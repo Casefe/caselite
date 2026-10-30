@@ -1,0 +1,10 @@
+packages:
+  - apps/desktop
+
+# pnpm 11 reads this setting from YAML; .npmrc retains the Forge convention.
+nodeLinker: hoisted
+saveExact: true
+strictDepBuilds: true
+
+allowBuilds:
+  electron: true
