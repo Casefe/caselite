@@ -153,3 +153,9 @@ vite.config.ts.timestamp-*
 
 # Electron Forge
 .webpack/
+
+# Generated quality evidence and reports
+artifacts/
+coverage/
+playwright-report/
+.vitest/

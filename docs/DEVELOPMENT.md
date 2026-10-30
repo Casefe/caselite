@@ -1,6 +1,6 @@
 # CaseLite｜开发环境与可复现操作
 
-- **性质**：P0 开发工作手册。开发机基础工具链已于 2026-10-29 完成实际验证；Electron、项目依赖、构建、测试与打包仍需由 DEV-1557、DEV-1559 等任务继续验证。
+- **性质**：P0 开发工作手册。开发机基础工具链已于 2026-10-29 完成实际验证；工程基线、G0 本地质量门槛与 Linux CI 由 DEV-1557、DEV-1559 分别建立。每次是否通过，以命令的当次输出和 CI 记录为准。
 - **来源**：[P0 开发环境与依赖清单](https://linear.app/logixy-ai/document/caselite-p0开发环境必装工具与依赖准入清单-v1待验证-8203d1bf3ff4)、[DEV-1557](https://linear.app/logixy-ai/issue/DEV-1557)、[DEV-1565](https://linear.app/logixy-ai/issue/DEV-1565)
 - **整理日期**：2026-10-29
 
@@ -75,20 +75,25 @@ ls -la
 
 如果某个命令失败，先报告真实原因，不安装另一套重复工具链作为快捷替代。不展示 Token、`~/.ssh` 私钥、Keychain 秘密或完整 `.env` 内容。
 
-## 5. 项目脚本——**目标接口，尚待代码验证**
+## 5. 项目脚本与质量门槛
 
-P0 预期在项目 `package.json` 中实现并验证下列语义，但不要在工程骨架尚不存在时声称命令已成功：
+下列命令已在根目录 `package.json` 中配置。只有命令当次退出成功并生成相应证据，才能称该次检查通过。
 
-| 目标脚本 | 语义 |
+| 脚本 | 语义 |
 | --- | --- |
 | `pnpm install --frozen-lockfile` | 从锁文件做干净、可复现安装 |
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
-| `pnpm typecheck` / `pnpm lint` | 类型与静态检查 |
-| `pnpm test` / `pnpm test:e2e` | 测试与桌面冒烟 |
-| `pnpm make` 或约定的 `pnpm package` | 打包/发布能力验证 |
-| `pnpm verify` | 全部强制检查的一键入口 |
+| `pnpm check:quick` | 格式、静态检查、架构边界、公开仓库安全、类型、单元与合同测试；不要求联网 |
+| `pnpm ci` | Linux CI 使用的完整 G0 门槛；另含生产依赖漏洞审计与许可证报告 |
+| `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
+| `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，另执行 macOS Apple Silicon 打包 |
+| `pnpm package` | macOS Apple Silicon 打包验证 |
+| `pnpm test:integration` | 当前明确报告“未运行”：SQLite、文件与类型化 IPC 尚未实现 |
+| `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
 
-真实脚本、版本、运行方式以 DEV-1557、1559 产物及 CI 为准，禁止在文档中捏造。
+`pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。
+
+若漏洞审计因 npm 服务不可用而失败，应如实记录为“未完成”，待网络恢复后重跑；不得删除该检查或把失败改为通过。
 
 ## 6. 依赖准入
 

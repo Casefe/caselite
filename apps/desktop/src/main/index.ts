@@ -33,21 +33,24 @@ async function createWindow(): Promise<void> {
   if (!window.isDestroyed()) window.show();
 }
 
-app.whenReady().then(async () => {
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false);
-  });
-  session.defaultSession.setPermissionCheckHandler(() => false);
-  session.defaultSession.on('will-download', (event) => event.preventDefault());
+app
+  .whenReady()
+  .then(async () => {
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
+      callback(false);
+    });
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.on('will-download', (event) => event.preventDefault());
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow().catch(reportStartupFailure);
-    }
-  });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        void createWindow().catch(reportStartupFailure);
+      }
+    });
 
-  await createWindow();
-}).catch(reportStartupFailure);
+    await createWindow();
+  })
+  .catch(reportStartupFailure);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
