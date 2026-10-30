@@ -8,9 +8,41 @@
     "pnpm": "11.0.9"
   },
   "scripts": {
+    "audit:dependencies": "pnpm audit --prod --audit-level=high",
     "architecture:check": "node scripts/check-architecture-boundaries.mjs",
+    "check:quick": "node scripts/run-quality-gate.mjs quick",
+    "ci": "node scripts/run-quality-gate.mjs ci",
+    "coverage": "vitest run --coverage",
     "dev": "pnpm --filter @caselite/desktop dev",
+    "evidence": "node scripts/run-quality-gate.mjs evidence",
+    "format": "prettier --write package.json apps scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
+    "format:check": "prettier --check package.json apps scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
+    "lint": "eslint . --max-warnings=0",
+    "licenses:report": "node scripts/create-license-report.mjs",
     "typecheck": "pnpm --filter @caselite/desktop typecheck",
-    "package": "pnpm --filter @caselite/desktop package"
+    "package": "pnpm --filter @caselite/desktop package",
+    "security:public": "node scripts/check-public-repository.mjs",
+    "test:contracts": "vitest run tests/contracts",
+    "test:e2e": "node scripts/report-not-run.mjs e2e",
+    "test:full": "node scripts/run-quality-gate.mjs full",
+    "test:integration": "node scripts/report-not-run.mjs integration",
+    "test:integrity": "node scripts/check-test-integrity.mjs",
+    "test:unit": "vitest run tests/unit",
+    "verify": "pnpm test:full"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.8",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "jsdom": "30.1.3",
+    "prettier": "3.9.10",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
   }
 }

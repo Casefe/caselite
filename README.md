@@ -30,7 +30,7 @@ CaseLite 是面向独立律师和小型法律团队的本地优先法律工作�
 - **开发交接操作手册**：[`docs/WORKFLOW.md`](./docs/WORKFLOW.md)
 - **Linear 来源索引与状态**：[`docs/SOURCES.md`](./docs/SOURCES.md)
 
-当前实际安装、启动、测试和打包命令尚需 P0 工程任务在真实仓库中验证。**不存在的命令不得作为“已通过”列出。**
+当前工程基线已有可执行命令：`pnpm check:quick`（离线的快速质量检查）、`pnpm ci`（Linux CI 门槛）、`pnpm coverage`、`pnpm test:full`（含本机 macOS 打包）和 `pnpm package`。它们是否通过，以当次终端输出、生成的本地证据和 GitHub CI 为准；SQLite/文件/IPC 集成测试与 Playwright Electron 自动化目前会明确报告“未运行”，不会被伪装为通过。
 
 ## 任务与验收
 
