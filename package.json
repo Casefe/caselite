@@ -8,6 +8,7 @@
     "pnpm": "11.0.9"
   },
   "scripts": {
+    "architecture:check": "node scripts/check-architecture-boundaries.mjs",
     "dev": "pnpm --filter @caselite/desktop dev",
     "typecheck": "pnpm --filter @caselite/desktop typecheck",
     "package": "pnpm --filter @caselite/desktop package"
