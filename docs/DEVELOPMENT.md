@@ -1,28 +1,51 @@
 # CaseLite｜开发环境与可复现操作
 
-- **性质**：P0 开发工作手册草案，不是“所有工具已验证”的环境报告。
+- **性质**：P0 开发工作手册。开发机基础工具链已于 2026-10-29 完成实际验证；Electron、项目依赖、构建、测试与打包仍需由 DEV-1557、DEV-1559 等任务继续验证。
 - **来源**：[P0 开发环境与依赖清单](https://linear.app/logixy-ai/document/caselite-p0开发环境必装工具与依赖准入清单-v1待验证-8203d1bf3ff4)、[DEV-1557](https://linear.app/logixy-ai/issue/DEV-1557)、[DEV-1565](https://linear.app/logixy-ai/issue/DEV-1565)
 - **整理日期**：2026-10-29
 
-## 1. 目标环境（不是全部发行平台承诺）
+## 1. 已验证的开发环境
 
-- 开发设备：macOS Apple Silicon（用户当前 Mac mini M4）。
-- 外置开发盘：APFS 卷 `CASDEV`，示例路径 `/Volumes/CASDEV/projects/caselite`。
-- 代码远端：公开仓库 `https://github.com/Casefe/caselite`；本机 `git push` 认证仍需在这台 Mac 上实际验证。
-- 工具安装在内置盘，仓库、项目依赖和合成测试资料在外置盘。**CI 必须脱离 `/Volumes/CASDEV` 绝对路径也能工作。**
+- 开发设备：macOS 26.6.2（Build 25G83），Apple Silicon `arm64`。
+- 外置开发盘：APFS 卷 `CASDEV`，项目路径 `/Volumes/CASDEV/projects/caselite`。
+- 代码远端：公开仓库 `https://github.com/Casefe/caselite`。
+- GitHub HTTPS 认证、分支 Push、Pull Request 和合并流程均已实际验证。
+- Node.js 由项目级 `mise.toml` 固定为 `24.22.2`。
+- pnpm 当前实际版本为 `11.0.9`；后续应在 `package.json` 中固定 `packageManager`。
+- 系统开发工具安装在内置盘；仓库、项目依赖、合成测试资料及可重建产物放在外置开发盘。
+- CI 和项目代码不得依赖 `/Volumes/CASDEV` 这一台机器的绝对路径。
 
-## 2. 用户提供的本机检查记录
+## 2. 开发机验证记录
 
-| 项目 | 最近提供的输出（2026-10-29） | 待做事项 |
+| 项目 | 实际验证结果 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| Git | 2.55.0，Homebrew 安装 | 在实际 CaseLite 仓库检查远端/分支/写入权限 |
-| Node.js | v26.0.0 | 与 Electron/原生 SQLite driver/测试工具实测兼容后冻结版本；不凭空降级 |
-| pnpm | 11.0.9 | 项目中固定 `packageManager` 与 lockfile；验证 frozen install |
-| mise | 2026.5.18；`--version` 曾遇更新站点超时 | 网络问题与本地版本可用性分开诊断 |
-| Xcode CLT | 路径 `/Library/Developer/CommandLineTools` | 编译器实际运行/原生模块构建仍待验证 |
-| CASDEV | 约 931 GiB，四目录已创建，读写通过 | 本轮未直接重新检查挂载；每次写入前复核 |
+| macOS | 26.6.2，Build 25G83 | 已验证 |
+| CPU | arm64 | 已验证 |
+| Xcode Command Line Tools | `/Library/Developer/CommandLineTools` | 已验证 |
+| Apple clang | 15.0.0，目标 `arm64-apple-darwin25.6.0` | 已验证；原生 Electron 模块仍需后续实际编译验证 |
+| Git | 2.55.0 | 已验证 |
+| Node.js | 24.22.2 | 已由 `mise.toml` 固定 |
+| pnpm | 11.0.9 | 已验证；待 `package.json` 固定版本 |
+| mise | `node 24.22.2` | 已验证 |
+| GitHub CLI | 已登录 `Lawyer-tan`，HTTPS Git 操作可用 | 已验证 |
+| GitHub Remote | `https://github.com/Casefe/caselite.git` | fetch / push 已验证 |
+| Git 工作流 | branch → commit → push → PR → merge | 已实际完成一次 |
+| CASDEV | APFS 外置卷，约 931 GiB，基本读写通过 | 已验证；每次写入前仍应检查挂载 |
 
-上述记录是用户终端回显，并非本文件编写时运行的检查。
+以上结果来自 2026-10-29 的实际终端验证。本文不记录 Token、密钥或其他凭据。
+
+
+## 2.1 Git 回退演练
+
+2026-10-30 已在 `/Volumes/CASDEV/scratch` 的隔离临时 Git 仓库完成回退演练：
+
+1. 创建独立 Git 仓库并建立基线提交；
+2. 人为制造未提交的错误修改；
+3. 使用 `git diff` 正确识别修改；
+4. 使用 `git restore` 恢复工作树；
+5. 恢复后 `git diff` 与 `git status --short` 均为空。
+
+结论：未提交的 LLM／人工错误修改可以通过 Git 安全恢复；演练未修改 CaseLite 正式仓库，也未使用真实案件资料或凭据。
 
 ## 3. 从已有仓库开始
 
