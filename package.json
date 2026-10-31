@@ -17,6 +17,7 @@
     "dev": "pnpm --filter @caselite/desktop dev",
     "env:check": "node scripts/check-environment.mjs",
     "evidence": "node scripts/run-quality-gate.mjs evidence",
+    "fixtures:case-materials": "node scripts/generate-case-material-fixtures.mjs",
     "format": "prettier --write package.json apps scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
     "format:check": "prettier --check package.json apps scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
     "lint": "eslint . --max-warnings=0",

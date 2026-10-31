@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "purpose": "CaseLite DEV-1560 的合成、公开、可重现测试样本；不得替换为真实法律资料。",
+  "generator": "pnpm fixtures:case-materials（macOS CUPS + sips）",
+  "files": [
+    {
+      "id": "development-contract-v1-text",
+      "path": "development/contract-v1-text.pdf",
+      "sha256": "4684cc55f5c88ac1630e744fac92466ed0d45cb60c64bc13e6f30b8a132ad0d3",
+      "purpose": "开发集：可检索文本 PDF，作为 v1 原件样本。",
+      "textLayer": "expected"
+    },
+    {
+      "id": "development-contract-v2-text",
+      "path": "development/contract-v2-text.pdf",
+      "sha256": "09bef1d405259bd8902f334906ce301fd443e26004d615c68a15b765a5772e29",
+      "purpose": "开发集：仅变更付款期限的 v2 文本 PDF。",
+      "textLayer": "expected"
+    },
+    {
+      "id": "regression-supply-contract-v1-text",
+      "path": "regression/supply-contract-v1-text.pdf",
+      "sha256": "9fe3389f9c84b0747cb98866a1dad35eff632cd1ee8d87b71872b03562770ac8",
+      "purpose": "独立回归集：不同 Matter 的合成采购合同。",
+      "textLayer": "expected"
+    },
+    {
+      "id": "development-contract-v1-scan",
+      "path": "development/contract-v1-scan.pdf",
+      "sha256": "be1bc5b6cf5aa03998f7cabc01b710450f2c5552d39abca7ce6d4db04173a26b",
+      "purpose": "开发集：由 v1 文本 PDF 栅格化生成的无文本层扫描副本。",
+      "textLayer": "none"
+    },
+    {
+      "id": "development-damaged-pdf",
+      "path": "development/damaged.pdf",
+      "sha256": "060db531ec41cc4975bbca1149d9150209a6d2f4ec69af066e9f9b10ab5bc11c",
+      "purpose": "开发集：故意损坏的伪 PDF；导入/阅读必须安全拒绝。",
+      "textLayer": "invalid"
+    }
+  ]
+}
