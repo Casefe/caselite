@@ -1,6 +1,6 @@
 # Application、Command／Query／Event 与 IPC 合同 v1
 
-- 状态：DEV-1578 实施中的可执行 Spike；不表示 Matter、Anchor、SQLite 或权限系统已经交付。
+- 状态：DEV-1578 可执行 Spike，正在复验；不表示 Matter、Anchor 的真实持久化或权限系统已经交付。
 - 代码位置：packages/contracts、packages/application、apps/desktop/src/main/ipc、apps/desktop/src/preload。
 
 ## 当前两个 Command
@@ -25,7 +25,7 @@ protocol_version 固定为 1。未知版本返回 PROTOCOL_UNSUPPORTED；不能�
 
 renderer 不取得 ipcRenderer、数据库、文件、路径、SQL 或通用通道。preload 公开上述两项业务动作，以及 DEV-1566 固定合成数据用的 `offlineProbe`；后者仅在打包集成测试进程中注册 handler，正常应用进程没有对应 handler。main 拒绝非受信任页面，测试请求还必须满足严格 Zod 合同。测试入口不表示 Matter 或 Anchor 已持久化。
 
-当前 composition root 的授权器恒定允许，只能用于此无持久化 Spike；它不是身份或权限实现。DEV-1561/P1 必须替换为真实对象级授权 Port，SQLite/Outbox 由 DEV-1567/P1 实现。
+当前 composition root 的授权器恒定允许，只能用于此无持久化 Spike；它不是身份或权限实现。每次重试先重新授权，再比较原命令的操作、身份、作用域和业务数据；同一幂等编号用于不同内容时返回 CONFLICT。内存中的幂等记录随进程退出消失，不构成跨重启保证。真实对象级授权、SQLite/Outbox 的同事务写入仍属 P1 实施范围。
 
 ## 追踪矩阵与后续入口
 
@@ -48,12 +48,25 @@ renderer 不取得 ipcRenderer、数据库、文件、路径、SQL 或通用通�
 | CONFLICT | 版本冲突 | refresh_and_retry |
 | INTERNAL | 通用失败 | contact_support |
 
-所有错误包含相关 ID，但不包含 SQL、绝对路径、密钥或堆栈。
+main 捕获 Application 或结果校验抛出的异常，返回固定的 INTERNAL 文案与新生成的 correlation_id；底层 SQL、绝对路径、密钥、堆栈不穿过 IPC。Repository／Outbox 当前尚未接入两项业务命令，测试中注入的异常只证明边界清理，不证明真实事务回滚或 Outbox 故障恢复。IPC 超时和真实持久化失败的恢复策略仍待首个持久化切片定义。
+
+UI 状态对应：发起命令时为 loading；编辑且未发出命令时为 dirty；`not-persisted` 必须显示为演练结果，不能显示为 local-saved；CONFLICT 显示冲突并提示刷新，FORBIDDEN 显示无权，INVALID_REQUEST 显示可纠正输入，INTERNAL 显示通用失败与 correlation_id。只有未来收到真实本地事务提交确认，才能显示 local-saved。
 
 ## 验证和回退
 
 - tests/contracts/application-ipc-contracts.test.ts：Schema、幂等、权限和冲突；
 - tests/contracts/ipc-spike.test.ts：固定 preload API、IPC channel、sender、协议与输入拒绝；
 - pnpm architecture:check：阻断 renderer 导入 application/contracts/Node。
+- `pnpm test:packaged-integration`：在打包 Electron 的真实 renderer → preload → main → Application 路径执行 CreateMatter、CreateAnchor、重复请求、旧协议和非法输入；独立证据由脚本记录。
 
-因当前 macOS/Electron 图形启动存在已记录的系统级阻塞，尚未获得 GUI 端到端实测。上述测试用可注入的 IPC main 注册器验证 handler 路径；不得把它表述为已完成 GUI 验收。回退时删除这两个 workspace 包、preload API 和 main 注册，不保留兼容性通道。
+安全的请求／响应摘要（仅合成标识与结果类型，不记录法律正文或路径）：
+
+| 测试请求 | 预期响应 |
+| --- | --- |
+| CreateMatter v1、CreateAnchor v1 | `ok`、对应 `*.created` 事件、`not-persisted` |
+| 两项命令用相同幂等编号重试 | 原结果，不产生第二个内存结果 |
+| 同编号改换内容或命令 | `CONFLICT` |
+| 旧协议、缺失或非法字段 | `PROTOCOL_UNSUPPORTED`／`INVALID_REQUEST` |
+| 模拟底层异常 | `INTERNAL`，不回传异常文本 |
+
+当前自动化环境可能使打包 Electron 以 SIGABRT 退出；只有在用户 Mac 终端看到打包测试成功并取得证据，才可记录真实 GUI 验收通过。回退本次验收修复时撤销该分支提交；回退整个 Spike 时须一并移除两个 workspace 包、preload API 和 main 注册，不保留兼容性通道。

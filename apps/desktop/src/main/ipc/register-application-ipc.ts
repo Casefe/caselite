@@ -147,9 +147,13 @@ export function registerApplicationIpc({
     const request = parseCommand(createMatterRequestSchema, payload, correlationId);
     if (isFailure(request)) return request;
 
-    return createMatterResultSchema.parse(
-      await application.createMatter(createMatterRequestSchema.parse(request)),
-    );
+    try {
+      return createMatterResultSchema.parse(
+        await application.createMatter(createMatterRequestSchema.parse(request)),
+      );
+    } catch {
+      return error(correlationId, 'INTERNAL', '操作暂时无法完成。', 'contact_support');
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.createAnchor, async (event, payload) => {
@@ -161,9 +165,13 @@ export function registerApplicationIpc({
     const request = parseCommand(createAnchorRequestSchema, payload, correlationId);
     if (isFailure(request)) return request;
 
-    return createAnchorResultSchema.parse(
-      await application.createAnchor(createAnchorRequestSchema.parse(request)),
-    );
+    try {
+      return createAnchorResultSchema.parse(
+        await application.createAnchor(createAnchorRequestSchema.parse(request)),
+      );
+    } catch {
+      return error(correlationId, 'INTERNAL', '操作暂时无法完成。', 'contact_support');
+    }
   });
 
   // This channel exists only while the fixed DEV-1566 packaged probe runs.

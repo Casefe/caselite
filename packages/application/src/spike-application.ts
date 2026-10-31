@@ -50,8 +50,37 @@ function failure(
 export function createSpikeApplication(
   dependencies: SpikeApplicationDependencies,
 ): SpikeApplication {
-  const matterResults = new Map<string, CreateMatterResult>();
-  const anchorResults = new Map<string, CreateAnchorResult>();
+  const results = new Map<
+    string,
+    { operation: Operation; fingerprint: string; result: CreateMatterResult | CreateAnchorResult }
+  >();
+
+  function fingerprint(request: CreateMatterRequest | CreateAnchorRequest): string {
+    // A retry may have a new request ID. Its actor, scope and business data
+    // must still match the original command associated with this key.
+    return JSON.stringify(
+      Object.entries(request)
+        .filter(([key]) => key !== 'request_id' && key !== 'idempotency_key')
+        .sort(([first], [second]) => first.localeCompare(second)),
+    );
+  }
+
+  function replay(
+    request: CreateMatterRequest | CreateAnchorRequest,
+    operation: Operation,
+  ): CreateMatterResult | CreateAnchorResult | undefined {
+    const previous = results.get(request.idempotency_key);
+    if (!previous) return undefined;
+    if (previous.operation !== operation || previous.fingerprint !== fingerprint(request)) {
+      return failure(
+        request.request_id,
+        'CONFLICT',
+        '此重复请求编号已用于其他内容。',
+        'refresh_and_retry',
+      );
+    }
+    return previous.result;
+  }
 
   async function authorized(
     request: CreateMatterRequest | CreateAnchorRequest,
@@ -75,8 +104,8 @@ export function createSpikeApplication(
 
   return {
     async createMatter(request) {
-      const existing = matterResults.get(request.idempotency_key);
-      if (existing) return existing;
+      const rejected = await authorized(request, 'create-matter');
+      if (rejected) return rejected;
 
       if (request.expected_version !== 0) {
         return failure(
@@ -87,8 +116,8 @@ export function createSpikeApplication(
         );
       }
 
-      const rejected = await authorized(request, 'create-matter');
-      if (rejected) return rejected;
+      const existing = replay(request, 'create-matter');
+      if (existing) return existing as CreateMatterResult;
 
       const entityId = dependencies.createId();
       const eventId = dependencies.createId();
@@ -112,13 +141,17 @@ export function createSpikeApplication(
         warnings: [notPersistedWarning],
       });
       const success: CreateMatterResult = { ok: true, value: result };
-      matterResults.set(request.idempotency_key, success);
+      results.set(request.idempotency_key, {
+        operation: 'create-matter',
+        fingerprint: fingerprint(request),
+        result: success,
+      });
       return success;
     },
 
     async createAnchor(request) {
-      const existing = anchorResults.get(request.idempotency_key);
-      if (existing) return existing;
+      const rejected = await authorized(request, 'create-anchor');
+      if (rejected) return rejected;
 
       if (request.expected_version !== 0) {
         return failure(
@@ -129,8 +162,8 @@ export function createSpikeApplication(
         );
       }
 
-      const rejected = await authorized(request, 'create-anchor');
-      if (rejected) return rejected;
+      const existing = replay(request, 'create-anchor');
+      if (existing) return existing as CreateAnchorResult;
 
       const entityId = dependencies.createId();
       const eventId = dependencies.createId();
@@ -157,7 +190,11 @@ export function createSpikeApplication(
         warnings: [notPersistedWarning],
       });
       const success: CreateAnchorResult = { ok: true, value: result };
-      anchorResults.set(request.idempotency_key, success);
+      results.set(request.idempotency_key, {
+        operation: 'create-anchor',
+        fingerprint: fingerprint(request),
+        result: success,
+      });
       return success;
     },
   };

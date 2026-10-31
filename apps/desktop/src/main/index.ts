@@ -240,6 +240,93 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     stage = 'preload-api';
     await waitFor("typeof window.caselite?.offlineProbe === 'function'");
 
+    // Exercise both DEV-1578 business commands in the actual packaged renderer,
+    // preload, main IPC handler and Application. These are in-memory Spike results.
+    stage = 'matter-ipc';
+    const matterCommand = {
+      request_id: '11111111-1111-4111-8111-111111111111',
+      protocol_version: 1,
+      workspace_id: 'dev-1578-synthetic',
+      actor_id: 'synthetic-actor',
+      device_id: 'synthetic-device',
+      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      expected_version: 0,
+      payload: { title: '合成事项' },
+    };
+    const matterResult = (await evaluate(
+      `window.caselite.createMatter(${JSON.stringify(matterCommand)})`,
+    )) as {
+      ok: boolean;
+      value?: {
+        entity_id: string;
+        local_save_status: string;
+        domain_events: { event_type: string }[];
+      };
+    };
+    if (
+      !matterResult.ok ||
+      matterResult.value?.local_save_status !== 'not-persisted' ||
+      matterResult.value.domain_events[0]?.event_type !== 'matter.created'
+    ) {
+      throw new Error('CreateMatter packaged IPC returned an unexpected result');
+    }
+    stage = 'matter-idempotency';
+    const matterReplay = await evaluate(
+      `window.caselite.createMatter(${JSON.stringify({ ...matterCommand, request_id: '33333333-3333-4333-8333-333333333333' })})`,
+    );
+    if (JSON.stringify(matterReplay) !== JSON.stringify(matterResult)) {
+      throw new Error('CreateMatter duplicate request produced another result');
+    }
+
+    stage = 'anchor-ipc';
+    const anchorCommand = {
+      ...matterCommand,
+      request_id: '44444444-4444-4444-8444-444444444444',
+      idempotency_key: '55555555-5555-4555-8555-555555555555',
+      matter_id: matterResult.value.entity_id,
+      payload: {
+        source_version_id: 'synthetic-source-version',
+        page_number: 1,
+        quoted_text: '合成引文',
+      },
+    };
+    const anchorResult = (await evaluate(
+      `window.caselite.createAnchor(${JSON.stringify(anchorCommand)})`,
+    )) as {
+      ok: boolean;
+      value?: { local_save_status: string; domain_events: { event_type: string }[] };
+    };
+    if (
+      !anchorResult.ok ||
+      anchorResult.value?.local_save_status !== 'not-persisted' ||
+      anchorResult.value.domain_events[0]?.event_type !== 'anchor.created'
+    ) {
+      throw new Error('CreateAnchor packaged IPC returned an unexpected result');
+    }
+    stage = 'anchor-idempotency';
+    const anchorReplay = await evaluate(
+      `window.caselite.createAnchor(${JSON.stringify({ ...anchorCommand, request_id: '66666666-6666-4666-8666-666666666666' })})`,
+    );
+    if (JSON.stringify(anchorReplay) !== JSON.stringify(anchorResult)) {
+      throw new Error('CreateAnchor duplicate request produced another result');
+    }
+
+    stage = 'old-command-protocol';
+    const oldProtocol = (await evaluate(
+      `window.caselite.createMatter(${JSON.stringify({ ...matterCommand, protocol_version: 0 })})`,
+    )) as { error?: { code?: string } };
+    if (oldProtocol.error?.code !== 'PROTOCOL_UNSUPPORTED') {
+      throw new Error('Old business command protocol was not rejected');
+    }
+    stage = 'invalid-command';
+    const invalidCommand = (await evaluate(
+      `window.caselite.createAnchor(${JSON.stringify({ ...anchorCommand, payload: { ...anchorCommand.payload, quoted_text: '' } })})`,
+    )) as { error?: { code?: string } };
+    if (invalidCommand.error?.code !== 'INVALID_REQUEST') {
+      throw new Error('Malformed business command was not rejected');
+    }
+    process.stdout.write('CaseLite real CreateMatter/CreateAnchor IPC accepted.\n');
+
     // A malformed DTO must be rejected by main before touching the database.
     stage = 'invalid-ipc';
     let invalid: unknown;

@@ -156,4 +156,34 @@ describe('typed preload to main IPC Spike', () => {
       error: { code: 'INVALID_REQUEST', recovery_action: 'correct_input' },
     });
   });
+
+  it('turns an application failure into a safe structured error', async () => {
+    const handlers = new Map<string, Handler>();
+    registerApplicationIpc({
+      application: {
+        createMatter: async () => {
+          throw new Error('SQLITE_READONLY /private/client-case.db secret-value');
+        },
+        createAnchor: async () => {
+          throw new Error('Outbox failed at /private/outbox.db');
+        },
+      },
+      ipcMain: { handle: (channel, handler) => void handlers.set(channel, handler) },
+      isTrustedSender: () => true,
+    });
+
+    for (const [channel, payload] of [
+      [IPC_CHANNELS.createMatter, request],
+      [IPC_CHANNELS.createAnchor, anchorRequest],
+    ] as const) {
+      const handler = handlers.get(channel);
+      if (!handler) throw new Error('Required IPC handler was not registered.');
+      const result = await handler({ senderFrame: { url: 'caselite://trusted' } }, payload);
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: 'INTERNAL', recovery_action: 'contact_support' },
+      });
+      expect(JSON.stringify(result)).not.toMatch(/SQLITE|outbox\.db|client-case\.db|secret-value/);
+    }
+  });
 });

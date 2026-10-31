@@ -98,7 +98,9 @@ try {
       result.status === 0 &&
       result.stdout.includes(
         `CaseLite packaged offline integration ${workerFault ? `worker-${workerFault}` : phase} passed.`,
-      );
+      ) &&
+      (workerFault ||
+        result.stdout.includes('CaseLite real CreateMatter/CreateAnchor IPC accepted.'));
     const safeStage = (result.stderr ?? '')
       .split('\n')
       .find((line) => /^CaseLite offline integration failed at [a-z0-9-]+\.$/.test(line));
@@ -117,6 +119,7 @@ try {
       scenario: workerFault ? `pdf-worker-${workerFault}` : 'normal',
       packageLocation: binary === executable ? 'original' : 'unicode-space-copy',
       status: success ? 'passed' : 'failed',
+      ...(workerFault ? {} : { realBusinessIpc: 'CreateMatter and CreateAnchor (DEV-1578)' }),
       ...(safeStage ? { failureStage: safeStage } : {}),
       ...(safePdfState ? { failureState: safePdfState } : {}),
       ...(safeRendererState ? { rendererState: safeRendererState } : {}),
