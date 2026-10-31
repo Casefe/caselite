@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +8,13 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const fixturesRoot = path.join(repositoryRoot, 'tests/fixtures/case-materials');
 const manifest = JSON.parse(readFileSync(path.join(fixturesRoot, 'manifest.json'), 'utf8')) as {
-  files: Array<{ id: string; path: string; sha256: string; textLayer: string }>;
+  files: Array<{
+    id: string;
+    path: string;
+    sha256: string;
+    sourceSha256?: string;
+    textLayer: string;
+  }>;
 };
 
 function sha256(filePath: string) {
@@ -21,6 +28,28 @@ describe('CaseLite synthetic case-material fixtures', () => {
     for (const fixture of manifest.files) {
       expect(sha256(path.join(fixturesRoot, fixture.path))).toBe(fixture.sha256);
     }
+  });
+
+  it('ties each text source to its frozen PDF and verifies without rewriting files', () => {
+    const sources = new Map([
+      ['development-contract-v1-text', 'contract-v1.txt'],
+      ['development-contract-v2-text', 'contract-v2.txt'],
+      ['regression-supply-contract-v1-text', 'supply-contract-v1.txt'],
+    ]);
+
+    for (const fixture of manifest.files) {
+      const source = sources.get(fixture.id);
+      if (source) {
+        expect(fixture.sourceSha256).toBe(sha256(path.join(fixturesRoot, 'source', source)));
+      }
+    }
+
+    const files = ['manifest.json', ...manifest.files.map((fixture) => fixture.path)];
+    const before = files.map((file) => sha256(path.join(fixturesRoot, file)));
+    execFileSync(process.execPath, [
+      path.join(repositoryRoot, 'scripts/generate-case-material-fixtures.mjs'),
+    ]);
+    expect(files.map((file) => sha256(path.join(fixturesRoot, file)))).toEqual(before);
   });
 
   it('keeps v1 and v2 to one substantive payment-term change', () => {

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "purpose": "CaseLite DEV-1560 的合成、公开、可重现测试样本；不得替换为真实法律资料。",
-  "generator": "pnpm fixtures:case-materials（macOS CUPS + sips）",
+  "purpose": "CaseLite DEV-1560 的合成、公开、固定测试样本；不得替换为真实法律资料。",
+  "generator": "pnpm fixtures:case-materials --refresh（macOS CUPS + sips；须人工复核）",
   "files": [
     {
       "id": "development-contract-v1-text",
       "path": "development/contract-v1-text.pdf",
       "sha256": "4684cc55f5c88ac1630e744fac92466ed0d45cb60c64bc13e6f30b8a132ad0d3",
+      "sourceSha256": "51d9d40c6e8dab797298cf12b5b8c01cdde2c79868790de491b31fc17a023d52",
       "purpose": "开发集：可检索文本 PDF，作为 v1 原件样本。",
       "textLayer": "expected"
     },
@@ -14,6 +15,7 @@
       "id": "development-contract-v2-text",
       "path": "development/contract-v2-text.pdf",
       "sha256": "09bef1d405259bd8902f334906ce301fd443e26004d615c68a15b765a5772e29",
+      "sourceSha256": "9d83308026f345c1984a129435ce2f5a6ae87014be02cefd1aa9ad709682dd55",
       "purpose": "开发集：仅变更付款期限的 v2 文本 PDF。",
       "textLayer": "expected"
     },
@@ -21,6 +23,7 @@
       "id": "regression-supply-contract-v1-text",
       "path": "regression/supply-contract-v1-text.pdf",
       "sha256": "9fe3389f9c84b0747cb98866a1dad35eff632cd1ee8d87b71872b03562770ac8",
+      "sourceSha256": "82e6092df1dfdf44ca649448ffcb3d737faf04cbb91cc0edbdff05a85902f95c",
       "purpose": "独立回归集：不同 Matter 的合成采购合同。",
       "textLayer": "expected"
     },
