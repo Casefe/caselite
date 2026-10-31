@@ -82,6 +82,8 @@ ls -la
 | 脚本 | 语义 |
 | --- | --- |
 | `pnpm install --frozen-lockfile` | 从锁文件做干净、可复现安装 |
+| `pnpm env:check` | 核对本机 Node、pnpm、Git、项目配置及 macOS 编译工具是否符合本仓库的固定版本 |
+| `pnpm clean` | 只删除可重建的构建、缓存、覆盖率和本地证据；不删除源码、锁文件、`node_modules` 或任何用户资料 |
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
 | `pnpm check:quick` | 格式、静态检查、架构边界、公开仓库安全、类型、单元与合同测试；不要求联网 |
 | `pnpm ci` | Linux CI 使用的完整 G0 门槛；另含生产依赖漏洞审计与许可证报告 |
@@ -92,6 +94,8 @@ ls -la
 | `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
 
 `pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。
+
+macOS 打包首次仍须从 Electron 官方发布源取得锁定版本的 ZIP；下载成功后，Forge 使用 Electron 包内记录的 SHA-256 校验本机缓存，不会为了再次下载 `SHASUMS256.txt` 而让已有缓存失效。缓存不是仓库内容，也不提交二进制。升级 Electron 时必须同时更新 `apps/desktop/forge.config.mjs` 的校验值，并重新执行打包验证。
 
 若漏洞审计因 npm 服务不可用而失败，应如实记录为“未完成”，待网络恢复后重跑；不得删除该检查或把失败改为通过。
 
