@@ -91,7 +91,8 @@ ls -la
 | `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，另执行 macOS Apple Silicon 打包 |
 | `pnpm package` | macOS Apple Silicon 打包验证 |
-| `pnpm test:integration` | 当前明确报告“未运行”：SQLite、文件与类型化 IPC 尚未实现 |
+| `pnpm test:packaged-db` | 在 `pnpm package` 后检查包内原生文件与迁移，再启动打包版执行合成 SQLite 读写探针 |
+| `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 迁移、事务、重开与失败恢复测试；文件集成测试仍待后续 Issue |
 | `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
 
 `pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import WebpackPlugin from '@electron-forge/plugin-webpack';
+import AutoUnpackNativesPlugin from '@electron-forge/plugin-auto-unpack-natives';
 import FusesPlugin from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
@@ -20,9 +21,11 @@ export default {
       checksums: electronArtifactChecksums,
     },
     executableName: 'CaseLite',
+    extraResource: [localPath('../../packages/local-db/migrations')],
   },
   makers: [],
   plugins: [
+    new AutoUnpackNativesPlugin({}),
     new WebpackPlugin({
       mainConfig: localPath('./webpack.main.config.mjs'),
       devContentSecurityPolicy:

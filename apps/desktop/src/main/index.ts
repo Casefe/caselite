@@ -1,7 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { createSpikeApplication } from '@caselite/application';
+import { openToolchainProbe, toolchainProbe } from '@caselite/local-db';
 
 import { registerApplicationIpc } from './ipc/register-application-ipc';
 
@@ -54,9 +58,45 @@ function registerIpcSpike(): void {
   });
 }
 
+function runLocalDatabaseProbe(): void {
+  const directory = mkdtempSync(join(tmpdir(), 'caselite-electron-db-'));
+  const databasePath = join(directory, 'probe.sqlite');
+  const migrationsFolder = app.isPackaged
+    ? join(process.resourcesPath, 'migrations')
+    : resolve(process.cwd(), '../../packages/local-db/migrations');
+
+  try {
+    const first = openToolchainProbe(databasePath, migrationsFolder);
+    try {
+      first.db.insert(toolchainProbe).values({ id: 'synthetic', value: 'verified' }).run();
+    } finally {
+      first.sqlite.close();
+    }
+    const second = openToolchainProbe(databasePath, migrationsFolder);
+    try {
+      const result = second.sqlite
+        .prepare('SELECT value FROM toolchain_probe WHERE id = ?')
+        .get('synthetic');
+      if (JSON.stringify(result) !== JSON.stringify({ value: 'verified' })) {
+        throw new Error('Local database probe did not read back its synthetic value');
+      }
+    } finally {
+      second.sqlite.close();
+    }
+    process.stdout.write('CaseLite SQLite/Drizzle Electron probe passed.\n');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 app
   .whenReady()
   .then(async () => {
+    if (process.env.CASELITE_DB_PROBE === '1') {
+      runLocalDatabaseProbe();
+      app.quit();
+      return;
+    }
     registerIpcSpike();
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
       callback(false);
@@ -72,7 +112,14 @@ app
 
     await createWindow();
   })
-  .catch(reportStartupFailure);
+  .catch(() => {
+    if (process.env.CASELITE_DB_PROBE === '1') {
+      process.stderr.write('CaseLite SQLite/Drizzle Electron probe failed.\n');
+      app.exit(1);
+      return;
+    }
+    reportStartupFailure();
+  });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

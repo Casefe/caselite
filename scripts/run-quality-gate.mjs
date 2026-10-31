@@ -27,7 +27,7 @@ const commands = {
     ['contracts', ['test:contracts']],
     ['dependency-audit', ['audit:dependencies']],
     ['license-report', ['licenses:report']],
-    ['integration', ['test:integration'], 'not-run'],
+    ['integration', ['test:integration']],
     ['e2e', ['test:e2e'], 'not-run'],
   ],
   full: [
@@ -41,7 +41,7 @@ const commands = {
     ['contracts', ['test:contracts']],
     ['dependency-audit', ['audit:dependencies']],
     ['license-report', ['licenses:report']],
-    ['integration', ['test:integration'], 'not-run'],
+    ['integration', ['test:integration']],
     ['e2e', ['test:e2e'], 'not-run'],
     ['macos-package', ['package']],
   ],
@@ -91,7 +91,7 @@ const evidence = {
   results,
   startedAt: startedAt.toISOString(),
   unverified: [
-    'Integration tests are not configured until SQLite, files and typed IPC exist.',
+    'Only the SQLite/Drizzle infrastructure integration probe exists; file and desktop IPC integration remain unverified.',
     'Playwright Electron automation is deferred because the current security Fuse intentionally disables the inspect argument it requires.',
     ...(mode === 'ci'
       ? [

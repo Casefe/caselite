@@ -32,7 +32,8 @@
     "test:contracts": "vitest run tests/contracts",
     "test:e2e": "node scripts/report-not-run.mjs e2e",
     "test:full": "node scripts/run-quality-gate.mjs full",
-    "test:integration": "node scripts/report-not-run.mjs integration",
+    "test:integration": "vitest run tests/integration",
+    "test:packaged-db": "node scripts/check-packaged-local-db.mjs",
     "test:integrity": "node scripts/check-test-integrity.mjs",
     "test:unit": "vitest run tests/unit",
     "verify": "pnpm test:full"
