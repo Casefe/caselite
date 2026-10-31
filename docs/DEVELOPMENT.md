@@ -1,6 +1,6 @@
 # CaseLite｜开发环境与可复现操作
 
-- **性质**：P0 开发工作手册。开发机基础工具链已于 2026-10-29 完成实际验证；工程基线、G0 本地质量门槛与 Linux CI 由 DEV-1557、DEV-1559 分别建立。每次是否通过，以命令的当次输出和 CI 记录为准。
+- **性质**：P0 开发工作手册。开发机基础工具链已于 2026-10-29 完成实际验证；工程基线、G0 本地质量门槛、Linux CI 与 P0 安全基线分别由 DEV-1557、DEV-1559、DEV-1561 建立。每次是否通过，以命令的当次输出和 CI 记录为准。
 - **来源**：[P0 开发环境与依赖清单](https://linear.app/logixy-ai/document/caselite-p0开发环境必装工具与依赖准入清单-v1待验证-8203d1bf3ff4)、[DEV-1557](https://linear.app/logixy-ai/issue/DEV-1557)、[DEV-1565](https://linear.app/logixy-ai/issue/DEV-1565)
 - **整理日期**：2026-10-29
 
@@ -85,7 +85,8 @@ ls -la
 | `pnpm env:check` | 核对本机 Node、pnpm、Git、项目配置及 macOS 编译工具是否符合本仓库的固定版本 |
 | `pnpm clean` | 只删除可重建的构建、缓存、覆盖率和本地证据；不删除源码、锁文件、`node_modules` 或任何用户资料 |
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
-| `pnpm check:quick` | 格式、静态检查、架构边界、公开仓库安全、类型、单元与合同测试；不要求联网 |
+| `pnpm security:baseline` | 公开仓库、Electron/Fuses/CSP/权限、无直接敏感日志及 Secretlint 假令牌自检；不要求联网 |
+| `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
 | `pnpm ci` | Linux CI 使用的完整 G0 门槛；另含生产依赖漏洞审计与许可证报告 |
 | `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，另执行 macOS Apple Silicon 打包 |
