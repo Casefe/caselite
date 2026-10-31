@@ -4,16 +4,17 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rendererRoot = resolve(repositoryRoot, 'apps/desktop/src/renderer');
-const fixture = resolve(
-  repositoryRoot,
-  'tests/fixtures/architecture-boundaries/renderer-imports-node.ts',
-);
+const fixtures = [
+  resolve(repositoryRoot, 'tests/fixtures/architecture-boundaries/renderer-imports-node.ts'),
+  resolve(repositoryRoot, 'tests/fixtures/architecture-boundaries/renderer-imports-application.ts'),
+];
 
 const forbiddenRendererPackages = new Set([
   'electron',
   'better-sqlite3',
   'drizzle-orm',
   '@caselite/application',
+  '@caselite/contracts',
   '@caselite/domain',
   '@caselite/files',
   '@caselite/local-db',
@@ -106,9 +107,9 @@ async function findViolations(filePath) {
 
 const rendererFiles = await collectTypeScriptFiles(rendererRoot);
 const rendererViolations = (await Promise.all(rendererFiles.map(findViolations))).flat();
-const fixtureViolations = await findViolations(fixture);
+const fixtureViolations = (await Promise.all(fixtures.map(findViolations))).flat();
 
-if (fixtureViolations.length === 0) {
+if (fixtureViolations.length !== fixtures.length) {
   console.error(
     'Architecture check configuration error: the deliberate renderer violation was not detected.',
   );
@@ -121,5 +122,7 @@ if (fixtureViolations.length === 0) {
   console.log(
     `Architecture boundary check passed: ${rendererFiles.length} renderer source file(s) scanned.`,
   );
-  console.log(`Deliberate negative fixture detected: ${fixtureViolations[0]}`);
+  for (const violation of fixtureViolations) {
+    console.log(`Deliberate negative fixture detected: ${violation}`);
+  }
 }

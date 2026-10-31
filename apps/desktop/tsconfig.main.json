@@ -12,5 +12,5 @@
     "noEmitOnError": true,
     "sourceMap": true
   },
-  "include": ["src/main/**/*.ts", "src/renderer/env.d.ts"]
+  "include": ["src/main/**/*.ts", "src/main/**/*.d.ts"]
 }

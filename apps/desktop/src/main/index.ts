@@ -1,4 +1,9 @@
-import { app, BrowserWindow, dialog, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { randomUUID } from 'node:crypto';
+
+import { createSpikeApplication } from '@caselite/application';
+
+import { registerApplicationIpc } from './ipc/register-application-ipc';
 
 function reportStartupFailure(): void {
   // Keep internal paths and stack traces out of user-facing errors.
@@ -33,9 +38,26 @@ async function createWindow(): Promise<void> {
   if (!window.isDestroyed()) window.show();
 }
 
+function registerIpcSpike(): void {
+  registerApplicationIpc({
+    ipcMain,
+    application: createSpikeApplication({
+      authorization: {
+        // DEV-1578 has no identity store yet. The composition root is the only place
+        // allowed to make this temporary, explicit test policy.
+        canAct: async () => true,
+      },
+      createId: randomUUID,
+      now: () => new Date().toISOString(),
+    }),
+    isTrustedSender: (event) => event.senderFrame?.url === MAIN_WINDOW_WEBPACK_ENTRY,
+  });
+}
+
 app
   .whenReady()
   .then(async () => {
+    registerIpcSpike();
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
       callback(false);
     });

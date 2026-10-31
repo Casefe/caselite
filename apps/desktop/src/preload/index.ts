@@ -1,2 +1,8 @@
-// This baseline exposes no IPC, Node, filesystem, or shell APIs to the renderer.
-export {};
+import { contextBridge, ipcRenderer } from 'electron';
+
+import { createCaseLitePreloadApi } from './caselite-api';
+
+contextBridge.exposeInMainWorld(
+  'caselite',
+  createCaseLitePreloadApi((channel, payload) => ipcRenderer.invoke(channel, payload)),
+);

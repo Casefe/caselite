@@ -24,7 +24,7 @@ export default {
       },
       {
         test: /\.ts$/,
-        include: localPath('./src/preload/'),
+        include: [localPath('./src/preload/'), localPath('../../packages/contracts/src/')],
         use: {
           loader: 'ts-loader',
           options: {
