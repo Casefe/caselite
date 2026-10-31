@@ -1,8 +1,8 @@
 # CaseLite｜测试策略与交付证据
 
 - **性质**：测试基线草案，执行标准最终以真实项目测试脚本、CI 与律师确认的样本为准。
-- **来源**：[Linear 场景与验收样例 v2.2](https://linear.app/logixy-ai/document/caselite场景与验收样例-v22现行-65005791136a)、[DEV-1559](https://linear.app/logixy-ai/issue/DEV-1559)、[DEV-1560](https://linear.app/logixy-ai/issue/DEV-1560)
-- **状态**：G0 工程检查已由 DEV-1559 建立；数据库、文件、PDF、Yjs、同步与人工金标准仍待各自 Issue 实现和验证。不得把本页的计划写成已通过的产品能力。
+- **来源**：[Linear 场景与验收样例 v2.2](https://linear.app/logixy-ai/document/caselite场景与验收样例-v22现行-65005791136a)、[DEV-1559](https://linear.app/logixy-ai/issue/DEV-1559)、[DEV-1560](https://linear.app/logixy-ai/issue/DEV-1560)、[DEV-1561](https://linear.app/logixy-ai/issue/DEV-1561)
+- **状态**：G0 工程检查与 P0 安全基线已建立；IPC 合同 Spike 与合成样本已存在。数据库、文件、PDF、Yjs、同步与真实图形端到端验收仍待各自 Issue 实现和验证。不得把本页的计划写成已通过的产品能力。
 
 ## 1. 质量门禁
 
@@ -29,15 +29,16 @@
 | `pnpm lint` | ESLint 静态检查 | 警告也会失败 |
 | `pnpm architecture:check` | 检查 renderer 不导入 Node、Electron 或本地数据层 | 含故意违规夹具的自检 |
 | `pnpm test:integrity` | 阻止真实测试中新增 `.skip`、`.only`、`.todo` | 含故意违规夹具的自检 |
+| `pnpm security:baseline` | 公开仓库、Electron 设置、日志与 Secretlint 秘密扫描 | 含临时生成假令牌的自检；不扫描或保存真实凭据 |
 | `pnpm typecheck` | 检查桌面进程的 TypeScript | 不等同于运行时安全校验 |
 | `pnpm test:unit` | Vitest + React Testing Library 的最小用户可见界面测试 | 只覆盖当前工程骨架 |
 | `pnpm test:contracts` | 架构与测试完整性脚本的合同测试 | 不等同于未来 IPC/SQLite 合同 |
 | `pnpm coverage` | 生成当前测试覆盖率报告 | 用于发现缺口，不以百分比定义完成 |
-| `pnpm check:quick` | 快速执行格式、lint、边界、完整性、类型、单元和合同检查 | 生成可忽略的本地证据文件 |
+| `pnpm check:quick` | 快速执行格式、lint、边界、完整性、安全、类型、单元和合同检查 | 生成可忽略的本地证据文件 |
 | `pnpm test:full` / `pnpm verify` | 在本机执行快速检查、明确的未运行项及 macOS 桌面打包 | 适用于本机完整回归 |
 | `pnpm ci` | Linux CI 的相同代码检查入口 | 明确不打包 macOS 应用 |
 
-`pnpm test:integration` 目前会明确输出“未配置”：SQLite、文件和 IPC 尚未实现。`pnpm test:e2e` 也会明确输出“未运行”：Playwright Electron 自动化需要启用与当前安全 Fuse 冲突的调试参数；不得为了测试关闭该 Fuse。两者不是“通过”，其状态会写入质量证据文件。
+`pnpm test:integration` 目前会明确输出“未配置”：SQLite 与文件尚未实现，当前 IPC 仅为不持久化的合同 Spike。`pnpm test:e2e` 也会明确输出“未运行”：Playwright Electron 自动化需要启用与当前安全 Fuse 冲突的调试参数；不得为了测试关闭该 Fuse。两者不是“通过”，其状态会写入质量证据文件。
 
 每次 `check:quick`、`ci` 或 `test:full` 会在被忽略的 `artifacts/evidence/` 下生成 JSON，记录提交、Node/pnpm 版本、执行命令、耗时、结果、未运行项和恢复方式。失败也会尽量保留该记录；它不包含绝对路径、客户资料或秘密。
 
@@ -55,9 +56,7 @@ GitHub Actions 使用干净的 Linux runner、锁定的 Node 24.22.2 和 `pnpm i
 
 CaseLite 专用、许可明确、体积合理的测试文件原则上放在仓库 `tests/fixtures/`，与代码版本共同更新。需要共享的大型/非敏感语料才考虑 CASDEV 顶层 `fixtures/`；CI 不得依赖其绝对路径。
 
-DEV-1560 尚需生成：合成合同 v1/v2、扫描副本、重复文字、日期/金额/否定词变化、不可读取/加密/无文本层样例；人工金标准需要律师确认；测试输入、预期及其版本应分离，避免模型自评替代事实核验。
-
-**当前样本状态：待制作/待律师确认；本包未附带 PDF 或真实金标准。**
+DEV-1560 已提供合成合同 v1/v2、扫描副本、重复文字、日期/金额/否定词变化和损坏 PDF 样本；人工金标准已由律师确认。详细清单、哈希及预期见 `tests/fixtures/case-materials/`。测试输入、预期及其版本仍须分离，避免模型自评替代事实核验。
 
 ## 5. P3 关键故障用例（将来才运行）
 

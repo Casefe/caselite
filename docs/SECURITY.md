@@ -15,12 +15,12 @@
 
 `README.md`、合成测试样本和公开设计摘要可以发布，但公开性应由使用者确认。`.gitignore` **不是秘密防泄露保证**，已提交到 Git 历史的秘密不会自动消失。实际工程需设置可运行的 secret 扫描、依赖审计及提交前/CI 门禁。**不要在此文件记录任何真实密钥。**
 
-## 2. Electron 边界（待编码验证）
+## 2. Electron 边界（已建立 P0 可执行基线）
 
 - Renderer 设置 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`，禁止不受信任网页获得 Node 权限。
 - Preload 仅暴露最小白名单、类型化 API；IPC 校验调用者、对象范围、参数、权限、版本和错误，不能暴露任意 SQL、命令、URL 或文件操作。
 - 对外部导航、窗口创建、CSP、文件读取和自定义协议采取明确安全默认值；恶意 PDF/网页和工具返回视为不可信数据。
-- `safeStorage` / 系统凭据保存 BYOK Key 的方案需实际 Spike；密钥不进入普通业务数据库、日志、同步、提示词记录和公开文档。
+- `safeStorage` / 系统凭据保存 BYOK Key 的方案需实际 Spike；密钥不进入普通业务数据库、日志、同步、提示词记录和公开文档。P0 尚无凭据输入或 Provider，不能声称已实现密钥保存。
 
 ## 3. 外发、费用与授权
 
@@ -39,6 +39,8 @@ CASDEV 当前为**非加密 APFS**，仅适合公开/合成研发材料；真实
 - 使用**假** Key 验证扫描器可以拦截泄露；测试越权 IPC、路径穿越、恶意链接、注入内容、意外外发与日志残留。
 - 不关闭或删除测试/CI/防护来换取绿色结果；未执行的安全检查写明“未执行”。
 - 违反安全边界时停止写入、保全数据并报告风险，先形成修复/回退路径再继续。
+
+P0 已提供 `pnpm security:baseline`：它组合公开仓库基础检查、Electron/Fuses/CSP/权限静态检查、生产代码无直接控制台日志检查，以及 Secretlint 推荐规则集。秘密扫描在系统临时目录生成假 GitHub token 并要求扫描器拒绝；测试材料和仓库不保存该 token。详见 [`docs/security/DEV-1561-threat-model.md`](./security/DEV-1561-threat-model.md)。
 
 ## 6. 漏洞处理与公共协作
 
