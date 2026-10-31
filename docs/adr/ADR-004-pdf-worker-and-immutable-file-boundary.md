@@ -1,10 +1,10 @@
 # ADR-004｜PDF Worker、附件元数据与不可变文件版本边界
 
-- 状态：提议；等待 DEV-1560、DEV-1568 与 P1 文件/Anchor 合同验证
+- 状态：提议；DEV-1560 样本已冻结，DEV-1568 打包资源已构建，运行态与 P1 文件/Anchor 合同仍待验证
 - 日期：2026-10-30
 - Linear Issue：[DEV-1558](https://linear.app/logixy-ai/issue/DEV-1558)、[DEV-1568](https://linear.app/logixy-ai/issue/DEV-1568)
 - 影响模块：未来 `files`、`pdf`、`local-db`、`application`
-- 代码位置与提交：尚未实现；当前不含 PDF 或案件文件
+- 代码位置：`apps/desktop/src/renderer/PdfSpike.tsx` 和 Webpack/Forge 配置；仅为合成样本兼容测试，不含案件文件
 
 ## 背景与问题
 
@@ -28,6 +28,8 @@
 
 - DEV-1560 先提供公开、合成的合同 v1/v2 和扫描副本。
 - DEV-1568 验证离线 package、worker 资源、页码和失败路径；P1 再验证 SourceVersion/Anchor。
+- DEV-1568 测试页将固定合成 PDF 编入 renderer，并将 Worker、CMaps、标准字体与 WASM 编入本地打包资源；不开放任意路径或客户文件。PDF.js 在 `file://` 无同源标识时以本地 Blob 包装模块 Worker，因此 CSP 的 `worker-src` 仅放行同源及 `blob:`；文字层所需的样式属性单独放行，脚本仍只允许同源。此策略需在正式文件接入时重新审查。
+- macOS 首发兼容测试只生成 Forge ZIP；当前未签名、未公证，不能当作可分发安装包。自动化构建成功不等于图形运行验收通过。
 - 回退：失败文件保持不可用状态；不覆盖最后一个完整版本。
 
 ## 后果与重新评估条件

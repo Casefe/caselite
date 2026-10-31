@@ -15,7 +15,7 @@ function reportStartupFailure(): void {
   app.quit();
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(show = true): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 960,
     height: 640,
@@ -39,7 +39,72 @@ async function createWindow(): Promise<void> {
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
   await window.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
-  if (!window.isDestroyed()) window.show();
+  if (show && !window.isDestroyed()) window.show();
+  return window;
+}
+
+// A fixed, synthetic-only packaged check. It uses Electron's own renderer and
+// does not enable remote debugging or expose an arbitrary renderer IPC method.
+async function runPdfProbe(): Promise<void> {
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: /^https?:/i.test(details.url) });
+  });
+  const window = await createWindow(false);
+  const evaluate = (source: string): Promise<unknown> =>
+    window.webContents.executeJavaScript(source);
+  const waitFor = async (predicate: string): Promise<void> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (await evaluate(predicate)) return;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    throw new Error('PDF probe timed out');
+  };
+
+  let stage = 'initialization';
+  try {
+    await evaluate("document.querySelector('button')?.click()");
+    stage = 'worker-and-text-page';
+    await waitFor(
+      "window.__caselitePdfNativeWorker === true && document.querySelector('[aria-label=\"PDF 页码\"]')?.textContent?.includes('1 / 1') && document.querySelector('canvas')?.width > 0 && document.querySelector('.react-pdf__Page__textContent')?.textContent?.includes('合同')",
+    );
+    await evaluate(
+      "document.querySelector('#pdf-fixture').value = '1'; document.querySelector('#pdf-fixture').dispatchEvent(new Event('change', { bubbles: true }))",
+    );
+    stage = 'scanned-page';
+    await waitFor(
+      "document.querySelector('[aria-label=\"PDF 页码\"]')?.textContent?.includes('1 / 1') && document.querySelector('canvas')?.width > 0 && !document.querySelector('.react-pdf__Page__textContent')",
+    );
+    await evaluate(
+      "document.querySelector('#pdf-fixture').value = '2'; document.querySelector('#pdf-fixture').dispatchEvent(new Event('change', { bubbles: true }))",
+    );
+    stage = 'repeated-text-page-one';
+    await waitFor(
+      "document.querySelector('[aria-label=\"PDF 页码\"]')?.textContent?.includes('1 / 2') && document.querySelector('canvas')?.width > 0",
+    );
+    await evaluate(
+      "[...document.querySelectorAll('button')].find((button) => button.textContent === '下一页')?.click()",
+    );
+    stage = 'repeated-text-page-two';
+    await waitFor(
+      "document.querySelector('[aria-label=\"PDF 页码\"]')?.textContent?.includes('2 / 2') && document.querySelector('.react-pdf__Page__textContent')?.textContent?.includes('BETA-002')",
+    );
+    process.stdout.write('CaseLite packaged offline PDF probe passed.\n');
+  } catch {
+    process.stderr.write(`CaseLite PDF probe failed at ${stage}.\n`);
+    try {
+      const state = (await evaluate(
+        "({ nativeWorker: window.__caselitePdfNativeWorker ?? null, canvas: Boolean(document.querySelector('canvas')?.width), text: Boolean(document.querySelector('.react-pdf__Page__textContent')?.textContent), error: Boolean(document.querySelector('[role=alert]')) })",
+      )) as { nativeWorker: boolean | null; canvas: boolean; text: boolean; error: boolean };
+      process.stderr.write(
+        `CaseLite PDF probe state: nativeWorker=${state.nativeWorker}, canvas=${state.canvas}, text=${state.text}, error=${state.error}.\n`,
+      );
+    } catch {
+      process.stderr.write('CaseLite PDF probe state unavailable.\n');
+    }
+    throw new Error('PDF compatibility probe failed');
+  } finally {
+    window.destroy();
+  }
 }
 
 function registerIpcSpike(): void {
@@ -97,6 +162,11 @@ app
       app.quit();
       return;
     }
+    if (process.env.CASELITE_PDF_PROBE === '1') {
+      await runPdfProbe();
+      app.exit(0);
+      return;
+    }
     registerIpcSpike();
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
       callback(false);
@@ -113,8 +183,8 @@ app
     await createWindow();
   })
   .catch(() => {
-    if (process.env.CASELITE_DB_PROBE === '1') {
-      process.stderr.write('CaseLite SQLite/Drizzle Electron probe failed.\n');
+    if (process.env.CASELITE_DB_PROBE === '1' || process.env.CASELITE_PDF_PROBE === '1') {
+      process.stderr.write('CaseLite packaged probe failed.\n');
       app.exit(1);
       return;
     }
