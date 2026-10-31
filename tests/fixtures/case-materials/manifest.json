@@ -20,6 +20,14 @@
       "textLayer": "expected"
     },
     {
+      "id": "development-anchor-repeat-two-pages",
+      "path": "development/anchor-repeat-two-pages.pdf",
+      "sha256": "6bd5ae2f4e6aef0a0c6696e39c31165050295139460507a052cf25f0b59042ac",
+      "sourceSha256": "a00b09ac5e7a36be75c228ecd36292aef2ce407e9e7b4513ca3bc3cb8d368dd7",
+      "purpose": "开发集：同一句话出现在两页，用于锚点页码与片段消歧。",
+      "textLayer": "expected"
+    },
+    {
       "id": "regression-supply-contract-v1-text",
       "path": "regression/supply-contract-v1-text.pdf",
       "sha256": "9fe3389f9c84b0747cb98866a1dad35eff632cd1ee8d87b71872b03562770ac8",
