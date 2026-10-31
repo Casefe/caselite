@@ -23,7 +23,7 @@ protocol_version 固定为 1。未知版本返回 PROTOCOL_UNSUPPORTED；不能�
       → Application 授权、版本、幂等处理
       → 结构化结果/领域事件
 
-renderer 不取得 ipcRenderer、数据库、文件、路径、SQL 或通用通道。preload 仅公开上述两项业务动作；main 拒绝非受信任页面。
+renderer 不取得 ipcRenderer、数据库、文件、路径、SQL 或通用通道。preload 公开上述两项业务动作，以及 DEV-1566 固定合成数据用的 `offlineProbe`；后者仅在打包集成测试进程中注册 handler，正常应用进程没有对应 handler。main 拒绝非受信任页面，测试请求还必须满足严格 Zod 合同。测试入口不表示 Matter 或 Anchor 已持久化。
 
 当前 composition root 的授权器恒定允许，只能用于此无持久化 Spike；它不是身份或权限实现。DEV-1561/P1 必须替换为真实对象级授权 Port，SQLite/Outbox 由 DEV-1567/P1 实现。
 

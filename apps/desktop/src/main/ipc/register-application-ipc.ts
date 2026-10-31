@@ -5,18 +5,45 @@ import {
   createAnchorResultSchema,
   createMatterRequestSchema,
   createMatterResultSchema,
+  offlineProbeRequestSchema,
+  offlineProbeResultSchema,
   IPC_CHANNELS,
   IPC_PROTOCOL_VERSION,
   type ApplicationError,
   type CommandFailure,
 } from '@caselite/contracts';
-import type { SpikeApplication } from '@caselite/application';
+import type { SpikeApplication, createOfflineProbeApplication } from '@caselite/application';
 
 type IpcEventLike = {
+  sender?: unknown;
   senderFrame: {
     url: string;
   } | null;
 };
+
+type TrustedWindowLike = {
+  isDestroyed(): boolean;
+  webContents: {
+    mainFrame: unknown;
+  };
+};
+
+// A file URL may be normalized differently when the app moves to a path with
+// Unicode or spaces. Trust only the live app window's main frame by identity.
+export function isTrustedDesktopSender(
+  event: IpcEventLike,
+  windows: readonly TrustedWindowLike[],
+): boolean {
+  return (
+    event.senderFrame !== null &&
+    windows.some(
+      (window) =>
+        !window.isDestroyed() &&
+        event.sender === window.webContents &&
+        event.senderFrame === window.webContents.mainFrame,
+    )
+  );
+}
 
 type IpcMainLike = {
   handle(channel: string, listener: (event: IpcEventLike, payload: unknown) => unknown): void;
@@ -38,6 +65,7 @@ type RuntimeSchema = {
 
 export type RegisterApplicationIpcDependencies = {
   application: SpikeApplication;
+  offlineProbe?: ReturnType<typeof createOfflineProbeApplication>;
   ipcMain: IpcMainLike;
   isTrustedSender(event: IpcEventLike): boolean;
 };
@@ -106,6 +134,7 @@ function isFailure(value: unknown): value is CommandFailure {
 
 export function registerApplicationIpc({
   application,
+  offlineProbe,
   ipcMain,
   isTrustedSender,
 }: RegisterApplicationIpcDependencies): void {
@@ -136,4 +165,19 @@ export function registerApplicationIpc({
       await application.createAnchor(createAnchorRequestSchema.parse(request)),
     );
   });
+
+  // This channel exists only while the fixed DEV-1566 packaged probe runs.
+  if (offlineProbe) {
+    ipcMain.handle(IPC_CHANNELS.offlineProbe, (event, payload) => {
+      const correlationId = randomUUID();
+      if (!isTrustedSender(event)) {
+        return error(correlationId, 'FORBIDDEN', '此页面无权调用桌面测试接口。', 'request_access');
+      }
+      const request = parseCommand(offlineProbeRequestSchema, payload, correlationId);
+      if (isFailure(request)) return request;
+      return offlineProbeResultSchema.parse(
+        offlineProbe.run(offlineProbeRequestSchema.parse(request)),
+      );
+    });
+  }
 }

@@ -89,12 +89,13 @@ ls -la
 | `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
 | `pnpm ci` | Linux CI 使用的完整 G0 门槛；另含生产依赖漏洞审计与许可证报告 |
 | `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
-| `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，另执行 macOS Apple Silicon 打包 |
+| `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，执行 macOS Apple Silicon 打包后再运行 DEV-1566 同一打包应用的 PDF、IPC 与 SQLite 离线联动测试 |
 | `pnpm package` | macOS Apple Silicon 打包验证 |
 | `pnpm make` | 用唯一的 Forge ZIP maker 生成 macOS Apple Silicon ZIP；尚未签名或公证 |
 | `pnpm test:packaged-db` | 在 `pnpm package` 后检查包内原生文件与迁移，再启动打包版执行合成 SQLite 读写探针 |
 | `pnpm test:packaged-pdf` | 在 `pnpm make` 后启动同一打包应用；阻断 HTTP(S) 后检查合成 PDF 的页面、Worker、文字层、扫描件和双页翻页 |
-| `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 迁移、事务、重开与失败恢复测试；文件集成测试仍待后续 Issue |
+| `pnpm test:packaged-integration` | 在 `pnpm package` 后启动同一打包应用，使用固定合成样本验证 PDF Worker、受控 IPC、SQLite 持久化和重启读回；须在可启动图形程序的 macOS Apple Silicon 终端运行 |
+| `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 测试，以及 DEV-1566 固定合成记录的 IPC/重启测试；正式案件与文件集成测试仍待后续 Issue |
 | `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
 
 `pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。

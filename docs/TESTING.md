@@ -2,7 +2,7 @@
 
 - **性质**：测试基线草案，执行标准最终以真实项目测试脚本、CI 与律师确认的样本为准。
 - **来源**：[Linear 场景与验收样例 v2.2](https://linear.app/logixy-ai/document/caselite场景与验收样例-v22现行-65005791136a)、[DEV-1559](https://linear.app/logixy-ai/issue/DEV-1559)、[DEV-1560](https://linear.app/logixy-ai/issue/DEV-1560)、[DEV-1561](https://linear.app/logixy-ai/issue/DEV-1561)
-- **状态**：G0 工程检查与 P0 安全基线已建立；IPC 合同 Spike 与合成样本已存在。数据库、文件、PDF、Yjs、同步与真实图形端到端验收仍待各自 Issue 实现和验证。不得把本页的计划写成已通过的产品能力。
+- **状态**：G0 工程检查与 P0 安全基线已建立；IPC 合同、合成样本、SQLite 和 PDF 的独立 Spike 已存在。DEV-1566 正在验证同一打包程序中的 PDF、测试用 IPC 与 SQLite 重启恢复；正式文件、Matter/Anchor、Yjs、同步与产品图形验收仍未实现。
 
 ## 1. 质量门禁
 
@@ -38,7 +38,7 @@
 | `pnpm test:full` / `pnpm verify` | 在本机执行快速检查、明确的未运行项及 macOS 桌面打包 | 适用于本机完整回归 |
 | `pnpm ci` | Linux CI 的相同代码检查入口 | 明确不打包 macOS 应用 |
 
-`pnpm test:integration` 目前会明确输出“未配置”：SQLite 与文件尚未实现，当前 IPC 仅为不持久化的合同 Spike。`pnpm test:e2e` 也会明确输出“未运行”：Playwright Electron 自动化需要启用与当前安全 Fuse 冲突的调试参数；不得为了测试关闭该 Fuse。两者不是“通过”，其状态会写入质量证据文件。
+`pnpm test:integration` 已运行 SQLite 与 DEV-1566 固定合成记录的受控 IPC/重启测试；它不证明正式 Matter 或任意文件导入。`pnpm test:e2e` 仍明确输出“未运行”：Playwright Electron 自动化需要启用与当前安全 Fuse 冲突的调试参数；不得为了测试关闭该 Fuse。`pnpm test:packaged-integration` 在可启动桌面程序的 macOS Apple Silicon 终端运行真实打包态离线冒烟，并由本机 `pnpm test:full` 在打包后调用。Linux CI 不运行 macOS 图形程序。
 
 每次 `check:quick`、`ci` 或 `test:full` 会在被忽略的 `artifacts/evidence/` 下生成 JSON，记录提交、Node/pnpm 版本、执行命令、耗时、结果、未运行项和恢复方式。失败也会尽量保留该记录；它不包含绝对路径、客户资料或秘密。
 
@@ -49,6 +49,7 @@ GitHub Actions 使用干净的 Linux runner、锁定的 Node 24.22.2 和 `pnpm i
 - 对纯函数/领域规则写单元测试；对 SQLite 迁移、事务/Outbox、IPC 参数和错误写合同/集成测试。
 - 对 Electron 打包态执行至少一个**真实**桌面冒烟，开发服务器停止后再次验证；外置盘不等于产品运行目录。
 - DEV-1568 的 `pnpm test:packaged-pdf` 只用仓库合成样本，并在测试模式阻断 HTTP(S)。它需在可启动 macOS 图形程序的本机终端运行；构建成功、包内资源存在或自动化环境的启动失败，都不能冒充该命令已通过。
+- DEV-1566 的 `pnpm test:packaged-integration` 在**同一个**打包程序内检查 PDF Worker/文字层、固定合成记录的 renderer→preload→IPC→Application→SQLite 写入与两次重启读回。它还验证非法 DTO、损坏及缺失 PDF、中文与空格的应用资源路径；临时数据自动删除。测试会在应用会话内拦截 HTTP(S)，但不能代替人工断开物理网络的检查。报告写入被忽略的 `artifacts/evidence/dev-1566-packaged-integration.json`。
 - 运行版本一致的测试命令，CI 从干净环境重现；不得为“绿色”结果删除失败断言、放宽安全检查或批量跳过。
 - 测试库、临时文件、进程使用独立临时目录，并在正常/失败退出后清理；不得使用真实案件数据。
 - 每次合并或交付记录测试分层：未运行、失败、通过、不适用，不允许把模拟与真实联调混为一谈。
