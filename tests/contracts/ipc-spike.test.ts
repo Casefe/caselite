@@ -5,13 +5,16 @@ import {
   createMatterRequestSchema,
 } from '@caselite/contracts';
 import { createSpikeApplication } from '@caselite/application';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   isTrustedDesktopSender,
   registerApplicationIpc,
 } from '../../apps/desktop/src/main/ipc/register-application-ipc';
-import { createCaseLitePreloadApi } from '../../apps/desktop/src/preload/caselite-api';
+import {
+  createCaseLitePreloadApi,
+  IPC_COMMAND_TIMEOUT_MS,
+} from '../../apps/desktop/src/preload/caselite-api';
 
 type Handler = (event: { senderFrame: { url: string } }, payload: unknown) => unknown;
 
@@ -184,6 +187,72 @@ describe('typed preload to main IPC Spike', () => {
         error: { code: 'INTERNAL', recovery_action: 'contact_support' },
       });
       expect(JSON.stringify(result)).not.toMatch(/SQLITE|outbox\.db|client-case\.db|secret-value/);
+    }
+  });
+
+  it('returns an uncertain outcome after a bounded IPC wait without retrying either command', async () => {
+    vi.useFakeTimers();
+    try {
+      const invoke = vi.fn(async () => new Promise<unknown>(() => undefined));
+      const api = createCaseLitePreloadApi(invoke);
+      const matterResult = api.createMatter(request);
+      const anchorResult = api.createAnchor(anchorRequest);
+
+      await vi.advanceTimersByTimeAsync(IPC_COMMAND_TIMEOUT_MS);
+
+      for (const result of [await matterResult, await anchorResult]) {
+        expect(result).toMatchObject({
+          ok: false,
+          error: {
+            code: 'IPC_TIMEOUT',
+            retryable: false,
+            recovery_action: 'check_status',
+          },
+        });
+      }
+      expect(invoke).toHaveBeenCalledTimes(2);
+      expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+        IPC_CHANNELS.createMatter,
+        IPC_CHANNELS.createAnchor,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report a late IPC success as saved after the timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (value: unknown) => void;
+      const api = createCaseLitePreloadApi(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const pending = api.createMatter(request);
+      await vi.advanceTimersByTimeAsync(IPC_COMMAND_TIMEOUT_MS);
+      const timedOut = await pending;
+      finish({ ok: true, value: { entity_kind: 'matter' } });
+      await Promise.resolve();
+      expect(timedOut).toMatchObject({ ok: false, error: { code: 'IPC_TIMEOUT' } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sanitizes rejected and malformed IPC replies', async () => {
+    const rejected = createCaseLitePreloadApi(async () => {
+      throw new Error('SQLITE_ERROR /private/client-case.db secret-value');
+    });
+    const malformed = createCaseLitePreloadApi(async () => ({ secret: '/private/client-case.db' }));
+
+    for (const result of [
+      await rejected.createMatter(request),
+      await malformed.createAnchor(anchorRequest),
+    ]) {
+      expect(result).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+      expect(JSON.stringify(result)).not.toMatch(/SQLITE|client-case\.db|secret-value/);
     }
   });
 });
