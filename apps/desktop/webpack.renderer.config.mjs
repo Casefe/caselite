@@ -7,6 +7,7 @@ const localPath = (relativePath) => fileURLToPath(new URL(relativePath, import.m
 const require = createRequire(import.meta.url);
 const pdfjsRoot = dirname(require.resolve('pdfjs-dist/package.json'));
 const reactPdfRoot = dirname(require.resolve('react-pdf/package.json'));
+const pdfjsVersion = require('pdfjs-dist/package.json').version;
 
 // Emit into webpack's output filesystem so both the development server and
 // packaged file:// renderer use the same local assets without a CDN.
@@ -34,6 +35,20 @@ class PdfSpikeAssetsPlugin {
               new compiler.webpack.sources.RawSource(await readFile(source)),
             );
           }
+          // Keep a test-only Worker with a different internal version. PDF.js
+          // itself must reject it during getDocument; the production Worker is
+          // emitted separately and is never rewritten.
+          const workerSource = await readFile(join(pdfjsRoot, 'build/pdf.worker.mjs'), 'utf8');
+          const expected = `const workerVersion = "${pdfjsVersion}";`;
+          if (workerSource.split(expected).length !== 2) {
+            throw new Error('PDF.js Worker version marker changed; update the mismatch probe');
+          }
+          compilation.emitAsset(
+            'pdf-resources/mismatch-worker.mjs',
+            new compiler.webpack.sources.RawSource(
+              workerSource.replace(expected, 'const workerVersion = "0.0.0-caselite-test";'),
+            ),
+          );
         },
       );
     });

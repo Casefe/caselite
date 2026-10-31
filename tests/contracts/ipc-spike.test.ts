@@ -7,7 +7,10 @@ import {
 import { createSpikeApplication } from '@caselite/application';
 import { describe, expect, it } from 'vitest';
 
-import { registerApplicationIpc } from '../../apps/desktop/src/main/ipc/register-application-ipc';
+import {
+  isTrustedDesktopSender,
+  registerApplicationIpc,
+} from '../../apps/desktop/src/main/ipc/register-application-ipc';
 import { createCaseLitePreloadApi } from '../../apps/desktop/src/preload/caselite-api';
 
 type Handler = (event: { senderFrame: { url: string } }, payload: unknown) => unknown;
@@ -61,7 +64,30 @@ function createHarness() {
 }
 
 describe('typed preload to main IPC Spike', () => {
-  it('exposes only two named business actions through preload', () => {
+  it('accepts only the live desktop window main frame, independent of file URL spelling', () => {
+    const mainFrame = { url: 'file:///tmp/中文%20路径/index.html' };
+    const otherFrame = { url: mainFrame.url };
+    const webContents = { mainFrame };
+    const window = { isDestroyed: () => false, webContents };
+
+    expect(isTrustedDesktopSender({ sender: webContents, senderFrame: mainFrame }, [window])).toBe(
+      true,
+    );
+    expect(isTrustedDesktopSender({ sender: webContents, senderFrame: otherFrame }, [window])).toBe(
+      false,
+    );
+    expect(isTrustedDesktopSender({ sender: {}, senderFrame: mainFrame }, [window])).toBe(false);
+    expect(isTrustedDesktopSender({ sender: webContents, senderFrame: null }, [window])).toBe(
+      false,
+    );
+    expect(
+      isTrustedDesktopSender({ sender: webContents, senderFrame: mainFrame }, [
+        { isDestroyed: () => true, webContents },
+      ]),
+    ).toBe(false);
+  });
+
+  it('exposes only fixed, named actions through preload', () => {
     const api = createCaseLitePreloadApi(async () => ({
       ok: false,
       error: {
@@ -73,7 +99,7 @@ describe('typed preload to main IPC Spike', () => {
       },
     }));
 
-    expect(Object.keys(api).sort()).toEqual(['createAnchor', 'createMatter']);
+    expect(Object.keys(api).sort()).toEqual(['createAnchor', 'createMatter', 'offlineProbe']);
   });
 
   it('uses the fixed channel and returns a validated application result', async () => {

@@ -44,6 +44,7 @@ const commands = {
     ['integration', ['test:integration']],
     ['e2e', ['test:e2e'], 'not-run'],
     ['macos-package', ['package']],
+    ['macos-packaged-integration', ['test:packaged-integration']],
   ],
 };
 
@@ -91,8 +92,13 @@ const evidence = {
   results,
   startedAt: startedAt.toISOString(),
   unverified: [
-    'Only the SQLite/Drizzle infrastructure integration probe exists; file and desktop IPC integration remain unverified.',
+    'The test-only SQLite/IPC integration is covered locally; formal Matter/Anchor and arbitrary customer file integration are not implemented.',
     'Playwright Electron automation is deferred because the current security Fuse intentionally disables the inspect argument it requires.',
+    ...(mode === 'ci'
+      ? [
+          'The packaged PDF + IPC + SQLite restart test runs only on an interactive macOS Apple Silicon host.',
+        ]
+      : []),
     ...(mode === 'ci'
       ? [
           'macOS desktop packaging is intentionally verified on the Apple Silicon development machine, not the Linux CI runner.',

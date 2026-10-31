@@ -1,12 +1,31 @@
-import { useMemo, useState } from 'react';
+import { Component, useMemo, useState, type ReactNode } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-// Webpack emits this as a local asset. No CDN, customer file or filesystem
-// capability is exposed to the renderer by this isolated compatibility spike.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+class PdfDocumentErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? (
+      <p role="alert">PDF 文件损坏或不存在，无法打开。请选择其他测试样本。</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
+// Webpack emits this as a local asset. The two fixed failure URLs are used
+// only by the packaged integration probe; no caller supplies an arbitrary URL.
+const workerFault = new URLSearchParams(document.location.search).get('caselite-pdf-worker-fault');
+pdfjs.GlobalWorkerOptions.workerSrc =
+  workerFault === 'missing'
+    ? new URL('../pdf-resources/not-present-worker.mjs', document.baseURI).toString()
+    : workerFault === 'mismatch'
+      ? new URL('../pdf-resources/mismatch-worker.mjs', document.baseURI).toString()
+      : new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 declare global {
   interface Window {
@@ -56,6 +75,11 @@ const fixtures = [
       '../../../../tests/fixtures/case-materials/development/damaged.pdf',
       import.meta.url,
     ).toString(),
+    expectedText: false,
+  },
+  {
+    label: '缺失 PDF（预期报错）',
+    url: new URL('../pdf-resources/not-present.pdf', document.baseURI).toString(),
     expectedText: false,
   },
 ] as const;
@@ -123,32 +147,36 @@ export default function PdfSpike() {
         </button>
       </div>
       {selectedText && <p>选中：{selectedText.slice(0, 200)}</p>}
-      {fixture.expectedText ? (
+      {fixtureIndex >= 3 ? (
+        <p>缺失或损坏的测试文件应显示错误，不影响已保存的测试记录。</p>
+      ) : fixture.expectedText ? (
         <p>文字 PDF：请尝试选取页面文字。重复句子的页码不能混淆。</p>
       ) : (
         <p>扫描 PDF：仅图像可见；此测试不提供 OCR 或可选取的原文。</p>
       )}
-      {error && <p role="alert">无法打开此合成 PDF；现有资料未被修改。</p>}
       <div className="pdf-spike-page">
-        <Document
-          key={fixture.label}
-          file={file}
-          options={pdfOptions}
-          loading={<p>正在打开合成 PDF…</p>}
-          error={<p>PDF 解析失败。</p>}
-          onLoadSuccess={({ numPages }) => {
-            setPages(numPages);
-            setError(false);
-          }}
-          onLoadError={() => setError(true)}
-        >
-          <Page
-            pageNumber={page}
-            scale={scale}
-            renderAnnotationLayer={false}
-            renderTextLayer={fixture.expectedText}
-          />
-        </Document>
+        <PdfDocumentErrorBoundary key={fixture.label}>
+          {error ? (
+            <p role="alert">PDF 文件损坏或不存在，无法打开。请选择其他测试样本。</p>
+          ) : (
+            <Document
+              file={file}
+              options={pdfOptions}
+              loading={<p>正在打开合成 PDF…</p>}
+              error={<p role="alert">PDF 文件损坏或不存在，无法打开。请选择其他测试样本。</p>}
+              onLoadSuccess={({ numPages }) => setPages(numPages)}
+              onLoadError={() => setError(true)}
+              onSourceError={() => setError(true)}
+            >
+              <Page
+                pageNumber={page}
+                scale={scale}
+                renderAnnotationLayer={false}
+                renderTextLayer={fixture.expectedText}
+              />
+            </Document>
+          )}
+        </PdfDocumentErrorBoundary>
       </div>
     </section>
   );

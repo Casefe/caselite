@@ -1,6 +1,21 @@
-import { lazy, Suspense, useState } from 'react';
+import { Component, lazy, Suspense, useState, type ReactNode } from 'react';
 
 const PdfSpike = lazy(() => import('./PdfSpike'));
+
+class PdfTestErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <p role="alert">PDF 测试页无法显示；请关闭后重新打开。现有资料未被修改。</p>;
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [showPdfSpike, setShowPdfSpike] = useState(false);
@@ -13,9 +28,11 @@ export default function App() {
         {showPdfSpike ? '关闭 PDF 测试页' : '打开 PDF 测试页'}
       </button>
       {showPdfSpike && (
-        <Suspense fallback={<p>正在加载 PDF 测试页…</p>}>
-          <PdfSpike />
-        </Suspense>
+        <PdfTestErrorBoundary>
+          <Suspense fallback={<p>正在加载 PDF 测试页…</p>}>
+            <PdfSpike />
+          </Suspense>
+        </PdfTestErrorBoundary>
       )}
     </main>
   );
