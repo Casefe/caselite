@@ -33,6 +33,14 @@ const sourceFiles = [
     textLayer: 'expected',
   },
   {
+    id: 'development-anchor-repeat-two-pages',
+    source: 'anchor-repeat-two-pages.txt',
+    output: 'development/anchor-repeat-two-pages.pdf',
+    purpose: '开发集：同一句话出现在两页，用于锚点页码与片段消歧。',
+    textLayer: 'expected',
+    pageBreakMarker: true,
+  },
+  {
     id: 'regression-supply-contract-v1-text',
     source: 'supply-contract-v1.txt',
     output: 'regression/supply-contract-v1-text.pdf',
@@ -130,7 +138,18 @@ try {
       throw new Error(`缺少样本文本源文件：${sample.source}`);
     }
 
-    writePdfFromText(sourcePath, outputPath, sample.id);
+    let pdfSourcePath = sourcePath;
+    if (sample.pageBreakMarker) {
+      const sourceText = readFileSync(sourcePath, 'utf8');
+      const marker = '[[PAGE_BREAK]]';
+      if (sourceText.split(marker).length !== 2) {
+        throw new Error(`${sample.source} 必须恰好包含一个明确换页标记。`);
+      }
+      pdfSourcePath = path.join(temporaryRoot, sample.source);
+      writeFileSync(pdfSourcePath, sourceText.replace(marker, '\f'));
+    }
+
+    writePdfFromText(pdfSourcePath, outputPath, sample.id);
   }
 
   const scanSource = path.join(developmentRoot, 'contract-v1-text.pdf');

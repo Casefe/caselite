@@ -23,7 +23,7 @@ function sha256(filePath: string) {
 
 describe('CaseLite synthetic case-material fixtures', () => {
   it('keeps every manifested fixture present and unchanged', () => {
-    expect(manifest.files).toHaveLength(5);
+    expect(manifest.files).toHaveLength(6);
 
     for (const fixture of manifest.files) {
       expect(sha256(path.join(fixturesRoot, fixture.path))).toBe(fixture.sha256);
@@ -34,6 +34,7 @@ describe('CaseLite synthetic case-material fixtures', () => {
     const sources = new Map([
       ['development-contract-v1-text', 'contract-v1.txt'],
       ['development-contract-v2-text', 'contract-v2.txt'],
+      ['development-anchor-repeat-two-pages', 'anchor-repeat-two-pages.txt'],
       ['regression-supply-contract-v1-text', 'supply-contract-v1.txt'],
     ]);
 
@@ -75,5 +76,25 @@ describe('CaseLite synthetic case-material fixtures', () => {
         ['development-damaged-pdf', 'invalid'],
       ]),
     );
+  });
+
+  it('keeps one identical quote on each of two distinct PDF pages', () => {
+    const source = readFileSync(
+      path.join(fixturesRoot, 'source/anchor-repeat-two-pages.txt'),
+      'utf8',
+    );
+    const pages = source.split('[[PAGE_BREAK]]');
+    expect(pages).toHaveLength(2);
+    for (const page of pages) {
+      expect(page.split('请核对资料编号。')).toHaveLength(2);
+    }
+    expect(pages[0]).toContain('ALPHA-001');
+    expect(pages[1]).toContain('BETA-002');
+
+    const pdf = readFileSync(
+      path.join(fixturesRoot, 'development/anchor-repeat-two-pages.pdf'),
+    ).toString('latin1');
+    expect(pdf).toMatch(/\/Count\s+2\b/);
+    expect([...pdf.matchAll(/\/Type\s*\/Page\b/g)]).toHaveLength(2);
   });
 });
