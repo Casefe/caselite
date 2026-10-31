@@ -26,7 +26,7 @@
 
 ## 验证与交付
 
-- DEV-1570 先决定首个切片是否延后 Tiptap/Yjs；没有富文本用户结果时不安装。
+- DEV-1570 的 [准入结论](../architecture/DEV-1570-editor-admission.md)：首个 Matter＋PDF 锚点切片没有富文本编辑，延后安装 Tiptap/Yjs；首个真实富文本切片必须验证本地 Y.Doc 二进制持久化、重启恢复和迁移。
 - P3 再验证持久化 ACK、update 幂等、Snapshot、Redis 丢失与权限撤销。
 - 回退：保留原 Update 与 Snapshot；压缩或迁移失败不得删除最后可恢复状态。
 
