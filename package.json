@@ -21,6 +21,7 @@
     "format": "prettier --write package.json apps packages scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
     "format:check": "prettier --check package.json apps packages scripts tests .github eslint.config.mjs prettier.config.mjs vitest.config.mts",
     "lint": "eslint . --max-warnings=0",
+    "make": "pnpm --filter @caselite/desktop make",
     "licenses:report": "node scripts/create-license-report.mjs",
     "typecheck": "pnpm --filter @caselite/desktop typecheck",
     "package": "pnpm --filter @caselite/desktop package",
@@ -34,6 +35,7 @@
     "test:full": "node scripts/run-quality-gate.mjs full",
     "test:integration": "vitest run tests/integration",
     "test:packaged-db": "node scripts/check-packaged-local-db.mjs",
+    "test:packaged-pdf": "node scripts/check-packaged-pdf.mjs",
     "test:integrity": "node scripts/check-test-integrity.mjs",
     "test:unit": "vitest run tests/unit",
     "verify": "pnpm test:full"

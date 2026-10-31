@@ -21,6 +21,7 @@ const workspaceManifestByName = new Map(
 const visited = new Set();
 const packages = [];
 const unresolved = [];
+const skippedOptional = [];
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
@@ -54,12 +55,16 @@ function resolveManifest(packageName, issuerManifestFile) {
   }
 }
 
-function visit(packageName, issuerManifestFile) {
+function visit(packageName, issuerManifestFile, optional = false) {
   let manifestFile;
   try {
     manifestFile = resolveManifest(packageName, issuerManifestFile);
   } catch (error) {
-    unresolved.push(`${packageName}: ${error.message}`);
+    if (optional) {
+      skippedOptional.push(packageName);
+    } else {
+      unresolved.push(`${packageName}: ${error.message}`);
+    }
     return;
   }
 
@@ -74,11 +79,11 @@ function visit(packageName, issuerManifestFile) {
     version: manifest.version,
   });
 
-  for (const dependency of Object.keys({
-    ...manifest.dependencies,
-    ...manifest.optionalDependencies,
-  }).sort()) {
+  for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
     visit(dependency, manifestFile);
+  }
+  for (const dependency of Object.keys(manifest.optionalDependencies ?? {}).sort()) {
+    visit(dependency, manifestFile, true);
   }
 }
 
@@ -104,7 +109,8 @@ writeFileSync(
     {
       generatedAt: new Date().toISOString(),
       packages: packages.sort((left, right) => left.name.localeCompare(right.name)),
-      scope: 'Production dependencies reachable from all current workspace manifests',
+      scope: 'Installed production dependencies reachable from all current workspace manifests',
+      skippedOptional: [...new Set(skippedOptional)].sort(),
     },
     null,
     2,

@@ -91,7 +91,9 @@ ls -la
 | `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，另执行 macOS Apple Silicon 打包 |
 | `pnpm package` | macOS Apple Silicon 打包验证 |
+| `pnpm make` | 用唯一的 Forge ZIP maker 生成 macOS Apple Silicon ZIP；尚未签名或公证 |
 | `pnpm test:packaged-db` | 在 `pnpm package` 后检查包内原生文件与迁移，再启动打包版执行合成 SQLite 读写探针 |
+| `pnpm test:packaged-pdf` | 在 `pnpm make` 后启动同一打包应用；阻断 HTTP(S) 后检查合成 PDF 的页面、Worker、文字层、扫描件和双页翻页 |
 | `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 迁移、事务、重开与失败恢复测试；文件集成测试仍待后续 Issue |
 | `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
 
@@ -104,7 +106,7 @@ macOS 打包首次仍须从 Electron 官方发布源取得锁定版本的 ZIP；
 ## 6. 依赖准入
 
 - 基础：Electron、React、TypeScript、单一 Forge 构建主链；SQLite/Drizzle 用原生驱动时测试 Electron ABI、打包、迁移和重启。
-- PDF/Worker：待合成 PDF 与离线打包 Spike 验证后纳入正式功能。
+- PDF/Worker：DEV-1568 已加入合成样本测试页与打包资源；只有打包版离线运行探针和人工画面检查通过后才可认定兼容，不代表正式文件/锚点功能。
 - Tiptap/Yjs：首个富文本用户路径启动时验证 Y.Doc 本地持久化；不提前建设协作服务器。
 - AI SDK、PostgreSQL/Hocuspocus、Redis、MCP SDK：按各能力 Issue/ADR 分批引入，不为“以后会用”提前安装；Redis 不是 P3 持久化的前提。
 - 不允许另建第二个 ORM、桌面框架、测试运行器或 Agent Runtime，除非有具体 Issue、替代分析、退出策略。

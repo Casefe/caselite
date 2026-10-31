@@ -23,13 +23,13 @@ export default {
     executableName: 'CaseLite',
     extraResource: [localPath('../../packages/local-db/migrations')],
   },
-  makers: [],
+  makers: [{ name: '@electron-forge/maker-zip', platforms: ['darwin'] }],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new WebpackPlugin({
       mainConfig: localPath('./webpack.main.config.mjs'),
       devContentSecurityPolicy:
-        "default-src 'none'; script-src 'self'; style-src 'none'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+        "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
       devServer: {
         host: 'localhost',
         hot: false,

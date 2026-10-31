@@ -9,6 +9,7 @@ describe('CaseLite engineering baseline', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'CaseLite 工程骨架' })).toBeTruthy();
-    expect(screen.getByText(/尚未提供案件或文档处理功能/)).toBeTruthy();
+    expect(screen.getByText(/尚未提供案件或正式文档处理功能/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开 PDF 测试页' })).toBeTruthy();
   });
 });
