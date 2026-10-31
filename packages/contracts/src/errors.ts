@@ -5,6 +5,7 @@ export const applicationErrorCodeSchema = z.enum([
   'PROTOCOL_UNSUPPORTED',
   'FORBIDDEN',
   'CONFLICT',
+  'IPC_TIMEOUT',
   'INTERNAL',
 ]);
 
@@ -25,6 +26,7 @@ export const applicationErrorSchema = z.object({
     'upgrade_client',
     'refresh_and_retry',
     'request_access',
+    'check_status',
     'contact_support',
   ]),
   correlation_id: z.string().uuid(),
