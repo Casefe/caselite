@@ -7,20 +7,20 @@
 - `development/`：开发期间可见的 v1、v2、扫描副本和故意损坏文件；
 - `regression/`：独立 Matter 的采购合同，不得用开发合同的事实、金额、条款或结论污染它；
 - `source/`：可审阅的 UTF-8 文本源文件；其中 v1/v2 除第二条第 2 款的付款期限外完全相同；
-- `manifest.json`：每个二进制样本的 SHA-256、用途和文本层预期；
-- `golden-standard.md`：律师确认前的人工预期草案和后续合同映射。
+- `manifest.json`：每个二进制样本的 SHA-256、文本源 SHA-256、用途和文本层预期；
+- `golden-standard.md`：律师已确认的业务预期，以及供后续验收的技术映射。
 
 ## 生成与校验
 
-在 macOS 开发机运行：
+日常核对固定样本（macOS 和 Linux 均可运行，**不会改写 PDF 或清单**）：
 
 ```bash
 pnpm fixtures:case-materials
 pnpm test:contracts
 ```
 
-生成过程使用 macOS 自带 CUPS 创建文本 PDF，再用 `sips` 栅格化产生扫描副本；不安装新的项目依赖。首次运行后的 PDF 和 `manifest.json` 应纳入版本控制。CI 只校验已提交文件和哈希，不在 Linux 上伪造 macOS PDF 生成。
+只有经审阅修改源文本或生成程序时，才在 macOS 开发机运行 `pnpm fixtures:case-materials --refresh`，然后逐个检查 PDF、`manifest.json` 的变化，并重新进行律师确认。更新过程使用 macOS 自带 CUPS 创建文本 PDF，再用 `sips` 栅格化产生扫描副本；不安装新的项目依赖。CUPS 写入生成时间和文件 ID，且二进制布局可能随环境变化，因此**重新生成的 PDF 不保证与已提交文件逐字节相同**。已提交的 PDF 和哈希清单是固定验收输入；日常命令只验证它们及其文本源。CI 不在 Linux 上伪造 macOS PDF 生成。
 
 ## 人工确认状态
 
-本目录提供的是**待律师确认的测试预期**。在 DEV-1560 标记完成前，律师应确认：付款期限由 10 日变为 30 日是唯一实质变更；金标准中的“受影响/不受影响”判断适合后续功能验收；以及所有材料均为合成公开内容。
+律师已于 2026-10-31 在 [DEV-1560 实施记录](https://linear.app/logixy-ai/issue/DEV-1560) 中确认原有人工金标准的业务预期。该确认适用于当前已提交的样本和原有业务判断；本次新增的技术映射还需在代码审阅中验收。以后修改 PDF、文本源或业务预期，须重新核对并确认。

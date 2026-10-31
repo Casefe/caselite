@@ -11,7 +11,11 @@ const sourcesRoot = path.join(fixturesRoot, 'source');
 const developmentRoot = path.join(fixturesRoot, 'development');
 const regressionRoot = path.join(fixturesRoot, 'regression');
 const manifestPath = path.join(fixturesRoot, 'manifest.json');
-const temporaryRoot = mkdtempSync(path.join(tmpdir(), 'caselite-case-materials-'));
+const argumentsList = process.argv.slice(2);
+if (argumentsList.length > 1 || (argumentsList.length === 1 && argumentsList[0] !== '--refresh')) {
+  throw new Error('只支持 --refresh；默认命令校验已固定的样本，不改写文件。');
+}
+const refresh = argumentsList[0] === '--refresh';
 
 const sourceFiles = [
   {
@@ -68,6 +72,52 @@ function relativeToFixtures(filePath) {
   return path.relative(fixturesRoot, filePath).split(path.sep).join('/');
 }
 
+function verifyFrozenFixtures() {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (manifest.schemaVersion !== 1 || manifest.files.length !== sourceFiles.length + 2) {
+    throw new Error('样本清单版本或文件数量不符；请检查 manifest.json。');
+  }
+
+  const filesById = new Map(manifest.files.map((file) => [file.id, file]));
+  if (filesById.size !== manifest.files.length) {
+    throw new Error('样本清单包含重复 ID。');
+  }
+  const expectedFiles = new Map([
+    ...sourceFiles.map((sample) => [sample.id, sample.output]),
+    ['development-contract-v1-scan', 'development/contract-v1-scan.pdf'],
+    ['development-damaged-pdf', 'development/damaged.pdf'],
+  ]);
+
+  for (const sample of sourceFiles) {
+    const entry = filesById.get(sample.id);
+    if (entry?.path !== sample.output) {
+      throw new Error(`样本清单缺少预期文件：${sample.id}`);
+    }
+    if (entry.sourceSha256 !== sha256(path.join(sourcesRoot, sample.source))) {
+      throw new Error(`源文本已变化：${sample.source}；请审核后使用 --refresh 更新样本。`);
+    }
+  }
+
+  for (const entry of manifest.files) {
+    if (
+      expectedFiles.get(entry.id) !== entry.path ||
+      entry.sha256 !== sha256(path.join(fixturesRoot, entry.path))
+    ) {
+      throw new Error(`固定样本缺失或哈希不符：${entry.path}`);
+    }
+  }
+
+  console.log(
+    `固定样本校验通过：${manifest.files.length} 个文件与 ${sourceFiles.length} 个源文本；未改写文件。`,
+  );
+}
+
+if (!refresh) {
+  verifyFrozenFixtures();
+  process.exit(0);
+}
+
+const temporaryRoot = mkdtempSync(path.join(tmpdir(), 'caselite-case-materials-'));
 try {
   mkdirSync(developmentRoot, { recursive: true });
   mkdirSync(regressionRoot, { recursive: true });
@@ -103,8 +153,8 @@ try {
 
   const manifest = {
     schemaVersion: 1,
-    purpose: 'CaseLite DEV-1560 的合成、公开、可重现测试样本；不得替换为真实法律资料。',
-    generator: 'pnpm fixtures:case-materials（macOS CUPS + sips）',
+    purpose: 'CaseLite DEV-1560 的合成、公开、固定测试样本；不得替换为真实法律资料。',
+    generator: 'pnpm fixtures:case-materials --refresh（macOS CUPS + sips；须人工复核）',
     files: [
       ...sourceFiles.map((sample) => {
         const outputPath = path.join(fixturesRoot, sample.output);
@@ -112,6 +162,7 @@ try {
           id: sample.id,
           path: sample.output,
           sha256: sha256(outputPath),
+          sourceSha256: sha256(path.join(sourcesRoot, sample.source)),
           purpose: sample.purpose,
           textLayer: sample.textLayer,
         };
@@ -136,6 +187,7 @@ try {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`已生成 ${manifest.files.length} 个 CaseLite 合成样本。`);
   console.log(`清单：${relativeToFixtures(manifestPath)}`);
+  console.log('请检查 PDF 差异并重新进行人工确认；CUPS 生成的二进制内容可能随环境变化。');
 } finally {
   rmSync(temporaryRoot, { force: true, recursive: true, maxRetries: 2, retryDelay: 100 });
 }
