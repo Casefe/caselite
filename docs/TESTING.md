@@ -2,7 +2,7 @@
 
 - **性质**：测试基线草案，执行标准最终以真实项目测试脚本、CI 与律师确认的样本为准。
 - **来源**：[Linear 场景与验收样例 v2.2](https://linear.app/logixy-ai/document/caselite场景与验收样例-v22现行-65005791136a)、[DEV-1559](https://linear.app/logixy-ai/issue/DEV-1559)、[DEV-1560](https://linear.app/logixy-ai/issue/DEV-1560)、[DEV-1561](https://linear.app/logixy-ai/issue/DEV-1561)
-- **状态**：G0 工程检查与 P0 安全基线已建立；IPC 合同、合成样本、SQLite 和 PDF 的独立 Spike 已存在。DEV-1566 正在验证同一打包程序中的 PDF、测试用 IPC 与 SQLite 重启恢复；正式文件、Matter/Anchor、Yjs、同步与产品图形验收仍未实现。
+- **状态**：G0 工程检查与 P0 安全基线已建立；DEV-1566 已验证同一打包程序中的 PDF、测试用 IPC 与 SQLite 重启恢复。DEV-1578 正在复验两项无持久化业务命令的真实 IPC 路径；正式文件、Matter/Anchor 持久化、Yjs、同步与产品图形验收仍未实现。
 
 ## 1. 质量门禁
 
@@ -50,6 +50,7 @@ GitHub Actions 使用干净的 Linux runner、锁定的 Node 24.22.2 和 `pnpm i
 - 对 Electron 打包态执行至少一个**真实**桌面冒烟，开发服务器停止后再次验证；外置盘不等于产品运行目录。
 - DEV-1568 的 `pnpm test:packaged-pdf` 只用仓库合成样本，并在测试模式阻断 HTTP(S)。它需在可启动 macOS 图形程序的本机终端运行；构建成功、包内资源存在或自动化环境的启动失败，都不能冒充该命令已通过。
 - DEV-1566 的 `pnpm test:packaged-integration` 在**同一个**打包程序内检查 PDF Worker/文字层、固定合成记录的 renderer→preload→IPC→Application→SQLite 写入与两次重启读回。它还验证非法 DTO、损坏及缺失 PDF、中文与空格的应用资源路径；临时数据自动删除。测试会在应用会话内拦截 HTTP(S)，但不能代替人工断开物理网络的检查。报告写入被忽略的 `artifacts/evidence/dev-1566-packaged-integration.json`。
+- DEV-1578 在同一打包测试的正常阶段额外检查 CreateMatter、CreateAnchor 的真实 IPC 路径、重复请求、旧协议及非法输入；两项结果均为 `not-persisted`，不能把这一结果视为 Matter/Anchor 写库或 Outbox 事务通过。
 - 运行版本一致的测试命令，CI 从干净环境重现；不得为“绿色”结果删除失败断言、放宽安全检查或批量跳过。
 - 测试库、临时文件、进程使用独立临时目录，并在正常/失败退出后清理；不得使用真实案件数据。
 - 每次合并或交付记录测试分层：未运行、失败、通过、不适用，不允许把模拟与真实联调混为一谈。

@@ -75,6 +75,52 @@ describe('application command, query and event contracts', () => {
     });
   });
 
+  it('rechecks authorization before returning an idempotent result', async () => {
+    let allowed = true;
+    const application = createSpikeApplication({
+      authorization: { canAct: async () => allowed },
+      createId: () => crypto.randomUUID(),
+      now: () => '2026-10-31T00:00:00.000Z',
+    });
+    const request = createMatterRequestSchema.parse(matterRequest());
+    expect((await application.createMatter(request)).ok).toBe(true);
+
+    allowed = false;
+    await expect(application.createMatter(request)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+  });
+
+  it('rejects a reused key for changed data or a different command', async () => {
+    let nextId = 0;
+    const application = createSpikeApplication({
+      authorization: { canAct: async () => true },
+      createId: () => '00000000-0000-4000-8000-' + String(++nextId).padStart(12, '0'),
+      now: () => '2026-10-31T00:00:00.000Z',
+    });
+    const request = createMatterRequestSchema.parse(matterRequest());
+    expect((await application.createMatter(request)).ok).toBe(true);
+
+    await expect(
+      application.createMatter({ ...request, payload: { title: '另一事项' } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    const anchor = createAnchorRequestSchema.parse({
+      ...request,
+      matter_id: 'matter-spike',
+      payload: {
+        source_version_id: 'source-version-spike',
+        page_number: 1,
+        quoted_text: '合成引文',
+      },
+    });
+    await expect(application.createAnchor(anchor)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'CONFLICT' },
+    });
+    expect(nextId).toBe(2);
+  });
+
   it('returns structured forbidden and conflict errors without persistence details', async () => {
     const denied = createSpikeApplication({
       authorization: { canAct: async () => false },
