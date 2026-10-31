@@ -12,7 +12,11 @@ export default {
     rules: [
       {
         test: /\.ts$/,
-        include: localPath('./src/main/'),
+        include: [
+          localPath('./src/main/'),
+          localPath('../../packages/application/src/'),
+          localPath('../../packages/contracts/src/'),
+        ],
         use: {
           loader: 'ts-loader',
           options: {

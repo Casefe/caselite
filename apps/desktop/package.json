@@ -11,6 +11,8 @@
     "package": "electron-forge package --platform=darwin --arch=arm64"
   },
   "dependencies": {
+    "@caselite/application": "workspace:*",
+    "@caselite/contracts": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

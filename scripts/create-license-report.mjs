@@ -1,13 +1,23 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const requireFromRepository = createRequire(resolve(repositoryRoot, 'package.json'));
 const reportDirectory = resolve(repositoryRoot, 'artifacts/licenses');
 const reportFile = resolve(reportDirectory, 'production-dependencies.json');
-const workspaceManifests = ['package.json', 'apps/desktop/package.json'];
+const workspaceManifestFiles = [
+  resolve(repositoryRoot, 'package.json'),
+  resolve(repositoryRoot, 'apps/desktop/package.json'),
+  ...readdirSync(resolve(repositoryRoot, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => resolve(repositoryRoot, 'packages', entry.name, 'package.json'))
+    .filter(existsSync),
+];
+const workspaceManifests = workspaceManifestFiles.map((file) => readJson(file));
+const workspaceManifestByName = new Map(
+  workspaceManifests.map((manifest) => [manifest.name, manifest]),
+);
 const visited = new Set();
 const packages = [];
 const unresolved = [];
@@ -16,11 +26,17 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
-function resolveManifest(packageName) {
+function resolveManifest(packageName, issuerManifestFile) {
+  const workspaceManifest = workspaceManifestByName.get(packageName);
+  if (workspaceManifest) {
+    return workspaceManifestFiles.find((file) => readJson(file).name === packageName);
+  }
+
+  const requireFromIssuer = createRequire(issuerManifestFile);
   try {
-    return requireFromRepository.resolve(`${packageName}/package.json`);
+    return requireFromIssuer.resolve(`${packageName}/package.json`);
   } catch {
-    const entry = requireFromRepository.resolve(packageName);
+    const entry = requireFromIssuer.resolve(packageName);
     let directory = dirname(entry);
     while (directory.startsWith(repositoryRoot)) {
       const manifestFile = resolve(directory, 'package.json');
@@ -38,10 +54,10 @@ function resolveManifest(packageName) {
   }
 }
 
-function visit(packageName) {
+function visit(packageName, issuerManifestFile) {
   let manifestFile;
   try {
-    manifestFile = resolveManifest(packageName);
+    manifestFile = resolveManifest(packageName, issuerManifestFile);
   } catch (error) {
     unresolved.push(`${packageName}: ${error.message}`);
     return;
@@ -62,14 +78,14 @@ function visit(packageName) {
     ...manifest.dependencies,
     ...manifest.optionalDependencies,
   }).sort()) {
-    visit(dependency);
+    visit(dependency, manifestFile);
   }
 }
 
-for (const workspaceManifest of workspaceManifests) {
-  const manifest = readJson(resolve(repositoryRoot, workspaceManifest));
+for (let index = 0; index < workspaceManifests.length; index += 1) {
+  const manifest = workspaceManifests[index];
   for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
-    visit(dependency);
+    visit(dependency, workspaceManifestFiles[index]);
   }
 }
 
@@ -88,7 +104,7 @@ writeFileSync(
     {
       generatedAt: new Date().toISOString(),
       packages: packages.sort((left, right) => left.name.localeCompare(right.name)),
-      scope: 'Production dependencies reachable from root and apps/desktop manifests',
+      scope: 'Production dependencies reachable from all current workspace manifests',
     },
     null,
     2,
