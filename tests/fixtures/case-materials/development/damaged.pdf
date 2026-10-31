@@ -1,0 +1,2 @@
+This file is intentionally not a PDF.
+CaseLite DEV-1560 uses it to verify that future import and PDF readers reject corrupted input safely.
