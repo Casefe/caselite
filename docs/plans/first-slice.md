@@ -148,7 +148,7 @@ renderer/features（五栏目与阅读 ViewModel）
 | `tests/fixtures/case-materials/development/damaged.pdf`                 | 拒绝导入/阅读并显示可恢复错误；不损坏已有 Matter/SourceVersion                                | G1/G6/G7    |
 | `tests/fixtures/case-materials/regression/supply-contract-v1-text.pdf`  | 独立 Matter 回归，不得跨 Matter 取文件或 Anchor                                               | G1/G7       |
 
-**G0**：从干净锁文件安装；`pnpm check:quick`、`pnpm ci`（Linux）、`pnpm test:full`（macOS）按当次结果记录；打包资源与原生 SQLite 可加载。**G1**：版本/哈希/文字选择/双页消歧/失配与扫描边界；定位正确与法律支持正确分开。**G2**：只验证 v1/v2 历史和锚点保全，不声称 Finding/知识/交付影响已实现。**G6**：正常与强制退出、源路径变化、SQLite/文件部分失败、备份恢复。**G7**：最小改动、不弱化 CI/安全；越权/错误 DTO、私密路径/日志/备份泄露检查；交付证据与律师操作验收分开。
+**G0**：从干净锁文件安装；`pnpm check:quick`、`pnpm run ci`（Linux）、`pnpm test:full`（macOS）按当次结果记录；打包资源与原生 SQLite 可加载。**G1**：版本/哈希/文字选择/双页消歧/失配与扫描边界；定位正确与法律支持正确分开。**G2**：只验证 v1/v2 历史和锚点保全，不声称 Finding/知识/交付影响已实现。**G6**：正常与强制退出、源路径变化、SQLite/文件部分失败、备份恢复。**G7**：最小改动、不弱化 CI/安全；越权/错误 DTO、私密路径/日志/备份泄露检查；交付证据与律师操作验收分开。
 
 ### 追踪矩阵
 
@@ -172,7 +172,7 @@ renderer/features（五栏目与阅读 ViewModel）
 7. **失败与边界**：至少覆盖取消、缺失/无权/损坏/超限文件、源改名/变更、重复导入、同文跨页/同页、DB/文件部分失败、强制退出、备份恢复；所有旧版本和已提交数据保全。
 8. **代码范围**：可修改 `apps/desktop/src/{renderer,preload,main}`、`packages/{contracts,application,local-db}`，按需要新增最小 `packages/{domain,files,pdf}` 和测试/迁移/文档；不可引入第二 ORM、打包器、同步服务、Tiptap/Yjs、AI/OCR/MCP 或通用文件 API。
 9. **数据与权限不变量**：稳定本地 ID，路径不作身份，哈希不作真实性；SourceVersion 与 AssetVersion/Anchor 精确绑定；main/Application 权限和范围校验；Matter/Outbox 同事务；文件先可验证再 ready；无网络外发；公开仓库无真实资料。
-10. **测试与验收**：局部领域/合同/IPC/SQLite/文件/PDF/迁移负向测试；`pnpm security:baseline`、`pnpm check:quick`、`pnpm test:integration`；本机 `pnpm test:full` 含联网审计、许可证、打包及真实桌面路径；Linux `pnpm ci`；人工断网、重启、v1/v2、扫描及备份恢复演示。未运行逐项标注。
+10. **测试与验收**：局部领域/合同/IPC/SQLite/文件/PDF/迁移负向测试；`pnpm security:baseline`、`pnpm check:quick`、`pnpm test:integration`；本机 `pnpm test:full` 含联网审计、许可证、打包及真实桌面路径；Linux `pnpm run ci`；人工断网、重启、v1/v2、扫描及备份恢复演示。未运行逐项标注。
 11. **证据**：分支/提交/锁文件、实际命令与退出结果、迁移版本、样本 SHA-256、Matter/SourceVersion/Anchor 的匿名 ID 与哈希、重启回跳录屏/截图、失败与恢复记录、未验证项及回退。不得提交真实资料、用户数据库、备份或可识别路径。
 12. **非目标与开工门禁**：不做法律分析、正式引用支持判断、AI、OCR、Yjs、同步、MCP、知识库或跨设备。须先确认下节体验问题、完成 DEV-1564 预演，且与 DEV-1577/1576/1579 的具体设计无冲突；迁移/备份的破坏性操作另经人工授权。
 

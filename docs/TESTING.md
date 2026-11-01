@@ -36,13 +36,13 @@
 | `pnpm coverage` | 生成当前测试覆盖率报告 | 用于发现缺口，不以百分比定义完成 |
 | `pnpm check:quick` | 快速执行格式、lint、边界、完整性、安全、类型、单元和合同检查 | 生成可忽略的本地证据文件 |
 | `pnpm test:full` / `pnpm verify` | 在本机执行检查、审计、许可证、集成、覆盖率、打包和真实桌面测试 | 适用于本机完整回归 |
-| `pnpm ci` | Linux CI 的相同代码检查入口 | 明确不打包 macOS 应用 |
+| `pnpm run ci` | Linux CI 的相同代码检查入口 | 明确不打包 macOS 应用 |
 
 `pnpm test:integration` 已运行 SQLite 与 DEV-1566 固定合成记录的受控 IPC/重启测试；它不证明正式 Matter 或任意文件导入。`pnpm test:e2e` 调用已有的真实打包态 PDF＋IPC＋SQLite 测试（自有 Electron harness），不冒充 Playwright。Playwright Electron 仍延期：其 inspect 参数与当前安全 Fuse 冲突。Linux CI 将桌面测试明确记为未运行，本机完整链在打包后实际运行。`pnpm test:packaged-integration` 在可启动桌面程序的 macOS Apple Silicon 终端运行真实打包态离线冒烟，并由本机 `pnpm test:full` 在打包后调用。Linux CI 不运行 macOS 图形程序。
 
 每次 `check:quick`、`ci` 或 `test:full` 会在被忽略的 `artifacts/evidence/` 下生成 JSON，记录提交、工作树和锁文件摘要、是否有未提交改动、Node/pnpm 版本、全部计划命令、耗时、退出码/信号、结果、未运行项和恢复方式。前一步失败后的命令逐项记为 not-run，不能从另一次执行借用通过结果。失败也会尽量保留该记录；它不包含绝对路径、客户资料或秘密。
 
-GitHub Actions 使用干净的 Linux runner、锁定的 Node 24.22.2 和 `pnpm install --frozen-lockfile`，运行含覆盖率的 `pnpm ci`。根据人工选择，它不在云端打包 macOS 应用；macOS 打包必须由开发机执行 `pnpm test:full` 并在交付记录中附上真实结果。
+GitHub Actions 使用干净的 Linux runner、锁定的 Node 24.22.2 和 `pnpm install --frozen-lockfile`，运行含覆盖率的 `pnpm run ci`。根据人工选择，它不在云端打包 macOS 应用；macOS 打包必须由开发机执行 `pnpm test:full` 并在交付记录中附上真实结果。
 
 ## 3. P0 必须落地的检查
 

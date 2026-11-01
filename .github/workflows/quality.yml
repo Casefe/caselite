@@ -27,14 +27,21 @@ jobs:
           node-version: 24.22.2
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm ci
+      - run: pnpm run ci
       - name: Upload quality evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: quality-evidence
+          path: artifacts/evidence/g0-ci-*.json
+          if-no-files-found: error
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-reports
           path: |
-            artifacts/evidence/
+            artifacts/evidence/quality-change-review.json
             artifacts/licenses/
             coverage/
           if-no-files-found: warn

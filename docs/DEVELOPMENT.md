@@ -87,7 +87,7 @@ ls -la
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
 | `pnpm security:baseline` | 公开仓库、Electron/Fuses/CSP/权限、无直接敏感日志及 Secretlint 假令牌自检；不要求联网 |
 | `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
-| `pnpm ci` | Linux CI 使用的 G0 门槛，含生产依赖审计、许可证阻断、集成与覆盖率；桌面测试记为未运行 |
+| `pnpm run ci` | Linux CI 使用的 G0 门槛，含生产依赖审计、许可证阻断、集成与覆盖率；桌面测试记为未运行 |
 | `pnpm coverage` | 输出当前全部生产源码的测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，执行 macOS Apple Silicon 打包后再运行 DEV-1566 同一打包应用的 PDF、IPC 与 SQLite 离线联动测试 |
 | `pnpm package` | macOS Apple Silicon 打包验证 |
@@ -98,7 +98,7 @@ ls -la
 | `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 测试，以及 DEV-1566 固定合成记录的 IPC/重启测试；正式案件与文件集成测试仍待后续 Issue |
 | `pnpm test:e2e` | 打包后运行真实桌面 PDF＋IPC＋SQLite harness；Playwright 仍延期且不更改安全 Fuse |
 
-`pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。
+`pnpm run ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。pnpm 11.0.9 中的 `pnpm ci` 是安装命令，不会执行本仓库的 `ci` 脚本；必须显式使用 `run`。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。
 
 macOS 打包首次仍须从 Electron 官方发布源取得锁定版本的 ZIP；下载成功后，Forge 使用 Electron 包内记录的 SHA-256 校验本机缓存，不会为了再次下载 `SHASUMS256.txt` 而让已有缓存失效。缓存不是仓库内容，也不提交二进制。升级 Electron 时必须同时更新 `apps/desktop/forge.config.mjs` 的校验值，并重新执行打包验证。
 
