@@ -28,6 +28,8 @@ CaseLite 是面向独立律师和小型法律团队的本地优先法律工作�
 - **测试与验收**：[`docs/TESTING.md`](./docs/TESTING.md)
 - **安全与公开仓库规则**：[`docs/SECURITY.md`](./docs/SECURITY.md)
 - **开发交接操作手册**：[`docs/WORKFLOW.md`](./docs/WORKFLOW.md)
+- **代码可维护性与独立审查**：[`docs/CODE_REVIEW.md`](./docs/CODE_REVIEW.md)
+- **DEV-1564 新 AI 交接演练**：[`docs/REVIEW_HANDOFF_EXERCISE.md`](./docs/REVIEW_HANDOFF_EXERCISE.md)
 - **Linear 来源索引与状态**：[`docs/SOURCES.md`](./docs/SOURCES.md)
 
 当前工程基线已有可执行命令：`pnpm security:baseline`（公开仓库、Electron 设置、日志和秘密扫描）、`pnpm check:quick`（离线的快速质量检查）、`pnpm ci`（Linux CI 门槛）、`pnpm coverage`、`pnpm test:full`（含本机 macOS 打包）和 `pnpm package`。它们是否通过，以当次终端输出、生成的本地证据和 GitHub CI 为准；SQLite/文件集成测试与 Playwright Electron 自动化目前会明确报告“未运行”，不会被伪装为通过。
