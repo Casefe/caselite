@@ -1,14 +1,14 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { forbiddenTestModifiers } from './lib/source-analysis.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const testsRoot = resolve(repositoryRoot, 'tests');
+const testsRoots = ['tests', 'apps', 'packages'].map((folder) => resolve(repositoryRoot, folder));
 const negativeFixture = resolve(
   repositoryRoot,
   'tests/fixtures/test-integrity/contains-test-skip.fixture.ts',
 );
-const disallowedModifier = /\b(?:describe|it|test)\.(?:only|skip|todo)\s*\(/g;
 
 async function collectTestFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -16,7 +16,9 @@ async function collectTestFiles(directory) {
     entries.map(async (entry) => {
       const filePath = resolve(directory, entry.name);
       if (entry.isDirectory()) {
-        return entry.name === 'fixtures' ? [] : collectTestFiles(filePath);
+        return ['fixtures', 'node_modules', 'out', '.webpack'].includes(entry.name)
+          ? []
+          : collectTestFiles(filePath);
       }
       return /\.(?:test|spec)\.(?:ts|tsx)$/.test(entry.name) ? [filePath] : [];
     }),
@@ -26,12 +28,12 @@ async function collectTestFiles(directory) {
 
 async function findModifiers(filePath) {
   const source = await readFile(filePath, 'utf8');
-  return [...source.matchAll(disallowedModifier)].map(
-    (match) => `${relative(repositoryRoot, filePath)} contains ${match[0].trim()}`,
+  return forbiddenTestModifiers(source, filePath).map(
+    (match) => `${relative(repositoryRoot, filePath)} contains ${match}`,
   );
 }
 
-const testFiles = await collectTestFiles(testsRoot);
+const testFiles = (await Promise.all(testsRoots.map(collectTestFiles))).flat();
 const violations = (await Promise.all(testFiles.map(findModifiers))).flat();
 const fixtureViolations = await findModifiers(negativeFixture);
 

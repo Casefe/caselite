@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readWorktreeOrIndex } from './lib/repository-content.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const repositoryFiles = execFileSync(
@@ -23,6 +23,7 @@ const secretPatterns = [
   /\bsk-[A-Za-z0-9]{20,}\b/,
 ];
 const violations = [];
+let scannedFiles = 0;
 
 for (const file of repositoryFiles) {
   if (filenameViolation.test(file) && file !== '.env.example') {
@@ -30,7 +31,8 @@ for (const file of repositoryFiles) {
     continue;
   }
 
-  const content = readFileSync(resolve(repositoryRoot, file), 'utf8');
+  const content = readWorktreeOrIndex(repositoryRoot, file).toString('utf8');
+  scannedFiles++;
   if (secretPatterns.some((pattern) => pattern.test(content))) {
     violations.push(`${file}: probable credential material`);
   }
@@ -41,9 +43,7 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;
 } else {
-  console.log(
-    `Public-repository safety check passed: ${repositoryFiles.length} repository file(s) scanned.`,
-  );
+  console.log(`Public-repository safety check passed: ${scannedFiles} repository file(s) scanned.`);
   console.log(
     'This is a minimal deterministic guard, not a replacement for a dedicated secret scanner.',
   );

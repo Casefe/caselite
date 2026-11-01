@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import App from '../../apps/desktop/src/renderer/App';
+import App from './App';
 
-vi.mock('../../apps/desktop/src/renderer/PdfSpike', () => ({
+vi.mock('./PdfSpike', () => ({
   default: () => {
     throw new Error('synthetic PDF test-page failure');
   },

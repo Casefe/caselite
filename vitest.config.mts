@@ -13,9 +13,15 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
+      include: ['apps/desktop/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+      exclude: ['**/*.d.ts', '**/*.{test,spec}.{ts,tsx}'],
       reporter: ['text', 'json-summary'],
     },
-    include: ['tests/**/*.{test,spec}.{ts,tsx}'],
+    include: [
+      'tests/**/*.{test,spec}.{ts,tsx}',
+      'apps/**/src/**/*.{test,spec}.{ts,tsx}',
+      'packages/**/src/**/*.{test,spec}.{ts,tsx}',
+    ],
     passWithNoTests: false,
   },
 });

@@ -13,8 +13,12 @@ jobs:
     name: Linux quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      QUALITY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 11.0.9
@@ -24,7 +28,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm ci
-      - run: pnpm coverage
       - name: Upload quality evidence
         if: always()
         uses: actions/upload-artifact@v7
