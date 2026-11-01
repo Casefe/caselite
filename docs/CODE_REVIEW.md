@@ -42,7 +42,7 @@ PR 必须包含：Linear Issue、用户结果、变更文件和范围、输入�
 
 关键模块采用独立上下文审查（另一轮 AI 或工程师），依据**实际 diff、代码、架构合同及测试证据**判断；明确列出 blocker、非 blocker 和未验证风险。不让同一 AI 的「我已审查」声明代替审查或合并门禁。
 
-**合并前**：运行适用的 `pnpm check:quick`、`pnpm ci` 或 `pnpm test:full`；记录不可运行项。Linux CI 不证明 macOS 打包/桌面集成已通过。检查 GitHub 的必需状态检查确已生效；规则未配置时直接说明缺口，不能宣称主分支已保护。
+**合并前**：运行适用的 `pnpm check:quick`、`pnpm run ci` 或 `pnpm test:full`；记录不可运行项。Linux CI 不证明 macOS 打包/桌面集成已通过。检查 GitHub 的必需状态检查确已生效；规则未配置时直接说明缺口，不能宣称主分支已保护。
 
 ## 6. 新 AI 交接抽检
 

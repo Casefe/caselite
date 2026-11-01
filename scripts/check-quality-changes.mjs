@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import yaml from 'js-yaml';
 import ts from 'typescript';
 import { parse } from './lib/source-analysis.mjs';
 
@@ -21,6 +22,54 @@ function testTitles(source, file) {
   }
   walk(tree);
   return titles;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value, allowed) {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function hasRequiredPrQualityWorkflow(source) {
+  let workflow;
+  try {
+    workflow = yaml.load(source);
+  } catch {
+    return false;
+  }
+  if (!isRecord(workflow) || !isRecord(workflow.on)) return false;
+  const pullRequest = workflow.on.pull_request;
+  if (pullRequest !== null && (!isRecord(pullRequest) || Object.keys(pullRequest).length))
+    return false;
+  if (!Object.hasOwn(workflow.on, 'pull_request')) return false;
+
+  const quality = workflow.jobs?.quality;
+  if (
+    !isRecord(quality) ||
+    !hasOnlyKeys(quality, ['name', 'runs-on', 'timeout-minutes', 'env', 'steps']) ||
+    quality['runs-on'] !== 'ubuntu-latest'
+  )
+    return false;
+  if (!Array.isArray(quality.steps)) return false;
+  const ciStep = quality.steps.find((step) => isRecord(step) && step.run === 'pnpm run ci');
+  const evidenceStep = quality.steps.find(
+    (step) => isRecord(step) && step.name === 'Upload quality evidence',
+  );
+  return Boolean(
+    ciStep &&
+    hasOnlyKeys(ciStep, ['run']) &&
+    evidenceStep &&
+    hasOnlyKeys(evidenceStep, ['name', 'if', 'uses', 'with']) &&
+    evidenceStep.if === 'always()' &&
+    evidenceStep.uses === 'actions/upload-artifact@v7' &&
+    isRecord(evidenceStep.with) &&
+    hasOnlyKeys(evidenceStep.with, ['name', 'path', 'if-no-files-found']) &&
+    evidenceStep.with.name === 'quality-evidence' &&
+    evidenceStep.with?.path === 'artifacts/evidence/g0-ci-*.json' &&
+    evidenceStep.with?.['if-no-files-found'] === 'error',
+  );
 }
 
 export function reviewChanges(changes) {
@@ -81,12 +130,10 @@ export function reviewChanges(changes) {
         )
           violations.push(`Security chain removed: ${name}`);
     }
-    if (
-      file.startsWith('.github/workflows/') &&
-      /pull_request:/.test(before) &&
-      (!/pull_request:/.test(after) || !after.includes('pnpm ci'))
-    )
-      violations.push(`Required PR quality workflow disabled: ${file}`);
+    if (file === '.github/workflows/quality.yml' && !hasRequiredPrQualityWorkflow(after))
+      violations.push(
+        `Required PR quality workflow missing an active CI step or required evidence: ${file}`,
+      );
     if (file === 'scripts/run-quality-gate.mjs') {
       for (const step of [
         'format:check',

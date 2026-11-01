@@ -154,6 +154,22 @@ describe('G0 rejects deliberate failures', () => {
   });
 
   it('blocks removed tests, security chain removal, disabled CI and lowered thresholds and requests review of protected changes', () => {
+    const activeWorkflow = [
+      'on:',
+      '  pull_request:',
+      'jobs:',
+      '  quality:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - run: pnpm run ci',
+      '      - name: Upload quality evidence',
+      '        if: always()',
+      '        uses: actions/upload-artifact@v7',
+      '        with:',
+      '          name: quality-evidence',
+      '          path: artifacts/evidence/g0-ci-*.json',
+      '          if-no-files-found: error',
+    ].join('\n');
     const report = reviewChanges([
       {
         file: 'tests/contracts/probe.test.ts',
@@ -169,7 +185,7 @@ describe('G0 rejects deliberate failures', () => {
       },
       {
         file: '.github/workflows/quality.yml',
-        before: 'pull_request:\nrun: pnpm ci',
+        before: activeWorkflow,
         after: 'push:',
       },
       {
@@ -181,8 +197,57 @@ describe('G0 rejects deliberate failures', () => {
     expect(report.reviewRequired).toBe(true);
     expect(report.violations.join('\n')).toMatch(/Test removed/);
     expect(report.violations.join('\n')).toMatch(/Security chain removed/);
-    expect(report.violations.join('\n')).toMatch(/workflow disabled/);
+    expect(report.violations.join('\n')).toMatch(/workflow missing/);
     expect(report.violations.join('\n')).toMatch(/threshold removed or lowered/);
+    for (const after of [
+      activeWorkflow.replace('pnpm run ci', 'pnpm ci'),
+      activeWorkflow.replace('if-no-files-found: error', 'if-no-files-found: warn'),
+      activeWorkflow.replace('path: artifacts/evidence/g0-ci-*.json', 'path: coverage/'),
+      activeWorkflow.replace('  pull_request:', '  # pull_request:'),
+      activeWorkflow.replace('  pull_request:', '  pull_request:\n    types: [closed]'),
+      activeWorkflow.replace('  pull_request:', '  pull_request:\n    branches: [release]'),
+      activeWorkflow.replace('  pull_request:', "  pull_request:\n    paths-ignore: ['**']"),
+      activeWorkflow.replace(
+        '      - run: pnpm run ci',
+        '      - run: pnpm run ci\n        if: false',
+      ),
+      activeWorkflow.replace(
+        '      - run: pnpm run ci',
+        '      - run: pnpm run ci\n        if : false',
+      ),
+      activeWorkflow.replace('        if: always()', '        if: false'),
+      activeWorkflow.replace('  quality:', '  quality:\n    if: false'),
+      activeWorkflow.replace('  quality:', '  quality:\n    if : false'),
+      activeWorkflow.replace(
+        '  quality:',
+        '  precheck:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  quality:\n    needs: precheck',
+      ),
+      activeWorkflow.replace(
+        '      - run: pnpm run ci',
+        '      - run: pnpm run ci\n        continue-on-error: true',
+      ),
+    ]) {
+      expect(
+        reviewChanges([
+          {
+            file: '.github/workflows/quality.yml',
+            before: activeWorkflow,
+            after,
+          },
+        ]).violations,
+      ).toContain(
+        'Required PR quality workflow missing an active CI step or required evidence: .github/workflows/quality.yml',
+      );
+    }
+    expect(
+      reviewChanges([
+        {
+          file: '.github/workflows/quality.yml',
+          before: activeWorkflow.replace('pnpm run ci', 'pnpm ci'),
+          after: activeWorkflow,
+        },
+      ]).violations,
+    ).toEqual([]);
     expect(
       reviewChanges([
         {
