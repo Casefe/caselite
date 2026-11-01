@@ -39,7 +39,32 @@
 - IPC、文件、外发、鉴权 → `docs/SECURITY.md` 与经确认的具体合同
 - 单项设计草案的完整来源 → `docs/SOURCES.md` 中对应 Linear Resource/Issue
 
-*机械检查应交给脚本/CI，不应继续把所有规范堆到本文件。*
+_机械检查应交给脚本/CI，不应继续把所有规范堆到本文件。_
+
+## 修改位置速查（按 Issue 创建，目录存在不等于功能已实现）
+
+| 需求                      | 首选位置                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 领域规则                  | `packages/domain/`                                                                                    |
+| 用户动作与事务编排        | `packages/application/`                                                                               |
+| SQLite、迁移、本地 Outbox | `packages/local-db/`                                                                                  |
+| Electron 接线             | `apps/desktop/src/main/adapters/`                                                                     |
+| React 界面                | `apps/desktop/src/renderer/features/`                                                                 |
+| PDF 阅读与锚点            | `packages/pdf/`                                                                                       |
+| 文件身份、版本与传输      | `packages/files/`                                                                                     |
+| 模型／OCR 接入            | `packages/integrations/`                                                                              |
+| Agent 运行过程            | `packages/work-runtime/`                                                                              |
+| MCP 协议与连接器          | `packages/integrations/mcp/`、`packages/integrations/connectors/`、`apps/desktop/src/main/hosts/mcp/` |
+| 同步客户端                | `packages/sync-client/`                                                                               |
+
+修改前说明为何选这些位置、为何不改其他包、是否跨越稳定边界及是否需要 ADR。遇到 MCP 直达 Repository、Skill 直达 SQLite、renderer 直达本地存储或重复 Runtime，停止并报告。目标目录未创建时，先核对当前 Issue 和 `docs/ARCHITECTURE.md`；名称或层级冲突须报告，不可为对齐表格预建空包。
+
+## 开源参考准入
+
+- 开工先读 `docs/SOURCES.md` 所列的开源采用矩阵、相关 ADR 和当前 Issue；不能以参考项目的热度或做法作为唯一依据。
+- 不复制许可证未知、AGPL 或商业目录的实现。拟复用任何源码时先停止，提交来源仓库、文件、Commit、许可证、NOTICE 和影响供人工确认；遵守 `docs/adr/ADR-005-third-party-code-license-and-clean-room.md`。
+- 把参考架构转成 CaseLite 自己的接口、命名、失败行为和测试，不兼容参考项目的私有实现。改变进程边界、持久化格式、同步协议、权威状态或核心依赖时，先更新 ADR 并执行相应 R2 Spike；未经 Issue 授权不新增数据库、同步框架、状态管理框架、微服务或平台目录。
+- 研究必须落到决定、测试或自动门禁。交接列出参考来源、许可证处理、实际运行、未运行及回退点；资料堆积和 AI 自评不是完成证据。
 
 ## 可维护性与独立审查（DEV-1562）
 
