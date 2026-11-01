@@ -1,5 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { executePlan } from './lib/quality-results.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,16 +13,19 @@ const commands = {
     ['lint', ['lint']],
     ['architecture', ['architecture:check']],
     ['test-integrity', ['test:integrity']],
+    ['quality-changes', ['review:changes']],
     ['security-baseline', ['security:baseline']],
     ['typecheck', ['typecheck']],
     ['unit', ['test:unit']],
     ['contracts', ['test:contracts']],
+    ['license-report', ['licenses:report']],
   ],
   ci: [
     ['format', ['format:check']],
     ['lint', ['lint']],
     ['architecture', ['architecture:check']],
     ['test-integrity', ['test:integrity']],
+    ['quality-changes', ['review:changes']],
     ['security-baseline', ['security:baseline']],
     ['typecheck', ['typecheck']],
     ['unit', ['test:unit']],
@@ -28,13 +33,15 @@ const commands = {
     ['dependency-audit', ['audit:dependencies']],
     ['license-report', ['licenses:report']],
     ['integration', ['test:integration']],
-    ['e2e', ['test:e2e'], 'not-run'],
+    ['coverage', ['coverage']],
+    ['e2e', ['exec', 'node', 'scripts/report-not-run.mjs', 'e2e'], 'not-run'],
   ],
   full: [
     ['format', ['format:check']],
     ['lint', ['lint']],
     ['architecture', ['architecture:check']],
     ['test-integrity', ['test:integrity']],
+    ['quality-changes', ['review:changes']],
     ['security-baseline', ['security:baseline']],
     ['typecheck', ['typecheck']],
     ['unit', ['test:unit']],
@@ -42,9 +49,9 @@ const commands = {
     ['dependency-audit', ['audit:dependencies']],
     ['license-report', ['licenses:report']],
     ['integration', ['test:integration']],
-    ['e2e', ['test:e2e'], 'not-run'],
+    ['coverage', ['coverage']],
     ['macos-package', ['package']],
-    ['macos-packaged-integration', ['test:packaged-integration']],
+    ['macos-desktop-e2e', ['test:e2e']],
   ],
 };
 
@@ -63,28 +70,44 @@ function run(command, args) {
 }
 
 const startedAt = new Date();
-const results = [];
-
-for (const [name, args, presetStatus] of commands[mode]) {
-  const command = ['pnpm', ...args];
-  const started = Date.now();
-  console.log(`\n==> ${command.join(' ')}`);
-  const result = spawnSync(command[0], command.slice(1), {
+const trackedAndUntracked = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+})
+  .split('\0')
+  .filter(Boolean)
+  .sort();
+const sourceHash = createHash('sha256');
+for (const file of trackedAndUntracked) {
+  sourceHash
+    .update(file)
+    .update('\0')
+    .update(
+      existsSync(resolve(repositoryRoot, file))
+        ? readFileSync(resolve(repositoryRoot, file))
+        : '<deleted>',
+    )
+    .update('\0');
+}
+const identity = {
+  commit: run('git', ['rev-parse', 'HEAD']),
+  dirty: run('git', ['status', '--porcelain']).length > 0,
+  worktreeSha256: sourceHash.digest('hex'),
+  lockfileSha256: createHash('sha256')
+    .update(readFileSync(resolve(repositoryRoot, 'pnpm-lock.yaml')))
+    .digest('hex'),
+};
+const results = executePlan(commands[mode], (args) => {
+  console.log(`\n==> pnpm ${args.join(' ')}`);
+  return spawnSync('pnpm', args, {
     cwd: repositoryRoot,
     encoding: 'utf8',
     stdio: 'inherit',
   });
-  results.push({
-    command: command.join(' '),
-    durationMs: Date.now() - started,
-    name,
-    status: result.status === 0 ? (presetStatus ?? 'passed') : 'failed',
-  });
-  if (result.status !== 0) break;
-}
+});
 
 const evidence = {
-  commit: run('git', ['rev-parse', 'HEAD']),
+  ...identity,
   mode,
   node: process.version,
   pnpm: run('pnpm', ['--version']),
@@ -92,7 +115,7 @@ const evidence = {
   results,
   startedAt: startedAt.toISOString(),
   unverified: [
-    'The test-only SQLite/IPC integration is covered locally; formal Matter/Anchor and arbitrary customer file integration are not implemented.',
+    'Formal Matter/Anchor and arbitrary customer file integration are not implemented; inspect individual results for checks actually run.',
     'Playwright Electron automation is deferred because the current security Fuse intentionally disables the inspect argument it requires.',
     ...(mode === 'ci'
       ? [
@@ -106,6 +129,16 @@ const evidence = {
       : []),
   ],
 };
+evidence.status = results.some((result) => result.status === 'failed')
+  ? 'failed'
+  : 'passed-with-limitations';
+evidence.unverified.push(
+  ...results
+    .filter((result) => result.status !== 'passed')
+    .map(
+      (result) => `${result.name}: ${result.status}${result.reason ? ` (${result.reason})` : ''}`,
+    ),
+);
 
 const evidenceDirectory = resolve(repositoryRoot, 'artifacts/evidence');
 mkdirSync(evidenceDirectory, { recursive: true });

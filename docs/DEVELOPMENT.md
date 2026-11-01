@@ -87,8 +87,8 @@ ls -la
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
 | `pnpm security:baseline` | 公开仓库、Electron/Fuses/CSP/权限、无直接敏感日志及 Secretlint 假令牌自检；不要求联网 |
 | `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
-| `pnpm ci` | Linux CI 使用的完整 G0 门槛；另含生产依赖漏洞审计与许可证报告 |
-| `pnpm coverage` | 输出单元与合同测试覆盖率到本机 `coverage/` |
+| `pnpm ci` | Linux CI 使用的 G0 门槛，含生产依赖审计、许可证阻断、集成与覆盖率；桌面测试记为未运行 |
+| `pnpm coverage` | 输出当前全部生产源码的测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，执行 macOS Apple Silicon 打包后再运行 DEV-1566 同一打包应用的 PDF、IPC 与 SQLite 离线联动测试 |
 | `pnpm package` | macOS Apple Silicon 打包验证 |
 | `pnpm make` | 用唯一的 Forge ZIP maker 生成 macOS Apple Silicon ZIP；尚未签名或公证 |
@@ -96,7 +96,7 @@ ls -la
 | `pnpm test:packaged-pdf` | 在 `pnpm make` 后启动同一打包应用；阻断 HTTP(S) 后检查合成 PDF 的页面、Worker、文字层、扫描件和双页翻页 |
 | `pnpm test:packaged-integration` | 在 `pnpm package` 后启动同一打包应用，使用固定合成样本验证 PDF Worker、受控 IPC、SQLite 持久化和重启读回；须在可启动图形程序的 macOS Apple Silicon 终端运行 |
 | `pnpm test:integration` | 执行 DEV-1567 的合成 SQLite/Drizzle 测试，以及 DEV-1566 固定合成记录的 IPC/重启测试；正式案件与文件集成测试仍待后续 Issue |
-| `pnpm test:e2e` | 当前明确报告“未运行”：为保持 Electron 安全 Fuse，尚未开启 Playwright Electron 所需的 inspect 参数 |
+| `pnpm test:e2e` | 打包后运行真实桌面 PDF＋IPC＋SQLite harness；Playwright 仍延期且不更改安全 Fuse |
 
 `pnpm ci` 的证据写入 `artifacts/evidence/`，许可证报告根据已安装生产依赖的 `package.json` 写入 `artifacts/licenses/`；二者均被 `.gitignore` 排除。GitHub Actions 在 Pull Request 和 `main` 更新时使用 Node 24.22.2、pnpm 11.0.9 和锁文件重装，上传这些证据及覆盖率，但不在 Linux 上冒充 macOS 桌面打包。
 
@@ -117,3 +117,12 @@ macOS 打包首次仍须从 Electron 官方发布源取得锁定版本的 ZIP；
 每一项开发任务交付：Issue ID；分支/提交；实际变更；使用的版本；运行命令和日志摘要；通过/失败/未运行的检查；最小演示；回退方式；待人工确认项。
 
 真实代码、锁文件、构建和测试始终优先于此处的操作示意。发布和数据破坏性变更须另经授权。
+
+
+## DEV-1559 质量门禁验收补充
+
+`pnpm review:changes` 生成受保护变更清单并阻断可识别的测试删除/门禁削弱；PR 合并前必须审阅该清单的精确差异。`QUALITY_BASE_REF` 是已存在的 Git 提交引用；本机默认 origin/main，CI 从完整历史读取 PR base 或 push before。
+
+单元测试共置于 apps/packages 的源码旁；根 tests 保留合同、集成和 fixtures。本机 `pnpm test:full` 在打包后运行 `pnpm test:e2e`，避免重复启动同一桌面 harness。Linux CI 不启动 macOS 程序。失败和后续未运行步骤均写入证据；联网审计服务不可用仍会阻断完整链。
+
+质量脚本直接使用仓库已有 TypeScript 6.0.3 解析源码，因此在根 devDependencies 显式声明相同版本，不增加第二套解析器或测试运行器。

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { licenseViolations } from './lib/license-policy.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const reportDirectory = resolve(repositoryRoot, 'artifacts/licenses');
@@ -77,6 +78,7 @@ function visit(packageName, issuerManifestFile, optional = false) {
     license: manifest.license ?? 'UNKNOWN',
     name: manifest.name,
     version: manifest.version,
+    workspace: workspaceManifestFiles.includes(manifestFile),
   });
 
   for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
@@ -103,12 +105,14 @@ if (unresolved.length > 0) {
 }
 
 mkdirSync(reportDirectory, { recursive: true });
+const violations = licenseViolations(packages);
 writeFileSync(
   reportFile,
   `${JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
       packages: packages.sort((left, right) => left.name.localeCompare(right.name)),
+      violations,
       scope: 'Installed production dependencies reachable from all current workspace manifests',
       skippedOptional: [...new Set(skippedOptional)].sort(),
     },
@@ -119,3 +123,7 @@ writeFileSync(
 console.log(
   `License report written to artifacts/licenses/production-dependencies.json (${packages.length} package(s)).`,
 );
+if (violations.length) {
+  console.error(violations.join('\n'));
+  process.exitCode = 1;
+}

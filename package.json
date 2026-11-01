@@ -31,15 +31,16 @@
     "security:public": "node scripts/check-public-repository.mjs",
     "security:secrets": "node scripts/check-secrets.mjs",
     "test:contracts": "vitest run tests/contracts",
-    "test:e2e": "node scripts/report-not-run.mjs e2e",
+    "test:e2e": "pnpm test:packaged-integration",
     "test:full": "node scripts/run-quality-gate.mjs full",
     "test:integration": "vitest run tests/integration",
     "test:packaged-db": "node scripts/check-packaged-local-db.mjs",
     "test:packaged-integration": "node scripts/check-packaged-integration.mjs",
     "test:packaged-pdf": "node scripts/check-packaged-pdf.mjs",
     "test:integrity": "node scripts/check-test-integrity.mjs",
-    "test:unit": "vitest run tests/unit",
-    "verify": "pnpm test:full"
+    "test:unit": "vitest run apps packages",
+    "verify": "pnpm test:full",
+    "review:changes": "node scripts/check-quality-changes.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -56,6 +57,7 @@
     "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
     "secretlint": "13.0.5",
     "typescript-eslint": "8.72.1",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "typescript": "6.0.3"
   }
 }

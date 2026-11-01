@@ -1,8 +1,9 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { readWorktreeOrIndex } from './lib/repository-content.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const executable = resolve(repositoryRoot, 'node_modules/.bin/secretlint');
@@ -22,7 +23,7 @@ function repositoryFiles() {
     .split('\0')
     .filter(Boolean)
     .filter((file) => !excludedPrefixes.some((prefix) => file.startsWith(prefix)))
-    .filter((file) => !readFileSync(resolve(repositoryRoot, file)).includes(0));
+    .filter((file) => !readWorktreeOrIndex(repositoryRoot, file).includes(0));
 }
 
 function scan(files, label, { expectFailure = false } = {}) {
@@ -63,8 +64,19 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-if (scan(files, 'repository files') === 0) {
-  console.log(
-    `Secret scan passed: ${files.length} text repository file(s) checked with Secretlint.`,
-  );
+const indexedSnapshotDirectory = mkdtempSync(resolve(tmpdir(), 'caselite-index-scan-'));
+try {
+  const scanPaths = files.map((file, index) => {
+    if (existsSync(resolve(repositoryRoot, file))) return file;
+    const snapshot = resolve(indexedSnapshotDirectory, `${index}.txt`);
+    writeFileSync(snapshot, readWorktreeOrIndex(repositoryRoot, file));
+    return snapshot;
+  });
+  if (scan(scanPaths, 'repository files and indexed deleted paths') === 0) {
+    console.log(
+      `Secret scan passed: ${files.length} text repository file(s) checked with Secretlint.`,
+    );
+  }
+} finally {
+  rmSync(indexedSnapshotDirectory, { recursive: true, force: true });
 }

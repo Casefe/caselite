@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import PdfSpike from '../../apps/desktop/src/renderer/PdfSpike';
+import PdfSpike from './PdfSpike';
 
 vi.mock('react-pdf', async () => {
   const { useEffect } = await import('react');
