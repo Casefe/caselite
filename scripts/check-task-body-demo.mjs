@@ -30,7 +30,17 @@ for (const phase of ['write', 'crash', 'read']) {
 }
 const out = join(root, 'artifacts/evidence/task-body-demo');
 mkdirSync(out, { recursive: true });
-for (const name of ['write.png', 'read.png', 'expected.json'])
+for (const name of [
+  'write.png',
+  'read.png',
+  'expected.json',
+  'home.png',
+  'projects-list.png',
+  'projects-board.png',
+  'project-overview.png',
+  'project-task.png',
+  'task-list.png',
+])
   copyFileSync(join(dir, name), join(out, name));
 writeFileSync(
   join(out, 'result.json'),
@@ -46,6 +56,7 @@ writeFileSync(
       passed: true,
       unverified: [
         'Human UI acceptance',
+        'Project persistence: example UI only',
         'IME OS keyboard candidate selection',
         'Power loss or device loss',
         'OCR/BYOK/Word/PDF',

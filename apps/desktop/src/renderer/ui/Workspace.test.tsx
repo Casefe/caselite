@@ -1,0 +1,52 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WorkspaceShell } from './Workspace';
+import ProjectPreview from '../projects/ProjectPreview';
+afterEach(cleanup);
+describe('workspace navigation and clearly bounded project prototype', () => {
+  it('routes primary objects and keeps the sidebar collapse accessible', () => {
+    const navigate = vi.fn(),
+      collapse = vi.fn(),
+      create = vi.fn();
+    render(
+      <WorkspaceShell
+        view="home"
+        collapsed={false}
+        onCollapse={collapse}
+        onNavigate={navigate}
+        onNew={create}
+        tasks={[]}
+        onOpen={vi.fn()}
+        search=""
+        onSearch={vi.fn()}
+      >
+        <p>内容区域</p>
+      </WorkspaceShell>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '项目', exact: true }));
+    expect(navigate).toHaveBeenCalledWith('projects');
+    fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
+    expect(collapse).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '新建任务', exact: true }));
+    expect(create).toHaveBeenCalledOnce();
+    expect(screen.getByText('内容区域')).toBeTruthy();
+  });
+  it('filters and drills into sample project tabs without a storage API', () => {
+    render(<ProjectPreview />);
+    expect(screen.getByText('示例项目 · 不保存')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: '筛选示例项目状态' }), {
+      target: { value: '待开始' },
+    });
+    expect(screen.queryByText('海川服务合同争议')).toBeNull();
+    expect(screen.getByText('明远劳动争议')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '项目看板视图' }));
+    fireEvent.click(screen.getByText('明远劳动争议'));
+    fireEvent.click(screen.getByRole('tab', { name: /任务/ }));
+    fireEvent.click(screen.getByText('整理已收到的材料'));
+    expect(screen.getByText(/不会创建或修改你的本地任务/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭示例任务详情' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回项目列表' }));
+    expect(screen.getByRole('button', { name: '项目列表视图' })).toBeTruthy();
+  });
+});

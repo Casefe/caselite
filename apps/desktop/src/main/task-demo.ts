@@ -20,6 +20,14 @@ export async function runTaskDemo(
     }
     throw new Error('Task demo timed out: ' + predicate);
   };
+  const capture = async (name: string) => {
+    await evaluate(
+      'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const frame = await window.webContents.capturePage();
+    writeFileSync(join(root, name), frame.toPNG());
+  };
   const click = async (selector: string) =>
     evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
   const input = async (selector: string, value: string) =>
@@ -40,15 +48,31 @@ export async function runTaskDemo(
     await evaluate(
       `document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,${JSON.stringify(body)})`,
     );
+    await click('[data-nav=projects]');
+    await wait(
+      "document.querySelector('[data-testid=body-editor]') && document.querySelector('[role=alert]')?.textContent.includes('请先保存')",
+    );
     await wait("document.querySelector('[data-testid=save-body]')?.disabled===false");
     await click('[data-testid=save-body]');
     await wait(
       "document.querySelector('[data-testid=revision]')?.textContent==='1' && document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备'",
     );
+    await wait("document.querySelector('[data-task-id]')");
     const id = await evaluate(
       "document.querySelector('[data-task-id]').getAttribute('data-task-id')",
     );
     writeFileSync(join(root, 'expected.json'), JSON.stringify({ id, body }));
+    await click('[data-testid=new-task]');
+    await input('[data-testid=task-title]', '采购任务隔离样本B');
+    await input('[data-testid=task-objective]', '独立任务B，不应显示A的正文');
+    await click('[data-testid=create-task]');
+    await wait(
+      "document.querySelector('[data-testid=body-editor]') && document.body.textContent.includes('采购任务隔离样本B')",
+    );
+    await click(`[data-task-id="${id}"]`);
+    await wait(
+      `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(body)})`,
+    );
   } else {
     const expected = JSON.parse(readFileSync(join(root, 'expected.json'), 'utf8'));
     await click(`[data-task-id="${expected.id}"]`);
@@ -72,14 +96,50 @@ export async function runTaskDemo(
       process.kill(process.pid, 'SIGKILL');
     }
     await wait("document.querySelector('[data-testid=revision]')?.textContent==='2'");
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='任务目标').click()",
+    );
+    await wait("document.querySelector('.goal-panel')");
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
+    );
+    await wait(
+      `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(expected.body)})`,
+    );
+    await wait("document.querySelector('[data-testid=revision]')?.textContent==='2'");
   }
   await wait("getComputedStyle(document.querySelector('.workbench')).display==='flex'");
   if (phase === 'read')
     await wait(
       "document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备'",
     );
-  const image = await window.webContents.capturePage();
-  writeFileSync(join(root, `${phase}.png`), image.toPNG());
+  await capture(`${phase}.png`);
+  if (phase === 'read') {
+    await click('[data-nav=home]');
+    await wait("document.querySelector('.home-view')");
+    await capture('home.png');
+    await click('[data-nav=projects]');
+    await wait("document.querySelector('[data-testid=project-preview]')");
+    await capture('projects-list.png');
+    await evaluate('document.querySelector(\'[aria-label="项目看板视图"]\').click()');
+    await wait("document.querySelector('.project-board')");
+    await capture('projects-board.png');
+    await click('[data-project-id=sample-contract]');
+    await wait("document.querySelector('.project-properties')");
+    await capture('project-overview.png');
+    await click('[data-project-tab=任务]');
+    await click('[data-sample-task="0"]');
+    await wait("document.querySelector('.sample-detail')");
+    await capture('project-task.png');
+    await click('[data-nav=tasks]');
+    await evaluate("document.querySelector('[data-testid=back-to-tasks]')?.click()");
+    await wait("document.querySelector('.list-view')");
+    await input('[aria-label="搜索本地任务"]', '采购');
+    await wait("document.querySelectorAll('[data-row-task]').length===1");
+    await input('[aria-label="搜索本地任务"]', '');
+    await wait("document.querySelectorAll('[data-row-task]').length===2");
+    await capture('task-list.png');
+  }
   process.stdout.write(`Task UI ${phase} passed.\n`);
   window.destroy();
 }

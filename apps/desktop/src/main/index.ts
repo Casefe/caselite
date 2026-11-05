@@ -31,8 +31,8 @@ async function createWindow(
   pdfWorkerFault?: 'missing' | 'mismatch',
 ): Promise<BrowserWindow> {
   const window = new BrowserWindow({
-    width: 960,
-    height: 640,
+    width: 1280,
+    height: 800,
     minWidth: 640,
     minHeight: 480,
     title: 'CaseLite',
