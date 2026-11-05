@@ -22,4 +22,6 @@
 | [ADR-006](./ADR-006-task-body-local-snapshots.md) | 首片实现候选 | 独立Task与本地成果正文 | 以实际测试/回执为准 |
 | [ADR-007](./ADR-007-editor-modes-and-task-description.md) | 提议 | 两种编辑器交互与任务说明富文本 | DEV-1732及当前消费者 |
 
+| [ADR-009](./ADR-009-provider-model-selection.md) | 已决定（真实 API 待验证） | OpenAI/DeepSeek 独立凭据与显式默认模型 | DEV-1648，合成 HTTP 与打包设置回归 |
+
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。

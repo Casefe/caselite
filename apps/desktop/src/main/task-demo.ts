@@ -170,6 +170,19 @@ export async function runTaskDemo(
       evaluate(
         "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
       );
+    if (phase !== 'write') {
+      const vault = await createAgentCredentials(join(root, 'userData'));
+      if (
+        vault.get('deepseek') !== 'sk-synthetic-restart-deepseek' ||
+        vault.getDefaultModel() !== 'deepseek-v4-pro'
+      )
+        throw new Error('DeepSeek key/default did not survive process restart');
+      const profile = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'profile'})",
+      );
+      if (!profile.ok || profile.model !== 'deepseek-v4-pro' || !profile.providers.deepseek)
+        throw new Error('Host profile failed to read persisted DeepSeek settings');
+    }
     if (phase === 'write') {
       await click('[data-nav=tasks]');
       await wait(
@@ -275,6 +288,9 @@ export async function runTaskDemo(
         `document.querySelector('[data-testid=body-editor]')?.textContent===${JSON.stringify(body)} && document.querySelector('[data-testid=body-editor] strong')`,
       );
       writeFileSync(join(root, 'expected.json'), JSON.stringify({ id, body, goal }));
+      const vault = await createAgentCredentials(join(root, 'userData'));
+      await vault.set('sk-synthetic-restart-deepseek', 'deepseek');
+      await vault.setDefaultModel('deepseek-v4-pro');
       await click('[data-nav=home]');
       await wait("document.querySelector('[data-testid=agent-input]')");
       await input('[data-testid=agent-input]', '独立任务B，不应显示A的正文');
@@ -584,7 +600,62 @@ export async function runTaskDemo(
       if (reopenedCredentials.get() !== testKey)
         throw new Error('Saved settings credential did not decrypt on reopen');
       await capture('settings-models.png');
-      for (const provider of ['deepseek', 'mineru', 'yuandian']) {
+      await click('[data-provider=deepseek]');
+      await wait('!document.querySelector(\'[aria-label="DeepSeek API Key"]\').disabled');
+      await input('[aria-label="DeepSeek API Key"]', 'sk-synthetic-settings-deepseek');
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='保存 Key').click()",
+      );
+      await wait("document.querySelector('.settings-notice')?.textContent.includes('已加密保存')");
+      await evaluate(
+        "(()=>{const e=document.querySelector('[aria-label=模型选择]');e.value='deepseek-flash';e.dispatchEvent(new Event('change',{bubbles:true}));})()",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='设为默认模型').click()",
+      );
+      await wait(
+        "document.querySelector('.settings-notice')?.textContent.includes('默认模型已保存')",
+      );
+      const dsVault = await createAgentCredentials(join(root, 'userData'));
+      if (
+        dsVault.get('deepseek') !== 'sk-synthetic-settings-deepseek' ||
+        dsVault.get() !== testKey ||
+        dsVault.getDefaultModel() !== 'deepseek-flash'
+      )
+        throw new Error('Provider settings isolation failed');
+      if (
+        readFileSync(join(root, 'userData', 'deepseek-credential.enc')).includes(
+          'sk-synthetic-settings-deepseek',
+        )
+      )
+        throw new Error('DeepSeek key persisted as plaintext');
+      await capture('settings-deepseek.png');
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='删除 Key').click()",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='确认删除').click()",
+      );
+      await wait("document.querySelector('.settings-notice')?.textContent.includes('已删除')");
+      const dsRemoved = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'profile'})",
+      );
+      if (
+        !dsRemoved.ok ||
+        dsRemoved.configured ||
+        dsRemoved.providers.deepseek ||
+        !dsRemoved.providers.openai ||
+        dsRemoved.model !== 'deepseek-flash'
+      )
+        throw new Error('Provider deletion caused fallback or removed OpenAI');
+      await click('[data-provider=openai]');
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='设为默认模型').click()",
+      );
+      await wait(
+        "document.querySelector('.settings-notice')?.textContent.includes('默认模型已保存')",
+      );
+      for (const provider of ['mineru', 'yuandian']) {
         await click(`[data-provider=${provider}]`);
         await wait("document.querySelector('.provider-detail input[type=password]').disabled");
         await capture(`settings-${provider}.png`);

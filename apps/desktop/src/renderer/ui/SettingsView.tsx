@@ -1,5 +1,6 @@
 import { createContext, useEffect, useRef, useState } from 'react';
-import type { AgentRequest } from '../../preload/caselite-api';
+import { agentProviderFor, agentModelLabel } from './model-labels';
+import type { AgentModel, AgentProvider, AgentRequest } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 
 export const ModelSettingsNavigation = createContext<(() => void) | null>(null);
@@ -24,7 +25,7 @@ const services = [
     description: '通用对话与推理',
     endpoint: 'https://api.deepseek.com',
     model: '接入时选择具体模型',
-    note: 'DeepSeek 运行适配尚未接入，当前仅展示配置位置。',
+    note: '',
   },
   {
     id: 'mineru',
@@ -201,7 +202,9 @@ function SettingRow({
 }
 function ModelSettings() {
   const [selected, setSelected] = useState('openai');
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [providers, setProviders] = useState<{ openai: boolean; deepseek: boolean } | null>(null);
+  const [defaultModel, setDefaultModel] = useState<AgentModel>('gpt-4.1-mini');
+  const [selectedModel, setSelectedModel] = useState<AgentModel>('gpt-4.1-mini');
   const [key, setKey] = useState('');
   const [pending, setPending] = useState(true);
   const [error, setError] = useState('');
@@ -210,7 +213,11 @@ function ModelSettings() {
   const mounted = useRef(false);
   const inFlight = useRef(true);
   const service = services.find((item) => item.id === selected)!;
-  const available = service.id === 'openai';
+  const available = service.id === 'openai' || service.id === 'deepseek';
+  const provider = service.id as AgentProvider;
+  const configured = available ? (providers?.[provider] ?? null) : null;
+  const modelOptions: AgentModel[] =
+    service.id === 'openai' ? ['gpt-4.1-mini'] : ['deepseek-flash', 'deepseek-v4-pro'];
   const validKey = /^sk-[A-Za-z0-9_-]{8,}$/.test(key.trim()) && key.trim().length <= 512;
   async function execute(request: AgentRequest) {
     if (inFlight.current) return;
@@ -223,18 +230,21 @@ function ModelSettings() {
       const result = await window.caselite.agent(request);
       if (!mounted.current) return;
       if (result.ok) {
-        setConfigured(result.configured);
+        setProviders(result.providers);
+        setDefaultModel(result.model);
         setConfirmDelete(false);
         if (request.operation === 'configure')
           setNotice('密钥已加密保存到此设备。尚未验证服务连接。');
+        if (request.operation === 'select_model')
+          setNotice(`默认模型已保存：${agentModelLabel(result.model)}。`);
         if (request.operation === 'clear_key') setNotice('已删除本机密钥，人工编辑不受影响。');
       } else {
         setError(result.message);
-        setConfigured(null);
+        setProviders(null);
       }
     } catch {
       if (mounted.current) {
-        setConfigured(null);
+        setProviders(null);
         setError('无法读取或确认模型配置，请重新读取状态后再操作。');
       }
     } finally {
@@ -249,8 +259,10 @@ function ModelSettings() {
       .agent({ protocol_version: 1, operation: 'profile' })
       .then((result) => {
         if (cancelled) return;
-        if (result.ok) setConfigured(result.configured);
-        else setError(result.message);
+        if (result.ok) {
+          setProviders(result.providers);
+          setDefaultModel(result.model);
+        } else setError(result.message);
       })
       .catch(() => {
         if (!cancelled) setError('无法读取模型配置，请重试。');
@@ -279,6 +291,13 @@ function ModelSettings() {
               disabled={pending}
               onClick={() => {
                 setSelected(item.id);
+                setSelectedModel(
+                  agentProviderFor(defaultModel) === item.id
+                    ? defaultModel
+                    : item.id === 'openai'
+                      ? 'gpt-4.1-mini'
+                      : 'deepseek-flash',
+                );
                 setKey('');
                 setError('');
                 setNotice('');
@@ -291,12 +310,12 @@ function ModelSettings() {
                 <small>{item.kind}</small>
               </span>
               <span className="provider-state">
-                {item.id === 'openai'
-                  ? configured === null
+                {item.id === 'openai' || item.id === 'deepseek'
+                  ? providers === null
                     ? pending
                       ? '读取中'
                       : '状态未知'
-                    : configured
+                    : providers[item.id]
                       ? '已保存'
                       : '未配置'
                   : '待接入'}
@@ -311,7 +330,13 @@ function ModelSettings() {
               <h3>{service.name}</h3>
               <p>{service.description}</p>
             </div>
-            <span className="settings-pill">{available ? '当前对话服务' : '配置预览'}</span>
+            <span className="settings-pill">
+              {available
+                ? agentProviderFor(defaultModel) === service.id
+                  ? '默认对话服务'
+                  : '可用对话服务'
+                : '配置预览'}
+            </span>
           </header>
           {!available && <div className="provider-notice">{service.note}</div>}
           <label>
@@ -320,7 +345,22 @@ function ModelSettings() {
           </label>
           <label>
             {service.kind === '对话模型' ? '模型' : '服务'}
-            <input value={service.model} readOnly aria-label="模型或服务名称" />
+            {available ? (
+              <select
+                aria-label="模型选择"
+                value={selectedModel}
+                disabled={pending}
+                onChange={(e) => setSelectedModel(e.target.value as AgentModel)}
+              >
+                {modelOptions.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input value={service.model} readOnly aria-label="模型或服务名称" />
+            )}
           </label>
           <label>
             {service.id === 'mineru' ? 'API Token' : 'API Key'}
@@ -361,7 +401,9 @@ function ModelSettings() {
             <button
               className="primary"
               disabled={!available || pending || !validKey}
-              onClick={() => void execute({ protocol_version: 1, operation: 'configure', key })}
+              onClick={() =>
+                void execute({ protocol_version: 1, operation: 'configure', provider, key })
+              }
             >
               {pending ? '处理中…' : '保存 Key'}
             </button>
@@ -382,12 +424,34 @@ function ModelSettings() {
               </>
             )}
           </div>
+          {available && (
+            <div className="model-default-control">
+              <p>当前默认：{agentModelLabel(defaultModel)}</p>
+              <button
+                disabled={pending || !configured || selectedModel === defaultModel}
+                onClick={() =>
+                  void execute({
+                    protocol_version: 1,
+                    operation: 'select_model',
+                    model: selectedModel,
+                  })
+                }
+              >
+                设为默认模型
+              </button>
+              <p className="provider-help">
+                保存 Key 不会自动切换模型。默认模型用于下一次发送，运行中不可修改。
+              </p>
+            </div>
+          )}
           {available && confirmDelete && (
             <div className="key-delete-confirm" role="group" aria-label="确认删除密钥">
-              <p>删除此设备的 OpenAI 密钥？已有任务和正文会保留。</p>
+              <p>删除此设备的 {service.name} 密钥？已有任务和正文会保留。</p>
               <button
                 disabled={pending}
-                onClick={() => void execute({ protocol_version: 1, operation: 'clear_key' })}
+                onClick={() =>
+                  void execute({ protocol_version: 1, operation: 'clear_key', provider })
+                }
               >
                 确认删除
               </button>

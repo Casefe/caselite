@@ -1,12 +1,22 @@
-import { agentRequestSchema, type AgentResponse, type AgentRun } from '@caselite/contracts';
+import {
+  agentRequestSchema,
+  agentProviderFor,
+  type AgentModel,
+  type AgentProvider,
+  type AgentResponse,
+  type AgentRun,
+} from '@caselite/contracts';
 
 export interface AgentCredentialPort {
-  get(): string | undefined;
-  set(key: string): void | Promise<void>;
-  clear(): void;
+  get(provider?: AgentProvider): string | undefined;
+  set(key: string, provider?: AgentProvider): void | Promise<void>;
+  clear(provider?: AgentProvider): void;
+  getDefaultModel(): AgentModel;
+  setDefaultModel(model: AgentModel): void | Promise<void>;
 }
 export interface AgentRuntimePort {
   start(input: {
+    model: AgentModel;
     prompt: string;
     key: string;
     onText(text: string): void;
@@ -27,9 +37,9 @@ export function createAgentApplication(ports: {
   const runs = new Map<string, { owner: string; run: AgentRun; cancel?: () => void }>();
   let configuring = false;
   const failure = (code: string, message: string): AgentResponse => ({ ok: false, code, message });
-  const configured = () => {
+  const configured = (provider: AgentProvider) => {
     try {
-      return Boolean(ports.credentials.get());
+      return Boolean(ports.credentials.get(provider));
     } catch {
       return false;
     }
@@ -43,44 +53,62 @@ export function createAgentApplication(ports: {
         configuring &&
         (request.operation === 'configure' ||
           request.operation === 'clear_key' ||
+          request.operation === 'select_model' ||
           (request.operation === 'start' && !runs.has(request.run_id)))
       )
         return failure('BUSY', '模型配置正在保存，请稍后核对。');
       try {
         const active = [...runs.values()].find((item) => item.run.status === 'running');
-        if (request.operation === 'configure' || request.operation === 'clear_key') {
+        if (
+          request.operation === 'configure' ||
+          request.operation === 'clear_key' ||
+          request.operation === 'select_model'
+        ) {
           if (active) return failure('BUSY', '请先停止当前运行，再修改模型配置。');
-          if (request.operation === 'configure') {
+          if (request.operation !== 'clear_key') {
             configuring = true;
             try {
-              await ports.credentials.set(request.key);
+              if (request.operation === 'configure')
+                await ports.credentials.set(request.key, request.provider ?? 'openai');
+              else {
+                if (!ports.credentials.get(agentProviderFor(request.model)))
+                  return failure('NO_KEY', '请先保存该服务商的 Key，再设为默认模型。');
+                await ports.credentials.setDefaultModel(request.model);
+              }
             } finally {
               configuring = false;
             }
-          } else ports.credentials.clear();
+          } else ports.credentials.clear(request.provider ?? 'openai');
         }
         if ('scope' in request && request.scope !== 'home' && !ports.taskExists(request.scope))
           return failure('NOT_FOUND', '任务不存在，未读取或发送任何正文。');
         if (request.operation === 'start') {
+          const selectedModel = request.model ?? 'gpt-4.1-mini';
+          const provider = agentProviderFor(selectedModel);
           const existing = runs.get(request.run_id);
           if (existing) {
             if (
               existing.owner !== owner ||
               existing.run.scope !== request.scope ||
-              existing.run.prompt !== request.prompt
+              existing.run.prompt !== request.prompt ||
+              existing.run.model !== selectedModel
             )
               return failure('CONFLICT', '运行标识不匹配，未重复发送。');
           } else {
             if (active) return failure('BUSY', '已有运行进行中，请先停止或等待结束。');
             if (runs.size >= 100)
               return failure('LIMIT', '本次会话已达运行上限，请先保存需要保留的结果。');
-            const key = ports.credentials.get();
+            if (ports.credentials.getDefaultModel() !== selectedModel)
+              return failure('MODEL_CHANGED', '默认模型已变化，请返回修改并重新预览；本次未发送。');
+            const key = ports.credentials.get(provider);
             if (!key)
               return failure(
                 'NO_KEY',
-                '请先配置自己的 OpenAI API Key。不会使用其他软件的登录或额度。',
+                '请先配置所选服务商的 API Key。不会使用其他软件的登录或额度。',
               );
             const run: AgentRun = {
+              provider,
+              model: selectedModel,
               id: request.run_id,
               scope: request.scope,
               prompt: request.prompt,
@@ -94,6 +122,7 @@ export function createAgentApplication(ports: {
             runs.set(run.id, item);
             try {
               const handle = ports.runtime.start({
+                model: selectedModel,
                 prompt: run.prompt,
                 key,
                 onText(text) {
@@ -130,10 +159,17 @@ export function createAgentApplication(ports: {
             item.cancel = undefined;
           }
         }
+        // 已接受运行的回执不受默认配置读取失败影响；不再派发任何请求。
+        const model =
+          request.operation === 'start'
+            ? (request.model ?? 'gpt-4.1-mini')
+            : ports.credentials.getDefaultModel();
+        const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
         return {
           ok: true,
-          configured: configured(),
-          model: 'gpt-4.1-mini',
+          configured: providers[agentProviderFor(model)],
+          model,
+          providers,
           runs:
             'scope' in request
               ? [...runs.values()]

@@ -3018,3 +3018,16 @@ dd {
   flex-shrink: 0;
   padding: 0 22px;
 }
+
+.model-default-control {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 18px;
+}
+.provider-detail select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+}

@@ -17,7 +17,15 @@ const result = spawnSync(binary, [], {
 if (result.status !== 0) throw new Error(`Agent demo failed: ${dir}; ${result.stderr}`);
 const out = join(root, 'artifacts/evidence/agent-demo');
 mkdirSync(out, { recursive: true });
-for (const file of ['agent-home.png', 'agent-sidebar.png', 'agent-result.json'])
+for (const file of [
+  'agent-home.png',
+  'agent-sidebar.png',
+  'deepseek-settings.png',
+  'deepseek-sidebar.png',
+  'deepseek-preview.png',
+  'deepseek-home.png',
+  'agent-result.json',
+])
   copyFileSync(join(dir, file), join(out, file));
 writeFileSync(
   join(out, 'result.json'),

@@ -520,19 +520,10 @@ app
     );
     const tasks = createTaskApplication(taskStore);
     registerTaskIpc(tasks);
+    const agentCredentials = await createAgentCredentials(taskRoot);
+    if (taskDemoPhase === 'agent') await agentCredentials.set('sk-synthetic-openai');
     const agent = createAgentApplication({
-      credentials:
-        taskDemoPhase === 'agent'
-          ? {
-              get: () => 'synthetic-only',
-              set() {
-                throw new Error('Synthetic mode');
-              },
-              clear() {
-                throw new Error('Synthetic mode');
-              },
-            }
-          : await createAgentCredentials(taskRoot),
+      credentials: agentCredentials,
       runtime: createPiRuntime(taskDemoPhase === 'agent' ? syntheticAgentStream : undefined),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });

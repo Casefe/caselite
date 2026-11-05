@@ -36,7 +36,13 @@ vi.mock('../editors/RichEditor', () => ({
   ),
 }));
 afterEach(cleanup);
-const profile: AgentResponse = { ok: true, configured: true, model: 'gpt-4.1-mini', runs: [] };
+const profile: AgentResponse = {
+  ok: true,
+  configured: true,
+  model: 'gpt-4.1-mini',
+  providers: { openai: true, deepseek: false },
+  runs: [],
+};
 describe('AI submission UI lifecycle', () => {
   it('a late response from an unmounted panel cannot erase a newer unknown submission', async () => {
     let resolveA: (value: AgentResponse) => void = () => {};
@@ -54,6 +60,8 @@ describe('AI submission UI lifecycle', () => {
       runs: accepted
         ? [
             {
+              model: 'gpt-4.1-mini',
+              provider: 'openai',
               id: sent[0].run_id,
               scope: sent[0].scope,
               prompt: sent[0].prompt,
@@ -164,5 +172,29 @@ describe('AI submission UI lifecycle', () => {
     second.unmount();
     render(<AgentPanel scope="77777777-7777-4777-8777-777777777777" />);
     expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('');
+  });
+  it('freezes the DeepSeek model in a preview even if the default changes before confirmation', async () => {
+    let model: 'deepseek-flash' | 'gpt-4.1-mini' = 'deepseek-flash';
+    const sent: AgentRequest[] = [];
+    window.caselite = {
+      agent: vi.fn(async (r: AgentRequest) => {
+        if (r.operation === 'start') {
+          sent.push(r);
+          return { ok: false, code: 'MODEL_CHANGED', message: '默认模型已变化，本次未发送。' };
+        }
+        return { ...profile, model, providers: { openai: true, deepseek: true } };
+      }),
+    } as unknown as Window['caselite'];
+    render(<AgentPanel scope="99999999-9999-4999-8999-999999999999" />);
+    await screen.findByText('DeepSeek · deepseek-flash');
+    fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: '冻结目标测试' } });
+    fireEvent.click(screen.getByText('预览发送'));
+    model = 'gpt-4.1-mini';
+    await screen.findByText('OpenAI · gpt-4.1-mini');
+    expect(screen.getByLabelText('发送预览').textContent).toContain('deepseek-flash');
+    fireEvent.click(screen.getByText('确认发送'));
+    await screen.findByText('默认模型已变化，本次未发送。');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ model: 'deepseek-flash' });
   });
 });

@@ -25,6 +25,8 @@ function setup(hasKey = true) {
   };
   const app = createAgentApplication({
     credentials: {
+      getDefaultModel: () => 'gpt-4.1-mini',
+      setDefaultModel() {},
       get: () => (hasKey ? 'synthetic-only' : undefined),
       set: vi.fn(),
       clear: vi.fn(),
@@ -48,7 +50,13 @@ describe('Agent controlled boundary', () => {
       }),
     };
     const app = createAgentApplication({
-      credentials: { get: () => 'synthetic-only', set: () => saving, clear() {} },
+      credentials: {
+        getDefaultModel: () => 'gpt-4.1-mini',
+        setDefaultModel() {},
+        get: () => 'synthetic-only',
+        set: () => saving,
+        clear() {},
+      },
       runtime,
       taskExists: () => false,
     });
@@ -73,7 +81,13 @@ describe('Agent controlled boundary', () => {
     });
     const runtime = { start: vi.fn(() => ({ cancel() {} })) };
     const app = createAgentApplication({
-      credentials: { get: () => 'synthetic-only', set: () => saving, clear() {} },
+      credentials: {
+        getDefaultModel: () => 'gpt-4.1-mini',
+        setDefaultModel() {},
+        get: () => 'synthetic-only',
+        set: () => saving,
+        clear() {},
+      },
       runtime,
       taskExists: () => false,
     });
@@ -94,6 +108,8 @@ describe('Agent controlled boundary', () => {
     let calls = 0;
     const app = createAgentApplication({
       credentials: {
+        getDefaultModel: () => 'gpt-4.1-mini',
+        setDefaultModel() {},
         get() {
           if (++reads > 1) throw new Error('locked');
           return 'synthetic-only';
@@ -167,6 +183,8 @@ describe('Agent controlled boundary', () => {
     expect(cancel).toHaveBeenCalledOnce();
     const broken = createAgentApplication({
       credentials: {
+        getDefaultModel: () => 'gpt-4.1-mini',
+        setDefaultModel() {},
         get: () => {
           throw new Error('private-key-path');
         },
@@ -183,5 +201,121 @@ describe('Agent controlled boundary', () => {
     expect(
       JSON.stringify(await broken.execute({ operation: 'profile', protocol_version: 1 }, 'x')),
     ).not.toContain('private-key-path');
+  });
+});
+
+describe('Explicit multi-provider selection', () => {
+  function setupProviders() {
+    const keys = new Map<string, string>([
+      ['openai', 'openai-synthetic'],
+      ['deepseek', 'deepseek-synthetic'],
+    ]);
+    let selected: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
+    let finish: Parameters<AgentRuntimePort['start']>[0]['onEnd'];
+    const runtime = {
+      start: vi.fn((input: Parameters<AgentRuntimePort['start']>[0]) => {
+        finish = input.onEnd;
+        return { cancel() {} };
+      }),
+    };
+    const app = createAgentApplication({
+      credentials: {
+        get: (provider = 'openai') => keys.get(provider),
+        set: (key, provider = 'openai') => {
+          keys.set(provider, key);
+        },
+        clear: (provider = 'openai') => {
+          keys.delete(provider);
+        },
+        getDefaultModel: () => selected,
+        setDefaultModel: (model) => {
+          selected = model;
+        },
+      },
+      runtime,
+      taskExists: () => false,
+    });
+    return {
+      app,
+      keys,
+      runtime,
+      finish: () => finish({ status: 'succeeded', message: 'done', usage: null }),
+    };
+  }
+  it('isolates keys, persists the selected target through the port, and refuses stale previews and changed replay', async () => {
+    const { app, runtime, finish } = setupProviders();
+    await app.execute(
+      { protocol_version: 1, operation: 'select_model', model: 'deepseek-flash' },
+      'w',
+    );
+    expect(await app.execute(start, 'w')).toMatchObject({ code: 'MODEL_CHANGED' });
+    expect(runtime.start).not.toHaveBeenCalled();
+    const ds = { ...start, model: 'deepseek-flash' };
+    expect(await app.execute(ds, 'w')).toMatchObject({
+      ok: true,
+      runs: [{ provider: 'deepseek', model: 'deepseek-flash' }],
+    });
+    expect(runtime.start.mock.calls[0][0]).toMatchObject({
+      key: 'deepseek-synthetic',
+      model: 'deepseek-flash',
+    });
+    expect(await app.execute({ ...ds, model: 'deepseek-v4-pro' }, 'w')).toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(
+      await app.execute(
+        { protocol_version: 1, operation: 'select_model', model: 'gpt-4.1-mini' },
+        'w',
+      ),
+    ).toMatchObject({ code: 'BUSY' });
+    finish();
+    await app.execute(
+      { protocol_version: 1, operation: 'select_model', model: 'gpt-4.1-mini' },
+      'w',
+    );
+    await app.execute(ds, 'w');
+    expect(runtime.start).toHaveBeenCalledTimes(1);
+    await app.execute({ ...start, run_id: '22222222-2222-4222-8222-222222222222' }, 'w');
+    expect(runtime.start.mock.calls[1][0]).toMatchObject({
+      key: 'openai-synthetic',
+      model: 'gpt-4.1-mini',
+    });
+  });
+  it('deleting one key never clears another or falls back to another service', async () => {
+    const { app, keys, runtime } = setupProviders();
+    await app.execute(
+      { protocol_version: 1, operation: 'select_model', model: 'deepseek-v4-pro' },
+      'w',
+    );
+    const result = await app.execute(
+      { protocol_version: 1, operation: 'clear_key', provider: 'deepseek' },
+      'w',
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      model: 'deepseek-v4-pro',
+      configured: false,
+      providers: { openai: true, deepseek: false },
+    });
+    expect(keys.get('openai')).toBe('openai-synthetic');
+    expect(await app.execute({ ...start, model: 'deepseek-v4-pro' }, 'w')).toMatchObject({
+      code: 'NO_KEY',
+    });
+    expect(
+      await app.execute(
+        { protocol_version: 1, operation: 'select_model', model: 'deepseek-flash' },
+        'w',
+      ),
+    ).toMatchObject({ code: 'NO_KEY' });
+    expect(runtime.start).not.toHaveBeenCalled();
+  });
+  it('rejects arbitrary providers, endpoints, models and mismatched identity at the contract boundary', () => {
+    for (const request of [
+      { ...start, model: 'unknown-model' },
+      { ...start, model: 'deepseek-flash', provider: 'openai' },
+      { ...start, baseUrl: 'https://another.example' },
+      { protocol_version: 1, operation: 'configure', provider: 'another', key: 'sk-synthetic-key' },
+    ])
+      expect(agentRequestSchema.safeParse(request).success).toBe(false);
   });
 });

@@ -7,7 +7,8 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { ModelSettingsNavigation } from './SettingsView';
-import type { AgentRun, AgentRequest } from '../../preload/caselite-api';
+import { agentModelLabel, agentProviderFor } from './model-labels';
+import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
 import {
   DraftEditor,
   emptyDraft,
@@ -47,7 +48,13 @@ export default function AgentPanel({
     (onDraft ?? setLocalDraft)(value);
   };
   const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [configured, setConfigured] = useState(false);
+  const [model, setModel] = useState<AgentModel>('gpt-4.1-mini');
+  const [providers, setProviders] = useState({ openai: false, deepseek: false });
+  const [previewModel, setPreviewModel] = useState<AgentModel>(
+    () => submissions.get(scope)?.model ?? 'gpt-4.1-mini',
+  );
+  const configured = providers[agentProviderFor(model)];
+  const previewConfigured = providers[agentProviderFor(previewModel)];
   const [error, setError] = useState('');
   const openSettings = useContext(ModelSettingsNavigation);
   const [pending, setPending] = useState(false);
@@ -64,7 +71,8 @@ export default function AgentPanel({
     if (!alive.current) return;
     if (result.ok) {
       setRuns(result.runs);
-      setConfigured(result.configured);
+      setProviders(result.providers);
+      setModel(result.model);
     } else setError(result.message);
   };
   useEffect(() => {
@@ -76,7 +84,8 @@ export default function AgentPanel({
       if (stopped) return;
       if (result.ok) {
         setRuns(result.runs);
-        setConfigured(result.configured);
+        setProviders(result.providers);
+        setModel(result.model);
         const submitted = submissions.get(scope);
         if (submitted && result.runs.some((run) => run.id === submitted.run_id)) {
           submissions.delete(scope);
@@ -97,7 +106,8 @@ export default function AgentPanel({
     const result = await window.caselite.agent(request);
     if (!alive.current) return;
     if (result.ok) {
-      setConfigured(result.configured);
+      setProviders(result.providers);
+      setModel(result.model);
       if ('scope' in request) setRuns(result.runs);
       setError('');
     } else setError(result.message);
@@ -148,6 +158,7 @@ export default function AgentPanel({
       const request = previousSubmission ?? {
         protocol_version: 1 as const,
         operation: 'start' as const,
+        model: previewModel,
         scope,
         run_id: crypto.randomUUID(),
         prompt: preview,
@@ -165,7 +176,8 @@ export default function AgentPanel({
         if (uncertain && !submissions.has(scope)) setPreview(null);
         if (result.ok) {
           setRuns(result.runs);
-          setConfigured(result.configured);
+          setProviders(result.providers);
+          setModel(result.model);
           setError('');
           setPreview(null);
         } else setError(result.message);
@@ -188,7 +200,8 @@ export default function AgentPanel({
       >
         <div className="assistant-model">
           <span>
-            <i className={configured ? 'local-dot' : 'unconnected-dot'} /> OpenAI · gpt-4.1-mini
+            <i className={configured ? 'local-dot' : 'unconnected-dot'} />{' '}
+            {agentModelLabel(active?.model ?? model)}
           </span>
           <button
             type="button"
@@ -207,6 +220,7 @@ export default function AgentPanel({
         </ThreadPrimitive.Root>
         {latest && (
           <p className={`assistant-run-status ${latest.status}`} role="status">
+            {agentModelLabel(latest.model)} ·{' '}
             {latest.status === 'running' ? '正在生成，可随时停止。' : latest.message}
             {latest.usage
               ? ` 输入 ${latest.usage.input} / 输出 ${latest.usage.output} tokens；费用未知。`
@@ -259,7 +273,10 @@ export default function AgentPanel({
                 className="primary"
                 disabled={pending || !draft.text.trim() || draft.text.length > 4000}
                 onClick={() => {
-                  if (!composing.current) setPreview(draft.text.trim());
+                  if (!composing.current && !unknown) {
+                    setPreviewModel(model);
+                    setPreview(draft.text.trim());
+                  }
                 }}
               >
                 预览发送
@@ -270,7 +287,9 @@ export default function AgentPanel({
         {preview !== null && (
           <section className="assistant-preview" aria-label="发送预览">
             <h3>本次发送内容</h3>
-            <p>发送至 OpenAI · gpt-4.1-mini。只包含下列输入，不含任务正文、文件或此前对话。</p>
+            <p>
+              发送至 {agentModelLabel(previewModel)}。只包含下列输入，不含任务正文、文件或此前对话。
+            </p>
             <pre>{preview}</pre>
             <p>最多输出 2,048 tokens；60 秒超时，不自动重试。可能产生 API 费用。</p>
             <div className="assistant-actions">
@@ -279,7 +298,7 @@ export default function AgentPanel({
               </button>
               <button
                 className="primary"
-                disabled={!configured || pending || Boolean(active)}
+                disabled={!previewConfigured || pending || Boolean(active)}
                 onClick={() => {
                   if (!composing.current)
                     runtime.thread.append({
@@ -288,7 +307,11 @@ export default function AgentPanel({
                     });
                 }}
               >
-                {unknown ? '核对原发送（同一标识）' : configured ? '确认发送' : '请先配置 Key'}
+                {unknown
+                  ? '核对原发送（同一标识）'
+                  : previewConfigured
+                    ? '确认发送'
+                    : '请先配置 Key'}
               </button>
             </div>
           </section>

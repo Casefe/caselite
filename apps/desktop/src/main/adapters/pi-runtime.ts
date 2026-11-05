@@ -1,15 +1,18 @@
 import { Agent, type StreamFn } from '@earendil-works/pi-agent-core';
 import { createModels } from '@earendil-works/pi-ai';
+import { agentProviderFor } from '@caselite/contracts';
+import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import type { AgentRuntimePort } from '@caselite/application';
 
 export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
   const models = createModels();
   models.setProvider(openaiProvider());
-  const model = models.getModel('openai', 'gpt-4.1-mini');
-  if (!model) throw new Error('Required model unavailable');
+  models.setProvider(deepseekProvider());
   return {
     start(input) {
+      const model = models.getModel(agentProviderFor(input.model), input.model);
+      if (!model) throw new Error('Required model unavailable');
       let dispatches = 0;
       let settled = false;
       const agent = new Agent({

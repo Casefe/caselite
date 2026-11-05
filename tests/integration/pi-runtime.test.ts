@@ -43,7 +43,13 @@ describe('Actual Pi Core with synthetic provider stream (MOCK_ONLY provider)', (
       return stream;
     });
     const result = await new Promise((resolve) =>
-      runtime.start({ prompt: '唯一输入', key: 'synthetic-only', onText() {}, onEnd: resolve }),
+      runtime.start({
+        model: 'gpt-4.1-mini',
+        prompt: '唯一输入',
+        key: 'synthetic-only',
+        onText() {},
+        onEnd: resolve,
+      }),
     );
     expect(result).toMatchObject({ status: 'succeeded', usage: { input: 3, output: 4 } });
     expect(calls).toBe(1);
@@ -69,7 +75,13 @@ describe('Actual Pi Core with synthetic provider stream (MOCK_ONLY provider)', (
       return stream;
     });
     const result = await new Promise((resolve) =>
-      runtime.start({ prompt: '工具拒绝夹具', key: 'synthetic-only', onText() {}, onEnd: resolve }),
+      runtime.start({
+        model: 'gpt-4.1-mini',
+        prompt: '工具拒绝夹具',
+        key: 'synthetic-only',
+        onText() {},
+        onEnd: resolve,
+      }),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(result).toMatchObject({ status: 'failed' });
@@ -91,6 +103,7 @@ describe('Actual Pi Core with synthetic provider stream (MOCK_ONLY provider)', (
     });
     const seen: string[] = [];
     const handle = runtime.start({
+      model: 'gpt-4.1-mini',
       prompt: '停止夹具',
       key: 'synthetic-only',
       onText: (text) => seen.push(text),
@@ -110,7 +123,13 @@ describe('Actual Pi Core with synthetic provider stream (MOCK_ONLY provider)', (
       throw new Error('private upstream response');
     });
     const result = await new Promise((resolve) =>
-      runtime.start({ prompt: '错误夹具', key: 'synthetic-only', onText() {}, onEnd: resolve }),
+      runtime.start({
+        model: 'gpt-4.1-mini',
+        prompt: '错误夹具',
+        key: 'synthetic-only',
+        onText() {},
+        onEnd: resolve,
+      }),
     );
     expect(result).toMatchObject({ status: 'failed' });
     expect(JSON.stringify(result)).not.toContain('private upstream');

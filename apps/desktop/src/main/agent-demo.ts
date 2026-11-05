@@ -10,9 +10,9 @@ export const syntheticAgentStream: StreamFn = (_model, _context, options) => {
   const stream = createAssistantMessageEventStream();
   const response: AssistantMessage = {
     role: 'assistant',
-    api: 'openai-responses',
-    provider: 'openai',
-    model: 'gpt-4.1-mini',
+    api: _model.api,
+    provider: _model.provider,
+    model: _model.id,
     content: [{ type: 'text', text: '' }],
     stopReason: 'stop',
     timestamp: Date.now(),
@@ -66,6 +66,46 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     readFileSync(join(root, 'openai-credential.enc')).includes(syntheticKey)
   )
     throw new Error('Credential encryption roundtrip failed');
+  await vault.set('synthetic-deepseek-roundtrip', 'deepseek');
+  await vault.setDefaultModel('deepseek-v4-pro');
+  const twoProviders = await createAgentCredentials(root);
+  if (
+    twoProviders.get() !== syntheticKey ||
+    twoProviders.get('deepseek') !== 'synthetic-deepseek-roundtrip' ||
+    twoProviders.getDefaultModel() !== 'deepseek-v4-pro'
+  )
+    throw new Error('Independent provider roundtrip failed');
+  if (readFileSync(join(root, 'deepseek-credential.enc')).includes('synthetic-deepseek-roundtrip'))
+    throw new Error('DeepSeek key encryption failed');
+  writeFileSync(join(root, 'deepseek-credential.enc'), Buffer.from('synthetic-corrupt-ciphertext'));
+  const corruptProvider = await createAgentCredentials(root);
+  let corruptRejected = false;
+  try {
+    corruptProvider.get('deepseek');
+  } catch {
+    corruptRejected = true;
+  }
+  if (!corruptRejected || corruptProvider.get() !== syntheticKey)
+    throw new Error('Corrupt provider isolation failed');
+  writeFileSync(
+    join(root, 'agent-model.json'),
+    JSON.stringify({ version: 2, model: 'gpt-4.1-mini' }),
+  );
+  let settingsRejected = false;
+  try {
+    corruptProvider.getDefaultModel();
+  } catch {
+    settingsRejected = true;
+  }
+  if (!settingsRejected) throw new Error('Unsupported settings version accepted');
+  await vault.setDefaultModel('deepseek-v4-pro');
+  vault.clear('deepseek');
+  if (
+    vault.get() !== syntheticKey ||
+    vault.get('deepseek') ||
+    vault.getDefaultModel() !== 'deepseek-v4-pro'
+  )
+    throw new Error('Deleting DeepSeek changed OpenAI or default model');
   vault.clear();
   if (vault.get() !== undefined || existsSync(join(root, 'openai-credential.enc')))
     throw new Error('Credential removal failed');
@@ -154,6 +194,81 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
       captureBeyondViewport: true,
     });
     writeFileSync(join(root, 'agent-sidebar.png'), Buffer.from(side.data, 'base64'));
+    await evaluate("document.querySelector('.model-settings-link').click()");
+    await wait(
+      "document.querySelector('[data-provider=deepseek]') && !document.querySelector('[data-provider=deepseek]').disabled",
+    );
+    await evaluate("document.querySelector('[data-provider=deepseek]').click()");
+    await evaluate(
+      "(()=>{const e=document.querySelector('[aria-label=\"DeepSeek API Key\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'sk-synthetic-agent-deepseek');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
+    );
+    await clickText('保存 Key');
+    await wait("document.querySelector('.settings-notice')?.textContent.includes('已加密保存')");
+    await evaluate(
+      "(()=>{const e=document.querySelector('[aria-label=模型选择]');e.value='deepseek-v4-pro';e.dispatchEvent(new Event('change',{bubbles:true}));})()",
+    );
+    await clickText('设为默认模型');
+    await wait(
+      "document.querySelector('.settings-notice')?.textContent.includes('deepseek-v4-pro')",
+    );
+    const modelSettings = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+    });
+    writeFileSync(join(root, 'deepseek-settings.png'), Buffer.from(modelSettings.data, 'base64'));
+    await evaluate("document.querySelector('.settings-back').click()");
+    await wait("document.querySelector('.task-inspector')");
+    await clickText('AI 助手');
+    await wait("document.querySelector('[data-testid=assistant-input]')");
+    await wait("document.querySelector('.assistant-panel')?.innerText.includes('预览发送')");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await clickText('预览发送');
+    await wait(
+      "document.querySelector('[aria-label=发送预览]')?.textContent.includes('deepseek-v4-pro')",
+    );
+    await clickText('确认发送');
+    await wait(
+      "document.querySelector('.ai-inspector .assistant-run-status.succeeded')?.textContent.includes('deepseek-v4-pro')",
+    );
+    const dsResult = await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'read',scope:document.querySelector('.task-detail').dataset.activeTask})",
+    );
+    if (
+      !dsResult.ok ||
+      dsResult.runs.at(-1).model !== 'deepseek-v4-pro' ||
+      dsResult.runs.at(-1).provider !== 'deepseek' ||
+      dsResult.runs.at(-1).status !== 'succeeded' ||
+      !dsResult.providers.openai
+    )
+      throw new Error('DeepSeek selected run failed');
+    const dsImage = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+    });
+    writeFileSync(join(root, 'deepseek-sidebar.png'), Buffer.from(dsImage.data, 'base64'));
+    await evaluate("document.querySelector('[data-nav=home]').click()");
+    await wait(
+      "document.querySelector('.agent-home .assistant-model')?.textContent.includes('deepseek-v4-pro')",
+    );
+    await type('[data-testid=agent-input]', 'DeepSeek 合成演示：梳理事实、矛盾与缺件。');
+    await clickText('预览发送');
+    await wait(
+      "document.querySelector('[aria-label=发送预览]')?.textContent.includes('deepseek-v4-pro')",
+    );
+    const previewImage = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+    });
+    writeFileSync(join(root, 'deepseek-preview.png'), Buffer.from(previewImage.data, 'base64'));
+    await clickText('确认发送');
+    await wait(
+      "document.querySelector('.agent-home .assistant-run-status.succeeded')?.textContent.includes('deepseek-v4-pro')",
+    );
+    const homeImage = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+    });
+    writeFileSync(join(root, 'deepseek-home.png'), Buffer.from(homeImage.data, 'base64'));
     writeFileSync(
       join(root, 'agent-result.json'),
       JSON.stringify(
@@ -171,6 +286,9 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
             'home/task isolation',
             'draft survives property tab',
             'sidebar streaming',
+            'DeepSeek key and default model through settings UI',
+            'DeepSeek selected run through Pi Core (synthetic stream)',
+            'OpenAI retained after DeepSeek selection',
           ],
           credentialEncryption:
             'PASS_REAL safeStorage synthetic key roundtrip, ciphertext and removal',

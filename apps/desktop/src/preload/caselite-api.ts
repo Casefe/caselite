@@ -125,4 +125,10 @@ export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi 
 }
 
 export type { Task, TaskRequest, TaskResponse } from '@caselite/contracts';
-export type { AgentRun, AgentRequest, AgentResponse } from '@caselite/contracts';
+export type {
+  AgentRun,
+  AgentRequest,
+  AgentResponse,
+  AgentModel,
+  AgentProvider,
+} from '@caselite/contracts';
