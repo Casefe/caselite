@@ -48,7 +48,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
         expect(
           second.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get(),
         ).toEqual({
-          n: 1,
+          n: 2,
         });
       } finally {
         second.sqlite.close();
@@ -81,9 +81,9 @@ describe('SQLite/Drizzle infrastructure probe', () => {
         }>;
       };
       journal.entries.push({
-        idx: 1,
+        idx: journal.entries.length,
         version: '6',
-        when: journal.entries[0].when + 1,
+        when: Math.max(...journal.entries.map((entry) => entry.when)) + 1,
         tag: '0001_deliberate_failure',
         breakpoints: true,
       });

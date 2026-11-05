@@ -1,0 +1,263 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f6f6f3;
+  color: #25352e;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid #d9dfd8;
+  background: #fff;
+  border-radius: 7px;
+  padding: 9px 14px;
+  color: inherit;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.tiptap:focus-visible {
+  outline: 2px solid #529078;
+  outline-offset: 3px;
+}
+.workbench {
+  display: flex;
+  min-height: 100vh;
+}
+aside {
+  width: 230px;
+  flex-shrink: 0;
+  background: #ecefe9;
+  padding: 30px 19px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #dce1d8;
+}
+.brand {
+  font:
+    600 28px Georgia,
+    serif;
+  letter-spacing: -1px;
+  padding: 0 8px 32px;
+}
+.brand span {
+  display: block;
+  font: 12px sans-serif;
+  color: #738074;
+  letter-spacing: 2px;
+  margin-top: 10px;
+}
+.new-task {
+  width: 100%;
+  background: #244b3b;
+  color: white;
+  border: 0;
+}
+.nav-label {
+  font-size: 12px;
+  color: #748073;
+  margin-top: 31px;
+  display: flex;
+  justify-content: space-between;
+}
+nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 6px 0;
+  background: transparent;
+  border: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+nav .selected {
+  background: #dce4d9;
+  color: #244b3b;
+  font-weight: 600;
+}
+.local-note {
+  margin-top: auto;
+  padding-top: 30px;
+  font-size: 12px;
+  color: #546e57;
+  line-height: 2;
+}
+.local-note small {
+  color: #7a847c;
+}
+article {
+  flex: 1;
+  min-width: 0;
+}
+header {
+  height: 73px;
+  border-bottom: 1px solid #e4e7e1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 35px;
+  font-size: 13px;
+  color: #78847c;
+}
+.device {
+  border: 1px solid #dce3d9;
+  border-radius: 30px;
+  padding: 5px 11px;
+}
+.empty {
+  text-align: center;
+  padding: 115px 25px;
+}
+.empty p {
+  line-height: 2;
+  color: #7b837d;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #7a8e7b;
+}
+.empty h1 {
+  font:
+    32px Georgia,
+    'Songti SC',
+    serif;
+}
+.primary {
+  background: #244b3b;
+  color: #fff;
+  border-color: #244b3b;
+}
+.create-form {
+  max-width: 620px;
+  margin: 65px auto;
+  padding: 25px;
+}
+.create-form label {
+  display: block;
+  font-size: 13px;
+  margin-top: 25px;
+}
+.create-form input,
+.create-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 9px;
+  border: 1px solid #d6dfd3;
+  border-radius: 6px;
+  padding: 13px;
+  background: #fff;
+}
+.create-form textarea {
+  height: 110px;
+  resize: vertical;
+}
+.create-form button {
+  margin-right: 12px;
+}
+.caption {
+  font-size: 12px;
+  color: #838e83;
+  line-height: 1.8;
+}
+.task-heading {
+  padding: 30px 45px 10px;
+}
+.task-heading h1 {
+  font-size: 25px;
+  font-weight: 550;
+  margin: 8px 0;
+}
+.task-heading > p:last-child {
+  color: #768078;
+  font-size: 14px;
+}
+.document {
+  margin: 20px 35px 35px;
+  border: 1px solid #dce2d8;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 9px 30px #243a2c06;
+}
+.document-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 25px;
+  font-size: 12px;
+  border-bottom: 1px solid #edf0eb;
+  color: #7b887d;
+}
+.toolbar {
+  padding: 10px 20px;
+  border-bottom: 1px solid #edf0eb;
+  display: flex;
+  gap: 5px;
+}
+.toolbar button {
+  border: 0;
+  font-size: 12px;
+  padding: 5px 11px;
+}
+.tiptap {
+  min-height: 180px;
+  padding: 28px 35px;
+  outline: none;
+  line-height: 1.9;
+  font-size: 16px;
+}
+.tiptap p {
+  margin: 0 0 13px;
+}
+.document footer {
+  border-top: 1px solid #edf0eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 25px;
+  font-size: 12px;
+  color: #7b887d;
+}
+.document > .caption {
+  padding: 0 25px 10px;
+}
+.error {
+  margin: 20px 35px;
+  padding: 13px;
+  background: #fff1e7;
+  color: #885e3a;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.error button {
+  margin-left: 10px;
+}
+@media (max-width: 750px) {
+  aside {
+    width: 170px;
+    padding: 24px 10px;
+  }
+  .document {
+    margin: 15px;
+  }
+  .task-heading {
+    padding: 20px;
+  }
+  .tiptap {
+    padding: 20px;
+  }
+  header {
+    padding: 0 20px;
+  }
+}

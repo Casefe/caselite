@@ -102,7 +102,12 @@ describe('typed preload to main IPC Spike', () => {
       },
     }));
 
-    expect(Object.keys(api).sort()).toEqual(['createAnchor', 'createMatter', 'offlineProbe']);
+    expect(Object.keys(api).sort()).toEqual([
+      'createAnchor',
+      'createMatter',
+      'offlineProbe',
+      'task',
+    ]);
   });
 
   it('uses the fixed channel and returns a validated application result', async () => {

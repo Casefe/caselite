@@ -15,10 +15,15 @@
     "@caselite/application": "workspace:*",
     "@caselite/contracts": "workspace:*",
     "@caselite/local-db": "workspace:*",
+    "@tiptap/extension-collaboration": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/react": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
     "pdfjs-dist": "6.3.289",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-pdf": "11.0.0"
+    "react-pdf": "11.0.0",
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",

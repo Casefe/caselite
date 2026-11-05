@@ -1,11 +1,22 @@
+import { runTaskDemo } from './task-demo';
+import { registerTaskIpc } from './ipc/register-task-ipc';
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 
-import { createOfflineProbeApplication, createSpikeApplication } from '@caselite/application';
-import { openOfflineProbePort, openToolchainProbe, toolchainProbe } from '@caselite/local-db';
+import {
+  createOfflineProbeApplication,
+  createSpikeApplication,
+  createTaskApplication,
+} from '@caselite/application';
+import {
+  openOfflineProbePort,
+  openToolchainProbe,
+  toolchainProbe,
+  openTaskStore,
+} from '@caselite/local-db';
 
 import { isTrustedDesktopSender, registerApplicationIpc } from './ipc/register-application-ipc';
 
@@ -42,6 +53,8 @@ async function createWindow(
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
   const entry = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
+  if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
+    entry.searchParams.set('engineering', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -358,7 +371,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 1
+      result.value?.migration_count !== 2
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -448,6 +461,22 @@ function runLocalDatabaseProbe(): void {
   }
 }
 
+let taskDemoRoot: string | undefined;
+const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
+if (taskDemoPhase) {
+  if (!['write', 'read', 'crash'].includes(taskDemoPhase)) throw new Error('Invalid demo phase');
+  const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
+  if (
+    !candidate.startsWith(realpathSync(tmpdir()) + sep) ||
+    !basename(candidate).startsWith('caselite-task-demo-')
+  )
+    throw new Error('Demo directory must be isolated');
+  taskDemoRoot = candidate;
+  const data = join(candidate, 'userData');
+  mkdirSync(data, { recursive: true });
+  app.setPath('userData', data);
+}
+
 app
   .whenReady()
   .then(async () => {
@@ -471,6 +500,21 @@ app
       return;
     }
     registerIpcSpike();
+    const taskRoot = app.getPath('userData');
+    mkdirSync(taskRoot, { recursive: true });
+    const taskStore = openTaskStore(
+      join(taskRoot, 'caselite.sqlite'),
+      app.isPackaged
+        ? join(process.resourcesPath, 'migrations')
+        : resolve(process.cwd(), '../../packages/local-db/migrations'),
+    );
+    registerTaskIpc(createTaskApplication(taskStore));
+    app.on('will-quit', () => taskStore.close());
+    if (taskDemoRoot && taskDemoPhase) {
+      await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -480,11 +524,13 @@ app
 
     await createWindow();
   })
-  .catch(() => {
+  .catch((error: unknown) => {
+    if (taskDemoRoot) writeFileSync(join(taskDemoRoot, 'diagnostic.txt'), String(error));
     if (
       process.env.CASELITE_DB_PROBE === '1' ||
       process.env.CASELITE_PDF_PROBE === '1' ||
-      process.env.CASELITE_INTEGRATION_PHASE
+      process.env.CASELITE_INTEGRATION_PHASE ||
+      process.env.CASELITE_TASK_DEMO
     ) {
       process.stderr.write('CaseLite packaged probe failed.\n');
       app.exit(1);

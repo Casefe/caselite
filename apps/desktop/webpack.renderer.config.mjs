@@ -23,6 +23,7 @@ class PdfSpikeAssetsPlugin {
           const files = [
             [join(reactPdfRoot, 'dist/Page/TextLayer.css'), 'pdf-resources/TextLayer.css'],
             [localPath('./src/renderer/pdf-spike.css'), 'pdf-resources/spike.css'],
+            [localPath('./src/renderer/task-workbench.css'), 'task-workbench.css'],
           ];
           for (const directory of ['cmaps', 'standard_fonts', 'wasm']) {
             for (const name of await readdir(join(pdfjsRoot, directory))) {

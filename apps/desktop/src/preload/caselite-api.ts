@@ -1,4 +1,10 @@
 import {
+  TASK_CHANNEL,
+  taskResponseSchema,
+  type TaskRequest,
+  type TaskResponse,
+} from '@caselite/contracts';
+import {
   createAnchorResultSchema,
   createMatterResultSchema,
   offlineProbeResultSchema,
@@ -45,7 +51,7 @@ function timeoutFailure(): CommandFailure {
 async function invokeBusinessCommand(
   invoke: IpcInvoke,
   channel: string,
-  request: CreateMatterRequest | CreateAnchorRequest,
+  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -63,6 +69,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  task(request: TaskRequest): Promise<TaskResponse>;
   createAnchor(request: CreateAnchorRequest): Promise<CreateAnchorResult>;
   createMatter(request: CreateMatterRequest): Promise<CreateMatterResult>;
   offlineProbe(request: OfflineProbeRequest): Promise<OfflineProbeResult>;
@@ -70,6 +77,18 @@ export type CaseLitePreloadApi = {
 
 export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi {
   return {
+    async task(request) {
+      const result = taskResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, TASK_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认操作结果，请保留输入并核对原提交。',
+          };
+    },
     async createAnchor(request) {
       const result = createAnchorResultSchema.safeParse(
         await invokeBusinessCommand(invoke, IPC_CHANNELS.createAnchor, request),
@@ -87,3 +106,5 @@ export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi 
     },
   };
 }
+
+export type { Task, TaskRequest, TaskResponse } from '@caselite/contracts';

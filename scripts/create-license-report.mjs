@@ -38,6 +38,11 @@ function resolveManifest(packageName, issuerManifestFile) {
   try {
     return requireFromIssuer.resolve(`${packageName}/package.json`);
   } catch {
+    // 某些包只导出子路径（如@tiptap/pm）；读取实际安装清单，仍校验名称及许可证，不跳过依赖。
+    for (const searchPath of requireFromIssuer.resolve.paths(packageName) ?? []) {
+      const candidate = resolve(searchPath, packageName, 'package.json');
+      if (existsSync(candidate) && readJson(candidate).name === packageName) return candidate;
+    }
     const entry = requireFromIssuer.resolve(packageName);
     let directory = dirname(entry);
     while (directory.startsWith(repositoryRoot)) {
