@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import WebpackPlugin from '@electron-forge/plugin-webpack';
 import AutoUnpackNativesPlugin from '@electron-forge/plugin-auto-unpack-natives';
 import FusesPlugin from '@electron-forge/plugin-fuses';
@@ -16,13 +18,37 @@ const electronArtifactChecksums = {
 
 export default {
   packagerConfig: {
+    appBundleId: 'com.caselite.desktop',
     asar: true,
     download: {
       checksums: electronArtifactChecksums,
     },
     executableName: 'CaseLite',
     icon: localPath('./assets/branding/caselite.icns'),
-    extraResource: [localPath('../../packages/local-db/migrations')],
+    extraResource: [
+      localPath('../../packages/local-db/migrations'),
+      localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
+    ],
+  },
+  hooks: {
+    postPackage: async (_config, result) => {
+      // 内部安装构建须绑定实际Bundle身份/资源，避免原Electron签名令Keychain加密失败。
+      // 这只是本机adhoc签名；公开分发仍须独立Developer ID签名与公证验收。
+      if (result.platform === 'darwin')
+        for (const output of result.outputPaths) {
+          const bundle = join(output, 'CaseLite.app');
+          execFileSync('/usr/bin/codesign', [
+            '--force',
+            '--deep',
+            '--sign',
+            '-',
+            '--identifier',
+            'com.caselite.desktop',
+            bundle,
+          ]);
+          execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);
+        }
+    },
   },
   makers: [{ name: '@electron-forge/maker-zip', platforms: ['darwin'] }],
   plugins: [

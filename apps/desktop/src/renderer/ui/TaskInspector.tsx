@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
+import AgentPanel from './AgentPanel';
 
 export default function TaskInspector({ task }: { task: Task }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
@@ -62,29 +63,7 @@ export default function TaskInspector({ task }: { task: Task }) {
             <Icon name="check" size={15} />
             <span>{task.title}</span>
           </div>
-          <div className="ai-status">
-            <span className="draft-badge">尚未接入</span>
-            <p>AI 与材料读取尚未接线。当前可继续在中间编辑并保存正文。</p>
-          </div>
-          <div className="ai-capabilities">
-            <h3>后续可用的工作方式</h3>
-            <p>梳理事实与出处</p>
-            <p>对照矛盾与缺件</p>
-            <p>形成内部沟通初稿</p>
-          </div>
-          <div className="ai-composer">
-            <textarea
-              aria-label="AI 工作要求（尚未接入）"
-              disabled
-              placeholder="接入模型后，在这里输入工作要求…"
-            />
-            <div>
-              <span>未连接模型 · 不会发送材料</span>
-              <button disabled aria-label="发送 AI 工作要求">
-                ↑
-              </button>
-            </div>
-          </div>
+          <AgentPanel key={task.id} scope={task.id} />
         </div>
       )}
     </aside>

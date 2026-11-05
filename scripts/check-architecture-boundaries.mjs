@@ -23,6 +23,8 @@ export function boundaryViolation(file, specifier, target, typeOnly = false) {
     '@caselite/domain',
     '@caselite/local-db',
     '@caselite/files',
+    '@earendil-works/pi-agent-core',
+    '@earendil-works/pi-ai',
   ];
   if (renderer && (node || forbidden.includes(pkg) || (pkg === '@caselite/contracts' && !typeOnly)))
     return 'renderer cannot access privileged implementation';

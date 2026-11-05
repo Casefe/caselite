@@ -1,4 +1,8 @@
 import {
+  AGENT_CHANNEL,
+  agentResponseSchema,
+  type AgentRequest,
+  type AgentResponse,
   TASK_CHANNEL,
   taskResponseSchema,
   type TaskRequest,
@@ -51,7 +55,7 @@ function timeoutFailure(): CommandFailure {
 async function invokeBusinessCommand(
   invoke: IpcInvoke,
   channel: string,
-  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest,
+  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest | AgentRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -69,6 +73,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  agent(request: AgentRequest): Promise<AgentResponse>;
   task(request: TaskRequest): Promise<TaskResponse>;
   createAnchor(request: CreateAnchorRequest): Promise<CreateAnchorResult>;
   createMatter(request: CreateMatterRequest): Promise<CreateMatterResult>;
@@ -77,6 +82,18 @@ export type CaseLitePreloadApi = {
 
 export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi {
   return {
+    async agent(request) {
+      const result = agentResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, AGENT_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认运行状态，请保留输入并刷新状态；不要重复发送。',
+          };
+    },
     async task(request) {
       const result = taskResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, TASK_CHANNEL, request),
@@ -108,3 +125,4 @@ export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi 
 }
 
 export type { Task, TaskRequest, TaskResponse } from '@caselite/contracts';
+export type { AgentRun, AgentRequest, AgentResponse } from '@caselite/contracts';

@@ -1,8 +1,9 @@
 import { useRef } from 'react';
-import { DraftEditor, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
+import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import BrandLogo from './BrandLogo';
+import AgentPanel from './AgentPanel';
 
 const starters = [
   {
@@ -36,7 +37,6 @@ export default function AgentHome({
   onOpen(id: string): void;
 }) {
   const draft = useRef<DraftEditorHandle>(null);
-  const composing = useRef(false);
   return (
     <section className="home-view agent-home" aria-label="Agent 首页">
       <div className="agent-main">
@@ -44,7 +44,7 @@ export default function AgentHome({
           <span>
             <Icon name="spark" size={15} /> Agent
           </span>
-          <span className="draft-badge">模型未连接</span>
+          <span className="draft-badge">个人工作区</span>
         </div>
         <div className="agent-start">
           <span className="agent-wordmark">
@@ -52,45 +52,13 @@ export default function AgentHome({
           </span>
           <h1>今天需要处理什么工作？</h1>
           <p>从工作目标开始，把材料、思考和成果放在同一个任务里。</p>
-          <form
-            className="agent-prompt"
-            onCompositionStart={() => {
-              composing.current = true;
-            }}
-            onCompositionEnd={() => {
-              composing.current = false;
-            }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!composing.current) onStart();
-            }}
-          >
-            <DraftEditor
-              ref={draft}
-              value={prompt}
-              onChange={onPrompt}
-              label="Agent 工作目标"
-              testId="agent-input"
-              placeholder="描述你需要完成的法律工作，输入 / 插入内容块…"
-            />
-            {prompt.text.length > 4000 && (
-              <p role="alert" className="caption">
-                超过4000字符，请精简后创建；输入仍保留。
-              </p>
-            )}
-            <div className="agent-prompt-actions">
-              <span>
-                <Icon name="file" size={14} /> 材料导入尚未接入
-              </span>
-              <button
-                className="primary"
-                data-testid="create-from-agent"
-                disabled={!prompt.text.trim() || prompt.text.length > 4000}
-              >
-                创建任务 <Icon name="plus" size={14} />
-              </button>
-            </div>
-          </form>
+          <AgentPanel
+            scope="home"
+            draft={prompt}
+            onDraft={onPrompt}
+            editorRef={draft}
+            onCreate={onStart}
+          />
           <div className="agent-starters">
             {starters.map((item) => (
               <button
@@ -107,10 +75,6 @@ export default function AgentHome({
               </button>
             ))}
           </div>
-          <p className="agent-limit">
-            当前可将工作目标创建为本地任务，并手动编辑、保存正文。AI
-            尚未接入，不会发送材料或生成回答。
-          </p>
         </div>
         <div className="agent-local">
           <i className="local-dot" />
@@ -146,7 +110,7 @@ export default function AgentHome({
             <i className="local-dot" />
             任务与正文保存
           </p>
-          <p className="muted">模型 / 材料读取：未接入</p>
+          <p className="muted">AI 仅使用本次确认输入；材料读取尚未接入</p>
         </div>
       </aside>
     </section>

@@ -1,4 +1,9 @@
 import { runTaskDemo } from './task-demo';
+import { runAgentDemo, syntheticAgentStream } from './agent-demo';
+import { createAgentApplication } from '@caselite/application';
+import { createPiRuntime } from './adapters/pi-runtime';
+import { createAgentCredentials } from './adapters/agent-credentials';
+import { registerAgentIpc } from './ipc/register-agent-ipc';
 import { registerTaskIpc } from './ipc/register-task-ipc';
 import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -468,7 +473,7 @@ function runLocalDatabaseProbe(): void {
 let taskDemoRoot: string | undefined;
 const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
-  if (!['write', 'read', 'crash', 'preview'].includes(taskDemoPhase))
+  if (!['write', 'read', 'crash', 'preview', 'agent'].includes(taskDemoPhase))
     throw new Error('Invalid demo phase');
   const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
   if (
@@ -513,7 +518,31 @@ app
         ? join(process.resourcesPath, 'migrations')
         : resolve(process.cwd(), '../../packages/local-db/migrations'),
     );
-    registerTaskIpc(createTaskApplication(taskStore));
+    const tasks = createTaskApplication(taskStore);
+    registerTaskIpc(tasks);
+    const agent = createAgentApplication({
+      credentials:
+        taskDemoPhase === 'agent'
+          ? {
+              get: () => 'synthetic-only',
+              set() {
+                throw new Error('Synthetic mode');
+              },
+              clear() {
+                throw new Error('Synthetic mode');
+              },
+            }
+          : await createAgentCredentials(taskRoot),
+      runtime: createPiRuntime(taskDemoPhase === 'agent' ? syntheticAgentStream : undefined),
+      taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+    });
+    registerAgentIpc(agent);
+    app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase === 'agent') {
+      await runAgentDemo(() => createWindow(), taskDemoRoot);
+      app.exit(0);
+      return;
+    }
     app.on('will-quit', () => taskStore.close());
     if (taskDemoRoot && taskDemoPhase && taskDemoPhase !== 'preview') {
       await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
