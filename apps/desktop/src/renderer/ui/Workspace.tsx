@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
+import BrandLogo from './BrandLogo';
 
 export type WorkspaceView = 'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
@@ -138,7 +139,7 @@ export function WorkspaceShell({
       <link rel="stylesheet" href={new URL('../task-workbench.css', window.location.href).href} />
       <aside className="primary-sidebar" aria-label="一级导航">
         <div className="brand">
-          <span className="brand-symbol">C</span>
+          <BrandLogo />
           {!collapsed && (
             <>
               <b>CaseLite</b>

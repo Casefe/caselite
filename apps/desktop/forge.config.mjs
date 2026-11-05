@@ -21,6 +21,7 @@ export default {
       checksums: electronArtifactChecksums,
     },
     executableName: 'CaseLite',
+    icon: localPath('./assets/branding/caselite.icns'),
     extraResource: [localPath('../../packages/local-db/migrations')],
   },
   makers: [{ name: '@electron-forge/maker-zip', platforms: ['darwin'] }],

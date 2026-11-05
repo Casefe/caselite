@@ -1,5 +1,6 @@
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
+import BrandLogo from './BrandLogo';
 
 const starters = [
   {
@@ -43,7 +44,7 @@ export default function AgentHome({
         </div>
         <div className="agent-start">
           <span className="agent-wordmark">
-            <Icon name="spark" size={24} /> CaseLite Agent
+            <BrandLogo /> CaseLite Agent
           </span>
           <h1>今天需要处理什么工作？</h1>
           <p>从工作目标开始，把材料、思考和成果放在同一个任务里。</p>
