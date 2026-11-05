@@ -9,3 +9,4 @@ export * from './task';
 export * from './agent';
 export * from './catalog';
 export * from './source';
+export * from './agent-input';
