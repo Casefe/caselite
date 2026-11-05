@@ -43,7 +43,7 @@ export async function runTaskDemo(
     const homeGeometry = new Map<number, number[]>();
     const capture = async (name: string) => {
       await evaluate(
-        'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
+        'Promise.race([new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true)))),new Promise(resolve=>setTimeout(resolve,2000))])',
       );
       await new Promise((resolve) => setTimeout(resolve, 200));
       const size = await evaluate('({width:innerWidth,height:innerHeight,ratio:devicePixelRatio})');
@@ -129,6 +129,10 @@ export async function runTaskDemo(
     };
     const click = async (selector: string) =>
       evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+    const button = async (label: string) =>
+      evaluate(
+        `Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===${JSON.stringify(label)}).click()`,
+      );
     const input = async (selector: string, value: string) =>
       evaluate(
         `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));}})()`,
@@ -349,6 +353,64 @@ export async function runTaskDemo(
       );
       await wait("document.querySelector('[data-testid=revision]')?.textContent==='2'");
     }
+    if (phase === 'write') {
+      const expected = JSON.parse(readFileSync(join(root, 'expected.json'), 'utf8'));
+      await click('[data-nav=projects]');
+      await wait("document.querySelector('[data-testid=project-catalog]')");
+      await button('创建项目');
+      await input('[aria-label=项目名称]', '本地项目验收样本');
+      await button('保存项目');
+      await wait(
+        "document.querySelector('[data-project-id]') && !document.querySelector('[aria-label=项目名称]')",
+      );
+      expected.projectId = await evaluate(
+        "document.querySelector('[data-project-id]').dataset.projectId",
+      );
+      await button('打开项目');
+      await wait("document.querySelector('[data-testid=project-overview-editor]')");
+      await input('[data-testid=project-overview-editor]', '项目说明重启保全：梳理事实与缺件。');
+      await selectAllText('[data-testid=project-overview-editor]');
+      await wait("document.querySelector('.catalog-actions [aria-label=选区格式]')");
+      await click('.catalog-actions [aria-label=选区格式] [aria-label=加粗]');
+      await wait("document.querySelector('[data-testid=project-overview-editor] strong')");
+      await button('保存项目概述');
+      await wait(
+        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目说明重启保全') && Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('已保存 · 说明修订 1'))",
+      );
+      await button('返回项目列表');
+      await evaluate(
+        `(()=>{const e=document.querySelector('[aria-label=归入已有任务]');e.value=${JSON.stringify(expected.id)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+      );
+      await button('归入项目');
+      await wait("document.querySelector('.project-properties')?.textContent.includes('1 个任务')");
+      const task = await evaluate(
+        `window.caselite.task({operation:'read',protocol_version:1,task_id:${JSON.stringify(expected.id)}})`,
+      );
+      if (!task.ok || task.tasks[0].matter_id !== expected.projectId)
+        throw new Error('Original Task association failed');
+      expected.documentId = task.tasks[0].document_id;
+      await click('[data-nav=documents]');
+      await wait("document.querySelector('[data-document-id]')");
+      await click(`[data-document-id="${expected.documentId}"]`);
+      await button('编辑分类与标签');
+      await input('[aria-label=文档分类]', '内部资料');
+      await input('[aria-label=文档标签]', '验收');
+      await button('保存分类');
+      await wait(
+        "!document.querySelector('[aria-label=文档分类]') && document.querySelector('.catalog-table')?.textContent.includes('内部资料')",
+      );
+      await button('收藏文档');
+      await wait(
+        "Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='取消收藏')",
+      );
+      await button('加入知识库');
+      await wait(
+        "Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='移出知识库')",
+      );
+      writeFileSync(join(root, 'expected.json'), JSON.stringify(expected));
+      await openTask(expected.id);
+      await wait("document.querySelector('[data-testid=body-editor]')");
+    }
     await wait("getComputedStyle(document.querySelector('.workbench')).display==='flex'");
     if (phase === 'read')
       await wait(
@@ -418,15 +480,13 @@ export async function runTaskDemo(
       await capture('home-compact.png');
       await setViewport(1920, 1080);
       await click('[data-nav=knowledge]');
-      await wait("document.querySelector('.knowledge-view')");
+      await wait("document.querySelector('.knowledge-view [data-document-id]')");
       await assertCollectionColumns('.collection-main', '.task-inspector');
       await capture('knowledge.png');
       await evaluate(
-        "Array.from(document.querySelectorAll('.knowledge-view [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
       );
-      await wait(
-        "document.querySelector('.knowledge-view h2') && document.querySelector('.inspector-content h2')?.textContent==='知识库 AI'",
-      );
+      await wait("document.querySelector('[data-testid=assistant-input]')");
       await capture('knowledge-ai.png');
       await setViewport(980, 740);
       await capture('knowledge-compact.png');
@@ -435,63 +495,38 @@ export async function runTaskDemo(
       await wait("document.querySelector('.settings-center')");
       await capture('profile-settings.png');
       await click('.settings-back');
-      await wait("document.querySelector('.knowledge-view')");
+      await wait("document.querySelector('.knowledge-view [data-document-id]')");
       await click('[data-nav=projects]');
-      await wait("document.querySelector('[data-testid=project-preview]')");
+      await wait("document.querySelector('[data-testid=project-catalog] [data-project-id]')");
       await assertCollectionColumns('.collection-main', '.project-properties');
-      await click('[data-project-id=sample-labor]');
-      await wait(
-        "document.querySelector('.project-properties h2')?.textContent==='明远劳动争议' && document.querySelector('.project-list')",
-      );
-      await click('[data-project-id=sample-contract]');
-      await wait(
-        "document.querySelector('.project-properties h2')?.textContent==='海川服务合同争议'",
-      );
       await capture('projects-list.png');
-      await evaluate(
-        "Array.from(document.querySelectorAll('.project-properties [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
-      );
+      await button('打开项目');
       await wait(
-        "document.querySelector('.project-agent-empty') && !document.querySelector('.assistant-panel')",
+        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目说明重启保全')",
       );
-      await capture('projects-ai.png');
-      await evaluate(
-        "Array.from(document.querySelectorAll('.project-properties [role=tab]')).find(e=>e.textContent.includes('属性')).click()",
-      );
-      await evaluate('document.querySelector(\'[aria-label="项目看板视图"]\').click()');
-      await wait("document.querySelector('.project-board')");
-      await capture('projects-board.png');
-      await click('[data-project-id=sample-contract]');
-      await wait("document.querySelector('.project-properties')");
-      await wait(
-        "document.querySelector('[data-testid=project-overview-editor]') && document.querySelector('[data-testid=comment-editor]')",
-      );
-      await input(
-        '[data-testid=project-overview-editor]',
-        '梳理事实、矛盾与缺件，形成内部沟通初稿。',
-      );
-      await selectAllText('[data-testid=project-overview-editor]');
-      await wait("document.querySelector('.project-overview-editor [aria-label=选区格式]')");
-      await click('.project-overview-editor [aria-label=选区格式] [aria-label=加粗]');
-      await wait("document.querySelector('[data-testid=project-overview-editor] strong')");
-      await input('[data-testid=comment-editor]', '请补充收悉凭证后再核对。');
-      await selectAllText('[data-testid=comment-editor]');
-      await wait("document.querySelector('.comment-composer [aria-label=选区格式]')");
-      await click('.comment-composer [aria-label=选区格式] [aria-label=斜体]');
-      await click('[data-testid=add-sample-comment]');
-      await wait(
-        "document.querySelector('.posted-comment em')?.textContent==='请补充收悉凭证后再核对。'",
-      );
-      await capture('project-editors.png');
       await capture('project-overview.png');
-      await click('[data-project-tab=任务]');
-      await click('[data-project-tab=概述]');
-      await wait(
-        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent==='梳理事实、矛盾与缺件，形成内部沟通初稿。' && document.querySelector('.posted-comment em')",
+      await capture('project-editors.png');
+      await button('返回项目列表');
+      await button('归档项目');
+      await wait("document.querySelectorAll('[data-project-id]').length===0");
+      await button('已归档');
+      await wait("document.querySelector('[data-project-id]')");
+      await button('恢复项目');
+      await wait("document.querySelectorAll('[data-project-id]').length===0");
+      await button('全部项目');
+      await wait("document.querySelector('[data-project-id]')");
+      const catalog = await evaluate(
+        "window.caselite.catalog({protocol_version:1,operation:'list'})",
       );
-      await click('[data-project-tab=任务]');
-      await click('[data-sample-task="0"]');
-      await wait("document.querySelector('.sample-detail')");
+      if (
+        !catalog.ok ||
+        catalog.projects[0].task_count !== 1 ||
+        catalog.documents.filter(
+          (d: { in_library: boolean; favorite: boolean; tags: string[] }) =>
+            d.in_library && d.favorite && d.tags.includes('验收'),
+        ).length !== 1
+      )
+        throw new Error('Catalog restart organization mismatch');
       await capture('project-task.png');
       await click('[data-nav=tasks]');
       await evaluate("document.querySelector('[data-testid=back-to-tasks]')?.click()");
@@ -526,40 +561,40 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-collection=documents]')");
       await assertCollectionColumns('.collection-main', '.task-inspector');
       await capture('documents-list.png');
-      await evaluate(
-        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='待起草').click()",
-      );
+      await button('收藏');
+      await wait("document.querySelectorAll('[data-document-id]').length===1");
+      await button('归档文档');
+      await wait("document.querySelectorAll('[data-document-id]').length===0");
+      await button('已归档');
+      await wait("document.querySelector('[data-document-id]')");
+      await button('打开正文');
       await wait(
-        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
+        "document.querySelector('[data-testid=body-editor]')?.getAttribute('contenteditable')==='false' && document.querySelector('[data-testid=save-status]')?.textContent.includes('已归档')",
       );
-      await evaluate(
-        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='已有修订').click()",
-      );
-      await wait(
-        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('服务合同')",
-      );
-      await evaluate(
-        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='全部文档').click()",
-      );
-      await wait("document.querySelectorAll('[data-row-task]').length===2");
+      await click('[data-nav=documents]');
+      await wait("document.querySelector('[data-collection=documents]')");
+      await button('已归档');
+      await wait("document.querySelector('[data-document-id]')");
+      await button('恢复文档');
+      await wait("document.querySelectorAll('[data-document-id]').length===0");
+      await button('全部文档');
+      await wait("document.querySelectorAll('[data-document-id]').length===2");
       await setViewport(980, 740);
       await assertCollectionColumns('.collection-main', '.task-inspector');
       await capture('documents-compact.png');
       await setViewport(1920, 1080);
       await click('[data-testid=inspector-open]');
-      await wait(
-        "document.querySelector('[data-testid=body-editor]') && document.querySelector('.task-detail')",
-      );
+      await wait("document.querySelector('[data-testid=body-editor]')");
       await click('[data-nav=documents]');
-      await wait("document.querySelector('[data-row-task]')");
-      await evaluate("document.querySelector('[data-row-task]').focus()");
+      await wait("document.querySelector('[data-document-id]')");
+      await evaluate("document.querySelector('[data-document-id]').focus()");
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
       await wait("document.querySelector('[data-testid=body-editor]')");
       await click('[data-nav=documents]');
-      await wait("document.querySelector('[data-row-task]')");
+      await wait("document.querySelector('[data-document-id]')");
       await evaluate(
-        "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}))",
+        "document.querySelector('[data-document-id]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))",
       );
       await wait("document.querySelector('[data-testid=body-editor]')");
       const savedTaskId = await evaluate(

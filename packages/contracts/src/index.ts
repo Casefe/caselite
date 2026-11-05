@@ -7,3 +7,4 @@ export * from './results';
 export * from './offline-probe';
 export * from './task';
 export * from './agent';
+export * from './catalog';

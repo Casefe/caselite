@@ -540,6 +540,7 @@ export const DraftEditor = forwardRef<
   }
 >(function DraftEditor({ value, onChange, label, testId, placeholder, disabled = false }, ref) {
   const doc = useLocalDoc(value);
+  const ready = useRef(false);
   const editor = useEditor(
     {
       injectCSS: false,
@@ -553,11 +554,17 @@ export const DraftEditor = forwardRef<
           'aria-multiline': 'true',
         },
       },
-      onUpdate: ({ editor: current }) =>
+      // 初始Yjs水合不属于用户编辑，不能把重开正文标成未保存。
+      onCreate: () => {
+        ready.current = true;
+      },
+      onUpdate: ({ editor: current }) => {
+        if (!ready.current) return;
         onChange({
           text: current.getText({ blockSeparator: '\n' }),
           state: Array.from(Y.encodeStateAsUpdate(doc)),
-        }),
+        });
+      },
     },
     [doc],
   );

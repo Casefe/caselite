@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { openTaskStore, openToolchainProbe } from '../../packages/local-db/src/index';
@@ -229,28 +229,47 @@ describe('rich task descriptions preserve identity and confirmed formatting', ()
     for (const entry of journal.entries)
       copyFileSync(join(migrations, entry.tag + '.sql'), join(oldMigrations, entry.tag + '.sql'));
     const file = join(root, 'old.sqlite');
-    const before = openTaskStore(file, oldMigrations);
+    // 直接构造旧版0001真实库，避免用当前适配器假装历史实现。
+    const before = openToolchainProbe(file, oldMigrations);
     const create = {
       ...identity(),
       operation: 'create' as const,
       title: '既有任务',
       objective: '原来的纯文本目标',
     };
-    const task = value(before.execute(create)).tasks[0];
+    const task = {
+      id: randomUUID(),
+      title: create.title,
+      objective: create.objective,
+      matter_id: null,
+      version: 1,
+      document_id: randomUUID(),
+      body_id: randomUUID(),
+      body_revision: 0,
+      editor_schema: 1,
+      updated_at: '2026-11-05',
+    };
+    before.sqlite
+      .prepare('INSERT INTO task_items VALUES(?,?,?,?,?,?)')
+      .run(task.id, 'local', task.title, task.objective, 1, task.updated_at);
+    before.sqlite
+      .prepare('INSERT INTO documents VALUES(?,?,?,?,?)')
+      .run(task.document_id, task.id, task.body_id, 1, 1);
     const body = binary('原成果正文');
-    value(
-      before.execute({
-        ...identity(),
-        operation: 'save',
-        task_id: task.id,
-        document_id: task.document_id,
-        body_id: task.body_id,
-        expected_revision: 0,
-        editor_schema: 1,
-        state: body,
-      }),
-    );
-    before.close();
+    before.sqlite
+      .prepare('INSERT INTO body_revisions VALUES(?,?,?)')
+      .run(task.body_id, 1, Buffer.from(body));
+    const { request_id: diagnostic, ...content } = create;
+    void diagnostic;
+    before.sqlite
+      .prepare('INSERT INTO task_receipts VALUES(?,?,?,?)')
+      .run(
+        'local',
+        create.idempotency_key,
+        createHash('sha256').update(JSON.stringify(content)).digest('hex'),
+        JSON.stringify({ ok: true, tasks: [task], state: null, receipt: create.idempotency_key }),
+      );
+    before.sqlite.close();
     const after = openTaskStore(file, migrations);
     const read = value(after.execute({ operation: 'read', protocol_version: 1, task_id: task.id }));
     expect(read.tasks[0]).toMatchObject({

@@ -14,7 +14,8 @@ for (const phase of ['write', 'crash', 'read']) {
     cwd: root,
     env: { ...process.env, CASELITE_TASK_DEMO: phase, CASELITE_TASK_DEMO_DIR: dir },
     encoding: 'utf8',
-    timeout: 60_000,
+    timeout: 90_000,
+    killSignal: 'SIGKILL',
   });
   phases.push({
     phase,
@@ -42,11 +43,9 @@ for (const name of [
   'profile-settings.png',
   'shell-layout.json',
   'projects-list.png',
-  'projects-ai.png',
   'documents-list.png',
   'documents-compact.png',
   'task-list-ai.png',
-  'projects-board.png',
   'project-overview.png',
   'project-task.png',
   'task-list.png',

@@ -7,9 +7,10 @@ import {
   taskResponseSchema,
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
+import { createCatalogStore } from './catalog-store';
 
-type Row = Omit<Task, 'matter_id'>;
-const select = `SELECT t.id,t.title,t.objective,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema FROM task_items t JOIN documents d ON d.task_id=t.id`;
+type Row = Task;
+const select = `SELECT t.id,t.title,t.objective,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -23,7 +24,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   const get = (id: string): Task | null => {
     const row = db.prepare(`${select} WHERE t.id=? AND t.workspace_id=?`).get(id, workspace) as
       Row | undefined;
-    return row ? { ...row, matter_id: null } : null;
+    return row ?? null;
   };
   const objectiveState = (id: string, version: number) =>
     (
@@ -39,12 +40,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    catalog: createCatalogStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
       if (request.operation === 'list') {
         const rows = db
           .prepare(`${select} WHERE t.workspace_id=? ORDER BY t.updated_at DESC,t.id`)
           .all(workspace) as Row[];
-        return ok(rows.map((row) => ({ ...row, matter_id: null })));
+        return ok(rows);
       }
       if (request.operation === 'status') {
         const row = db
@@ -122,6 +124,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
               'UPDATE task_items SET title=?,objective=?,version=version+1,updated_at=? WHERE id=?',
             ).run(request.title, objective, new Date().toISOString(), taskId);
           } else {
+            if (task.document_archived_at) return fail('CONFLICT', '正文已归档，请恢复后再保存。');
             if (task.document_id !== request.document_id || task.body_id !== request.body_id)
               return fail('FORBIDDEN', '正文与当前任务不匹配。');
             if (task.editor_schema !== 1 || task.body_revision !== request.expected_revision)

@@ -1,10 +1,11 @@
 import { runTaskDemo } from './task-demo';
 import { runAgentDemo, syntheticAgentStream } from './agent-demo';
+import { createCatalogApplication } from '@caselite/application';
 import { createAgentApplication } from '@caselite/application';
 import { createPiRuntime } from './adapters/pi-runtime';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
-import { registerTaskIpc } from './ipc/register-task-ipc';
+import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
 import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -380,7 +381,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 3
+      result.value?.migration_count !== 4
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -520,6 +521,7 @@ app
     );
     const tasks = createTaskApplication(taskStore);
     registerTaskIpc(tasks);
+    registerCatalogIpc(createCatalogApplication(taskStore.catalog));
     const agentCredentials = await createAgentCredentials(taskRoot);
     if (taskDemoPhase === 'agent') await agentCredentials.set('sk-synthetic-openai');
     const agent = createAgentApplication({

@@ -1,4 +1,8 @@
 import {
+  CATALOG_CHANNEL,
+  catalogResponseSchema,
+  type CatalogRequest,
+  type CatalogResponse,
   AGENT_CHANNEL,
   agentResponseSchema,
   type AgentRequest,
@@ -55,7 +59,7 @@ function timeoutFailure(): CommandFailure {
 async function invokeBusinessCommand(
   invoke: IpcInvoke,
   channel: string,
-  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest | AgentRequest,
+  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest | AgentRequest | CatalogRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -73,6 +77,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
   task(request: TaskRequest): Promise<TaskResponse>;
   createAnchor(request: CreateAnchorRequest): Promise<CreateAnchorResult>;
@@ -82,6 +87,14 @@ export type CaseLitePreloadApi = {
 
 export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi {
   return {
+    async catalog(request) {
+      const r = catalogResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, CATALOG_CHANNEL, request),
+      );
+      return r.success
+        ? r.data
+        : { ok: false, code: 'RESULT_UNKNOWN', message: '无法确认本地结果，请保留原提交并核对。' };
+    },
     async agent(request) {
       const result = agentResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, AGENT_CHANNEL, request),
@@ -132,3 +145,5 @@ export type {
   AgentModel,
   AgentProvider,
 } from '@caselite/contracts';
+
+export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';

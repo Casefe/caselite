@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { DraftEditor } from './RichEditor';
+import { DraftEditor, draftDoc } from './RichEditor';
+import * as Y from 'yjs';
 
 // jsdom无真实排版，只补齐Range几何API；本测试只验锁定，定位另由真实Electron验证。
 const previousRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects');
@@ -51,5 +52,20 @@ describe('rich input locking', () => {
     });
     expect(input.innerHTML).toBe(before);
     expect(input.textContent).toBe('第一段第二段');
+  });
+  it('does not treat persisted-body hydration as an unsaved user change', async () => {
+    const doc = draftDoc({ text: '已保存项目说明', state: null });
+    const state = Array.from(Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+    const change = vi.fn();
+    render(<DraftEditor value={{ text: '', state }} onChange={change} label="已保存说明" />);
+    const input = await screen.findByRole('textbox', { name: '已保存说明' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(input.textContent).toBe('已保存项目说明');
+    expect(change).not.toHaveBeenCalled();
+    input.focus();
+    fireEvent.click(await screen.findByRole('button', { name: '块操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制块' }));
+    await waitFor(() => expect(change).toHaveBeenCalled());
   });
 });

@@ -3031,3 +3031,95 @@ dd {
   border-radius: 5px;
   background: white;
 }
+
+/* 数据目录沿用首页同一列宽；表单/列表只在各自工作区内滚动。 */
+.catalog-view {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--workspace-columns);
+}
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.catalog-table th {
+  font-weight: 500;
+  color: var(--muted);
+  background: #f9fafb;
+}
+.catalog-table th,
+.catalog-table td {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.catalog-table tbody tr {
+  cursor: pointer;
+}
+.catalog-table tbody tr[aria-selected='true'] {
+  background: #f0f3fa;
+}
+.catalog-table tbody tr:hover {
+  background: #f6f7f9;
+}
+.catalog-table td:first-child svg {
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.catalog-empty {
+  padding: 40px;
+  color: var(--muted);
+  text-align: center;
+}
+.catalog-actions {
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+}
+.catalog-actions label,
+.catalog-view .project-properties label {
+  display: block;
+  margin: 16px 0;
+  color: #647080;
+  font-size: 12px;
+}
+.catalog-actions input,
+.catalog-actions select,
+.catalog-view .project-properties select {
+  width: 100%;
+  display: block;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  color: var(--ink);
+}
+.catalog-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.catalog-actions button,
+.catalog-view .project-properties button {
+  margin: 4px;
+}
+.catalog-actions .notion-editor {
+  min-height: 180px;
+  border: 1px solid var(--line);
+}
+
+.catalog-view > .project-properties {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 18px;
+  border-left: 1px solid var(--line);
+}
+.catalog-view > .project-properties .inspector-tabs {
+  margin: 0 -18px;
+}
+.project-ai-content {
+  padding-top: 20px;
+}

@@ -104,6 +104,7 @@ describe('typed preload to main IPC Spike', () => {
 
     expect(Object.keys(api).sort()).toEqual([
       'agent',
+      'catalog',
       'createAnchor',
       'createMatter',
       'offlineProbe',

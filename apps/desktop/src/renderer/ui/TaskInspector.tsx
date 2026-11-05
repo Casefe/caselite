@@ -71,7 +71,7 @@ export default function TaskInspector({
             )}
 
             <dt>所属项目</dt>
-            <dd>未归组</dd>
+            <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</dd>
             <dt>工作范围</dt>
             <dd>个人本地</dd>
             <dt>成果</dt>

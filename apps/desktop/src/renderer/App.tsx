@@ -4,9 +4,10 @@ import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
-import ProjectPreview from './projects/ProjectPreview';
+import ProjectCatalog from './projects/ProjectCatalog';
+import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
-import KnowledgeView from './ui/KnowledgeView';
+
 import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
 import RecordList from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
@@ -57,6 +58,7 @@ function BodyEditor({
   const editor = useEditor(
     {
       injectCSS: false,
+      editable: !task.document_archived_at,
       extensions: localExtensions(doc),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
@@ -140,12 +142,12 @@ function BodyEditor({
       <EditorSurface editor={editor} mode="simple" />
       <footer>
         <span role="status" data-testid="save-status">
-          {status}
+          {task.document_archived_at ? '文档已归档 · 只读' : status}
         </span>
         <button
           className="primary"
           data-testid="save-body"
-          disabled={busy || (!dirty && !hasPending)}
+          disabled={!!task.document_archived_at || busy || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
@@ -415,7 +417,14 @@ function Workbench() {
             正在读取本地任务…
           </div>
         ) : view === 'projects' ? (
-          <ProjectPreview onAgent={() => navigate('home')} />
+          <ProjectCatalog
+            tasks={tasks}
+            onOpen={(id) => void open(id)}
+            onDirty={setDirty}
+            onChanged={() =>
+              void refresh().catch(() => setError('数据已保存，任务列表刷新失败，请重新读取。'))
+            }
+          />
         ) : view === 'home' ? (
           <AgentHome
             prompt={agentPrompt}
@@ -527,11 +536,19 @@ function Workbench() {
               <TaskInspector key={active.id} task={active} />
             </div>
           </section>
-        ) : view === 'tasks' || view === 'documents' ? (
+        ) : view === 'documents' || view === 'knowledge' ? (
+          <DocumentLibrary
+            key={view}
+            tasks={tasks}
+            library={view === 'knowledge'}
+            onOpen={(id) => void open(id)}
+            onDirty={setDirty}
+          />
+        ) : view === 'tasks' ? (
           <RecordList
             key={view}
             tasks={filtered}
-            documents={view === 'documents'}
+            documents={false}
             filter={taskFilter}
             onFilter={setTaskFilter}
             onOpen={(id) => void open(id)}
@@ -546,7 +563,7 @@ function Workbench() {
             }}
           />
         ) : (
-          <KnowledgeView onHome={() => navigate('home')} />
+          <div>请选择导航入口。</div>
         )}
       </WorkspaceShell>
     </ModelSettingsNavigation.Provider>
