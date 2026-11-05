@@ -8,6 +8,8 @@ export default function RecordList({
   documents,
   filter,
   onFilter,
+  search,
+  onSearch,
   onOpen,
   onNew,
 }: {
@@ -15,6 +17,8 @@ export default function RecordList({
   documents: boolean;
   filter: string;
   onFilter(value: string): void;
+  search: string;
+  onSearch(value: string): void;
   onOpen(id: string): void;
   onNew(): void;
 }) {
@@ -32,7 +36,16 @@ export default function RecordList({
           <Icon name={documents ? 'file' : 'check'} size={18} />
           <h1>{documents ? '文档' : '我的任务'}</h1>
           <span className="collection-total">{tasks.length}</span>
-          <button className="collection-new" onClick={onNew}>
+          <label className="collection-search">
+            <Icon name="search" size={14} />
+            <input
+              aria-label="搜索本地任务"
+              placeholder={documents ? '搜索文档或关联任务' : '搜索任务'}
+              value={search}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </label>
+          <button className="collection-new" data-testid="new-task" onClick={onNew}>
             <Icon name="plus" size={14} />
             新建任务
           </button>

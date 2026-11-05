@@ -92,7 +92,6 @@ h3 {
   overflow: hidden;
 }
 .primary-sidebar {
-  width: 200px;
   flex-shrink: 0;
   background: var(--nav);
   color: #c8d5d7;
@@ -125,14 +124,7 @@ h3 {
   letter-spacing: -0.9px;
   line-height: 32px;
 }
-.brand-caption {
-  position: absolute;
-  left: 55px;
-  top: 37px;
-  color: #a5b6b9;
-  font-size: 10px;
-  letter-spacing: 1px;
-}
+
 .primary-navigation {
   flex-shrink: 0;
   display: grid;
@@ -221,15 +213,7 @@ h3 {
   margin-top: auto;
   flex-shrink: 0;
 }
-.local-note {
-  border-top: 1px solid #335057;
-  margin: 15px 12px 0;
-  padding-top: 16px;
-  font-size: 11px;
-  color: #b9cbce;
-}
-.local-note i,
-.device i,
+
 .local-dot {
   display: inline-block;
   width: 6px;
@@ -238,13 +222,7 @@ h3 {
   border-radius: 50%;
   margin-right: 7px;
 }
-.local-note span {
-  display: block;
-  color: #78979e;
-  font-size: 9px;
-  margin-top: 7px;
-  line-height: 1.6;
-}
+
 .workspace-main {
   display: flex;
   flex-direction: column;
@@ -252,89 +230,15 @@ h3 {
   flex: 1;
   overflow: auto;
 }
-.global-bar {
-  height: 42px;
-  flex-shrink: 0;
-  background: white;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 17px;
-  padding: 0 22px;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
+
 .icon-button {
   border: 0;
   background: transparent;
   padding: 6px;
   min-width: 27px;
 }
-.search-field {
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  width: min(350px, 43vw);
-  padding: 0 10px;
-  height: 28px;
-  gap: 8px;
-  color: #8c929b;
-}
-.search-field input {
-  width: 100%;
-  border: 0;
-  outline: none;
-  background: none;
-  font-size: 11px;
-  color: var(--ink);
-  min-width: 0;
-}
-.search-field > span {
-  font-size: 9px;
-  border: 1px solid var(--line);
-  padding: 1px 4px;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-.global-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-left: auto;
-}
-.new-task {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-  font-size: 11px;
-}
-.new-task:hover {
-  background: #c64830;
-}
-.avatar {
-  border: 1px solid #e8e2de;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  background: #f2e9e3;
-  color: #876653;
-  font-size: 12px;
-}
-.device {
-  color: #8b929a;
-  font-size: 10px;
-  white-space: nowrap;
-}
-.device i {
-  background: #519b80;
-  width: 5px;
-  height: 5px;
-}
+
 .is-collapsed .primary-sidebar {
-  width: 65px;
   padding-left: 6px;
   padding-right: 6px;
 }
@@ -698,9 +602,7 @@ h3 {
 }
 .task-layout {
   display: grid;
-  grid-template-columns: minmax(340px, 1fr) 280px;
   flex: 1;
-  min-height: 0;
 }
 .task-work-area {
   min-width: 0;
@@ -1291,11 +1193,9 @@ dd {
 }
 .project-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
   gap: 45px;
   padding: 32px;
   background: white;
-  min-height: calc(100vh - 250px);
 }
 .project-content {
   max-width: 750px;
@@ -1470,12 +1370,6 @@ dd {
   padding-top: 100px;
 }
 @media (max-width: 1100px) {
-  .task-layout {
-    grid-template-columns: minmax(300px, 1fr) 250px;
-  }
-  .primary-sidebar {
-    width: 180px;
-  }
   .table-head,
   .task-row {
     grid-template-columns: minmax(180px, 1.5fr) minmax(100px, 1fr) 85px;
@@ -1494,7 +1388,6 @@ dd {
   }
   .project-body {
     gap: 25px;
-    grid-template-columns: minmax(0, 1fr) 175px;
     padding: 25px;
   }
   .project-properties dl {
@@ -1505,16 +1398,8 @@ dd {
   .task-detail {
     overflow: auto;
   }
-  .task-layout {
-    min-width: 590px;
-    grid-template-columns: minmax(340px, 1fr) 250px;
-    min-height: 550px;
-  }
   .task-work-area > .document {
     margin: 12px;
-  }
-  .primary-sidebar {
-    width: 175px;
   }
   .brand {
     flex-shrink: 0;
@@ -1522,22 +1407,6 @@ dd {
   }
   .brand b {
     font-size: 20px;
-  }
-  .brand-caption {
-    left: 48px;
-  }
-  .device:not(.preview-device) {
-    display: none;
-  }
-  .global-bar {
-    padding: 0 15px;
-    gap: 10px;
-  }
-  .global-actions {
-    gap: 9px;
-  }
-  .project-body {
-    grid-template-columns: 1fr;
   }
   .project-properties {
     border-top: 1px solid var(--line);
@@ -1566,9 +1435,6 @@ dd {
   .task-row > .row-objective {
     display: none;
   }
-  .search-field {
-    width: 220px;
-  }
 }
 
 .sidebar-caption {
@@ -1595,9 +1461,7 @@ dd {
 }
 .agent-home {
   display: grid;
-  grid-template-columns: minmax(340px, 1fr) 280px;
   flex: 1;
-  min-height: 0;
   background: white;
 }
 .agent-main {
@@ -1772,9 +1636,6 @@ dd {
   margin-left: auto;
 }
 @media (max-width: 1100px) {
-  .agent-home {
-    grid-template-columns: minmax(300px, 1fr) 250px;
-  }
   .agent-start {
     width: calc(100% - 40px);
     margin-top: 60px;
@@ -1786,7 +1647,6 @@ dd {
 @media (max-width: 850px) {
   .agent-home {
     overflow: auto;
-    grid-template-columns: minmax(300px, 1fr);
   }
   .agent-context {
     border-top: 1px solid var(--line);
@@ -1795,15 +1655,6 @@ dd {
   .agent-start {
     margin-top: 40px;
   }
-}
-
-.agent-draft-link {
-  padding: 3px 7px;
-  font-size: 10px;
-  color: #8a7449;
-  background: #fffbf2;
-  border-color: #eee5ce;
-  white-space: nowrap;
 }
 
 /* 两种交互共用Tiptap/Yjs格式；样式不创建HTML或文本存储。 */
@@ -2316,10 +2167,7 @@ dd {
 /* 四页共享导航—工作区—属性栏；列表选择不创建第二份业务状态。 */
 .collection-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
   flex: 1;
-  min-height: 0;
-  min-width: 0;
   background: white;
 }
 .collection-main {
@@ -2510,8 +2358,6 @@ dd {
 .project-body {
   padding: 0;
   gap: 0;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  min-height: 0;
   flex: 1;
   overflow: auto;
 }
@@ -2519,9 +2365,6 @@ dd {
   padding: 28px;
   max-width: none;
   overflow: auto;
-}
-.agent-home {
-  grid-template-columns: minmax(0, 1fr) 300px;
 }
 .agent-main {
   background: #f9fafb;
@@ -2616,11 +2459,6 @@ dd {
   color: #4e5966;
 }
 @media (max-width: 1250px) {
-  .collection-workspace,
-  .agent-home,
-  .project-body {
-    grid-template-columns: minmax(0, 1fr) 250px;
-  }
   .collection-workspace .table-head,
   .collection-workspace .task-row {
     grid-template-columns: minmax(130px, 1fr) 85px 65px;
@@ -2663,10 +2501,6 @@ dd {
   }
 }
 @media (max-width: 850px) {
-  .collection-workspace,
-  .agent-home {
-    min-width: 600px;
-  }
   .agent-context {
     border-left: 1px solid var(--line);
     border-top: 0;
@@ -3038,4 +2872,93 @@ dd {
   .settings-page {
     padding: 20px;
   }
+}
+
+.brand {
+  height: 48px;
+  align-items: center;
+  padding: 0 12px 12px;
+}
+.sidebar-bottom {
+  padding-top: 12px;
+}
+.sidebar-bottom .sidebar-collapse,
+.sidebar-bottom .sidebar-draft {
+  border: 0;
+  background: transparent;
+  color: #91a8ac;
+  font-size: 10px;
+  padding: 8px 12px;
+  justify-content: flex-start;
+  width: 100%;
+}
+.sidebar-bottom .profile-settings {
+  width: 100%;
+  background: transparent;
+  color: #d7e2e4;
+  padding: 12px 8px 0;
+  margin-top: 8px;
+  border: 0;
+  border-top: 1px solid #304b50;
+  border-radius: 0;
+  justify-content: flex-start;
+  gap: 10px;
+  text-align: left;
+}
+.profile-avatar {
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #607579;
+  border-radius: 50%;
+  background: #385358;
+  color: #d7e3e4;
+  font-size: 12px;
+}
+.profile-name {
+  flex: 1;
+  min-width: 0;
+}
+.profile-name strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.profile-name small {
+  display: block;
+  font-size: 10px;
+  color: #94aaae;
+  margin-top: 5px;
+}
+.profile-settings[aria-current='page'] .profile-avatar {
+  border-color: #c4d4d8;
+}
+.collection-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: #99a2ad;
+}
+.collection-search input {
+  width: clamp(110px, 12vw, 220px);
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font-size: 11px;
+  color: #5e6978;
+  background: transparent;
+  padding: 6px 0;
+}
+.collection-search:focus-within {
+  box-shadow: 0 1px #73889d;
+}
+.collection-heading .collection-new {
+  margin-left: 6px;
+}
+.agent-topline .icon-button {
+  font-size: 11px;
 }

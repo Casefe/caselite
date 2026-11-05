@@ -1,5 +1,5 @@
 import { createAgentCredentials } from './adapters/agent-credentials';
-import { BrowserWindow, nativeImage, session } from 'electron';
+import { app, BrowserWindow, nativeImage, session } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -39,12 +39,42 @@ export async function runTaskDemo(
       await capture('failure.png');
       throw new Error('Task demo timed out: ' + predicate);
     };
+    const shellMeasurements: unknown[] = [];
     const capture = async (name: string) => {
       await evaluate(
         'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
       );
       await new Promise((resolve) => setTimeout(resolve, 200));
       const size = await evaluate('({width:innerWidth,height:innerHeight,ratio:devicePixelRatio})');
+      const shell = await evaluate(`(()=>{
+        const profile=document.querySelector('.profile-settings');
+        const nav=document.querySelector('.primary-sidebar').getBoundingClientRect();
+        const rect=profile.getBoundingClientRect();
+        const center=document.querySelector('.task-work-area, .agent-main, .collection-main');
+        const right=document.querySelector('.task-inspector, .agent-context, .project-properties');
+        const c=center?.getBoundingClientRect(), r=right?.getBoundingClientRect();
+        return {page:document.querySelector('[data-nav][aria-current=page]')?.getAttribute('data-nav'),
+          width:innerWidth, height:innerHeight, navWidth:nav.width,
+          centerLeft:c?.left, centerRight:c?.right, rightWidth:r?.width,
+          headerAbsent:!document.querySelector('.global-bar, .brand-caption'),
+          profileValid:rect.left>=nav.left && rect.right<=nav.right && rect.bottom>=innerHeight-20 && rect.bottom<=innerHeight && Boolean(profile.querySelector('.profile-avatar')) && Boolean(profile.querySelector('.profile-name'))};
+      })()`);
+      if (!shell.headerAbsent || !shell.profileValid)
+        throw new Error('Removed header or bottom profile regression: ' + JSON.stringify(shell));
+      if (shell.centerLeft !== undefined) {
+        const navWidth = size.width > 1250 ? 200 : 180,
+          rightWidth = size.width > 1250 ? 300 : 250;
+        if (
+          Math.abs(shell.navWidth - navWidth) > 1 ||
+          Math.abs(shell.centerLeft - navWidth) > 1 ||
+          Math.abs(shell.rightWidth - rightWidth) > 1 ||
+          Math.abs(shell.centerRight - (size.width - rightWidth)) > 1
+        )
+          throw new Error('Shared workspace dimensions diverged: ' + JSON.stringify(shell));
+      }
+      shellMeasurements.push({ capture: name, ...shell });
+      writeFileSync(join(root, 'shell-layout.json'), JSON.stringify(shellMeasurements, null, 2));
+
       // 只从当前隔离测试的同一渲染表面捕获完整视口，不开启调试端口，也不拉伸补画PNG。
       const snapshot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
         format: 'png',
@@ -106,7 +136,9 @@ export async function runTaskDemo(
       throw new Error('Primary navigation does not match the approved five entries');
     const selectAllText = async (selector: string) => {
       // 富文本选区工具条依赖原生窗口焦点；隔离演示先取得焦点，不放宽格式断言。
+      app.focus({ steal: true });
       window.focus();
+      window.webContents.focus();
       await wait('document.hasFocus()');
       await evaluate(
         `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();const range=document.createRange();range.selectNodeContents(e);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'));})()`,
@@ -341,6 +373,22 @@ export async function runTaskDemo(
       };
       await assertCollectionColumns('.agent-main', '.agent-context');
       await capture('home.png');
+      await click('[data-nav=knowledge]');
+      await wait("document.querySelector('.knowledge-view')");
+      await assertCollectionColumns('.collection-main', '.task-inspector');
+      await capture('knowledge.png');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.knowledge-view [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+      );
+      await wait(
+        "document.querySelector('.knowledge-view h2') && document.querySelector('.inspector-content h2')?.textContent==='知识库 AI'",
+      );
+      await capture('knowledge-ai.png');
+      await click('[data-nav=settings]');
+      await wait("document.querySelector('.settings-center')");
+      await capture('profile-settings.png');
+      await click('.settings-back');
+      await wait("document.querySelector('.knowledge-view')");
       await click('[data-nav=projects]');
       await wait("document.querySelector('[data-testid=project-preview]')");
       await assertCollectionColumns('.collection-main', '.project-properties');

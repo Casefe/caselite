@@ -3,9 +3,10 @@ import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
-import { WorkspaceShell, Icon, navigation, type WorkspaceView } from './ui/Workspace';
+import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
 import ProjectPreview from './projects/ProjectPreview';
 import TaskInspector from './ui/TaskInspector';
+import KnowledgeView from './ui/KnowledgeView';
 import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
 import RecordList from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
@@ -311,8 +312,6 @@ function Workbench() {
       (taskFilter === '全部任务' ||
         (taskFilter === '已写正文' ? t.body_revision > 0 : t.body_revision === 0)),
   );
-  const viewLabel =
-    view === 'settings' ? '设置' : navigation.find((item) => item.id === view)?.label;
   const resetTask = () => {
     if (!canLeave()) return;
     readSequence.current++;
@@ -333,21 +332,10 @@ function Workbench() {
         collapsed={collapsed}
         onCollapse={() => setCollapsed(!collapsed)}
         onNavigate={navigate}
-        onNew={newTask}
         tasks={tasks}
         favorites={favorites}
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
-        search={search}
-        onSearch={(value) => {
-          setSearch(value);
-          if (!dirty && !creating && !busy) {
-            readSequence.current++;
-            setLoading(false);
-            if (view !== 'documents') setView('tasks');
-            setActive(null);
-          }
-        }}
       >
         {error && (
           <div className="error" role="alert">
@@ -432,6 +420,7 @@ function Workbench() {
           <ProjectPreview onAgent={() => navigate('home')} />
         ) : view === 'home' ? (
           <AgentHome
+            onNew={newTask}
             prompt={agentPrompt}
             onPrompt={setAgentPrompt}
             onStart={() => {
@@ -446,26 +435,35 @@ function Workbench() {
           />
         ) : view === 'tasks' && active ? (
           <section className="task-detail" data-layout="three-column" data-active-task={active.id}>
-            <div className="page-topline">
-              <div>
-                <button
-                  className="icon-button"
-                  aria-label="返回任务列表"
-                  data-testid="back-to-tasks"
-                  onClick={resetTask}
-                >
-                  <Icon name="back" size={16} />
-                </button>
-                <button className="breadcrumb-button" onClick={resetTask}>
-                  任务
-                </button>
-                <Icon name="chevron" size={13} />
-                <span>{active.title}</span>
-              </div>
-              <span className="label-tag">独立任务</span>
-            </div>
             <div className="task-layout">
               <div className="task-work-area" aria-label="阅读与编辑工作区">
+                <div className="page-topline">
+                  <div>
+                    <button
+                      className="icon-button"
+                      aria-label="返回任务列表"
+                      data-testid="back-to-tasks"
+                      onClick={resetTask}
+                    >
+                      <Icon name="back" size={16} />
+                    </button>
+                    <button className="breadcrumb-button" onClick={resetTask}>
+                      任务
+                    </button>
+                    <Icon name="chevron" size={13} />
+                    <span>{active.title}</span>
+                  </div>
+                  <button
+                    className="icon-button"
+                    data-testid="new-task"
+                    aria-label="新建任务"
+                    onClick={newTask}
+                  >
+                    <Icon name="plus" size={14} />
+                    新建任务
+                  </button>
+                </div>
+
                 <div className="task-title">
                   <span className="task-symbol">
                     <Icon name="check" size={23} />
@@ -547,6 +545,8 @@ function Workbench() {
             tasks={filtered}
             documents={view === 'documents'}
             filter={taskFilter}
+            search={search}
+            onSearch={setSearch}
             onFilter={setTaskFilter}
             onOpen={(id) => void open(id)}
             onNew={newTask}
@@ -561,15 +561,7 @@ function Workbench() {
             }}
           />
         ) : (
-          <section className="future-view">
-            <div className="page-topline">工作区 / {viewLabel}</div>
-            <div className="project-tab-empty">
-              <Icon name="book" size={34} />
-              <h1>{viewLabel}</h1>
-              <p>知识库与受控复用将在后续版本开放。</p>
-              <button onClick={() => navigate('home')}>返回首页</button>
-            </div>
-          </section>
+          <KnowledgeView onHome={() => navigate('home')} />
         )}
       </WorkspaceShell>
     </ModelSettingsNavigation.Provider>

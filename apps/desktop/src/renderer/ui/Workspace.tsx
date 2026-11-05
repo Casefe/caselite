@@ -112,38 +112,32 @@ export function WorkspaceShell({
   collapsed,
   onCollapse,
   onNavigate,
-  onNew,
   tasks,
   favorites = [],
   agentDraft = false,
   onOpen,
-  search,
-  onSearch,
   children,
 }: {
   view: WorkspaceView;
   collapsed: boolean;
   onCollapse(): void;
   onNavigate(view: WorkspaceView): void;
-  onNew(): void;
   tasks: Task[];
   favorites?: string[];
   agentDraft?: boolean;
   onOpen(id: string): void;
-  search: string;
-  onSearch(value: string): void;
   children: ReactNode;
 }) {
   return (
     <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
       <link rel="stylesheet" href={new URL('../task-workbench.css', window.location.href).href} />
+      <link rel="stylesheet" href={new URL('../workspace-layout.css', window.location.href).href} />
       <aside className="primary-sidebar" aria-label="一级导航">
         <div className="brand">
           <BrandLogo />
           {!collapsed && (
             <>
               <b>CaseLite</b>
-              <span className="brand-caption">个人法律工作台</span>
             </>
           )}
         </div>
@@ -182,76 +176,50 @@ export function WorkspaceShell({
           </section>
         )}
         <div className="sidebar-bottom">
-          <button data-nav="settings" aria-label="设置" onClick={() => onNavigate('settings')}>
-            <Icon name="settings" />
-            {!collapsed && '设置'}
-          </button>
-          {!collapsed && (
-            <div className="local-note">
-              <i />
-              个人本地工作区<span>无需账号 · 数据保留在此设备</span>
-            </div>
+          {agentDraft && view !== 'home' && (
+            <button
+              className="sidebar-draft"
+              onClick={() => onNavigate('home')}
+              title="首页有未提交的工作目标"
+            >
+              <Icon name="spark" size={15} />
+              {!collapsed && 'Agent 草稿'}
+            </button>
           )}
-        </div>
-      </aside>
-      <div className="workspace-main">
-        <header className="global-bar">
           <button
-            className="icon-button"
+            className="sidebar-collapse"
             aria-label={collapsed ? '展开导航' : '收起导航'}
             onClick={onCollapse}
           >
-            <Icon name="panel" />
+            <Icon name="panel" size={16} />
+            {!collapsed && '收起导航'}
           </button>
-          <div className="search-field">
-            <Icon name="search" size={16} />
-            <input
-              aria-label="搜索本地任务"
-              placeholder="搜索任务名称或目标"
-              value={search}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-            <span>本地</span>
-          </div>
-          <div className="global-actions">
-            {agentDraft && view !== 'home' && (
-              <button
-                className="agent-draft-link"
-                onClick={() => onNavigate('home')}
-                title="首页有未提交的工作目标"
-              >
-                <Icon name="spark" size={13} />
-                Agent 草稿
-              </button>
+          <button
+            className="profile-settings"
+            data-nav="settings"
+            aria-label="设置"
+            title="本地用户 · 设置"
+            aria-current={view === 'settings' ? 'page' : undefined}
+            onClick={() => onNavigate('settings')}
+          >
+            <span className="profile-avatar">我</span>
+            {!collapsed && (
+              <>
+                <span className="profile-name">
+                  <strong>本地用户</strong>
+                  <small>
+                    {new URLSearchParams(window.location.search).has('preview')
+                      ? '设置 · 演示工作区'
+                      : '设置'}
+                  </small>
+                </span>
+                <Icon name="settings" size={16} />
+              </>
             )}
-            <span
-              className={`device ${new URLSearchParams(window.location.search).has('preview') ? 'preview-device' : ''}`}
-            >
-              <i />
-              {new URLSearchParams(window.location.search).has('preview')
-                ? '独立演示数据'
-                : '仅此设备'}
-            </span>
-            <button
-              className="new-task"
-              data-testid="new-task"
-              onClick={onNew}
-              aria-label="新建任务"
-            >
-              <Icon name="plus" />
-              {!collapsed && <span>新建任务</span>}
-            </button>
-            <button
-              className="avatar"
-              aria-label="个人工作区设置"
-              onClick={() => onNavigate('settings')}
-            >
-              我
-            </button>
-          </div>
-        </header>
-        {children}
-      </div>
+          </button>
+        </div>
+      </aside>
+      <div className="workspace-main">{children}</div>
     </main>
   );
 }

@@ -1,0 +1,74 @@
+/* 工作台尺寸的唯一配置入口：页面仅负责内容与视觉，不另设栏宽。 */
+:root {
+  --workspace-navigation-width: 200px;
+  --workspace-navigation-collapsed-width: 65px;
+  --workspace-inspector-width: 300px;
+  --workspace-center-min-width: 340px;
+  --workspace-columns: minmax(var(--workspace-center-min-width), 1fr)
+    var(--workspace-inspector-width);
+}
+.workbench {
+  height: 100vh;
+  overflow: hidden;
+}
+.primary-sidebar {
+  width: var(--workspace-navigation-width);
+}
+.is-collapsed .primary-sidebar {
+  width: var(--workspace-navigation-collapsed-width);
+}
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.agent-home,
+.task-layout,
+.collection-workspace,
+.project-body,
+.knowledge-view {
+  display: grid;
+  grid-template-columns: var(--workspace-columns);
+  min-width: calc(var(--workspace-center-min-width) + var(--workspace-inspector-width));
+  min-height: 0;
+  flex: 1;
+  gap: 0;
+}
+.agent-home,
+.knowledge-view {
+  background: white;
+}
+.task-detail {
+  min-height: 0;
+  flex: 1;
+}
+.agent-main,
+.task-work-area,
+.collection-main {
+  min-width: 0;
+  min-height: 0;
+}
+.agent-context,
+.task-inspector {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--line);
+  border-top: 0;
+  overflow: auto;
+}
+.agent-context > h2,
+.inspector-tabs {
+  height: 40px;
+  min-height: 40px;
+}
+.task-work-area > .document {
+  margin: 0;
+}
+@media (max-width: 1250px) {
+  :root {
+    --workspace-navigation-width: 180px;
+    --workspace-inspector-width: 250px;
+  }
+}
