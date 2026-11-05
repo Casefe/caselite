@@ -202,3 +202,205 @@ describe('Task durable SQLite transactions', () => {
     store.close();
   });
 });
+
+function richBinary(text: string, mark = 'bold') {
+  const doc = new Y.Doc();
+  const heading = new Y.XmlElement('heading');
+  heading.setAttribute('level', 2);
+  const content = new Y.XmlText();
+  content.insert(0, text);
+  content.format(0, text.length, { [mark]: {} });
+  heading.insert(0, [content]);
+  doc.getXmlFragment('default').insert(0, [heading]);
+  const result = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  return result;
+}
+
+describe('rich task descriptions preserve identity and confirmed formatting', () => {
+  it('upgrades pre-rich-text Task data while retaining the original outcome body and receipts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-description-upgrade-'));
+    roots.push(root);
+    const oldMigrations = join(root, 'previous');
+    mkdirSync(join(oldMigrations, 'meta'), { recursive: true });
+    const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.slice(0, 2);
+    writeFileSync(join(oldMigrations, 'meta/_journal.json'), JSON.stringify(journal));
+    for (const entry of journal.entries)
+      copyFileSync(join(migrations, entry.tag + '.sql'), join(oldMigrations, entry.tag + '.sql'));
+    const file = join(root, 'old.sqlite');
+    const before = openTaskStore(file, oldMigrations);
+    const create = {
+      ...identity(),
+      operation: 'create' as const,
+      title: '既有任务',
+      objective: '原来的纯文本目标',
+    };
+    const task = value(before.execute(create)).tasks[0];
+    const body = binary('原成果正文');
+    value(
+      before.execute({
+        ...identity(),
+        operation: 'save',
+        task_id: task.id,
+        document_id: task.document_id,
+        body_id: task.body_id,
+        expected_revision: 0,
+        editor_schema: 1,
+        state: body,
+      }),
+    );
+    before.close();
+    const after = openTaskStore(file, migrations);
+    const read = value(after.execute({ operation: 'read', protocol_version: 1, task_id: task.id }));
+    expect(read.tasks[0]).toMatchObject({
+      id: task.id,
+      objective: '原来的纯文本目标',
+      document_id: task.document_id,
+      body_id: task.body_id,
+      body_revision: 1,
+    });
+    expect(read.state).toEqual(body);
+    expect(read.objective_state).toBeNull();
+    expect(value(after.execute({ ...create, request_id: randomUUID() })).tasks[0].id).toBe(task.id);
+    after.close();
+  });
+  it('reads the description bound to Task version and preserves immutable history, retries and legacy title changes', () => {
+    const { file, store } = setup();
+    const first = richBinary('待核对金额');
+    const create = {
+      ...identity(),
+      operation: 'create' as const,
+      title: 'A',
+      objective: '投影不由客户端决定',
+      objective_state: first,
+    };
+    const task = value(store.execute(create)).tasks[0];
+    expect(task.objective).toBe('待核对金额');
+    expect(
+      store.execute({
+        ...identity(),
+        operation: 'update',
+        task_id: task.id,
+        expected_version: 1,
+        title: 'A',
+        objective: '试图降级格式',
+      }),
+    ).toMatchObject({ ok: false, code: 'CONFLICT' });
+    const renamed = value(
+      store.execute({
+        ...identity(),
+        operation: 'update',
+        task_id: task.id,
+        expected_version: 1,
+        title: '新标题',
+        objective: task.objective,
+      }),
+    ).tasks[0];
+    expect(renamed.version).toBe(2);
+    const raw = openToolchainProbe(file, migrations);
+    raw.sqlite
+      .prepare('INSERT INTO task_objective_revisions(task_id,task_version,state) VALUES(?,?,?)')
+      .run(task.id, 99, Buffer.from(richBinary('待核对金额', 'italic')));
+    const bound = value(
+      store.execute({ operation: 'read', protocol_version: 1, task_id: task.id }),
+    );
+    expect(bound.objective_state).toEqual(first);
+    const second = richBinary('补齐收悉凭证', 'underline');
+    const update = {
+      ...identity(),
+      operation: 'update' as const,
+      task_id: task.id,
+      expected_version: 2,
+      title: renamed.title,
+      objective: '客户端另一个投影',
+      objective_state: second,
+    };
+    const changed = value(store.execute(update)).tasks[0];
+    expect(changed.version).toBe(3);
+    expect(changed.objective).toBe('补齐收悉凭证');
+    expect(store.execute({ ...update, ...identity() })).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(
+      raw.sqlite
+        .prepare('SELECT state FROM task_objective_revisions WHERE task_id=? AND task_version=1')
+        .get(task.id),
+    ).toEqual({ state: Buffer.from(first) });
+    raw.sqlite.close();
+    store.close();
+    const next = openTaskStore(file, migrations);
+    expect(value(next.execute({ ...update, request_id: randomUUID() })).tasks[0].version).toBe(3);
+    expect(
+      value(next.execute({ operation: 'read', protocol_version: 1, task_id: task.id }))
+        .objective_state,
+    ).toEqual(second);
+    next.close();
+    const other = openTaskStore(file, migrations, 'other');
+    expect(
+      other.execute({ operation: 'read', protocol_version: 1, task_id: task.id }),
+    ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    other.close();
+  });
+  it('rejects unsupported/oversized descriptions and rolls back description, metadata, receipt and activity together', () => {
+    const { file, store } = setup();
+    const first = richBinary('原任务内容');
+    const task = value(
+      store.execute({
+        ...identity(),
+        operation: 'create',
+        title: 'A',
+        objective: '原任务内容',
+        objective_state: first,
+      }),
+    ).tasks[0];
+    const bad = new Y.Doc();
+    bad.getText('secret').insert(0, '未知根');
+    const update = {
+      ...identity(),
+      operation: 'update' as const,
+      task_id: task.id,
+      expected_version: 1,
+      title: 'A',
+      objective: '新内容',
+      objective_state: richBinary('新任务内容'),
+    };
+    expect(
+      store.execute({
+        ...update,
+        ...identity(),
+        objective_state: Array.from(Y.encodeStateAsUpdate(bad)),
+      }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    bad.destroy();
+    expect(
+      store.execute({ ...update, ...identity(), objective_state: binary('长'.repeat(4001)) }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    const raw = openToolchainProbe(file, migrations);
+    raw.sqlite.exec(
+      "CREATE TRIGGER fail_objective BEFORE INSERT ON task_activity WHEN NEW.operation='update' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
+    );
+    expect(createTaskApplication(store).execute(update)).toMatchObject({
+      ok: false,
+      code: 'WRITE_FAILED',
+    });
+    const read = value(store.execute({ operation: 'read', protocol_version: 1, task_id: task.id }));
+    expect(read.tasks[0].version).toBe(1);
+    expect(read.objective_state).toEqual(first);
+    expect(raw.sqlite.prepare('SELECT count(*) AS n FROM task_objective_revisions').get()).toEqual({
+      n: 1,
+    });
+    expect(
+      store.execute({
+        operation: 'status',
+        protocol_version: 1,
+        idempotency_key: update.idempotency_key,
+      }),
+    ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    raw.sqlite.exec('DROP TRIGGER fail_objective');
+    expect(value(store.execute(update)).tasks[0].version).toBe(2);
+    raw.sqlite.close();
+    store.close();
+  });
+});

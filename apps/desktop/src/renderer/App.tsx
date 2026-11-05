@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Collaboration from '@tiptap/extension-collaboration';
+import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
@@ -9,6 +7,14 @@ import { WorkspaceShell, TaskTable, Icon, navigation, type WorkspaceView } from 
 import ProjectPreview from './projects/ProjectPreview';
 import TaskInspector from './ui/TaskInspector';
 import AgentHome from './ui/AgentHome';
+import {
+  DraftEditor,
+  EditorSurface,
+  emptyDraft,
+  localExtensions,
+  type RichDraft,
+} from './editors/RichEditor';
+import TaskContentEditor from './editors/TaskContentEditor';
 
 const mutation = () => ({
   protocol_version: 1 as const,
@@ -47,10 +53,8 @@ function BodyEditor({
   const alive = useRef(true);
   const editor = useEditor(
     {
-      extensions: [
-        StarterKit.configure({ undoRedo: false, link: false }),
-        Collaboration.configure({ document: doc }),
-      ],
+      injectCSS: false,
+      extensions: localExtensions(doc),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
       },
@@ -130,18 +134,7 @@ function BodyEditor({
           修订 <b data-testid="revision">{revision}</b>
         </span>
       </div>
-      <div className="toolbar">
-        <button onClick={() => editor?.chain().focus().toggleBold().run()} aria-label="加粗">
-          B
-        </button>
-        <button onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}>
-          标题
-        </button>
-        <button onClick={() => editor?.chain().focus().toggleBulletList().run()}>列表</button>
-        <button onClick={() => editor?.chain().focus().undo().run()}>撤销</button>
-        <button onClick={() => editor?.chain().focus().redo().run()}>重做</button>
-      </div>
-      <EditorContent className="editor-surface" editor={editor} />
+      <EditorSurface editor={editor} mode="simple" />
       <footer>
         <span role="status" data-testid="save-status">
           {status}
@@ -164,7 +157,7 @@ function Workbench() {
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [agentPrompt, setAgentPrompt] = useState('');
+  const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
   const [taskFilter, setTaskFilter] = useState('全部任务');
   const [detailTab, setDetailTab] = useState('成果正文');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -172,7 +165,8 @@ function Workbench() {
   const [state, setState] = useState<number[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
-  const [objective, setObjective] = useState('');
+  const [objective, setObjective] = useState<RichDraft>(emptyDraft);
+  const [objectiveState, setObjectiveState] = useState<number[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -198,8 +192,8 @@ function Workbench() {
         dirty ||
         busy ||
         uncertain ||
-        agentPrompt.trim() ||
-        (creating && (title.trim() || objective.trim()))
+        agentPrompt.text.trim() ||
+        (creating && (title.trim() || objective.text.trim()))
       ) {
         event.preventDefault();
         event.returnValue = '';
@@ -213,7 +207,7 @@ function Workbench() {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
-    if (creating && (title.trim() || objective.trim())) {
+    if (creating && (title.trim() || objective.text.trim())) {
       setError('请先完成或取消当前新建表单。');
       return false;
     }
@@ -252,6 +246,7 @@ function Workbench() {
       if (seq === readSequence.current) {
         setActive(r.tasks[0]);
         setState(r.state);
+        setObjectiveState(r.objective_state ?? null);
         setView('tasks');
         setDetailTab('成果正文');
         setCreating(false);
@@ -269,7 +264,8 @@ function Workbench() {
       ...mutation(),
       operation: 'create' as const,
       title,
-      objective,
+      objective: objective.text,
+      ...(objective.state ? { objective_state: objective.state } : {}),
     };
     createRequest.current = command;
     try {
@@ -291,11 +287,12 @@ function Workbench() {
       createRequest.current = null;
       setActive(r.tasks[0]);
       setState(null);
+      setObjectiveState(command.operation === 'create' ? (command.objective_state ?? null) : null);
       setView('tasks');
       setDetailTab('成果正文');
       setCreating(false);
       setTitle('');
-      setObjective('');
+      setObjective(emptyDraft());
       void refresh().catch(() => setError('任务已创建，列表刷新失败；请重试列表，不要重复创建。'));
     } catch (e) {
       setError(e instanceof Error ? e.message : '创建失败');
@@ -327,7 +324,7 @@ function Workbench() {
       onNew={newTask}
       tasks={tasks}
       favorites={favorites}
-      agentDraft={Boolean(agentPrompt.trim())}
+      agentDraft={Boolean(agentPrompt.text.trim())}
       onOpen={(id) => void open(id)}
       search={search}
       onSearch={(value) => {
@@ -383,21 +380,32 @@ function Workbench() {
               disabled={busy || uncertain}
             />
           </label>
-          <label>
-            工作目标
-            <textarea
-              data-testid="task-objective"
+          <div className="create-objective">
+            <label id="task-content-label">任务内容</label>
+            <DraftEditor
+              key={creating ? 'create-content' : 'closed'}
               value={objective}
-              onChange={(e) => {
-                setObjective(e.target.value);
+              label="任务内容"
+              testId="task-objective"
+              disabled={busy || uncertain}
+              onChange={(value) => {
+                setObjective(value);
                 if (!busy) createRequest.current = null;
               }}
-              maxLength={4000}
-              disabled={busy || uncertain}
+              placeholder="输入目标和说明，使用 / 插入内容块…"
             />
-          </label>
+            {objective.text.length > 4000 && (
+              <p role="alert" className="caption">
+                超过4000字符，请精简后创建；输入仍保留。
+              </p>
+            )}
+          </div>
           <p className="caption">可直接开始，不需要先创建项目。</p>
-          <button className="primary" disabled={busy || !title.trim()} data-testid="create-task">
+          <button
+            className="primary"
+            disabled={busy || !title.trim() || objective.text.length > 4000}
+            data-testid="create-task"
+          >
             {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
           </button>
           <button type="button" disabled={busy || uncertain} onClick={() => setCreating(false)}>
@@ -415,11 +423,11 @@ function Workbench() {
           prompt={agentPrompt}
           onPrompt={setAgentPrompt}
           onStart={() => {
-            if (!canLeave() || !agentPrompt.trim()) return;
+            if (!canLeave() || !agentPrompt.text.trim()) return;
             newTask();
-            setTitle(agentPrompt.trim().split('\n')[0].slice(0, 60));
-            setObjective(agentPrompt.trim());
-            setAgentPrompt('');
+            setTitle(agentPrompt.text.trim().split('\n')[0].slice(0, 60));
+            setObjective(agentPrompt);
+            setAgentPrompt(emptyDraft());
           }}
           tasks={tasks}
           onOpen={(id) => void open(id)}
@@ -499,11 +507,17 @@ function Workbench() {
                   }}
                 />
               ) : detailTab === '任务目标' ? (
-                <section className="goal-panel">
-                  <h2>本次工作目标</h2>
-                  <p>{active.objective || '尚未填写工作目标。'}</p>
-                  <p className="caption">工作目标与成果正文分别保存。</p>
-                </section>
+                <TaskContentEditor
+                  key={active.id}
+                  task={active}
+                  initial={objectiveState}
+                  onDirty={setDirty}
+                  onSaved={(saved, bytes) => {
+                    setActive(saved);
+                    setObjectiveState(bytes);
+                    void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
+                  }}
+                />
               ) : (
                 <section className="project-tab-empty">
                   <Icon name="folder" size={30} />

@@ -19,5 +19,7 @@
 | [ADR-003](./ADR-003-structured-delta-and-yjs-document-state.md) | 架构方向已确认 | 结构化 Delta 与 Yjs 文档状态 | DEV-1570、P3 Issues |
 | [ADR-004](./ADR-004-pdf-worker-and-immutable-file-boundary.md) | 提议 | PDF Worker、附件与不可变版本 | DEV-1560、DEV-1568、DEV-1579 |
 | [ADR-005](./ADR-005-third-party-code-license-and-clean-room.md) | 已决定 | 第三方代码、许可证与 Clean-room | DEV-1559、DEV-1569 |
+| [ADR-006](./ADR-006-task-body-local-snapshots.md) | 首片实现候选 | 独立Task与本地成果正文 | 以实际测试/回执为准 |
+| [ADR-007](./ADR-007-editor-modes-and-task-description.md) | 提议 | 两种编辑器交互与任务说明富文本 | DEV-1732及当前消费者 |
 
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。

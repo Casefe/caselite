@@ -18,6 +18,8 @@ describe('Task boundary', () => {
       { ...command, path: '/tmp/a' },
       { ...command, title: '  ' },
       { ...command, protocol_version: 2 },
+      { ...command, objective_state: [256] },
+      { ...command, objective_state: [] },
     ])
       expect(taskRequestSchema.safeParse(bad).success).toBe(false);
   });

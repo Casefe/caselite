@@ -941,6 +941,8 @@ h3 {
   min-height: 230px;
 }
 .tiptap {
+  position: relative;
+  white-space: pre-wrap;
   padding: 20px 26px;
   max-width: 1120px;
   min-height: 230px;
@@ -949,6 +951,23 @@ h3 {
   color: #34414f;
   outline: none;
   overflow-wrap: anywhere;
+}
+.tiptap .ProseMirror-gapcursor {
+  position: absolute;
+  pointer-events: none;
+  display: none;
+  width: 1px;
+  height: 18px;
+  background: #52677b;
+}
+.tiptap.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+.tiptap .ProseMirror-separator {
+  width: 0;
+  height: 0;
+  margin: 0;
+  border: 0;
 }
 .tiptap p {
   margin: 0 0 9px;
@@ -1785,4 +1804,351 @@ dd {
   background: #fffbf2;
   border-color: #eee5ce;
   white-space: nowrap;
+}
+
+/* 两种交互共用Tiptap/Yjs格式；样式不创建HTML或文本存储。 */
+.rich-editor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 110px;
+  isolation: isolate;
+  font-size: 13px;
+}
+.rich-editor-content {
+  min-height: 0;
+  flex: 1;
+}
+.rich-editor--notion .tiptap {
+  min-height: 110px;
+  padding: 16px 38px;
+  max-width: none;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.rich-editor--notion .tiptap:focus-visible {
+  outline: none;
+  box-shadow: inset 2px 0 #b8ced7;
+}
+.rich-editor--notion .tiptap p {
+  margin-bottom: 6px;
+}
+.rich-editor--notion .tiptap h1 {
+  font-size: 23px;
+  margin: 12px 0 7px;
+}
+.rich-editor--notion .tiptap h2 {
+  font-size: 19px;
+  margin: 10px 0 6px;
+}
+.rich-editor--notion .tiptap h3 {
+  font-size: 16px;
+  margin: 8px 0 5px;
+}
+.rich-editor .tiptap blockquote {
+  border-left: 3px solid #ccd6dc;
+  margin: 10px 0;
+  padding-left: 13px;
+  color: #6e7f8b;
+}
+.rich-editor .tiptap pre {
+  background: #f3f5f7;
+  border-radius: 5px;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+.rich-editor .tiptap hr {
+  border: 0;
+  border-top: 1px solid #dce2e6;
+  margin: 16px 0;
+}
+.rich-editor[data-empty='true']:before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 16px;
+  left: 38px;
+  right: 12px;
+  color: #a2abb4;
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.rich-editor--simple[data-empty='true']:before {
+  top: 60px;
+  left: 26px;
+}
+.task-work-area .rich-editor--simple {
+  overflow: hidden;
+  flex: 1;
+  min-height: 230px;
+}
+.rich-editor--simple .rich-editor-content {
+  overflow: auto;
+}
+.simple-toolbar {
+  flex-shrink: 0;
+  border-block: 1px solid var(--line);
+  overflow-x: auto;
+  background: #fcfcfd;
+  padding: 4px 12px;
+}
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: max-content;
+}
+.format-bar button,
+.format-bar select {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #687887;
+  min-width: 27px;
+  height: 28px;
+  padding: 3px 7px;
+}
+.format-bar button:hover {
+  background: #edf1f4;
+}
+.format-bar button[aria-pressed='true'] {
+  color: #1e5562;
+  background: #e7eff2;
+}
+.format-bar select {
+  width: 85px;
+}
+.format-separator {
+  height: 15px;
+  border-left: 1px solid #e1e6ea;
+  margin: 0 4px;
+}
+.block-controls {
+  position: absolute;
+  left: 2px;
+  display: flex;
+  gap: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.rich-editor--notion:hover .block-controls,
+.rich-editor--notion:focus-within .block-controls {
+  opacity: 1;
+}
+.block-controls button {
+  border: 0;
+  background: none;
+  color: #a2adb5;
+  padding: 3px 1px;
+  font-size: 14px;
+  min-width: 15px;
+  height: 23px;
+}
+.block-controls button[draggable] {
+  cursor: grab;
+}
+.selection-tools {
+  position: absolute;
+  z-index: 12;
+}
+.format-bar--floating {
+  padding: 4px 6px;
+  background: white;
+  border: 1px solid #e0e5e9;
+  border-radius: 6px;
+  box-shadow: 0 5px 20px #182c3820;
+}
+.slash-menu,
+.block-menu {
+  position: absolute;
+  z-index: 15;
+  width: 254px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px;
+  background: white;
+  border: 1px solid #e1e5e9;
+  border-radius: 7px;
+  box-shadow: 0 8px 30px #1b2f4020;
+}
+.slash-menu-title {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 6px 9px;
+  font-size: 10px;
+  color: #7f8c98;
+}
+.slash-menu-title small {
+  font-size: 9px;
+  color: #a4aeb7;
+}
+.slash-menu > button {
+  display: flex;
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  padding: 6px;
+  gap: 9px;
+  background: none;
+}
+.slash-menu > button[aria-selected='true'],
+.slash-menu > button:hover {
+  background: #eff4f6;
+}
+.slash-menu > button > span {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border: 1px solid #e2e8ec;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #7b8b98;
+}
+.slash-menu > button > div {
+  font-size: 11px;
+  color: #4e6575;
+}
+.slash-menu > button small {
+  display: block;
+  font-size: 9px;
+  margin-top: 3px;
+  color: #a0aab4;
+}
+.slash-menu > p {
+  padding: 12px;
+  color: #8b97a2;
+  font-size: 11px;
+}
+.block-menu {
+  left: 8px;
+  width: 155px;
+}
+.block-menu button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  font-size: 11px;
+  background: none;
+}
+.block-menu button:hover {
+  background: #f0f3f5;
+}
+.rich-editor-loading {
+  color: #98a3ad;
+  padding: 18px;
+}
+.create-objective {
+  margin-top: 23px;
+}
+.create-objective > label {
+  margin: 0 0 9px;
+}
+.create-objective .rich-editor {
+  border: 1px solid #dce0e5;
+  border-radius: 5px;
+  background: white;
+}
+.create-objective .tiptap {
+  min-height: 150px;
+}
+.agent-prompt .rich-editor .tiptap {
+  min-height: 110px;
+  padding-top: 0;
+  padding-bottom: 14px;
+  font-size: 14px;
+}
+.agent-prompt .rich-editor[data-empty='true']:before {
+  top: 0;
+  font-size: 14px;
+}
+.task-content-panel.goal-panel {
+  padding: 0;
+}
+.task-content-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.task-content-panel > header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.task-content-panel .rich-editor .tiptap {
+  min-height: 210px;
+}
+.task-content-panel > footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: #7c8d96;
+}
+.task-content-panel > footer button {
+  font-size: 11px;
+}
+.task-content-panel > .caption {
+  margin: 0;
+  padding: 8px 16px;
+}
+.project-overview-editor {
+  border: 1px solid #e8ecef;
+  border-radius: 6px;
+}
+.project-overview-editor > .caption {
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid #eef1f4;
+  font-size: 10px;
+}
+.project-comments {
+  margin-top: 30px;
+}
+.project-comments h3 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 13px;
+}
+.comment-composer {
+  border: 1px solid #e1e6ea;
+  border-radius: 6px;
+}
+.comment-composer .rich-editor .tiptap {
+  min-height: 90px;
+}
+.comment-composer footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-top: 1px solid #eef1f4;
+  font-size: 9px;
+  color: #9ca7b0;
+}
+.comment-composer footer button {
+  font-size: 10px;
+}
+.posted-comment {
+  margin: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.posted-comment > span {
+  font-size: 10px;
+  color: #93a0ab;
+}
+.posted-comment .rich-editor {
+  min-height: 40px;
+}
+.posted-comment .rich-editor .tiptap {
+  min-height: 40px;
+  padding: 9px 0;
 }

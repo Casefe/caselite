@@ -51,3 +51,15 @@ export const taskActivity = sqliteTable('task_activity', {
   operation: text('operation').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const taskObjectiveRevisions = sqliteTable(
+  'task_objective_revisions',
+  {
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    taskVersion: integer('task_version').notNull(),
+    state: blob('state', { mode: 'buffer' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.taskId, table.taskVersion] })],
+);

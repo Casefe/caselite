@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '../ui/Workspace';
+import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
 const projects = [
   {
     id: 'sample-contract',
@@ -31,6 +32,11 @@ const projects = [
 ];
 const tabs = ['概述', '任务', '文件', '交付物', '活动'];
 export default function ProjectPreview() {
+  const [descriptions, setDescriptions] = useState<Record<string, RichDraft>>(() =>
+    Object.fromEntries(projects.map((p) => [p.id, { text: p.description, state: null }])),
+  );
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, RichDraft>>({});
+  const [comments, setComments] = useState<Record<string, RichDraft[]>>({});
   const [layout, setLayout] = useState<'list' | 'board'>('list');
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState('概述');
@@ -96,7 +102,19 @@ export default function ProjectPreview() {
               {tab === '概述' ? (
                 <>
                   <h2>项目概述</h2>
-                  <p className="overview-text">{project.description}</p>
+                  <div className="project-overview-editor">
+                    <DraftEditor
+                      key={`overview:${project.id}`}
+                      value={descriptions[project.id]}
+                      onChange={(value) =>
+                        setDescriptions((all) => ({ ...all, [project.id]: value }))
+                      }
+                      label="示例项目概述"
+                      testId="project-overview-editor"
+                      placeholder="输入项目概述，使用 / 插入内容块…"
+                    />
+                    <p className="caption">概述编辑为示例，不写入本地数据库。</p>
+                  </div>
                   <h3>工作成果</h3>
                   <p>围绕明确的法律工作目标，保留材料来源、事实矛盾和人工核对记录。</p>
                   <h3>工作阶段</h3>
@@ -114,6 +132,56 @@ export default function ProjectPreview() {
                       起草与核对 <small>形成内部成果</small>
                     </div>
                   </div>
+                  <section className="project-comments">
+                    <h3>
+                      评论 <small className="sample-badge">示例 · 不保存</small>
+                    </h3>
+                    {(comments[project.id] ?? []).map((comment, i) => (
+                      <div className="posted-comment" key={i}>
+                        <span>我 · 示例评论</span>
+                        <DraftEditor
+                          value={comment}
+                          onChange={() => {}}
+                          label="示例评论内容"
+                          disabled
+                        />
+                      </div>
+                    ))}
+                    <div className="comment-composer">
+                      <DraftEditor
+                        key={`comment:${project.id}:${comments[project.id]?.length ?? 0}`}
+                        value={commentDrafts[project.id] ?? emptyDraft()}
+                        onChange={(value) =>
+                          setCommentDrafts((all) => ({ ...all, [project.id]: value }))
+                        }
+                        label="示例评论"
+                        testId="comment-editor"
+                        placeholder="写下评论，支持 / 和选区格式…"
+                      />
+                      <footer>
+                        <span>仅展示编辑与添加，不发送给他人</span>
+                        <button
+                          type="button"
+                          data-testid="add-sample-comment"
+                          disabled={
+                            !commentDrafts[project.id]?.text.trim() ||
+                            (commentDrafts[project.id]?.text.length ?? 0) > 4000
+                          }
+                          onClick={() => {
+                            const draft = commentDrafts[project.id];
+                            if (!draft?.text.trim()) return;
+                            setComments((all) => ({
+                              ...all,
+                              [project.id]: [...(all[project.id] ?? []), draft],
+                            }));
+                            setCommentDrafts((all) => ({ ...all, [project.id]: emptyDraft() }));
+                          }}
+                        >
+                          添加示例评论
+                        </button>
+                      </footer>
+                    </div>
+                  </section>
                   <div className="project-note">
                     <Icon name="folder" />
                     <div>

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { validateBody } from './body-schema';
+import { validateBody, bodyPlainText } from './body-schema';
 import {
   type Task,
   type TaskRequest,
@@ -25,11 +25,19 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       Row | undefined;
     return row ? { ...row, matter_id: null } : null;
   };
+  const objectiveState = (id: string, version: number) =>
+    (
+      db
+        .prepare(
+          'SELECT state FROM task_objective_revisions WHERE task_id=? AND task_version<=? ORDER BY task_version DESC LIMIT 1',
+        )
+        .get(id, version) as { state: Buffer } | undefined
+    )?.state;
   const ok = (
     tasks: Task[],
     state: number[] | null = null,
     receipt: string | null = null,
-  ): TaskResponse => ({ ok: true, tasks, state, receipt });
+  ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
     execute(request: TaskRequest): TaskResponse {
       if (request.operation === 'list') {
@@ -56,7 +64,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           .get(task.body_id, task.body_revision) as { state: Buffer } | undefined;
         if (task.body_revision > 0 && !row) throw new Error('Missing committed body');
         if (row) validateBody(row.state);
-        return ok([task], row ? Array.from(row.state) : null);
+        const objective = objectiveState(task.id, task.version);
+        if (objective && bodyPlainText(objective) !== task.objective)
+          throw new Error('Invalid task description projection');
+        return {
+          ...ok([task], row ? Array.from(row.state) : null),
+          objective_state: objective ? Array.from(objective) : null,
+        };
       }
       // 幂等结果、对象/正文修订和成功事件同事务提交；异常不留下半个成功结果。
       return db.transaction((): TaskResponse => {
@@ -72,12 +86,23 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             ? taskResponseSchema.parse(JSON.parse(old.result))
             : fail('CONFLICT', '同一提交身份已用于不同内容，请核对原结果。');
         let taskId: string;
+        let objective = 'objective' in request ? request.objective : '';
+        const rich = 'objective_state' in request ? request.objective_state : undefined;
+        if (rich) {
+          try {
+            objective = bodyPlainText(Uint8Array.from(rich));
+          } catch {
+            return fail('INVALID_REQUEST', '任务说明格式不支持，输入已保留。');
+          }
+          if (objective.length > 4000)
+            return fail('INVALID_REQUEST', '任务说明超过4000字符，输入已保留。');
+        }
         if (request.operation === 'create') {
           taskId = randomUUID();
           const now = new Date().toISOString();
           db.prepare(
             'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,1,?)',
-          ).run(taskId, workspace, request.title, request.objective, now);
+          ).run(taskId, workspace, request.title, objective, now);
           db.prepare(
             'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
           ).run(randomUUID(), taskId, randomUUID());
@@ -88,9 +113,14 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           if (request.operation === 'update') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
+            if (!rich && objective !== task.objective && objectiveState(task.id, task.version))
+              return fail(
+                'CONFLICT',
+                '任务说明包含富文本，请用支持富文本的编辑器修改，原格式已保留。',
+              );
             db.prepare(
               'UPDATE task_items SET title=?,objective=?,version=version+1,updated_at=? WHERE id=?',
-            ).run(request.title, request.objective, new Date().toISOString(), taskId);
+            ).run(request.title, objective, new Date().toISOString(), taskId);
           } else {
             if (task.document_id !== request.document_id || task.body_id !== request.body_id)
               return fail('FORBIDDEN', '正文与当前任务不匹配。');
@@ -117,7 +147,12 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             );
           }
         }
-        const result = ok([get(taskId)!], null, request.idempotency_key);
+        const updated = get(taskId)!;
+        if (rich)
+          db.prepare(
+            'INSERT INTO task_objective_revisions(task_id,task_version,state) VALUES(?,?,?)',
+          ).run(taskId, updated.version, Buffer.from(rich));
+        const result = ok([updated], null, request.idempotency_key);
         db.prepare(
           'INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)',
         ).run(randomUUID(), taskId, request.operation, new Date().toISOString());

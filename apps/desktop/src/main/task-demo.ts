@@ -12,6 +12,9 @@ export async function runTaskDemo(
     callback({ cancel: /^https?:/i.test(details.url) }),
   );
   const window = await createWindow();
+  window.webContents.on('console-message', (event) => {
+    if (event.level === 'error') writeFileSync(join(root, 'renderer-error.txt'), event.message);
+  });
   window.webContents.debugger.attach('1.3');
   try {
     const setViewport = async (width: number, height: number) => {
@@ -31,6 +34,8 @@ export async function runTaskDemo(
         if (await evaluate(`Boolean(${predicate})`)) return;
         await new Promise((r) => setTimeout(r, 100));
       }
+      writeFileSync(join(root, 'failure-ui.txt'), await evaluate('document.body.innerText'));
+      await capture('failure.png');
       throw new Error('Task demo timed out: ' + predicate);
     };
     const capture = async (name: string) => {
@@ -79,7 +84,7 @@ export async function runTaskDemo(
       evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
     const input = async (selector: string, value: string) =>
       evaluate(
-        `(()=>{const e=document.querySelector(${JSON.stringify(selector)});const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+        `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));}})()`,
       );
     await wait(
       "document.querySelector('[data-testid=new-task]') && !document.body.textContent.includes('正在读取')",
@@ -94,17 +99,45 @@ export async function runTaskDemo(
     );
     if (JSON.stringify(navLabels) !== JSON.stringify(['首页', '任务', '项目', '文档', '知识库']))
       throw new Error('Primary navigation does not match the approved five entries');
-    if (phase === 'write') {
-      await wait("document.querySelector('.agent-home')");
-      await input(
-        '[aria-label="Agent 工作目标"]',
-        '核对两份材料的事实、矛盾及缺件，形成内部沟通初稿',
+    const selectAllText = async (selector: string) => {
+      await evaluate(
+        `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();const range=document.createRange();range.selectNodeContents(e);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'));})()`,
       );
-      await click('.agent-prompt button');
+    };
+    const insertText = async (text: string) =>
+      evaluate(`document.execCommand('insertText',false,${JSON.stringify(text)})`);
+    const taskGoalTab = async () =>
+      evaluate(
+        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='任务目标').click()",
+      );
+    const bodyTab = async () =>
+      evaluate(
+        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
+      );
+    if (phase === 'write') {
+      await wait("document.querySelector('.agent-home [data-testid=agent-input]')");
+      await input('[data-testid=agent-input]', '/');
+      await wait("document.querySelector('.agent-prompt [data-block-command=heading2]')");
+      await capture('notion-slash.png');
+      await click('.agent-prompt [data-block-command=heading2]');
+      await wait("document.querySelector('[data-testid=agent-input] h2')");
+      await insertText('核对两份材料的事实、矛盾及缺件，形成内部沟通初稿');
+      await selectAllText('[data-testid=agent-input]');
+      await wait("document.querySelector('.agent-prompt [aria-label=选区格式]')");
+      await click('.agent-prompt [aria-label=选区格式] [aria-label=加粗]');
+      await wait("document.querySelector('[data-testid=agent-input] h2 strong')");
+      await wait(`(()=>{
+        const toolbar=document.querySelector('.agent-prompt .selection-tools')?.getBoundingClientRect();
+        const heading=document.querySelector('[data-testid=agent-input] h2')?.getBoundingClientRect();
+        return toolbar && heading && toolbar.bottom<=heading.top+2;
+      })()`);
+      await capture('notion-agent.png');
+      await click('[data-testid=create-from-agent]');
       await wait("document.querySelector('[data-testid=task-title]')");
       await wait(
-        "document.querySelector('[data-testid=task-objective]').value==='核对两份材料的事实、矛盾及缺件，形成内部沟通初稿'",
+        "document.querySelector('[data-testid=task-objective]').textContent==='核对两份材料的事实、矛盾及缺件，形成内部沟通初稿'",
       );
+      await wait("document.querySelector('[data-testid=task-objective] h2 strong')");
       await input('[data-testid=task-title]', '服务合同事实梳理');
       await click('[data-testid=create-task]');
       await wait("document.querySelector('[data-testid=body-editor]')");
@@ -113,6 +146,10 @@ export async function runTaskDemo(
       await evaluate(
         `document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,${JSON.stringify(body)})`,
       );
+      await wait("document.querySelector('.document [data-editor-mode=simple] .simple-toolbar')");
+      await selectAllText('[data-testid=body-editor]');
+      await click('.simple-toolbar [aria-label=加粗]');
+      await wait("document.querySelector('[data-testid=body-editor] strong')");
       await evaluate(
         "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
       );
@@ -143,7 +180,40 @@ export async function runTaskDemo(
       await wait(`!document.querySelector('[data-task-id="${id}"]')`);
       await click('[data-testid=toggle-favorite]');
       await wait(`document.querySelector('[data-task-id="${id}"]')`);
-      writeFileSync(join(root, 'expected.json'), JSON.stringify({ id, body }));
+      await taskGoalTab();
+      await wait("document.querySelector('[data-testid=task-content-editor] h2 strong')");
+      await evaluate("document.querySelector('[data-testid=task-content-editor]').focus()");
+      await click('.task-content-panel [aria-label=插入内容块]');
+      await wait("document.querySelector('.task-content-panel [data-block-command=heading3]')");
+      await click('.task-content-panel [data-block-command=heading3]');
+      await insertText('待补收悉凭证');
+      await wait(
+        "document.querySelector('[data-testid=task-content-editor] h3')?.textContent==='待补收悉凭证'",
+      );
+      for (const action of ['复制块', '删除块']) {
+        await click('.task-content-panel [aria-label=块操作]');
+        await evaluate(
+          `Array.from(document.querySelectorAll('.task-content-panel [role=menuitem]')).find(e=>e.textContent===${JSON.stringify(action)}).click()`,
+        );
+      }
+      await wait(
+        "document.querySelectorAll('[data-testid=task-content-editor] h3').length===1 && document.querySelector('[data-testid=task-content-editor] h2 strong')",
+      );
+      const goal = await evaluate(
+        "document.querySelector('[data-testid=task-content-editor]').textContent",
+      );
+      await click('[data-testid=save-task-content]');
+      await wait(
+        "document.querySelector('[data-testid=task-content-status]')?.textContent==='任务内容已保存'",
+      );
+      if (await evaluate("Boolean(document.querySelector('[aria-label=关闭提示]'))"))
+        await click('[aria-label=关闭提示]');
+      await capture('task-content.png');
+      await bodyTab();
+      await wait(
+        `document.querySelector('[data-testid=body-editor]')?.textContent===${JSON.stringify(body)} && document.querySelector('[data-testid=body-editor] strong')`,
+      );
+      writeFileSync(join(root, 'expected.json'), JSON.stringify({ id, body, goal }));
       await click('[data-testid=new-task]');
       await input('[data-testid=task-title]', '采购任务隔离样本B');
       await input('[data-testid=task-objective]', '独立任务B，不应显示A的正文');
@@ -161,6 +231,14 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-testid=body-editor]')");
       await wait(
         `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(expected.body)})`,
+      );
+      await taskGoalTab();
+      await wait(
+        `document.querySelector('[data-testid=task-content-editor]')?.textContent===${JSON.stringify(expected.goal)} && document.querySelector('[data-testid=task-content-editor] h2 strong') && document.querySelector('[data-testid=task-content-editor] h3')`,
+      );
+      await bodyTab();
+      await wait(
+        `document.querySelector('[data-testid=body-editor]')?.textContent===${JSON.stringify(expected.body)} && document.querySelector('[data-testid=body-editor] strong')`,
       );
       if (phase === 'crash') {
         await evaluate(
@@ -253,7 +331,32 @@ export async function runTaskDemo(
       await capture('projects-board.png');
       await click('[data-project-id=sample-contract]');
       await wait("document.querySelector('.project-properties')");
+      await wait(
+        "document.querySelector('[data-testid=project-overview-editor]') && document.querySelector('[data-testid=comment-editor]')",
+      );
+      await input(
+        '[data-testid=project-overview-editor]',
+        '梳理事实、矛盾与缺件，形成内部沟通初稿。',
+      );
+      await selectAllText('[data-testid=project-overview-editor]');
+      await wait("document.querySelector('.project-overview-editor [aria-label=选区格式]')");
+      await click('.project-overview-editor [aria-label=选区格式] [aria-label=加粗]');
+      await wait("document.querySelector('[data-testid=project-overview-editor] strong')");
+      await input('[data-testid=comment-editor]', '请补充收悉凭证后再核对。');
+      await selectAllText('[data-testid=comment-editor]');
+      await wait("document.querySelector('.comment-composer [aria-label=选区格式]')");
+      await click('.comment-composer [aria-label=选区格式] [aria-label=斜体]');
+      await click('[data-testid=add-sample-comment]');
+      await wait(
+        "document.querySelector('.posted-comment em')?.textContent==='请补充收悉凭证后再核对。'",
+      );
+      await capture('project-editors.png');
       await capture('project-overview.png');
+      await click('[data-project-tab=任务]');
+      await click('[data-project-tab=概述]');
+      await wait(
+        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent==='梳理事实、矛盾与缺件，形成内部沟通初稿。' && document.querySelector('.posted-comment em')",
+      );
       await click('[data-project-tab=任务]');
       await click('[data-sample-task="0"]');
       await wait("document.querySelector('.sample-detail')");

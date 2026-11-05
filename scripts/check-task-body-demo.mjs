@@ -43,6 +43,10 @@ for (const name of [
   'three-column-ai.png',
   'three-column-compact.png',
   'layout.json',
+  'notion-slash.png',
+  'notion-agent.png',
+  'task-content.png',
+  'project-editors.png',
 ])
   copyFileSync(join(dir, name), join(out, name));
 writeFileSync(

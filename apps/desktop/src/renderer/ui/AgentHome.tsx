@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { DraftEditor, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import BrandLogo from './BrandLogo';
@@ -27,12 +29,14 @@ export default function AgentHome({
   tasks,
   onOpen,
 }: {
-  prompt: string;
-  onPrompt(value: string): void;
+  prompt: RichDraft;
+  onPrompt(value: RichDraft): void;
   onStart(): void;
   tasks: Task[];
   onOpen(id: string): void;
 }) {
+  const draft = useRef<DraftEditorHandle>(null);
+  const composing = useRef(false);
   return (
     <section className="home-view agent-home" aria-label="Agent 首页">
       <div className="agent-main">
@@ -50,23 +54,39 @@ export default function AgentHome({
           <p>从工作目标开始，把材料、思考和成果放在同一个任务里。</p>
           <form
             className="agent-prompt"
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onSubmit={(event) => {
               event.preventDefault();
-              onStart();
+              if (!composing.current) onStart();
             }}
           >
-            <textarea
-              aria-label="Agent 工作目标"
-              placeholder="描述你需要完成的法律工作…"
+            <DraftEditor
+              ref={draft}
               value={prompt}
-              maxLength={4000}
-              onChange={(event) => onPrompt(event.target.value)}
+              onChange={onPrompt}
+              label="Agent 工作目标"
+              testId="agent-input"
+              placeholder="描述你需要完成的法律工作，输入 / 插入内容块…"
             />
+            {prompt.text.length > 4000 && (
+              <p role="alert" className="caption">
+                超过4000字符，请精简后创建；输入仍保留。
+              </p>
+            )}
             <div className="agent-prompt-actions">
               <span>
                 <Icon name="file" size={14} /> 材料导入尚未接入
               </span>
-              <button className="primary" disabled={!prompt.trim()}>
+              <button
+                className="primary"
+                data-testid="create-from-agent"
+                disabled={!prompt.text.trim() || prompt.text.length > 4000}
+              >
                 创建任务 <Icon name="plus" size={14} />
               </button>
             </div>
@@ -75,9 +95,11 @@ export default function AgentHome({
             {starters.map((item) => (
               <button
                 key={item.title}
-                disabled={Boolean(prompt.trim()) && prompt.length + item.text.length + 1 > 4000}
-                title={prompt.trim() ? '追加到工作目标（最多4000字符）' : '填写工作目标'}
-                onClick={() => onPrompt(prompt.trim() ? `${prompt}\n${item.text}` : item.text)}
+                disabled={
+                  Boolean(prompt.text.trim()) && prompt.text.length + item.text.length + 1 > 4000
+                }
+                title={prompt.text.trim() ? '追加到工作目标（最多4000字符）' : '填写工作目标'}
+                onClick={() => draft.current?.append(item.text)}
               >
                 <Icon name={item.icon} size={16} />
                 <span>{item.title}</span>

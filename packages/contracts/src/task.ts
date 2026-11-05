@@ -26,6 +26,7 @@ export const taskQuerySchema = z.discriminatedUnion('operation', [
     })
     .strict(),
 ]);
+const richState = z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000);
 const mutation = {
   protocol_version: z.literal(1),
   request_id: taskIdSchema,
@@ -38,6 +39,7 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
       operation: z.literal('create'),
       title: z.string().trim().min(1).max(160),
       objective: z.string().max(4000),
+      objective_state: richState.optional(),
     })
     .strict(),
   z
@@ -48,6 +50,7 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
       expected_version: z.number().int().positive(),
       title: z.string().trim().min(1).max(160),
       objective: z.string().max(4000),
+      objective_state: richState.optional(),
     })
     .strict(),
   z
@@ -70,6 +73,7 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     tasks: z.array(taskSchema),
     state: z.array(z.number().int().min(0).max(255)).nullable(),
     receipt: taskIdSchema.nullable(),
+    objective_state: richState.nullable().optional(),
   }),
   z.object({
     ok: z.literal(false),
