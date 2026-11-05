@@ -1,0 +1,37 @@
+{
+  "record_id": "DEV-1682-ACCEPT-001",
+  "date": "2026-11-05",
+  "baseline_id": "DEV-1682-REP-001",
+  "baseline_file": "baseline.json",
+  "baseline_version": "0.1.0-draft",
+  "baseline_sha256": "c8550413be60749ba123e20795895cae90b6430c3370b751910cd7939971b648",
+  "source_commit": "e901542d4d5aaa0a2af14d929fd46acea1f8ec8c",
+  "decision_source": {
+    "id": "DEV-1682",
+    "updatedAt": "2026-11-05T07:50:32.265Z",
+    "url": "https://linear.app/logixy-ai/issue/DEV-1682/r0验证独立任务五阶段输入交付格式与人工负担验证"
+  },
+  "scope_acceptance": {
+    "by": "谭辉",
+    "statement": "接受，以“梳理两份材料中的事实、矛盾和缺件，形成律师内部沟通初稿”作为首个代表任务。请记录确认，核对 DEV-1682 的完成条件后更新状态，并继续推进下一张最小任务卡。",
+    "audience": "律师内部",
+    "output": "事实摘要、矛盾和缺件清单、内部沟通初稿"
+  },
+  "source_check": {
+    "by": "Codex",
+    "scope": "G01—G10原文一致性及样本完整性，依据用户委托核验；不是用户逐项人工操作记录",
+    "checks_passed": 40
+  },
+  "frozen_files": {
+    "baseline.json": "c8550413be60749ba123e20795895cae90b6430c3370b751910cd7939971b648",
+    "expected-draft.md": "566bf4beb11b5d5c86a6ef8eb46ee3837d0cb3c05421a9aa51550eff8f8e82ab",
+    "manual-path.csv": "6ef32eb6e00d538e3fd2d692cd4d6c0679a8de041c115d90667dce77788bf965",
+    "supplement-v1-scan.pdf": "7eac9493b874dbc02aa7d7b7bfff7b2fe51bcd7a3ed06aae8463bd7e06045bcd",
+    "supplement-v1.txt": "8b5c04556bf025c50455d2dccb87feaf7b2a5164ee0e9b9d3a00187888ffbda9"
+  },
+  "interpretation": "原草案PENDING记录制作时状态；当前基线接收须同时核对固定文件hash及本接收记录。业务用途接收与产品测试结果分别解释。",
+  "product_result": "NOT_RUN",
+  "human_operation_observation": "NOT_RUN",
+  "external_calls": "NONE",
+  "input_policy": "本记录及全部金标准/参考稿/制作源仅为测试控制面，不进入OCR或模型输入；只选baseline.json明确指定的两份PDF。"
+}
