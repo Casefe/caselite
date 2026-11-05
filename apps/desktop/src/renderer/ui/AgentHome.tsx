@@ -26,14 +26,12 @@ const starters = [
 export default function AgentHome({
   prompt,
   onPrompt,
-  onNew,
   onStart,
   tasks,
   onOpen,
 }: {
   prompt: RichDraft;
   onPrompt(value: RichDraft): void;
-  onNew(): void;
   onStart(): void;
   tasks: Task[];
   onOpen(id: string): void;
@@ -46,15 +44,6 @@ export default function AgentHome({
           <span>
             <Icon name="home" size={15} /> 首页
           </span>
-          <button
-            className="icon-button"
-            data-testid="new-task"
-            aria-label="新建任务"
-            onClick={onNew}
-          >
-            <Icon name="plus" size={14} />
-            新建任务
-          </button>
         </div>
         <div className="agent-start">
           <span className="agent-wordmark">

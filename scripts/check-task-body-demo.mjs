@@ -35,6 +35,8 @@ for (const name of [
   'read.png',
   'expected.json',
   'home.png',
+  'home-compact.png',
+  'knowledge-compact.png',
   'knowledge.png',
   'knowledge-ai.png',
   'profile-settings.png',

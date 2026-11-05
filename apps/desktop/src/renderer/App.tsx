@@ -160,7 +160,6 @@ function Workbench() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('系统设置');
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
-  const [search, setSearch] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
   const [taskFilter, setTaskFilter] = useState('全部任务');
@@ -308,9 +307,8 @@ function Workbench() {
   }
   const filtered = tasks.filter(
     (t) =>
-      `${t.title} ${t.objective}`.toLowerCase().includes(search.toLowerCase()) &&
-      (taskFilter === '全部任务' ||
-        (taskFilter === '已写正文' ? t.body_revision > 0 : t.body_revision === 0)),
+      taskFilter === '全部任务' ||
+      (taskFilter === '已写正文' ? t.body_revision > 0 : t.body_revision === 0),
   );
   const resetTask = () => {
     if (!canLeave()) return;
@@ -420,7 +418,6 @@ function Workbench() {
           <ProjectPreview onAgent={() => navigate('home')} />
         ) : view === 'home' ? (
           <AgentHome
-            onNew={newTask}
             prompt={agentPrompt}
             onPrompt={setAgentPrompt}
             onStart={() => {
@@ -453,15 +450,6 @@ function Workbench() {
                     <Icon name="chevron" size={13} />
                     <span>{active.title}</span>
                   </div>
-                  <button
-                    className="icon-button"
-                    data-testid="new-task"
-                    aria-label="新建任务"
-                    onClick={newTask}
-                  >
-                    <Icon name="plus" size={14} />
-                    新建任务
-                  </button>
                 </div>
 
                 <div className="task-title">
@@ -545,11 +533,8 @@ function Workbench() {
             tasks={filtered}
             documents={view === 'documents'}
             filter={taskFilter}
-            search={search}
-            onSearch={setSearch}
             onFilter={setTaskFilter}
             onOpen={(id) => void open(id)}
-            onNew={newTask}
           />
         ) : view === 'settings' ? (
           <SettingsView

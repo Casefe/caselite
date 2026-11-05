@@ -1,3 +1,4 @@
+/* CaseLite UI 设计：全局视觉、导航与页面样式集中于此；公共尺寸见文件末尾。 */
 :root {
   --nav: #102b30;
   --nav-muted: #93a9ad;
@@ -2200,13 +2201,9 @@ dd {
   padding: 2px 6px;
   border-radius: 4px;
 }
-.collection-new,
 .collection-heading .sample-count {
   margin-left: auto;
   font-size: 11px;
-}
-.collection-new {
-  padding: 4px 8px;
 }
 .collection-workspace .view-toolbar {
   height: 38px;
@@ -2936,29 +2933,88 @@ dd {
 .profile-settings[aria-current='page'] .profile-avatar {
   border-color: #c4d4d8;
 }
-.collection-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-left: auto;
-  color: #99a2ad;
+
+/* 工作台尺寸的唯一配置入口：页面仅负责内容与视觉，不另设栏宽。 */
+:root {
+  --workspace-navigation-width: 200px;
+  --workspace-navigation-collapsed-width: 65px;
+  --workspace-inspector-width: 300px;
+  --workspace-center-min-width: 340px;
+  --workspace-columns: minmax(var(--workspace-center-min-width), 1fr)
+    var(--workspace-inspector-width);
 }
-.collection-search input {
-  width: clamp(110px, 12vw, 220px);
+.workbench {
+  height: 100vh;
+  overflow: hidden;
+}
+.primary-sidebar {
+  width: var(--workspace-navigation-width);
+}
+.is-collapsed .primary-sidebar {
+  width: var(--workspace-navigation-collapsed-width);
+}
+.workspace-main {
+  flex: 1;
   min-width: 0;
-  border: 0;
-  outline: none;
-  font-size: 11px;
-  color: #5e6978;
-  background: transparent;
-  padding: 6px 0;
+  min-height: 0;
+  overflow: auto;
 }
-.collection-search:focus-within {
-  box-shadow: 0 1px #73889d;
+.agent-home,
+.task-layout,
+.collection-workspace,
+.project-body,
+.knowledge-view {
+  display: grid;
+  grid-template-columns: var(--workspace-columns);
+  min-width: calc(var(--workspace-center-min-width) + var(--workspace-inspector-width));
+  min-height: 0;
+  flex: 1;
+  gap: 0;
 }
-.collection-heading .collection-new {
-  margin-left: 6px;
+.agent-home,
+.knowledge-view {
+  background: white;
 }
-.agent-topline .icon-button {
-  font-size: 11px;
+.task-detail {
+  min-height: 0;
+  flex: 1;
+}
+.agent-main,
+.task-work-area,
+.collection-main {
+  min-width: 0;
+  min-height: 0;
+}
+.agent-context,
+.task-inspector {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--line);
+  border-top: 0;
+  overflow: auto;
+}
+.agent-context > h2,
+.inspector-tabs {
+  height: 40px;
+  min-height: 40px;
+}
+.task-work-area > .document {
+  margin: 0;
+}
+@media (max-width: 1250px) {
+  :root {
+    --workspace-navigation-width: 180px;
+    --workspace-inspector-width: 250px;
+  }
+}
+
+/* 所有工作区标题行采用首页尺寸；属性与 AI 切换不会改变栏宽。 */
+.agent-topline,
+.collection-heading,
+.task-work-area > .page-topline {
+  height: 40px;
+  min-height: 40px;
+  flex-shrink: 0;
+  padding: 0 22px;
 }

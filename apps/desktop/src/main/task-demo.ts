@@ -40,6 +40,7 @@ export async function runTaskDemo(
       throw new Error('Task demo timed out: ' + predicate);
     };
     const shellMeasurements: unknown[] = [];
+    const homeGeometry = new Map<number, number[]>();
     const capture = async (name: string) => {
       await evaluate(
         'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
@@ -56,7 +57,8 @@ export async function runTaskDemo(
         return {page:document.querySelector('[data-nav][aria-current=page]')?.getAttribute('data-nav'),
           width:innerWidth, height:innerHeight, navWidth:nav.width,
           centerLeft:c?.left, centerRight:c?.right, rightWidth:r?.width,
-          headerAbsent:!document.querySelector('.global-bar, .brand-caption'),
+          geometry:c && r ? [c.left,c.top,c.width,c.height,r.left,r.top,r.width,r.height] : null,
+          headerAbsent:!document.querySelector('.global-bar, .brand-caption, [data-testid=new-task], .collection-search, input[type=search]'),
           profileValid:rect.left>=nav.left && rect.right<=nav.right && rect.bottom>=innerHeight-20 && rect.bottom<=innerHeight && Boolean(profile.querySelector('.profile-avatar')) && Boolean(profile.querySelector('.profile-name'))};
       })()`);
       if (!shell.headerAbsent || !shell.profileValid)
@@ -71,6 +73,20 @@ export async function runTaskDemo(
           Math.abs(shell.centerRight - (size.width - rightWidth)) > 1
         )
           throw new Error('Shared workspace dimensions diverged: ' + JSON.stringify(shell));
+      }
+      if (shell.page === 'home' && shell.geometry) homeGeometry.set(size.width, shell.geometry);
+      if (
+        ['tasks', 'documents', 'knowledge'].includes(shell.page) &&
+        shell.geometry &&
+        homeGeometry.has(size.width)
+      ) {
+        const baseline = homeGeometry.get(size.width)!;
+        if (
+          shell.geometry.some(
+            (value: number, index: number) => Math.abs(value - baseline[index]) > 1,
+          )
+        )
+          throw new Error('Workspace does not match Home dimensions: ' + JSON.stringify(shell));
       }
       shellMeasurements.push({ capture: name, ...shell });
       writeFileSync(join(root, 'shell-layout.json'), JSON.stringify(shellMeasurements, null, 2));
@@ -118,7 +134,7 @@ export async function runTaskDemo(
         `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));}})()`,
       );
     await wait(
-      "document.querySelector('[data-testid=new-task]') && !document.body.textContent.includes('正在读取')",
+      "document.querySelector('[data-testid=create-from-agent]') && !document.body.textContent.includes('正在读取')",
     );
     const openTask = async (id: string) => {
       await click('[data-nav=tasks]');
@@ -155,6 +171,11 @@ export async function runTaskDemo(
         "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
       );
     if (phase === 'write') {
+      await click('[data-nav=tasks]');
+      await wait(
+        "document.querySelector('.inspector-empty') && document.querySelectorAll('[data-row-task]').length===0",
+      );
+      await click('[data-nav=home]');
       await wait("document.querySelector('.agent-home [data-testid=agent-input]')");
       await input('[data-testid=agent-input]', '/');
       await wait("document.querySelector('.agent-prompt [data-block-command=heading2]')");
@@ -254,7 +275,11 @@ export async function runTaskDemo(
         `document.querySelector('[data-testid=body-editor]')?.textContent===${JSON.stringify(body)} && document.querySelector('[data-testid=body-editor] strong')`,
       );
       writeFileSync(join(root, 'expected.json'), JSON.stringify({ id, body, goal }));
-      await click('[data-testid=new-task]');
+      await click('[data-nav=home]');
+      await wait("document.querySelector('[data-testid=agent-input]')");
+      await input('[data-testid=agent-input]', '独立任务B，不应显示A的正文');
+      await click('[data-testid=create-from-agent]');
+      await wait("document.querySelector('[data-testid=task-title]')");
       await input('[data-testid=task-title]', '采购任务隔离样本B');
       await input('[data-testid=task-objective]', '独立任务B，不应显示A的正文');
       await click('[data-testid=create-task]');
@@ -373,6 +398,9 @@ export async function runTaskDemo(
       };
       await assertCollectionColumns('.agent-main', '.agent-context');
       await capture('home.png');
+      await setViewport(980, 740);
+      await capture('home-compact.png');
+      await setViewport(1920, 1080);
       await click('[data-nav=knowledge]');
       await wait("document.querySelector('.knowledge-view')");
       await assertCollectionColumns('.collection-main', '.task-inspector');
@@ -384,6 +412,9 @@ export async function runTaskDemo(
         "document.querySelector('.knowledge-view h2') && document.querySelector('.inspector-content h2')?.textContent==='知识库 AI'",
       );
       await capture('knowledge-ai.png');
+      await setViewport(980, 740);
+      await capture('knowledge-compact.png');
+      await setViewport(1920, 1080);
       await click('[data-nav=settings]');
       await wait("document.querySelector('.settings-center')");
       await capture('profile-settings.png');
@@ -449,9 +480,15 @@ export async function runTaskDemo(
       await click('[data-nav=tasks]');
       await evaluate("document.querySelector('[data-testid=back-to-tasks]')?.click()");
       await wait("document.querySelector('.list-view')");
-      await input('[aria-label="搜索本地任务"]', '采购');
-      await wait("document.querySelectorAll('[data-row-task]').length===1");
-      await input('[aria-label="搜索本地任务"]', '');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='未写正文').click()",
+      );
+      await wait(
+        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='全部任务').click()",
+      );
       await wait("document.querySelectorAll('[data-row-task]').length===2");
       await assertCollectionColumns('.collection-main', '.task-inspector');
       const rowIds = await evaluate(
@@ -473,15 +510,21 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-collection=documents]')");
       await assertCollectionColumns('.collection-main', '.task-inspector');
       await capture('documents-list.png');
-      await input('[aria-label="搜索本地任务"]', '采购');
-      await wait(
-        "document.querySelector('[data-collection=documents]') && document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
+      await evaluate(
+        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='待起草').click()",
       );
-      await input('[aria-label="搜索本地任务"]', '不存在的合成任务');
       await wait(
-        "document.querySelector('.inspector-empty') && document.querySelectorAll('[data-row-task]').length===0",
+        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
       );
-      await input('[aria-label="搜索本地任务"]', '');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='已有修订').click()",
+      );
+      await wait(
+        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('服务合同')",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='全部文档').click()",
+      );
       await wait("document.querySelectorAll('[data-row-task]').length===2");
       await setViewport(980, 740);
       await assertCollectionColumns('.collection-main', '.task-inspector');

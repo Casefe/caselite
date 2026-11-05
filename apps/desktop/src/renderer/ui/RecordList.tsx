@@ -8,19 +8,13 @@ export default function RecordList({
   documents,
   filter,
   onFilter,
-  search,
-  onSearch,
   onOpen,
-  onNew,
 }: {
   tasks: Task[];
   documents: boolean;
   filter: string;
   onFilter(value: string): void;
-  search: string;
-  onSearch(value: string): void;
   onOpen(id: string): void;
-  onNew(): void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 筛选后只显示当前结果中的属性，避免右栏仍指向已被隐藏的对象。
@@ -36,19 +30,6 @@ export default function RecordList({
           <Icon name={documents ? 'file' : 'check'} size={18} />
           <h1>{documents ? '文档' : '我的任务'}</h1>
           <span className="collection-total">{tasks.length}</span>
-          <label className="collection-search">
-            <Icon name="search" size={14} />
-            <input
-              aria-label="搜索本地任务"
-              placeholder={documents ? '搜索文档或关联任务' : '搜索任务'}
-              value={search}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-          </label>
-          <button className="collection-new" data-testid="new-task" onClick={onNew}>
-            <Icon name="plus" size={14} />
-            新建任务
-          </button>
         </div>
         {documents && (
           <div className="document-intro">

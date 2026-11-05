@@ -130,8 +130,7 @@ export function WorkspaceShell({
 }) {
   return (
     <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
-      <link rel="stylesheet" href={new URL('../task-workbench.css', window.location.href).href} />
-      <link rel="stylesheet" href={new URL('../workspace-layout.css', window.location.href).href} />
+      <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
       <aside className="primary-sidebar" aria-label="一级导航">
         <div className="brand">
           <BrandLogo />
