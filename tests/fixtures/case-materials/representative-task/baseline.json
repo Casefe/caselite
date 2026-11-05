@@ -1,0 +1,431 @@
+{
+  "baseline_id": "DEV-1682-REP-001",
+  "version": "0.1.0-draft",
+  "status": "PENDING_HUMAN_GOLDEN_ACCEPTANCE",
+  "issue": "DEV-1682",
+  "base_commit": "4787feafdf70170072e5a2784803b495985b6225",
+  "scope": "律师内部事实梳理与沟通初稿；先Task＋正文人工保存重开，后消费同一代表样本贯通R1。",
+  "owner": "谭辉（范围/业务验收）",
+  "prepared_by": "Codex（样本制作与资料核对，不替代律师接收）",
+  "input_contracts": [
+    {
+      "id": "68e0ba6c-88b7-48f3-af95-6465245084f3",
+      "title": "【现行01】CaseLite 精简版 v3.0｜产品范围与五阶段任务闭环合同",
+      "updatedAt": "2026-11-05T05:34:16.954Z",
+      "sha256": "2c164ec65c40762d0d57c6d61b42863ea15c8311fe6274fc90db317429411b61",
+      "url": "https://linear.app/logixy-ai/document/现行01caselite-精简版-v30产品范围与五阶段任务闭环合同-ca0fbebf8d25"
+    },
+    {
+      "id": "ca981e54-47e8-4713-961c-015d67fcd40e",
+      "title": "【现行05】CaseLite 精简版 v3.0｜操作验收、失败与恢复样例",
+      "updatedAt": "2026-11-05T05:34:21.679Z",
+      "sha256": "363ac6ff228d4175fbc186c48f2e8e59bbbbdfd7291c055cc5db7e869455dede",
+      "url": "https://linear.app/logixy-ai/document/现行05caselite-精简版-v30操作验收失败与恢复样例-788bbb1e76a6"
+    },
+    {
+      "id": "d8addbc1-493d-4edc-8095-04982b70ae76",
+      "title": "【现行06】CaseLite 精简版 v3.0｜LLM 开发、工程操作与交接手册",
+      "updatedAt": "2026-11-05T05:34:23.055Z",
+      "sha256": "1431cdbfb0abf730ad6891696a22ade5691c8ec2ae726937312bcb3f616cf197",
+      "url": "https://linear.app/logixy-ai/document/现行06caselite-精简版-v30llm-开发工程操作与交接手册-432b4760f93b"
+    }
+  ],
+  "issue_updatedAt": "2026-11-05T06:00:04.082Z",
+  "task": {
+    "fixture_id": "TASK-A",
+    "runtime_id": null,
+    "matter_id": null,
+    "title": "核对服务费金额、发票情况并起草内部沟通初稿",
+    "audience": "承办律师及内部协作人员",
+    "output_type": "带来源位置、矛盾与缺件的事实摘要＋待核验沟通初稿",
+    "jurisdiction": "本样本不检索或适用法律；法律依据N/A，不提供法律效力/违约/法定期限判断",
+    "selected_files": ["TEXT-V1", "SCAN-SUP-V1"],
+    "comparison_task_fixture_id": "TASK-B",
+    "runtime_ids_are_generated": true
+  },
+  "source_files": [
+    {
+      "id": "TEXT-V1",
+      "path": "development/contract-v1-text.pdf",
+      "sha256": "4684cc55f5c88ac1630e744fac92466ed0d45cb60c64bc13e6f30b8a132ad0d3",
+      "physical_pages": [1],
+      "page_count": 1,
+      "scan": false,
+      "source_fixture_id": "SRC-1682-CONTRACT",
+      "source_version_fixture": "v1",
+      "task_fixture_id": "TASK-A",
+      "selected_for_task_a": true,
+      "origin": "synthetic_case_fixture",
+      "role": "复用DEV-1560文字合同",
+      "local_read_scope": "TASK-A选中材料",
+      "external_send_this_run": "NONE",
+      "external_send_later": "仅在另次获准真实BYOK中由用户预览确认选中内容；金标准/预期稿/生成源不发送"
+    },
+    {
+      "id": "SCAN-SUP-V1",
+      "path": "representative-task/supplement-v1-scan.pdf",
+      "sha256": "7eac9493b874dbc02aa7d7b7bfff7b2fe51bcd7a3ed06aae8463bd7e06045bcd",
+      "physical_pages": [1],
+      "page_count": 1,
+      "scan": true,
+      "source_fixture_id": "SRC-1682-SUPPLEMENT",
+      "source_version_fixture": "v1",
+      "task_fixture_id": "TASK-A",
+      "selected_for_task_a": true,
+      "origin": "synthetic_case_fixture",
+      "role": "新增明确合成的沟通记录；不是合同修改文件",
+      "local_read_scope": "TASK-A选中材料",
+      "external_send_this_run": "NONE",
+      "external_send_later": "仅在另次获准真实BYOK中由用户预览确认选中内容；金标准/预期稿/生成源不发送"
+    },
+    {
+      "id": "UNSELECTED-V2",
+      "path": "development/contract-v2-text.pdf",
+      "sha256": "09bef1d405259bd8902f334906ce301fd443e26004d615c68a15b765a5772e29",
+      "physical_pages": [1],
+      "page_count": 1,
+      "scan": false,
+      "source_fixture_id": "SRC-1682-CONTRACT",
+      "source_version_fixture": "v2",
+      "task_fixture_id": "TASK-A",
+      "selected_for_task_a": false,
+      "origin": "synthetic_case_fixture",
+      "role": "复用DEV-1560；放入资料库但本次不选择，用30日检测越界污染",
+      "local_read_scope": "仅权限/隔离测试控制面，不进入TASK-A检索或上下文",
+      "external_send_this_run": "NONE",
+      "external_send_later": "DENY_FOR_TASK_A"
+    },
+    {
+      "id": "OTHER-TASK",
+      "path": "regression/supply-contract-v1-text.pdf",
+      "sha256": "9fe3389f9c84b0747cb98866a1dad35eff632cd1ee8d87b71872b03562770ac8",
+      "physical_pages": [1],
+      "page_count": 1,
+      "scan": false,
+      "source_fixture_id": "SRC-1682-SUPPLY",
+      "source_version_fixture": "v1",
+      "task_fixture_id": "TASK-B",
+      "selected_for_task_a": false,
+      "origin": "synthetic_case_fixture",
+      "role": "复用DEV-1560；仅属于另一Task，用独立主体及80,000元检测串任务",
+      "local_read_scope": "仅权限/隔离测试控制面，不进入TASK-A检索或上下文",
+      "external_send_this_run": "NONE",
+      "external_send_later": "DENY_FOR_TASK_A"
+    }
+  ],
+  "non_input_sidecars": {
+    "excluded_from_ai_and_ocr": [
+      "baseline.json",
+      "README.md",
+      "expected-draft.md",
+      "manual-path.csv",
+      "supplement-v1.txt"
+    ],
+    "supplement_source_sha256": "8b5c04556bf025c50455d2dccb87feaf7b2a5164ee0e9b9d3a00187888ffbda9",
+    "meaning": "金标准/转录源仅供独立核验，不能当产品OCR、检索或模型输入；D1可人工输入预期稿但不据此评价AI。"
+  },
+  "golden_items": [
+    {
+      "id": "G01",
+      "topic": "主体和签订日期",
+      "required": true,
+      "expected": "甲方星桥科技（虚构）有限公司；乙方海棠咨询（虚构）有限公司；2026-01-05。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "页首主体/签订日期",
+          "quote": "签订日期：2026年1月5日",
+          "bbox": null
+        }
+      ],
+      "limits": "不得混入另一Task的北岸/云杉或2026-02-12。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G02",
+      "topic": "服务及成果",
+      "required": true,
+      "expected": "项目管理咨询；书面项目建议和一次项目复盘会议纪要。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第一条第1、2款",
+          "quote": "服务成果包括书面项目建议和一次项目复盘会议纪要。",
+          "bbox": null
+        }
+      ],
+      "limits": "不把采购设备作为本Task服务。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G03",
+      "topic": "合同金额",
+      "required": true,
+      "expected": "合同记载人民币120,000元（壹拾贰万元）。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第二条第1款",
+          "quote": "本合同服务费总额为人民币壹拾贰万元整（¥120,000）。",
+          "bbox": null
+        }
+      ],
+      "limits": "这是合同记载，不证明实际付款。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G04",
+      "topic": "付款条件",
+      "required": true,
+      "expected": "合同约定：收到乙方合规发票后十个自然日内一次性支付。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第二条第2款",
+          "quote": "甲方应在收到乙方合规发票后十个自然日内一次性支付全部服务费。",
+          "bbox": null
+        }
+      ],
+      "limits": "不得改成30日；不得把声称发送日期直接当成收悉日期或计算确定到期日。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G05",
+      "topic": "验收条件与限制",
+      "required": true,
+      "expected": "收到服务成果后五个工作日内书面确认验收意见；未提出异议不当然视为放弃补充说明权利。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第三条第1、2款",
+          "quote": "甲方未在前款期限内提出书面异议的，不当然视为放弃补充说明权利。",
+          "bbox": null
+        }
+      ],
+      "limits": "不能据期限或缺少异议材料自动认定验收完成。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G06",
+      "topic": "补件日期和陈述来源",
+      "required": true,
+      "expected": "2026-01-20形成的合成乙方记录称：2026-01-12向甲方发送发票。",
+      "source_refs": [
+        {
+          "file_id": "SCAN-SUP-V1",
+          "physical_page": 1,
+          "locator": "页首记录日期及第3项",
+          "quote": "乙方人员称已于2026年1月12日向甲方发送发票。",
+          "bbox": null
+        }
+      ],
+      "limits": "必须保留“乙方记录称/待核验”，不升级为发票合规或已收悉事实。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G07",
+      "topic": "金额矛盾",
+      "required": true,
+      "expected": "合同120,000元；补件乙方陈述100,000元。差异待核验，未见双方签署的金额变更文件。",
+      "source_refs": [
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第二条第1款",
+          "quote": "本合同服务费总额为人民币壹拾贰万元整（¥120,000）。",
+          "bbox": null
+        },
+        {
+          "file_id": "SCAN-SUP-V1",
+          "physical_page": 1,
+          "locator": "第2项",
+          "quote": "乙方人员在本记录中称：本次服务费总额为人民币100,000元。",
+          "bbox": null
+        }
+      ],
+      "limits": "不得自动采纳10万元覆盖合同，也不把单方陈述认定为合同变更。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G08",
+      "topic": "缺件清单",
+      "required": true,
+      "expected": "待补：双方签署的金额变更文件、发票、发送记录、甲方收悉凭证、付款流水、服务成果及验收记录。",
+      "source_refs": [
+        {
+          "file_id": "SCAN-SUP-V1",
+          "physical_page": 1,
+          "locator": "第2、3、4项",
+          "quote": "本记录未附发票、发送记录或甲方收悉凭证。",
+          "bbox": null
+        },
+        {
+          "file_id": "TEXT-V1",
+          "physical_page": 1,
+          "locator": "第一条/第三条",
+          "quote": "甲方在收到服务成果后五个工作日内书面确认验收意见。",
+          "bbox": null
+        }
+      ],
+      "limits": "“本次材料未提供/待补”不等于这些文件现实中不存在。服务成果本身仅因选材清单无该项而列为待补，不伪造补件原话。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G09",
+      "topic": "未知事实与沟通请求",
+      "required": true,
+      "expected": "收悉日期、实际付款和验收情况尚不能确认；沟通初稿请求补充上述文件并解释金额差异。",
+      "source_refs": [
+        {
+          "file_id": "SCAN-SUP-V1",
+          "physical_page": 1,
+          "locator": "第4项",
+          "quote": "上述陈述需与合同及后续凭证核对，不证明甲方已收悉发票或已经付款。",
+          "bbox": null
+        }
+      ],
+      "limits": "不写“已付款/确定未付款/已逾期/构成违约”；本样本不作法律结论或法定期限计算。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    },
+    {
+      "id": "G10",
+      "topic": "范围及引用",
+      "required": true,
+      "expected": "只以TEXT-V1和SCAN-SUP-V1支撑本任务事实；每个事实保留物理第1页及条款/项目位置。",
+      "source_refs": [],
+      "limits": "UNSELECTED-V2、OTHER-TASK及答案侧车不得进入模型上下文。来源存在不等于内容支持，未知坐标保留null。",
+      "human_acceptance": "PENDING",
+      "product_result": "NOT_RUN"
+    }
+  ],
+  "acceptance_cases": [
+    {
+      "id": "D1-01",
+      "stage": "D1",
+      "owner_issues": ["DEV-1590", "DEV-1591", "DEV-1599", "DEV-1623", "DEV-1592"],
+      "action": "无账号、无Key、无Project创建TASK-A；人工输入expected-draft.md正文并保存；退出应用进程后重开",
+      "expected": "实际TaskID/DocumentID/bodyRevision及正文一致；不存在的运行ID不伪造。此用例不证明材料导入/OCR/AI已经实现。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "D1-02",
+      "stage": "D1",
+      "owner_issues": ["DEV-1592", "DEV-1599", "DEV-1623"],
+      "action": "另建TASK-B写入“采购任务隔离标记：80,000元”；A/B切换、返回和迟到读取",
+      "expected": "各Task只显示自己的正文；不串主体、修订、焦点或保存回执。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "D1-03",
+      "stage": "D1",
+      "owner_issues": ["DEV-1590", "DEV-1591", "DEV-1623"],
+      "action": "在隔离测试目录中用受控存储失败和旧保存ACK到达顺序测试",
+      "expected": "失败不假报保存；v1迟到ACK不覆盖v2；已提交正文保全。禁止修改真实客户目录。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-01",
+      "stage": "R1",
+      "owner_issues": ["DEV-1609", "DEV-1610", "DEV-1611", "DEV-1615", "DEV-1649"],
+      "action": "仅导入/选中两份TASK-A材料；扫描件通过实际产品本地OCR处理",
+      "expected": "版本与hash固定；OCR金额、日期、否定词与页位置逐项人工核对；不得读取supplement-v1.txt作弊。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-02",
+      "stage": "R1",
+      "owner_issues": ["DEV-1617", "DEV-1618", "DEV-1620", "DEV-1625", "DEV-1684"],
+      "action": "在两份单页材料分别定位引用；再提供物理第2页或错版本引用",
+      "expected": "第2页不存在，须明确拒绝/待核验；不得静默改为第1页或v2；合法引用仍核对支持性。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-03",
+      "stage": "R1",
+      "owner_issues": ["DEV-1649", "DEV-1651", "DEV-1684"],
+      "action": "仅在派生OCR输出夹具中将100,000改为10,000或删除“不”；原PDF不改",
+      "expected": "金额/否定语义变化被人工核对发现并标待核验，不能自动当成原文事实。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-04",
+      "stage": "R1",
+      "owner_issues": ["DEV-1631", "DEV-1683", "DEV-1651", "DEV-1654"],
+      "action": "把UNSELECTED-V2留在本地库但不选；TASK-B关联OTHER-TASK；检索/预览/工具请求尝试越界",
+      "expected": "A实际请求载荷与工具回执都排除未选v2、B材料、预期稿、golden和生成源；不只凭模型输出未提及判断未泄漏。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-05",
+      "stage": "R1",
+      "owner_issues": ["DEV-1648", "DEV-1652", "DEV-1653", "DEV-1650", "DEV-1655"],
+      "action": "获准真实BYOK配置后生成；取消/迟到返回；重复接受候选",
+      "expected": "记录真实Provider/模型/范围/费用与回执；取消不自动落正式稿；重复接受不产生重复Document；候选与最终人工稿分列。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-06",
+      "stage": "R1",
+      "owner_issues": ["DEV-1684", "DEV-1655", "DEV-1657"],
+      "action": "核对原始候选与G01—G10，再人工修改并保留差异",
+      "expected": "最终稿全部必需项正确或按金标准明确不确定；原始误报/漏报/无依据句和人工修正单列。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-07",
+      "stage": "R1",
+      "owner_issues": ["DEV-1628", "DEV-1629", "DEV-1703", "DEV-1657"],
+      "action": "固定一个已保存正文修订生成交付快照，再分别导出Word/PDF并用真实阅读程序打开",
+      "expected": "同snapshotId/bodyRevision、相同事实与引用，不要求字节/分页一致；分别记录打开程序/版本、中文表格/分页/引用与失败行为。",
+      "result": "NOT_RUN",
+      "evidence": null
+    },
+    {
+      "id": "R1-08",
+      "stage": "R1",
+      "owner_issues": ["DEV-1593", "DEV-1657"],
+      "action": "在隔离目录恢复一致性备份并重启读回Task、正文和来源",
+      "expected": "IDs、修订、文件hash及回源一致；恢复失败保留旧数据，不包含凭据。",
+      "result": "NOT_RUN",
+      "evidence": null
+    }
+  ],
+  "metrics": {
+    "human_minutes": null,
+    "human_operator": null,
+    "human_observation": "NOT_RUN",
+    "model_raw_candidate": null,
+    "model_errors": null,
+    "manual_edits": null,
+    "provider_cost": null,
+    "product_elapsed_seconds": null,
+    "policy": "先记录真实原始候选和人工操作；无数据不填0，不宣称效率提升/95%本地比例。"
+  },
+  "passing_rule": "正式复测前由谭辉确认G01—G10；全部必需项正确或显式待核验。越权/错误版本或快照/静默丢失/假报成功/无依据已核验任一为FAIL。必要路径未跑保持NOT_RUN。",
+  "current_external_calls": "NONE",
+  "current_product_tests": "NOT_RUN",
+  "next_consumer": "DEV-1553；后续DEV-1576与DEV-1657引用同版本，不另建评测平台。"
+}
