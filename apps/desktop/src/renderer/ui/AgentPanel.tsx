@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useContext, useEffect, useRef, useState, type RefObject } from 'react';
 import {
   AssistantRuntimeProvider,
   MessagePrimitive,
@@ -6,6 +6,7 @@ import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
+import { ModelSettingsNavigation } from './SettingsView';
 import type { AgentRun, AgentRequest } from '../../preload/caselite-api';
 import {
   DraftEditor,
@@ -48,7 +49,7 @@ export default function AgentPanel({
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [configured, setConfigured] = useState(false);
   const [error, setError] = useState('');
-  const [keyInput, setKeyInput] = useState('');
+  const openSettings = useContext(ModelSettingsNavigation);
   const [pending, setPending] = useState(false);
   const [preview, setPreview] = useState<string | null>(
     () => submissions.get(scope)?.prompt ?? null,
@@ -189,45 +190,16 @@ export default function AgentPanel({
           <span>
             <i className={configured ? 'local-dot' : 'unconnected-dot'} /> OpenAI · gpt-4.1-mini
           </span>
-          <span>{active ? '生成中' : configured ? '已配置 Key' : '未配置 Key'}</span>
+          <button
+            type="button"
+            className="model-settings-link"
+            disabled={!openSettings}
+            onClick={() => openSettings?.()}
+          >
+            {active ? '生成中 · 模型设置' : configured ? '已配置 · 模型设置' : '前往设置配置 Key'}
+          </button>
         </div>
-        <details className="assistant-settings">
-          <summary>模型设置</summary>
-          <p>使用你自己的 OpenAI API Key。加密保存在此设备；配置不会发起模型请求。</p>
-          <label>
-            API Key
-            <input
-              aria-label="OpenAI API Key"
-              type="password"
-              autoComplete="off"
-              value={keyInput}
-              onChange={(event) => setKeyInput(event.target.value)}
-            />
-          </label>
-          <div className="assistant-actions">
-            <button
-              disabled={pending || Boolean(active) || keyInput.trim().length < 8}
-              onClick={async () => {
-                setPending(true);
-                const key = keyInput;
-                setKeyInput('');
-                try {
-                  await command({ protocol_version: 1, operation: 'configure', key });
-                } finally {
-                  if (alive.current) setPending(false);
-                }
-              }}
-            >
-              保存 Key
-            </button>
-            <button
-              disabled={pending || Boolean(active) || !configured}
-              onClick={() => void command({ protocol_version: 1, operation: 'clear_key' })}
-            >
-              删除 Key
-            </button>
-          </div>
-        </details>
+
         <ThreadPrimitive.Root className="assistant-thread">
           <ThreadPrimitive.Viewport className="assistant-viewport">
             <ThreadPrimitive.Messages components={{ Message }} />

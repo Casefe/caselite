@@ -1,3 +1,4 @@
+import { createAgentCredentials } from './adapters/agent-credentials';
 import { BrowserWindow, nativeImage, session } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -104,6 +105,9 @@ export async function runTaskDemo(
     if (JSON.stringify(navLabels) !== JSON.stringify(['首页', '任务', '项目', '文档', '知识库']))
       throw new Error('Primary navigation does not match the approved five entries');
     const selectAllText = async (selector: string) => {
+      // 富文本选区工具条依赖原生窗口焦点；隔离演示先取得焦点，不放宽格式断言。
+      window.focus();
+      await wait('document.hasFocus()');
       await evaluate(
         `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();const range=document.createRange();range.selectNodeContents(e);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'));})()`,
       );
@@ -451,6 +455,95 @@ export async function runTaskDemo(
         "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}))",
       );
       await wait("document.querySelector('[data-testid=body-editor]')");
+      const savedTaskId = await evaluate(
+        "document.querySelector('.task-detail').dataset.activeTask",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+      );
+      await wait("document.querySelector('.model-settings-link')");
+      if (
+        await evaluate("Boolean(document.querySelector('.assistant-panel input[type=password]'))")
+      )
+        throw new Error('Credential form remains in AI panel');
+      await click('.model-settings-link');
+      await wait(
+        "document.querySelector('[aria-label=设置中心]') && document.querySelector('[aria-label=\"OpenAI API Key\"]')",
+      );
+      const categories = await evaluate(
+        "Array.from(document.querySelectorAll('[aria-label=设置分类] button')).map(e=>e.textContent)",
+      );
+      if (
+        JSON.stringify(categories) !==
+        JSON.stringify(['系统设置', '账户管理', '外观', '模型', '个性化'])
+      )
+        throw new Error('Settings categories mismatch');
+      await wait("!document.querySelector('[data-provider=openai]').disabled");
+      const testKey = 'sk-' + 'synthetic-settings-test';
+      await input('[aria-label="OpenAI API Key"]', testKey);
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='保存 Key').click()",
+      );
+      await wait("document.querySelector('.settings-notice')?.textContent.includes('已加密保存')");
+      if (await evaluate("document.querySelector('[aria-label=\"OpenAI API Key\"]').value !== ''"))
+        throw new Error('Key remains in settings input');
+      const encrypted = readFileSync(join(root, 'userData', 'openai-credential.enc'));
+      if (encrypted.includes(testKey)) throw new Error('Plaintext key persisted');
+      const reopenedCredentials = await createAgentCredentials(join(root, 'userData'));
+      if (reopenedCredentials.get() !== testKey)
+        throw new Error('Saved settings credential did not decrypt on reopen');
+      await capture('settings-models.png');
+      for (const provider of ['deepseek', 'mineru', 'yuandian']) {
+        await click(`[data-provider=${provider}]`);
+        await wait("document.querySelector('.provider-detail input[type=password]').disabled");
+        await capture(`settings-${provider}.png`);
+      }
+      for (const [label, file] of [
+        ['系统设置', 'system'],
+        ['账户管理', 'account'],
+        ['外观', 'appearance'],
+        ['个性化', 'personalization'],
+      ]) {
+        await evaluate(
+          `Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent===${JSON.stringify(label)}).click()`,
+        );
+        await wait(
+          `document.querySelector('.settings-page > h2')?.textContent===${JSON.stringify(label)}`,
+        );
+        await capture(`settings-${file}.png`);
+      }
+      await evaluate(
+        "Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent==='模型').click()",
+      );
+      await wait(
+        "document.querySelector('[data-provider=openai]')?.textContent.includes('已保存')",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='删除 Key').click()",
+      );
+      await wait("document.querySelector('[aria-label=确认删除密钥]')");
+      await evaluate(
+        "Array.from(document.querySelectorAll('.key-delete-confirm button')).find(e=>e.textContent==='取消').click()",
+      );
+      const kept = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'profile'})",
+      );
+      if (!kept.ok || !kept.configured) throw new Error('Cancel deleted key');
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='删除 Key').click()",
+      );
+      await evaluate(
+        "Array.from(document.querySelectorAll('.key-delete-confirm button')).find(e=>e.textContent==='确认删除').click()",
+      );
+      await wait("document.querySelector('.settings-notice')?.textContent.includes('已删除')");
+      const removed = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'profile'})",
+      );
+      if (!removed.ok || removed.configured) throw new Error('Settings key deletion failed');
+      await click('.settings-back');
+      await wait(
+        `document.querySelector('.task-detail')?.dataset.activeTask===${JSON.stringify(savedTaskId)} && document.querySelector('[data-testid=body-editor]')`,
+      );
     }
     process.stdout.write(`Task UI ${phase} passed.\n`);
     window.destroy();
