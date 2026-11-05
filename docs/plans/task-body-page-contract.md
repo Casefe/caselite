@@ -1,5 +1,7 @@
 # 独立Task＋正文最低页面合同（DEV-1576）
 
+> 本文是固定起点的语义与验收设计，后文“工程骨架／全部NOT_RUN”不是实时状态。现有五入口三栏、首页Agent、Tiptap模式与共享尺寸见docs/design及ui-design.css；“最近任务”已按用户指定改为收藏。实际操作通过范围见同SHA证据，后续消费者不因本快照关闭。
+
 性质：供当前消费者实现与审查的设计交接，不是产品UI或交互通过报告。范围取自[现行01](https://linear.app/logixy-ai/document/现行01caselite-精简版-v30产品范围与五阶段任务闭环合同-ca0fbebf8d25)的`C2026-11-05-D1553-1`及[DEV-1576](https://linear.app/logixy-ai/issue/DEV-1576)当前执行合同/TECH8；Issue回读更新时间`2026-11-05T07:58:56.965Z`。范围变更由Linear决定，本文件同步获准内容，不独立维护第二份产品范围。
 
 代码核对起点：`e901542d4d5aaa0a2af14d929fd46acea1f8ec8c`。范围Owner谭辉，交接编写Codex。当前App仍为工程骨架，本合同所有产品操作用例均NOT_RUN。输入与首演示分层消费[当前首片交接](task-body-first-slice.md)及[代表任务](../../tests/fixtures/case-materials/representative-task/README.md)。

@@ -1,5 +1,7 @@
 # DEV-1582｜首片唯一Task接口
 
+> 原最低接口的设计快照，实际签名以task.ts为准。后续objective_state、catalog项目归组和Agent历史在各自已存在公开门面增量；不由旧“当前不建Run”推断现有能力。原Matter/Anchor探针和正式Task/正文仍分开。
+
 来源：DEV-1582当前EXEC2/TECH8及DEV-1577最低数据合同。正式入口是固定`caselite:task:v1`通道，Preload的task(request)只暴露该Application门面；不是通用SQL/文件调用或第二业务Router。现有Matter/Anchor工程接口不复用为Task持久化，不宣称探针为产品能力。
 
 可执行校验与响应：packages/contracts/src/task.ts；Application入口：packages/application/src/task-application.ts。
