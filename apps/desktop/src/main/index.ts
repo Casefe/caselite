@@ -1,6 +1,6 @@
 import { runTaskDemo } from './task-demo';
 import { registerTaskIpc } from './ipc/register-task-ipc';
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,9 +30,12 @@ async function createWindow(
   show = true,
   pdfWorkerFault?: 'missing' | 'mismatch',
 ): Promise<BrowserWindow> {
+  // 以1080p工作区为设计基准；小屏按可用桌面缩放窗口尺寸，不缩放正文或降低像素清晰度。
+  const available = screen.getPrimaryDisplay().workAreaSize;
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: Math.min(1920, available.width),
+    height: Math.min(1080, Math.max(480, available.height - 32)),
+    useContentSize: true,
     minWidth: 640,
     minHeight: 480,
     title: 'CaseLite',

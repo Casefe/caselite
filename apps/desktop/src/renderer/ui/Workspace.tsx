@@ -1,12 +1,10 @@
 import type { ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 
-export type WorkspaceView =
-  'home' | 'calendar' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings';
+export type WorkspaceView = 'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
-  { id: 'home', label: '首页', icon: 'home' },
-  { id: 'calendar', label: '日历', icon: 'calendar' },
-  { id: 'tasks', label: '我的任务', icon: 'check' },
+  { id: 'home', label: '首页（Agent）', icon: 'spark' },
+  { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'documents', label: '文档', icon: 'file' },
   { id: 'knowledge', label: '知识库', icon: 'book' },
@@ -78,6 +76,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
         <path d="M8 6h13M8 12h13M8 18h13M3 6h1m-1 6h1m-1 6h1" />
       </>
     ),
+    star: <path d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1 6.2-5.6-3-5.6 3 1-6.2L2.9 9.6l6.3-.9Z" />,
     clock: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -114,6 +113,8 @@ export function WorkspaceShell({
   onNavigate,
   onNew,
   tasks,
+  favorites = [],
+  agentDraft = false,
   onOpen,
   search,
   onSearch,
@@ -125,6 +126,8 @@ export function WorkspaceShell({
   onNavigate(view: WorkspaceView): void;
   onNew(): void;
   tasks: Task[];
+  favorites?: string[];
+  agentDraft?: boolean;
   onOpen(id: string): void;
   search: string;
   onSearch(value: string): void;
@@ -139,7 +142,7 @@ export function WorkspaceShell({
           {!collapsed && (
             <>
               <b>CaseLite</b>
-              <span className="brand-caption">三栏工作台 · 11.05</span>
+              <span className="brand-caption">个人法律工作台</span>
             </>
           )}
         </div>
@@ -161,14 +164,20 @@ export function WorkspaceShell({
         </nav>
         {!collapsed && (
           <section className="shortcuts">
-            <p className="sidebar-caption">最近访问</p>
-            {tasks.slice(0, 4).map((t) => (
-              <button key={t.id} data-task-id={t.id} onClick={() => onOpen(t.id)} title={t.title}>
-                <Icon name="clock" size={14} />
-                <span>{t.title}</span>
-              </button>
-            ))}
-            {tasks.length === 0 && <p className="sidebar-empty">创建任务后显示在这里</p>}
+            <p className="sidebar-caption">
+              收藏 <span title="当前为界面原型，收藏在本次会话内有效">本次会话</span>
+            </p>
+            {tasks
+              .filter((t) => favorites.includes(t.id))
+              .map((t) => (
+                <button key={t.id} data-task-id={t.id} onClick={() => onOpen(t.id)} title={t.title}>
+                  <Icon name="star" size={14} />
+                  <span>{t.title}</span>
+                </button>
+              ))}
+            {!tasks.some((task) => favorites.includes(task.id)) && (
+              <p className="sidebar-empty">在任务标题旁点 ☆ 添加收藏</p>
+            )}
           </section>
         )}
         <div className="sidebar-bottom">
@@ -204,6 +213,16 @@ export function WorkspaceShell({
             <span>本地</span>
           </div>
           <div className="global-actions">
+            {agentDraft && view !== 'home' && (
+              <button
+                className="agent-draft-link"
+                onClick={() => onNavigate('home')}
+                title="首页有未提交的工作目标"
+              >
+                <Icon name="spark" size={13} />
+                Agent 草稿
+              </button>
+            )}
             <span
               className={`device ${new URLSearchParams(window.location.search).has('preview') ? 'preview-device' : ''}`}
             >

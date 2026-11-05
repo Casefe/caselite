@@ -8,6 +8,7 @@ import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, TaskTable, Icon, navigation, type WorkspaceView } from './ui/Workspace';
 import ProjectPreview from './projects/ProjectPreview';
 import TaskInspector from './ui/TaskInspector';
+import AgentHome from './ui/AgentHome';
 
 const mutation = () => ({
   protocol_version: 1 as const,
@@ -162,6 +163,8 @@ function Workbench() {
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState('');
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [agentPrompt, setAgentPrompt] = useState('');
   const [taskFilter, setTaskFilter] = useState('全部任务');
   const [detailTab, setDetailTab] = useState('成果正文');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -191,14 +194,20 @@ function Workbench() {
   }, []);
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
-      if (dirty || busy || uncertain || (creating && (title.trim() || objective.trim()))) {
+      if (
+        dirty ||
+        busy ||
+        uncertain ||
+        agentPrompt.trim() ||
+        (creating && (title.trim() || objective.trim()))
+      ) {
         event.preventDefault();
         event.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty, busy, uncertain, creating, title, objective]);
+  }, [dirty, busy, uncertain, creating, title, objective, agentPrompt]);
   function canLeave() {
     if (dirty || busy || uncertain) {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
@@ -300,7 +309,6 @@ function Workbench() {
       (taskFilter === '全部任务' ||
         (taskFilter === '已写正文' ? t.body_revision > 0 : t.body_revision === 0)),
   );
-  const saved = tasks.filter((t) => t.body_revision > 0).length;
   const viewLabel =
     view === 'settings' ? '设置' : navigation.find((item) => item.id === view)?.label;
   const resetTask = () => {
@@ -318,6 +326,8 @@ function Workbench() {
       onNavigate={navigate}
       onNew={newTask}
       tasks={tasks}
+      favorites={favorites}
+      agentDraft={Boolean(agentPrompt.trim())}
       onOpen={(id) => void open(id)}
       search={search}
       onSearch={(value) => {
@@ -401,94 +411,21 @@ function Workbench() {
       ) : view === 'projects' ? (
         <ProjectPreview />
       ) : view === 'home' ? (
-        <section className="home-view">
-          <div className="page-topline">
-            <span>个人工作区</span>
-            <span className="quiet-label">
-              <i className="local-dot" />
-              离线可用
-            </span>
-          </div>
-          <div className="welcome">
-            <div>
-              <p className="eyebrow">我的工作台</p>
-              <h1>每一项工作，都有清晰的下一步。</h1>
-              <p>从一个任务开始，整理思路、形成初稿，再回来继续。</p>
-            </div>
-            <button className="primary" onClick={newTask}>
-              <Icon name="plus" size={16} />
-              新建任务
-            </button>
-          </div>
-          <div className="summary-grid">
-            <button
-              onClick={() => {
-                navigate('tasks');
-                setActive(null);
-                setTaskFilter('全部任务');
-              }}
-            >
-              <span>
-                <Icon name="check" />
-                我的任务
-              </span>
-              <strong>
-                {tasks.length}
-                <small>项</small>
-              </strong>
-              <p>当前本地工作区</p>
-            </button>
-            <button
-              onClick={() => {
-                navigate('documents');
-                setActive(null);
-              }}
-            >
-              <span>
-                <Icon name="file" />
-                已写正文
-              </span>
-              <strong>
-                {saved}
-                <small>份</small>
-              </strong>
-              <p>已保存至少一个正文修订</p>
-            </button>
-            <button onClick={() => navigate('projects')}>
-              <span>
-                <Icon name="folder" />
-                项目工作区 <small className="sample-badge">示例</small>
-              </span>
-              <strong className="summary-preview">
-                查看项目原型 <Icon name="chevron" />
-              </strong>
-              <p>概述、任务与属性</p>
-            </button>
-          </div>
-          <section className="home-recent">
-            <div className="section-title">
-              <h2>最近的任务</h2>
-              <button
-                onClick={() => {
-                  navigate('tasks');
-                  setActive(null);
-                }}
-              >
-                查看全部 <Icon name="chevron" size={13} />
-              </button>
-            </div>
-            <TaskTable tasks={filtered.slice(0, 6)} onOpen={(id) => void open(id)} />
-          </section>
-          <div className="home-footer">
-            <Icon name="file" />
-            <div>
-              <strong>先写下来，再逐步完善</strong>
-              <p>无需项目或模型配置，也能完成一份可保存、可重开的初稿。</p>
-            </div>
-          </div>
-        </section>
+        <AgentHome
+          prompt={agentPrompt}
+          onPrompt={setAgentPrompt}
+          onStart={() => {
+            if (!canLeave() || !agentPrompt.trim()) return;
+            newTask();
+            setTitle(agentPrompt.trim().split('\n')[0].slice(0, 60));
+            setObjective(agentPrompt.trim());
+            setAgentPrompt('');
+          }}
+          tasks={tasks}
+          onOpen={(id) => void open(id)}
+        />
       ) : view === 'tasks' && active ? (
-        <section className="task-detail" data-layout="three-column">
+        <section className="task-detail" data-layout="three-column" data-active-task={active.id}>
           <div className="page-topline">
             <div>
               <button
@@ -500,7 +437,7 @@ function Workbench() {
                 <Icon name="back" size={16} />
               </button>
               <button className="breadcrumb-button" onClick={resetTask}>
-                我的任务
+                任务
               </button>
               <Icon name="chevron" size={13} />
               <span>{active.title}</span>
@@ -517,6 +454,21 @@ function Workbench() {
                   <small>任务 {active.id.slice(0, 4).toUpperCase()}</small>
                   <h1>{active.title}</h1>
                 </div>
+                <button
+                  className="favorite-toggle"
+                  data-testid="toggle-favorite"
+                  aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
+                  aria-pressed={favorites.includes(active.id)}
+                  onClick={() =>
+                    setFavorites((ids) =>
+                      ids.includes(active.id)
+                        ? ids.filter((id) => id !== active.id)
+                        : [...ids, active.id],
+                    )
+                  }
+                >
+                  <Icon name="star" size={15} />
+                </button>
               </div>
               <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
                 {['成果正文', '任务目标', '材料'].map((t) => (
@@ -632,13 +584,9 @@ function Workbench() {
         <section className="future-view">
           <div className="page-topline">工作区 / {viewLabel}</div>
           <div className="project-tab-empty">
-            <Icon name={view === 'calendar' ? 'calendar' : 'book'} size={34} />
+            <Icon name="book" size={34} />
             <h1>{viewLabel}</h1>
-            <p>
-              {view === 'calendar'
-                ? '日历与日期提醒将在后续版本开放。'
-                : '知识库与受控复用将在后续版本开放。'}
-            </p>
+            <p>知识库与受控复用将在后续版本开放。</p>
             <button onClick={() => navigate('home')}>返回首页</button>
           </div>
         </section>
