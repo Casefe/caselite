@@ -7,6 +7,7 @@ import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, TaskTable, Icon, navigation, type WorkspaceView } from './ui/Workspace';
 import ProjectPreview from './projects/ProjectPreview';
+import TaskInspector from './ui/TaskInspector';
 
 const mutation = () => ({
   protocol_version: 1 as const,
@@ -487,7 +488,7 @@ function Workbench() {
           </div>
         </section>
       ) : view === 'tasks' && active ? (
-        <section className="task-detail">
+        <section className="task-detail" data-layout="three-column">
           <div className="page-topline">
             <div>
               <button
@@ -506,32 +507,33 @@ function Workbench() {
             </div>
             <span className="label-tag">独立任务</span>
           </div>
-          <div className="task-title">
-            <span className="task-symbol">
-              <Icon name="check" size={23} />
-            </span>
-            <div>
-              <small>任务 {active.id.slice(0, 4).toUpperCase()}</small>
-              <h1>{active.title}</h1>
-            </div>
-          </div>
-          <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
-            {['成果正文', '任务目标', '材料'].map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={detailTab === t}
-                onClick={() => {
-                  if (detailTab !== t && canLeave()) setDetailTab(t);
-                }}
-              >
-                {t}
-                {t === '成果正文' && <small>1</small>}
-              </button>
-            ))}
-          </div>
           <div className="task-layout">
-            <div>
+            <div className="task-work-area" aria-label="阅读与编辑工作区">
+              <div className="task-title">
+                <span className="task-symbol">
+                  <Icon name="check" size={23} />
+                </span>
+                <div>
+                  <small>任务 {active.id.slice(0, 4).toUpperCase()}</small>
+                  <h1>{active.title}</h1>
+                </div>
+              </div>
+              <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
+                {['成果正文', '任务目标', '材料'].map((t) => (
+                  <button
+                    key={t}
+                    role="tab"
+                    aria-selected={detailTab === t}
+                    onClick={() => {
+                      if (detailTab !== t && canLeave()) setDetailTab(t);
+                    }}
+                  >
+                    {t === '材料' ? '材料阅读' : t}
+                    {t === '成果正文' && <small>1</small>}
+                  </button>
+                ))}
+              </div>
+
               {detailTab === '成果正文' ? (
                 <BodyEditor
                   key={active.body_id}
@@ -558,30 +560,7 @@ function Workbench() {
                 </section>
               )}
             </div>
-            <aside className="task-properties">
-              <h3>任务属性</h3>
-              <dl>
-                <dt>所属项目</dt>
-                <dd>未归组</dd>
-                <dt>工作范围</dt>
-                <dd>个人本地</dd>
-                <dt>成果</dt>
-                <dd>内部沟通初稿</dd>
-                <dt>正文修订</dt>
-                <dd>{active.body_revision}</dd>
-                <dt>最近更新</dt>
-                <dd>{new Date(active.updated_at).toLocaleDateString('zh-CN')}</dd>
-              </dl>
-              <hr />
-              <div className="property-note">
-                <Icon name="file" size={16} />
-                <p>
-                  保存不代表定稿。
-                  <br />
-                  引用与结论仍需人工核对。
-                </p>
-              </div>
-            </aside>
+            <TaskInspector key={active.id} task={active} />
           </div>
         </section>
       ) : view === 'tasks' || view === 'documents' ? (

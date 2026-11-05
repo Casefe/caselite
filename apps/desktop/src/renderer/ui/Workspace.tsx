@@ -84,6 +84,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
         <path d="M12 6v6l4 2" />
       </>
     ),
+    spark: <path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6ZM20 3v4m-2-2h4" />,
     bell: (
       <>
         <path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5Zm5 3h4" />
@@ -138,7 +139,7 @@ export function WorkspaceShell({
           {!collapsed && (
             <>
               <b>CaseLite</b>
-              <span className="brand-caption">本地法律工作台</span>
+              <span className="brand-caption">三栏工作台 · 11.05</span>
             </>
           )}
         </div>
@@ -203,9 +204,13 @@ export function WorkspaceShell({
             <span>本地</span>
           </div>
           <div className="global-actions">
-            <span className="device">
+            <span
+              className={`device ${new URLSearchParams(window.location.search).has('preview') ? 'preview-device' : ''}`}
+            >
               <i />
-              仅此设备
+              {new URLSearchParams(window.location.search).has('preview')
+                ? '独立演示数据'
+                : '仅此设备'}
             </span>
             <button
               className="new-task"

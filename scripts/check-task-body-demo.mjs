@@ -40,6 +40,8 @@ for (const name of [
   'project-overview.png',
   'project-task.png',
   'task-list.png',
+  'three-column-ai.png',
+  'three-column-compact.png',
 ])
   copyFileSync(join(dir, name), join(out, name));
 writeFileSync(

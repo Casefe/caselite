@@ -48,6 +48,18 @@ export async function runTaskDemo(
     await evaluate(
       `document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,${JSON.stringify(body)})`,
     );
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+    );
+    await wait(
+      "document.querySelector('.ai-inspector') && document.querySelector('[data-testid=body-editor]')",
+    );
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('属性')).click()",
+    );
+    await wait(
+      "document.querySelector('.inspector-content') && document.querySelector('[data-testid=save-body]')?.disabled===false",
+    );
     await click('[data-nav=projects]');
     await wait(
       "document.querySelector('[data-testid=body-editor]') && document.querySelector('[role=alert]')?.textContent.includes('请先保存')",
@@ -115,6 +127,34 @@ export async function runTaskDemo(
     );
   await capture(`${phase}.png`);
   if (phase === 'read') {
+    const assertColumns = async () => {
+      const valid = await evaluate(`(()=>{
+        const left=document.querySelector('.primary-sidebar').getBoundingClientRect();
+        const center=document.querySelector('.task-work-area').getBoundingClientRect();
+        const right=document.querySelector('.task-inspector').getBoundingClientRect();
+        const footer=document.querySelector('.document footer').getBoundingClientRect();
+        return left.right<=center.left && center.right<=right.left+1 && right.width>=240 && right.right<=innerWidth+1 && footer.bottom<=innerHeight+1;
+      })()`);
+      if (!valid) throw new Error('Three-column layout or visible save footer failed');
+    };
+    await assertColumns();
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+    );
+    await wait(
+      "document.querySelector('.ai-inspector') && document.querySelector('[data-testid=revision]')?.textContent==='2'",
+    );
+    await capture('three-column-ai.png');
+    window.setSize(980, 740);
+    await evaluate(
+      'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',
+    );
+    await assertColumns();
+    await capture('three-column-compact.png');
+    window.setSize(1280, 800);
+    await evaluate(
+      "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('属性')).click()",
+    );
     await click('[data-nav=home]');
     await wait("document.querySelector('.home-view')");
     await capture('home.png');

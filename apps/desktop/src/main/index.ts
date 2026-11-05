@@ -55,6 +55,7 @@ async function createWindow(
   const entry = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -464,7 +465,8 @@ function runLocalDatabaseProbe(): void {
 let taskDemoRoot: string | undefined;
 const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
-  if (!['write', 'read', 'crash'].includes(taskDemoPhase)) throw new Error('Invalid demo phase');
+  if (!['write', 'read', 'crash', 'preview'].includes(taskDemoPhase))
+    throw new Error('Invalid demo phase');
   const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
   if (
     !candidate.startsWith(realpathSync(tmpdir()) + sep) ||
@@ -510,12 +512,17 @@ app
     );
     registerTaskIpc(createTaskApplication(taskStore));
     app.on('will-quit', () => taskStore.close());
-    if (taskDemoRoot && taskDemoPhase) {
+    if (taskDemoRoot && taskDemoPhase && taskDemoPhase !== 'preview') {
       await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;
     }
 
+    if (taskDemoPhase === 'preview') {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+    }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         void createWindow().catch(reportStartupFailure);
