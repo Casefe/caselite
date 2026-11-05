@@ -8,6 +8,7 @@ import {
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
 import { createCatalogStore } from './catalog-store';
+import { createAgentHistoryStore } from './agent-history-store';
 
 type Row = Task;
 const select = `SELECT t.id,t.title,t.objective,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
@@ -41,6 +42,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
     catalog: createCatalogStore(db, workspace),
+    agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
       if (request.operation === 'list') {
         const rows = db

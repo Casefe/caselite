@@ -107,3 +107,13 @@ export const catalogActivity = sqliteTable('catalog_activity', {
   operation: text('operation').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const agentRuns = sqliteTable('agent_runs', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  scope: text('scope').notNull(),
+  sequence: integer('sequence').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  payload: text('payload').notNull(),
+});

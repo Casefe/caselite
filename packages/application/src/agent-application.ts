@@ -14,6 +14,12 @@ export interface AgentCredentialPort {
   getDefaultModel(): AgentModel;
   setDefaultModel(model: AgentModel): void | Promise<void>;
 }
+export interface AgentHistoryPort {
+  register(run: AgentRun): { created: boolean; run: AgentRun };
+  load(): AgentRun[];
+  save(run: AgentRun): void;
+}
+
 export interface AgentRuntimePort {
   start(input: {
     model: AgentModel;
@@ -32,9 +38,32 @@ export interface AgentRuntimePort {
 export function createAgentApplication(ports: {
   credentials: AgentCredentialPort;
   runtime: AgentRuntimePort;
+  history?: AgentHistoryPort;
   taskExists(id: string): boolean;
 }) {
   const runs = new Map<string, { owner: string; run: AgentRun; cancel?: () => void }>();
+  let historyUnavailable = false;
+  try {
+    for (const run of ports.history?.load() ?? []) runs.set(run.id, { owner: '', run });
+  } catch {
+    historyUnavailable = true;
+  }
+  let dispatched = 0;
+  const persist = (item: { run: AgentRun; cancel?: () => void }): boolean => {
+    try {
+      ports.history?.save(item.run);
+      return true;
+    } catch {
+      item.run.status = 'failed';
+      item.run.sequence++;
+      item.run.usage = null;
+      item.run.message =
+        '运行记录保存失败，已停止本地生成；远端处理及费用可能未知，请保留输入核对。';
+      item.cancel?.();
+      item.cancel = undefined;
+      return false;
+    }
+  };
   let configuring = false;
   const failure = (code: string, message: string): AgentResponse => ({ ok: false, code, message });
   const configured = (provider: AgentProvider) => {
@@ -49,6 +78,16 @@ export function createAgentApplication(ports: {
       const parsed = agentRequestSchema.safeParse(input);
       if (!parsed.success) return failure('INVALID_REQUEST', '输入格式或发送确认无效。');
       const request = parsed.data;
+      if (
+        historyUnavailable &&
+        (request.operation === 'start' ||
+          request.operation === 'read' ||
+          request.operation === 'cancel')
+      )
+        return failure(
+          'HISTORY_UNAVAILABLE',
+          '本地运行记录无法读取，未发起模型请求；人工任务与正文仍可使用。',
+        );
       if (
         configuring &&
         (request.operation === 'configure' ||
@@ -88,7 +127,7 @@ export function createAgentApplication(ports: {
           const existing = runs.get(request.run_id);
           if (existing) {
             if (
-              existing.owner !== owner ||
+              (existing.owner !== owner && existing.owner !== '') ||
               existing.run.scope !== request.scope ||
               existing.run.prompt !== request.prompt ||
               existing.run.model !== selectedModel
@@ -96,7 +135,7 @@ export function createAgentApplication(ports: {
               return failure('CONFLICT', '运行标识不匹配，未重复发送。');
           } else {
             if (active) return failure('BUSY', '已有运行进行中，请先停止或等待结束。');
-            if (runs.size >= 100)
+            if (dispatched >= 100)
               return failure('LIMIT', '本次会话已达运行上限，请先保存需要保留的结果。');
             if (ports.credentials.getDefaultModel() !== selectedModel)
               return failure('MODEL_CHANGED', '默认模型已变化，请返回修改并重新预览；本次未发送。');
@@ -108,6 +147,7 @@ export function createAgentApplication(ports: {
               );
             const run: AgentRun = {
               provider,
+              created_at: new Date().toISOString(),
               model: selectedModel,
               id: request.run_id,
               scope: request.scope,
@@ -118,38 +158,64 @@ export function createAgentApplication(ports: {
               message: '',
               usage: null,
             };
-            const item: { owner: string; run: AgentRun; cancel?: () => void } = { owner, run };
-            runs.set(run.id, item);
-            try {
-              const handle = ports.runtime.start({
-                model: selectedModel,
-                prompt: run.prompt,
-                key,
-                onText(text) {
-                  if (run.status === 'running') {
-                    run.output = text.slice(0, 64_000);
-                    run.sequence++;
-                  }
-                },
-                onEnd(result) {
-                  if (run.status === 'running') {
-                    Object.assign(run, result);
-                    run.sequence++;
-                    item.cancel = undefined;
-                  }
-                },
-              });
-              if (run.status === 'running') item.cancel = () => handle.cancel();
-            } catch {
-              run.status = 'failed';
-              run.message = '模型启动失败，未自动重试。';
-              run.sequence++;
+            const registration = ports.history?.register(run);
+            if (registration && !registration.created) {
+              const old = registration.run;
+              if (
+                old.scope !== run.scope ||
+                old.prompt !== run.prompt ||
+                old.model !== run.model ||
+                old.provider !== run.provider
+              )
+                return failure('CONFLICT', '运行标识已登记其他输入，未重复发送。');
+              runs.set(old.id, { owner: '', run: old });
+            } else {
+              const item: { owner: string; run: AgentRun; cancel?: () => void } = { owner, run };
+              runs.set(run.id, item);
+              let lastCheckpoint = 0;
+              try {
+                dispatched++;
+                const handle = ports.runtime.start({
+                  model: selectedModel,
+                  prompt: run.prompt,
+                  key,
+                  onText(text) {
+                    if (run.status === 'running') {
+                      run.output = text.slice(0, 64_000);
+                      run.sequence++;
+                      if (Date.now() - lastCheckpoint >= 500) {
+                        lastCheckpoint = Date.now();
+                        persist(item);
+                      }
+                    }
+                  },
+                  onEnd(result) {
+                    if (run.status === 'running') {
+                      Object.assign(run, result);
+                      run.sequence++;
+                      item.cancel = undefined;
+                      persist(item);
+                    }
+                  },
+                });
+                if (run.status === 'running') item.cancel = () => handle.cancel();
+                else handle.cancel();
+              } catch {
+                run.status = 'failed';
+                if (!run.message) run.message = '模型启动失败，未自动重试。';
+                run.sequence++;
+                persist(item);
+              }
             }
           }
         }
         if (request.operation === 'cancel') {
           const item = runs.get(request.run_id);
-          if (!item || item.owner !== owner || item.run.scope !== request.scope)
+          if (
+            !item ||
+            (item.owner !== owner && item.owner !== '') ||
+            item.run.scope !== request.scope
+          )
             return failure('NOT_FOUND', '未找到当前范围的运行。');
           if (item.run.status === 'running') {
             item.run.status = 'cancelled';
@@ -157,6 +223,7 @@ export function createAgentApplication(ports: {
             item.run.message = '已停止本地生成；远端可能已处理或计费，用量尚不确定。';
             item.cancel?.();
             item.cancel = undefined;
+            persist(item);
           }
         }
         // 已接受运行的回执不受默认配置读取失败影响；不再派发任何请求。
@@ -173,7 +240,11 @@ export function createAgentApplication(ports: {
           runs:
             'scope' in request
               ? [...runs.values()]
-                  .filter((item) => item.owner === owner && item.run.scope === request.scope)
+                  .filter(
+                    (item) =>
+                      (item.owner === owner || item.owner === '') &&
+                      item.run.scope === request.scope,
+                  )
                   .map((item) => ({ ...item.run }))
               : [],
         };
@@ -183,12 +254,17 @@ export function createAgentApplication(ports: {
     },
     release(owner?: string) {
       for (const item of runs.values())
-        if ((!owner || item.owner === owner) && item.run.status === 'running') {
-          item.run.status = 'cancelled';
-          item.run.message = '窗口关闭，运行已停止。';
-          item.run.sequence++;
-          item.cancel?.();
-          item.cancel = undefined;
+        if (!owner || item.owner === owner) {
+          if (item.run.status === 'running') {
+            item.run.status = 'cancelled';
+            item.run.message = '窗口关闭，运行已停止；远端处理及费用可能未知。';
+            item.run.sequence++;
+            item.cancel?.();
+            item.cancel = undefined;
+            persist(item);
+          }
+          // 已释放窗口的终态成为同一本地工作区的只读历史。
+          item.owner = '';
         }
     },
   };

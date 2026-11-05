@@ -1,4 +1,6 @@
 import { BrowserWindow, session } from 'electron';
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai';
@@ -167,6 +169,22 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
       captureBeyondViewport: true,
     });
     writeFileSync(join(root, 'agent-home.png'), Buffer.from(screenshot.data, 'base64'));
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [], {
+        env: { ...process.env, CASELITE_TASK_DEMO: 'agent-read', CASELITE_TASK_DEMO_DIR: root },
+        stdio: 'ignore',
+      });
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('Second instance did not exit'));
+      }, 10000);
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error('Second instance was not refused'));
+      });
+    });
     await clickText('创建本地任务');
     await wait("document.querySelector('[data-testid=task-title]')");
     await evaluate(
@@ -293,7 +311,7 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
           credentialEncryption:
             'PASS_REAL safeStorage synthetic key roundtrip, ciphertext and removal',
           realByok: 'NOT_RUN',
-          persistedHistory: 'NOT_IMPLEMENTED',
+          persistedHistory: 'PASS_REAL SQLite with synthetic provider data',
         },
         null,
         2,
@@ -302,5 +320,90 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
   } finally {
     window.webContents.debugger.detach();
     window.destroy();
+  }
+}
+
+export async function runAgentHistoryProbe(
+  createWindow: () => Promise<BrowserWindow>,
+  root: string,
+  phase: string,
+) {
+  const window = await createWindow();
+  const evaluate = (s: string) => window.webContents.executeJavaScript(s);
+  const wait = async (predicate: string) => {
+    for (let i = 0; i < 100; i++) {
+      if (await evaluate(`Boolean(${predicate})`)) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('History recovery UI failed');
+  };
+  try {
+    await wait("document.querySelector('[data-testid=agent-input]')");
+    if (phase === 'agent-crash') {
+      const profile = await evaluate(
+          "window.caselite.agent({protocol_version:1,operation:'profile'})",
+        ),
+        id = randomUUID();
+      const r = await evaluate(
+        `window.caselite.agent({protocol_version:1,operation:'start',scope:'home',run_id:${JSON.stringify(id)},prompt:'中断恢复合成样本',confirmed:true,model:${JSON.stringify(profile.model)}})`,
+      );
+      if (!r.ok || r.runs.at(-1).status !== 'running') throw new Error('Crash Run did not start');
+      await wait(
+        "document.querySelector('.assistant-run-status.running') && document.body.innerText.includes('合成演示')",
+      );
+      await new Promise((r) => setTimeout(r, 350));
+      writeFileSync(join(root, 'crashed-run.json'), JSON.stringify({ id, model: profile.model }));
+      process.kill(process.pid, 'SIGKILL');
+    } else {
+      await wait("document.body.innerText.includes('上次运行被中断')");
+      const result = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
+      );
+      const crashed = JSON.parse(readFileSync(join(root, 'crashed-run.json'), 'utf8'));
+      const run = result.runs.find((r: { id: string }) => r.id === crashed.id);
+      if (
+        !result.ok ||
+        !run ||
+        run.status !== 'interrupted' ||
+        run.usage !== null ||
+        result.runs.some((r: { status: string }) => r.status === 'running') ||
+        !result.runs.some((r: { status: string }) => r.status === 'succeeded')
+      )
+        throw new Error('Restarted Run statuses incorrect');
+      if (existsSync(join(root, 'unexpected-runtime.txt')))
+        throw new Error('Restart dispatched a Provider');
+      window.webContents.debugger.attach('1.3');
+      await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width: 1920,
+        height: 1080,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      const screenshot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: true,
+      });
+      writeFileSync(join(root, 'agent-recovered.png'), Buffer.from(screenshot.data, 'base64'));
+      window.webContents.debugger.detach();
+      writeFileSync(
+        join(root, 'history-result.json'),
+        JSON.stringify(
+          {
+            passed: true,
+            provider: 'MOCK_ONLY',
+            sqliteRecovery: 'PASS_REAL',
+            interruptedRunId: run.id,
+            completedRuns: result.runs.filter((r: { status: string }) => r.status === 'succeeded')
+              .length,
+            runtimeAfterRestart: 0,
+            realByok: 'NOT_RUN',
+          },
+          null,
+          2,
+        ),
+      );
+    }
+  } finally {
+    if (!window.isDestroyed()) window.destroy();
   }
 }

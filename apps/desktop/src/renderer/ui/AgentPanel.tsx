@@ -317,7 +317,7 @@ export default function AgentPanel({
           </section>
         )}
         <p className="assistant-footnote">
-          回答待人工核对，不自动写入正文。本次对话重启后不保留；每次发送独立，不自动携带历史。
+          回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。
         </p>
       </section>
     </AssistantRuntimeProvider>

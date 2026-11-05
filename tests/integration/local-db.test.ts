@@ -48,7 +48,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
         expect(
           second.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get(),
         ).toEqual({
-          n: 4,
+          n: 5,
         });
       } finally {
         second.sqlite.close();

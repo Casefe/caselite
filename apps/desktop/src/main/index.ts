@@ -1,5 +1,5 @@
 import { runTaskDemo } from './task-demo';
-import { runAgentDemo, syntheticAgentStream } from './agent-demo';
+import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
 import { createCatalogApplication } from '@caselite/application';
 import { createAgentApplication } from '@caselite/application';
 import { createPiRuntime } from './adapters/pi-runtime';
@@ -381,7 +381,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 4
+      result.value?.migration_count !== 5
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -474,7 +474,11 @@ function runLocalDatabaseProbe(): void {
 let taskDemoRoot: string | undefined;
 const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
-  if (!['write', 'read', 'crash', 'preview', 'agent'].includes(taskDemoPhase))
+  if (
+    !['write', 'read', 'crash', 'preview', 'agent', 'agent-crash', 'agent-read'].includes(
+      taskDemoPhase,
+    )
+  )
     throw new Error('Invalid demo phase');
   const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
   if (
@@ -487,6 +491,25 @@ if (taskDemoPhase) {
   mkdirSync(data, { recursive: true });
   app.setPath('userData', data);
 }
+
+// 产品工作区只允许一个活进程；临时离线探针使用独立数据，不持有产品锁。
+const integrationPhase = process.env.CASELITE_INTEGRATION_PHASE;
+const integrationProbe = integrationPhase === 'write' || integrationPhase === 'read';
+if (integrationPhase !== undefined && !integrationProbe) app.exit(1);
+const isolatedProbe =
+  process.env.CASELITE_DB_PROBE === '1' ||
+  process.env.CASELITE_PDF_PROBE === '1' ||
+  integrationProbe;
+const ownsWorkspace = isolatedProbe || app.requestSingleInstanceLock();
+if (!ownsWorkspace) app.exit(0);
+app.on('second-instance', () => {
+  const existing = BrowserWindow.getAllWindows()[0];
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+  }
+});
 
 app
   .whenReady()
@@ -524,13 +547,41 @@ app
     registerCatalogIpc(createCatalogApplication(taskStore.catalog));
     const agentCredentials = await createAgentCredentials(taskRoot);
     if (taskDemoPhase === 'agent') await agentCredentials.set('sk-synthetic-openai');
+    let historyReady = true;
+    try {
+      taskStore.agentHistory.recoverInterrupted();
+    } catch {
+      historyReady = false;
+    }
+
     const agent = createAgentApplication({
       credentials: agentCredentials,
-      runtime: createPiRuntime(taskDemoPhase === 'agent' ? syntheticAgentStream : undefined),
+      history: {
+        ...taskStore.agentHistory,
+        load() {
+          if (!historyReady) throw new Error('History unavailable');
+          return taskStore.agentHistory.load();
+        },
+      },
+      runtime: createPiRuntime(
+        taskDemoPhase === 'agent-read'
+          ? () => {
+              writeFileSync(join(taskDemoRoot!, 'unexpected-runtime.txt'), 'unexpected dispatch');
+              throw new Error('Unexpected restart dispatch');
+            }
+          : taskDemoPhase?.startsWith('agent')
+            ? syntheticAgentStream
+            : undefined,
+      ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && (taskDemoPhase === 'agent-crash' || taskDemoPhase === 'agent-read')) {
+      await runAgentHistoryProbe(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
     if (taskDemoRoot && taskDemoPhase === 'agent') {
       await runAgentDemo(() => createWindow(), taskDemoRoot);
       app.exit(0);

@@ -3123,3 +3123,8 @@ dd {
 .project-ai-content {
   padding-top: 20px;
 }
+
+.assistant-run-status.interrupted {
+  color: #944f32;
+  background: #fff4eb;
+}
