@@ -92,10 +92,7 @@ export async function runTaskDemo(
     const navLabels = await evaluate(
       "Array.from(document.querySelectorAll('.primary-navigation button')).map(e=>e.getAttribute('aria-label'))",
     );
-    if (
-      JSON.stringify(navLabels) !==
-      JSON.stringify(['首页（Agent）', '任务', '项目', '文档', '知识库'])
-    )
+    if (JSON.stringify(navLabels) !== JSON.stringify(['首页', '任务', '项目', '文档', '知识库']))
       throw new Error('Primary navigation does not match the approved five entries');
     if (phase === 'write') {
       await wait("document.querySelector('.agent-home')");

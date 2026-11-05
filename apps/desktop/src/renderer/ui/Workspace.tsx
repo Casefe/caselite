@@ -4,7 +4,7 @@ import BrandLogo from './BrandLogo';
 
 export type WorkspaceView = 'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
-  { id: 'home', label: '首页（Agent）', icon: 'spark' },
+  { id: 'home', label: '首页', icon: 'home' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'documents', label: '文档', icon: 'file' },
