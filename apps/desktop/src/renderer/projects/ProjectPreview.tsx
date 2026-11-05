@@ -31,7 +31,7 @@ const projects = [
   },
 ];
 const tabs = ['概述', '任务', '文件', '交付物', '活动'];
-export default function ProjectPreview() {
+export default function ProjectPreview({ onAgent }: { onAgent(): void }) {
   const [descriptions, setDescriptions] = useState<Record<string, RichDraft>>(() =>
     Object.fromEntries(projects.map((p) => [p.id, { text: p.description, state: null }])),
   );
@@ -39,13 +39,19 @@ export default function ProjectPreview() {
   const [comments, setComments] = useState<Record<string, RichDraft[]>>({});
   const [layout, setLayout] = useState<'list' | 'board'>('list');
   const [selected, setSelected] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState(projects[0].id);
   const [tab, setTab] = useState('概述');
   const [filter, setFilter] = useState('全部状态');
   const [detail, setDetail] = useState<string | null>(null);
   const project = projects.find((p) => p.id === selected);
   const shown = projects.filter((p) => filter === '全部状态' || p.status === filter);
+  const preview = shown.find((p) => p.id === previewId) ?? shown[0];
+  const openProject = (id: string) => {
+    setSelected(id);
+    setTab('概述');
+  };
   return (
-    <section className="project-view" data-testid="project-preview">
+    <section data-layout="three-column" className="project-view" data-testid="project-preview">
       <div className="page-topline">
         <span>
           工作区 <Icon name="chevron" size={13} /> 项目
@@ -230,150 +236,227 @@ export default function ProjectPreview() {
                 </div>
               )}
             </div>
-            <aside className="project-properties">
-              <h3>属性</h3>
-              <dl>
-                <dt>状态</dt>
-                <dd>
-                  <span className={`status-tag ${project.color}`}>{project.status}</span>
-                </dd>
-                <dt>负责人</dt>
-                <dd>
-                  <span className="mini-avatar">律</span>
-                  {project.owner}
-                </dd>
-                <dt>优先级</dt>
-                <dd>普通</dd>
-                <dt>日期</dt>
-                <dd className="muted">未设置</dd>
-                <dt>领域</dt>
-                <dd>
-                  <span className="label-tag">
-                    {selected === 'sample-labor' ? '劳动争议' : '合同事务'}
-                  </span>
-                </dd>
-              </dl>
-              <hr />
-              <p className="caption">示例属性仅用于确认页面设计。</p>
-            </aside>
+            <ProjectInspector key={project.id} project={project} onAgent={onAgent} />
           </div>
         </>
       ) : (
-        <>
-          <div className="page-title">
-            <div>
-              <p className="eyebrow">项目管理</p>
+        <div className="collection-workspace project-collection">
+          <div className="collection-main">
+            <div className="collection-heading">
+              <Icon name="folder" size={18} />
               <h1>项目</h1>
-              <p>把相关任务、材料和成果组织在同一处。</p>
+              <span className="collection-total">{shown.length}</span>
+              <span className="sample-count">示例项目</span>
             </div>
-            <span className="sample-count">3 个示例项目</span>
-          </div>
-          <div className="view-toolbar">
-            <div className="view-tabs">
-              <button className="current">
-                全部项目 <small>3</small>
-              </button>
-            </div>
-            <div className="view-options">
-              <label className="filter-select">
-                状态{' '}
-                <select
-                  aria-label="筛选示例项目状态"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                >
-                  {['全部状态', '进行中', '待开始', '已完成'].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="segmented">
-                <button
-                  aria-label="项目列表视图"
-                  aria-pressed={layout === 'list'}
-                  onClick={() => setLayout('list')}
-                >
-                  <Icon name="list" size={16} />
-                </button>
-                <button
-                  aria-label="项目看板视图"
-                  aria-pressed={layout === 'board'}
-                  onClick={() => setLayout('board')}
-                >
-                  <Icon name="grid" size={16} />
+            <div className="view-toolbar">
+              <div className="view-tabs">
+                <button className="current">
+                  全部项目 <small>3</small>
                 </button>
               </div>
-            </div>
-          </div>
-          {layout === 'list' ? (
-            <div className="project-list">
-              <div className="project-list-head">
-                <span>项目名称</span>
-                <span>状态</span>
-                <span>负责人</span>
-                <span>任务</span>
-              </div>
-              {shown.map((p) => (
-                <button
-                  data-project-id={p.id}
-                  className="project-row"
-                  key={p.id}
-                  onClick={() => {
-                    setSelected(p.id);
-                    setTab('概述');
-                  }}
-                >
-                  <span>
-                    <span className={`project-icon ${p.color}`}>
-                      <Icon name="folder" />
-                    </span>
-                    <strong>{p.name}</strong>
-                  </span>
-                  <span className={`status-tag ${p.color}`}>{p.status}</span>
-                  <span className="muted">{p.owner}</span>
-                  <span className="task-total">{p.tasks.length} 项</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="project-board">
-              {['待开始', '进行中', '已完成'].map((status) => (
-                <section key={status}>
-                  <h3>
-                    <span className="circle-state" />
-                    {status}
-                    <small>{shown.filter((p) => p.status === status).length}</small>
-                  </h3>
-                  {shown
-                    .filter((p) => p.status === status)
-                    .map((p) => (
-                      <button
-                        className="project-card"
-                        data-project-id={p.id}
-                        key={p.id}
-                        onClick={() => {
-                          setSelected(p.id);
-                          setTab('概述');
-                        }}
-                      >
-                        <Icon name="folder" />
-                        <h3>{p.name}</h3>
-                        <p>{p.description}</p>
-                        <footer>
-                          <span>{p.tasks.length} 项任务</span>
-                          <span className="mini-avatar">律</span>
-                        </footer>
-                      </button>
+              <div className="view-options">
+                <label className="filter-select">
+                  状态{' '}
+                  <select
+                    aria-label="筛选示例项目状态"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                  >
+                    {['全部状态', '进行中', '待开始', '已完成'].map((s) => (
+                      <option key={s}>{s}</option>
                     ))}
-                </section>
-              ))}
+                  </select>
+                </label>
+                <div className="segmented">
+                  <button
+                    aria-label="项目列表视图"
+                    aria-pressed={layout === 'list'}
+                    onClick={() => setLayout('list')}
+                  >
+                    <Icon name="list" size={16} />
+                  </button>
+                  <button
+                    aria-label="项目看板视图"
+                    aria-pressed={layout === 'board'}
+                    onClick={() => setLayout('board')}
+                  >
+                    <Icon name="grid" size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
+            <div className="collection-scroll">
+              {layout === 'list' ? (
+                <div className="project-list">
+                  <div className="project-list-head">
+                    <span>项目名称</span>
+                    <span>状态</span>
+                    <span>负责人</span>
+                    <span>任务</span>
+                  </div>
+                  {shown.map((p) => (
+                    <button
+                      data-project-id={p.id}
+                      className="project-row"
+                      key={p.id}
+                      aria-current={preview?.id === p.id ? 'true' : undefined}
+                      onClick={() => setPreviewId(p.id)}
+                      onDoubleClick={() => openProject(p.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          openProject(p.id);
+                        }
+                      }}
+                    >
+                      <span>
+                        <span className={`project-icon ${p.color}`}>
+                          <Icon name="folder" />
+                        </span>
+                        <strong>{p.name}</strong>
+                      </span>
+                      <span className={`status-tag ${p.color}`}>{p.status}</span>
+                      <span className="muted">{p.owner}</span>
+                      <span className="task-total">{p.tasks.length} 项</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="project-board">
+                  {['待开始', '进行中', '已完成'].map((status) => (
+                    <section key={status}>
+                      <h3>
+                        <span className="circle-state" />
+                        {status}
+                        <small>{shown.filter((p) => p.status === status).length}</small>
+                      </h3>
+                      {shown
+                        .filter((p) => p.status === status)
+                        .map((p) => (
+                          <button
+                            className="project-card"
+                            data-project-id={p.id}
+                            key={p.id}
+                            onClick={() => {
+                              setSelected(p.id);
+                              setTab('概述');
+                            }}
+                          >
+                            <Icon name="folder" />
+                            <h3>{p.name}</h3>
+                            <p>{p.description}</p>
+                            <footer>
+                              <span>{p.tasks.length} 项任务</span>
+                              <span className="mini-avatar">律</span>
+                            </footer>
+                          </button>
+                        ))}
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+            <footer className="collection-footer">
+              <span>示例内容 · 不保存</span>
+              <span>
+                {layout === 'list' ? '单击查看属性 · 双击或 Enter 打开' : '单击卡片打开项目'}
+              </span>
+            </footer>
+          </div>
+          {preview ? (
+            <ProjectInspector
+              key={preview.id}
+              project={preview}
+              onOpen={() => openProject(preview.id)}
+              onAgent={onAgent}
+            />
+          ) : (
+            <aside className="task-inspector inspector-content">没有匹配的项目</aside>
           )}
-          <p className="prototype-footnote">
-            可点击项目查看概述、任务和属性。示例内容不会进入本地数据库。
-          </p>
-        </>
+        </div>
       )}
     </section>
+  );
+}
+
+function ProjectInspector({
+  project,
+  onOpen,
+  onAgent,
+}: {
+  project: (typeof projects)[number];
+  onOpen?(): void;
+  onAgent(): void;
+}) {
+  const [tab, setTab] = useState<'properties' | 'ai'>('properties');
+  return (
+    <aside className="task-inspector project-properties" aria-label="项目属性与 AI 侧边栏">
+      <div className="inspector-tabs" role="tablist" aria-label="项目侧边栏栏目">
+        <button
+          role="tab"
+          aria-selected={tab === 'properties'}
+          onClick={() => setTab('properties')}
+        >
+          <Icon name="panel" size={15} />
+          属性
+        </button>
+        <button role="tab" aria-selected={tab === 'ai'} onClick={() => setTab('ai')}>
+          <Icon name="spark" size={15} />
+          AI 助手
+        </button>
+      </div>
+      <div
+        className="inspector-content"
+        role="tabpanel"
+        aria-label={tab === 'properties' ? '项目属性' : '项目 AI 助手'}
+      >
+        <div className="inspector-heading">
+          <Icon name="folder" size={16} />
+          示例项目
+        </div>
+        <h2>{project.name}</h2>
+        {tab === 'properties' ? (
+          <>
+            {onOpen && (
+              <button data-testid="open-project" className="inspector-open" onClick={onOpen}>
+                打开项目
+                <Icon name="chevron" size={13} />
+              </button>
+            )}
+            <p className="inspector-objective">{project.description}</p>
+            <h3>属性</h3>
+            <dl>
+              <dt>状态</dt>
+              <dd>
+                <span className={`status-tag ${project.color}`}>{project.status}</span>
+              </dd>
+              <dt>负责人</dt>
+              <dd>{project.owner}</dd>
+              <dt>任务</dt>
+              <dd>{project.tasks.length} 项示例任务</dd>
+              <dt>日期</dt>
+              <dd>未设置</dd>
+              <dt>领域</dt>
+              <dd>{project.id === 'sample-labor' ? '劳动争议' : '合同事务'}</dd>
+            </dl>
+            <hr />
+            <p className="caption">项目属性与归组为界面示例，尚未保存到本地数据库。</p>
+          </>
+        ) : (
+          <div className="project-agent-empty">
+            <Icon name="spark" size={25} />
+            <h3>项目 AI 上下文待接入</h3>
+            <p>
+              项目材料和任务归组接入后，可围绕选定项目工作。当前可前往首页使用
+              Agent，示例项目不会发送给模型。
+            </p>
+            <button onClick={onAgent}>
+              前往首页 Agent
+              <Icon name="chevron" size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }

@@ -33,15 +33,15 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     expect(screen.getByText('内容区域')).toBeTruthy();
   });
   it('filters and drills into sample project tabs without a storage API', () => {
-    render(<ProjectPreview />);
+    render(<ProjectPreview onAgent={vi.fn()} />);
     expect(screen.getByText('示例项目 · 不保存')).toBeTruthy();
     fireEvent.change(screen.getByRole('combobox', { name: '筛选示例项目状态' }), {
       target: { value: '待开始' },
     });
     expect(screen.queryByText('海川服务合同争议')).toBeNull();
-    expect(screen.getByText('明远劳动争议')).toBeTruthy();
+    expect(screen.getAllByText('明远劳动争议')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '项目看板视图' }));
-    fireEvent.click(screen.getByText('明远劳动争议'));
+    fireEvent.click(screen.getByRole('button', { name: /明远劳动争议/ }));
     fireEvent.click(screen.getByRole('tab', { name: /任务/ }));
     fireEvent.click(screen.getByText('整理已收到的材料'));
     expect(screen.getByText(/不会创建或修改你的本地任务/)).toBeTruthy();

@@ -3,9 +3,10 @@ import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
-import { WorkspaceShell, TaskTable, Icon, navigation, type WorkspaceView } from './ui/Workspace';
+import { WorkspaceShell, Icon, navigation, type WorkspaceView } from './ui/Workspace';
 import ProjectPreview from './projects/ProjectPreview';
 import TaskInspector from './ui/TaskInspector';
+import RecordList from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
 import {
   DraftEditor,
@@ -332,7 +333,7 @@ function Workbench() {
         if (!dirty && !creating && !busy) {
           readSequence.current++;
           setLoading(false);
-          setView('tasks');
+          if (view !== 'documents') setView('tasks');
           setActive(null);
         }
       }}
@@ -417,7 +418,7 @@ function Workbench() {
           正在读取本地任务…
         </div>
       ) : view === 'projects' ? (
-        <ProjectPreview />
+        <ProjectPreview onAgent={() => navigate('home')} />
       ) : view === 'home' ? (
         <AgentHome
           prompt={agentPrompt}
@@ -530,48 +531,15 @@ function Workbench() {
           </div>
         </section>
       ) : view === 'tasks' || view === 'documents' ? (
-        <section className="list-view">
-          <div className="page-topline">
-            <span>
-              工作区 <Icon name="chevron" size={13} /> {viewLabel}
-            </span>
-            <span className="quiet-label">本地数据</span>
-          </div>
-          <div className="page-title">
-            <div>
-              <p className="eyebrow">{view === 'documents' ? '成果资料' : '个人工作'}</p>
-              <h1>{viewLabel}</h1>
-              <p>
-                {view === 'documents'
-                  ? '从关联任务打开成果，继续编辑同一份正文。'
-                  : '每个任务都可以独立开始，按需组织到项目。'}
-              </p>
-            </div>
-            <button className="primary" onClick={newTask}>
-              <Icon name="plus" size={16} />
-              新建任务
-            </button>
-          </div>
-          <div className="view-toolbar">
-            <div className="view-tabs">
-              {['全部任务', '已写正文', '未写正文'].map((t) => (
-                <button
-                  key={t}
-                  className={taskFilter === t ? 'current' : ''}
-                  onClick={() => setTaskFilter(t)}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            <span className="list-count">{filtered.length} 项</span>
-          </div>
-          <TaskTable
-            tasks={filtered}
-            documents={view === 'documents'}
-            onOpen={(id) => void open(id)}
-          />
-        </section>
+        <RecordList
+          key={view}
+          tasks={filtered}
+          documents={view === 'documents'}
+          filter={taskFilter}
+          onFilter={setTaskFilter}
+          onOpen={(id) => void open(id)}
+          onNew={newTask}
+        />
       ) : view === 'settings' ? (
         <section className="settings-view">
           <div className="page-topline">个人工作区 / 设置</div>
@@ -589,7 +557,7 @@ function Workbench() {
               <dt>任务与正文</dt>
               <dd>保存在此设备</dd>
               <dt>AI 配置</dt>
-              <dd>当前未接入，不影响人工编辑</dd>
+              <dd>首页与任务侧栏可配置 BYOK，不影响人工编辑</dd>
             </dl>
             <p className="caption">跨设备同步、备份恢复和团队协作将按后续功能开放。</p>
           </div>

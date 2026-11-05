@@ -259,10 +259,14 @@ export function TaskTable({
   tasks,
   onOpen,
   documents = false,
+  selectedId,
+  onSelect,
 }: {
   tasks: Task[];
   onOpen(id: string): void;
   documents?: boolean;
+  selectedId?: string;
+  onSelect(id: string): void;
 }) {
   return (
     <div
@@ -272,7 +276,7 @@ export function TaskTable({
     >
       <div className="table-head" role="row">
         <span>{documents ? '文档名称' : '任务名称'}</span>
-        <span>工作目标</span>
+        <span>{documents ? '关联任务' : '工作目标'}</span>
         <span>正文</span>
         <span>最近更新</span>
       </div>
@@ -282,7 +286,16 @@ export function TaskTable({
           role="row"
           key={t.id}
           data-row-task={t.id}
-          onClick={() => onOpen(t.id)}
+          aria-label={`选择${documents ? '文档' : '任务'}：${t.title}`}
+          aria-current={selectedId === t.id ? 'true' : undefined}
+          onClick={() => onSelect(t.id)}
+          onDoubleClick={() => onOpen(t.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onOpen(t.id);
+            }
+          }}
         >
           <span className="task-name">
             <Icon name={documents ? 'file' : 'check'} size={16} />
@@ -292,7 +305,7 @@ export function TaskTable({
               {documents ? ' · 初稿' : ''}
             </strong>
           </span>
-          <span className="row-objective">{t.objective || '尚未填写'}</span>
+          <span className="row-objective">{documents ? t.title : t.objective || '尚未填写'}</span>
           <span className="revision-badge">
             {t.body_revision > 0 ? `修订 ${t.body_revision}` : '未写正文'}
           </span>
@@ -302,7 +315,11 @@ export function TaskTable({
         </button>
       ))}
       {tasks.length === 0 && (
-        <div className="table-empty">没有匹配的任务。可以新建任务，或调整搜索条件。</div>
+        <div className="table-empty">
+          {documents
+            ? '没有匹配的成果文档。可在任务中编写正文，或调整筛选。'
+            : '没有匹配的任务。可以新建任务，或调整搜索条件。'}
+        </div>
       )}
     </div>
   );

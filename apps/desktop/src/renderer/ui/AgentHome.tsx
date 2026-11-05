@@ -38,11 +38,11 @@ export default function AgentHome({
 }) {
   const draft = useRef<DraftEditorHandle>(null);
   return (
-    <section className="home-view agent-home" aria-label="Agent 首页">
+    <section className="home-view agent-home" data-layout="three-column" aria-label="Agent 首页">
       <div className="agent-main">
         <div className="agent-topline">
           <span>
-            <Icon name="spark" size={15} /> Agent
+            <Icon name="home" size={15} /> 首页
           </span>
           <span className="draft-badge">个人工作区</span>
         </div>
@@ -50,7 +50,7 @@ export default function AgentHome({
           <span className="agent-wordmark">
             <BrandLogo /> CaseLite Agent
           </span>
-          <h1>今天需要处理什么工作？</h1>
+          <h1>从一个工作目标开始</h1>
           <p>从工作目标开始，把材料、思考和成果放在同一个任务里。</p>
           <AgentPanel
             scope="home"
@@ -76,13 +76,33 @@ export default function AgentHome({
             ))}
           </div>
         </div>
+        <section className="home-task-feed" aria-label="继续工作">
+          <header>
+            <h2>继续工作</h2>
+            <span>{tasks.length} 个本地任务</span>
+          </header>
+          {tasks.slice(0, 5).map((task) => (
+            <button key={task.id} onClick={() => onOpen(task.id)}>
+              <Icon name="check" size={16} />
+              <span>
+                <strong>{task.title}</strong>
+                <small>{task.objective || '独立任务'}</small>
+              </span>
+              <span className="revision-badge">
+                {task.body_revision ? `修订 ${task.body_revision}` : '待起草'}
+              </span>
+              <Icon name="chevron" size={13} />
+            </button>
+          ))}
+          {!tasks.length && <p>还没有任务。写下工作目标，或从右上角新建任务。</p>}
+        </section>
         <div className="agent-local">
           <i className="local-dot" />
           本地工作区 <span>无需登录即可开始</span>
         </div>
       </div>
       <aside className="agent-context" aria-label="Agent 工作上下文">
-        <h2>工作上下文</h2>
+        <h2>属性</h2>
         <div className="agent-context-section">
           <h3>当前范围</h3>
           <p>
@@ -92,17 +112,17 @@ export default function AgentHome({
           <span>开始任务后，在右栏查看任务属性与 AI 上下文。</span>
         </div>
         <div className="agent-context-section">
-          <h3>
-            可继续的任务 <small>{tasks.length}</small>
-          </h3>
-          {tasks.slice(0, 5).map((task) => (
-            <button key={task.id} onClick={() => onOpen(task.id)}>
-              <Icon name="check" size={14} />
-              <span>{task.title}</span>
-              <Icon name="chevron" size={12} />
-            </button>
-          ))}
-          {tasks.length === 0 && <p className="caption">尚无任务，从工作目标开始。</p>}
+          <h3>本地工作区</h3>
+          <dl className="workspace-properties">
+            <dt>任务</dt>
+            <dd>{tasks.length}</dd>
+            <dt>已有正文修订</dt>
+            <dd>{tasks.filter((task) => task.body_revision > 0).length}</dd>
+            <dt>存储位置</dt>
+            <dd>仅此设备</dd>
+            <dt>模型方式</dt>
+            <dd>自带密钥 · BYOK</dd>
+          </dl>
         </div>
         <div className="agent-context-section">
           <h3>已连接能力</h3>

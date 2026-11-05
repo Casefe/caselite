@@ -93,6 +93,10 @@ export async function runTaskDemo(
       await click('[data-nav=tasks]');
       await wait("document.querySelector('.list-view')");
       await click(`[data-row-task="${id}"]`);
+      await wait(
+        `document.querySelector('[data-row-task="${id}"]')?.getAttribute('aria-current')==='true'`,
+      );
+      await click('[data-testid=inspector-open]');
     };
     const navLabels = await evaluate(
       "Array.from(document.querySelectorAll('.primary-navigation button')).map(e=>e.getAttribute('aria-label'))",
@@ -322,10 +326,39 @@ export async function runTaskDemo(
       );
       await click('[data-nav=home]');
       await wait("document.querySelector('.home-view')");
+      const assertCollectionColumns = async (centerSelector: string, rightSelector: string) => {
+        const valid = await evaluate(`(()=>{
+          const left=document.querySelector('.primary-sidebar').getBoundingClientRect();
+          const center=document.querySelector(${JSON.stringify(centerSelector)}).getBoundingClientRect();
+          const right=document.querySelector(${JSON.stringify(rightSelector)}).getBoundingClientRect();
+          return left.right<=center.left+1 && center.width>=300 && center.right<=right.left+1 && right.width>=240 && right.right<=innerWidth+1 && right.bottom<=innerHeight+1;
+        })()`);
+        if (!valid) throw new Error('Collection three-column geometry failed: ' + centerSelector);
+      };
+      await assertCollectionColumns('.agent-main', '.agent-context');
       await capture('home.png');
       await click('[data-nav=projects]');
       await wait("document.querySelector('[data-testid=project-preview]')");
+      await assertCollectionColumns('.collection-main', '.project-properties');
+      await click('[data-project-id=sample-labor]');
+      await wait(
+        "document.querySelector('.project-properties h2')?.textContent==='明远劳动争议' && document.querySelector('.project-list')",
+      );
+      await click('[data-project-id=sample-contract]');
+      await wait(
+        "document.querySelector('.project-properties h2')?.textContent==='海川服务合同争议'",
+      );
       await capture('projects-list.png');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.project-properties [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+      );
+      await wait(
+        "document.querySelector('.project-agent-empty') && !document.querySelector('.assistant-panel')",
+      );
+      await capture('projects-ai.png');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.project-properties [role=tab]')).find(e=>e.textContent.includes('属性')).click()",
+      );
       await evaluate('document.querySelector(\'[aria-label="项目看板视图"]\').click()');
       await wait("document.querySelector('.project-board')");
       await capture('projects-board.png');
@@ -368,7 +401,56 @@ export async function runTaskDemo(
       await wait("document.querySelectorAll('[data-row-task]').length===1");
       await input('[aria-label="搜索本地任务"]', '');
       await wait("document.querySelectorAll('[data-row-task]').length===2");
+      await assertCollectionColumns('.collection-main', '.task-inspector');
+      const rowIds = await evaluate(
+        "Array.from(document.querySelectorAll('[data-row-task]')).map(e=>e.dataset.rowTask)",
+      );
+      for (const id of rowIds) {
+        await click(`[data-row-task="${id}"]`);
+        await wait(
+          `document.querySelector('[data-row-task="${id}"]')?.getAttribute('aria-current')==='true' && document.querySelector('.collection-main')`,
+        );
+      }
       await capture('task-list.png');
+      await evaluate(
+        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+      );
+      await wait("document.querySelector('[data-testid=assistant-input]')");
+      await capture('task-list-ai.png');
+      await click('[data-nav=documents]');
+      await wait("document.querySelector('[data-collection=documents]')");
+      await assertCollectionColumns('.collection-main', '.task-inspector');
+      await capture('documents-list.png');
+      await input('[aria-label="搜索本地任务"]', '采购');
+      await wait(
+        "document.querySelector('[data-collection=documents]') && document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
+      );
+      await input('[aria-label="搜索本地任务"]', '不存在的合成任务');
+      await wait(
+        "document.querySelector('.inspector-empty') && document.querySelectorAll('[data-row-task]').length===0",
+      );
+      await input('[aria-label="搜索本地任务"]', '');
+      await wait("document.querySelectorAll('[data-row-task]').length===2");
+      await setViewport(980, 740);
+      await assertCollectionColumns('.collection-main', '.task-inspector');
+      await capture('documents-compact.png');
+      await setViewport(1920, 1080);
+      await click('[data-testid=inspector-open]');
+      await wait(
+        "document.querySelector('[data-testid=body-editor]') && document.querySelector('.task-detail')",
+      );
+      await click('[data-nav=documents]');
+      await wait("document.querySelector('[data-row-task]')");
+      await evaluate("document.querySelector('[data-row-task]').focus()");
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+      await wait("document.querySelector('[data-testid=body-editor]')");
+      await click('[data-nav=documents]');
+      await wait("document.querySelector('[data-row-task]')");
+      await evaluate(
+        "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}))",
+      );
+      await wait("document.querySelector('[data-testid=body-editor]')");
     }
     process.stdout.write(`Task UI ${phase} passed.\n`);
     window.destroy();
