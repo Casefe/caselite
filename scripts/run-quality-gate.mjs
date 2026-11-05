@@ -115,7 +115,7 @@ const evidence = {
   results,
   startedAt: startedAt.toISOString(),
   unverified: [
-    'Formal Matter/Anchor and arbitrary customer file integration are not implemented; inspect individual results for checks actually run.',
+    'Managed source files/Anchor and arbitrary customer file integration are not implemented; inspect individual results for checks actually run. The packaged offline probe does not replace Task UI or legal workflow acceptance.',
     'Playwright Electron automation is deferred because the current security Fuse intentionally disables the inspect argument it requires.',
     ...(mode === 'ci'
       ? [

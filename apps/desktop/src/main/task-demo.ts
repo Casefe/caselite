@@ -1,7 +1,7 @@
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { app, BrowserWindow, nativeImage, session } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 // 仅在宿主校验过的临时合成目录运行；不触碰正常用户数据，也不开放调试端口。
 export async function runTaskDemo(
@@ -9,6 +9,24 @@ export async function runTaskDemo(
   root: string,
   phase: string,
 ) {
+  const isolation = {
+    userData: app.getPath('userData'),
+    sessionData: app.getPath('sessionData'),
+    sessionStorage: session.defaultSession.storagePath,
+    sqlite: join(app.getPath('userData'), 'caselite.sqlite'),
+    credentials: ['openai-credential.enc', 'deepseek-credential.enc'].map((name) =>
+      join(app.getPath('userData'), name),
+    ),
+    originals: 'N/A: managed AssetVersion storage is not implemented in this Task/body slice',
+    credentialEvidence: 'System encryption of synthetic keys only; real provider requests NOT_RUN',
+  };
+  if (
+    [isolation.userData, isolation.sessionData, isolation.sessionStorage].some(
+      (path) => !path || !path.startsWith(root + sep),
+    )
+  )
+    throw new Error('Demo application data or browser cache escaped isolation');
+  writeFileSync(join(root, 'isolation.json'), JSON.stringify(isolation, null, 2));
   session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
     callback({ cancel: /^https?:/i.test(details.url) }),
   );

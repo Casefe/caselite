@@ -35,6 +35,7 @@ for (const name of [
   'write.png',
   'read.png',
   'expected.json',
+  'isolation.json',
   'home.png',
   'home-compact.png',
   'knowledge-compact.png',
@@ -82,7 +83,7 @@ writeFileSync(
       passed: true,
       unverified: [
         'Human UI acceptance',
-        'Project persistence: example UI only',
+        'Full project board, comments and overview projections; this demo tests catalog CRUD and task links',
         'IME OS keyboard candidate selection',
         'Power loss or device loss',
         'OCR/BYOK/Word/PDF',

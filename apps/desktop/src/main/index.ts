@@ -488,8 +488,11 @@ if (taskDemoPhase) {
     throw new Error('Demo directory must be isolated');
   taskDemoRoot = candidate;
   const data = join(candidate, 'userData');
+  const sessionData = join(candidate, 'sessionData');
   mkdirSync(data, { recursive: true });
+  mkdirSync(sessionData, { recursive: true });
   app.setPath('userData', data);
+  app.setPath('sessionData', sessionData);
 }
 
 // 产品工作区只允许一个活进程；临时离线探针使用独立数据，不持有产品锁。
