@@ -2,15 +2,15 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 const root = resolve(import.meta.dirname, '..');
 const binary =
   process.argv[2] ??
   join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite');
 const dir = mkdtempSync(join(tmpdir(), 'caselite-task-demo-'));
-copyFileSync(
-  join(root, 'tests/fixtures/case-materials/development/contract-v1-text.pdf'),
-  join(dir, 'text.pdf'),
-);
+const textFixture =
+  process.argv[3] ?? join(root, 'tests/fixtures/case-materials/development/contract-v1-text.pdf');
+copyFileSync(textFixture, join(dir, 'text.pdf'));
 copyFileSync(
   join(root, 'tests/fixtures/case-materials/development/contract-v1-scan.pdf'),
   join(dir, 'scan.pdf'),
@@ -32,10 +32,26 @@ for (const phase of ['materials', 'materials-read']) {
 }
 const out = join(root, 'artifacts/evidence/material-chat-demo');
 mkdirSync(out, { recursive: true });
+writeFileSync(
+  join(out, 'fixture.json'),
+  JSON.stringify(
+    {
+      input: textFixture,
+      sha256: createHash('sha256').update(readFileSync(textFixture)).digest('hex'),
+      stagedName: 'text.pdf',
+      provider: 'MOCK_ONLY',
+      realByok: 'NOT_RUN',
+    },
+    null,
+    2,
+  ),
+);
 for (const file of [
   'pdf-drop-staged.png',
   'pdf-text-reader.png',
   'chat-preparing.png',
+  'chat-single-pdf-output.png',
+  'single-pdf-pi-context.json',
   'chat-visual-analysis.png',
   'chat-message-reader.png',
   'chat-local-fallback.png',

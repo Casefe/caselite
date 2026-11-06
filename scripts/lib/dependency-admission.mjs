@@ -1,6 +1,7 @@
 // DEV-1569：只约束当前生产消费者；变更版本或增加框架须重新核对消费卡和许可。
 const desktop = {
   '@assistant-ui/react': '0.15.32',
+  '@assistant-ui/react-markdown': '0.14.24',
   '@caselite/application': 'workspace:*',
   '@caselite/contracts': 'workspace:*',
   '@caselite/local-db': 'workspace:*',

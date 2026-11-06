@@ -9,7 +9,13 @@ const binary = join(
   'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite',
 );
 const phases = [];
-for (const phase of ['agent', 'agent-crash', 'agent-read']) {
+const syntheticRecovery = process.argv.includes('--synthetic-recovery');
+for (const phase of [
+  'agent',
+  syntheticRecovery ? 'agent-crash-synthetic' : 'agent-crash',
+  syntheticRecovery ? 'agent-read-synthetic' : 'agent-read',
+]) {
+  const startedAt = Date.now();
   const result = spawnSync(binary, [], {
     cwd: root,
     env: { ...process.env, CASELITE_TASK_DEMO: phase, CASELITE_TASK_DEMO_DIR: dir },
@@ -17,14 +23,25 @@ for (const phase of ['agent', 'agent-crash', 'agent-read']) {
     timeout: 60000,
     killSignal: 'SIGKILL',
   });
-  phases.push({ phase, exitCode: result.status, signal: result.signal });
-  if (phase === 'agent-crash' ? result.signal !== 'SIGKILL' : result.status !== 0)
+  phases.push({
+    phase,
+    exitCode: result.status,
+    signal: result.signal,
+    errorCode: result.error?.code ?? null,
+    elapsedMs: Date.now() - startedAt,
+  });
+  writeFileSync(join(dir, 'agent-phases.json'), JSON.stringify(phases, null, 2));
+  if (phase.startsWith('agent-crash') ? result.signal !== 'SIGKILL' : result.status !== 0)
     throw new Error(`Agent ${phase} demo failed: ${dir}; ${result.stderr}`);
 }
 const out = join(root, 'artifacts/evidence/agent-demo');
 mkdirSync(out, { recursive: true });
 for (const file of [
   'agent-home.png',
+  'agent-phases.json',
+  'agent-long-output.png',
+  'agent-layout.json',
+  'clipboard-check.json',
   'agent-sidebar.png',
   'deepseek-settings.png',
   'deepseek-sidebar.png',
@@ -41,6 +58,9 @@ writeFileSync(
     {
       ...JSON.parse(readFileSync(join(dir, 'agent-result.json'))),
       phases,
+      recoveryCredentials: syntheticRecovery
+        ? 'MOCK_ONLY in-memory credentials'
+        : 'real safeStorage adapter with synthetic Key',
       history: JSON.parse(readFileSync(join(dir, 'history-result.json'))),
       commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
       dirty: Boolean(

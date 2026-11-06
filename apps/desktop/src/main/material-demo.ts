@@ -71,7 +71,7 @@ export async function runMaterialDemo(
     await waitFor("Boolean(document.querySelector('[data-testid=body-editor]'))");
   }
   async function drop(file: string) {
-    // CDP 将固定合成文件装入浏览器 File，再发真实 drop；沿产品 preload/webUtils/IPC 导入。
+    // CDP 将固定合成文件装入浏览器 File，再派发合成drop事件；沿产品 preload/webUtils/IPC 导入，非Finder物理拖放。
     await evaluate(
       "(()=>{const old=document.querySelector('#material-demo-file');old?.remove();const input=document.createElement('input');input.type='file';input.id='material-demo-file';input.hidden=true;document.body.append(input);})()",
     );
@@ -99,7 +99,7 @@ export async function runMaterialDemo(
       const items = await list();
       if (items.length !== 2 || items.some((item) => !item.pages.length))
         throw new Error('Restart lost material');
-      await waitFor("document.querySelectorAll('.message-attachments').length===2");
+      await waitFor("document.querySelectorAll('.message-attachments').length===3");
       await evaluate(
         "[...document.querySelectorAll('.message-attachments button')].find(b=>b.textContent.includes('scan.pdf')).click()",
       );
@@ -145,6 +145,35 @@ export async function runMaterialDemo(
       await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
       await click('收起阅读');
     }
+    stage = 'single-pdf-and-text';
+    await evaluate(
+      "document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,'概括这一份 PDF 的主体、金额、日期和待核对事项。')",
+    );
+    await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+    await waitFor(
+      "document.querySelector('.assistant-run-status.succeeded') && document.querySelector('[data-testid=agent-input]').value==='' && document.querySelectorAll('.message-attachments').length===1",
+    );
+    const singleContext = JSON.parse(
+      readFileSync(join(directory, 'material-pi-context.json'), 'utf8'),
+    );
+    if (
+      singleContext.messages.length !== 2 ||
+      singleContext.messages.filter((message: { role: string }) => message.role === 'user')
+        .length !== 1 ||
+      singleContext.messages.filter((message: { role: string }) => message.role === 'system')
+        .length !== 1 ||
+      !JSON.stringify(singleContext).includes('text.pdf') ||
+      JSON.stringify(singleContext).includes('scan.pdf')
+    )
+      throw new Error('Single PDF dispatch included an unexpected message or attachment');
+    writeFileSync(
+      join(directory, 'single-pdf-pi-context.json'),
+      JSON.stringify(singleContext, null, 2),
+    );
+    await capture('chat-single-pdf-output');
+    await evaluate(
+      "document.querySelector('.material-library').open=true;[...document.querySelectorAll('.material-library > div')].find(row=>row.textContent.includes('text.pdf')).querySelectorAll('button')[1].click()",
+    );
     stage = 'drop-and-send-scan';
     await drop('scan.pdf');
     await evaluate("document.querySelector('[data-testid=agent-input]').focus()");
@@ -156,7 +185,7 @@ export async function runMaterialDemo(
     await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
     await capture('chat-preparing');
     await waitFor(
-      "document.body.textContent.includes('生成完成') && document.querySelector('[data-testid=agent-input]').value==='' && !document.querySelector('[aria-label=待发送附件]')",
+      "document.querySelector('.assistant-run-status.succeeded') && document.querySelector('[data-testid=agent-input]').value==='' && !document.querySelector('[aria-label=待发送附件]')",
     );
     items = await settled();
     if (items.length !== 2) throw new Error('Missing second attachment');
@@ -201,7 +230,7 @@ export async function runMaterialDemo(
     const started = Date.now();
     await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
     await waitFor(
-      "document.querySelector('[data-testid=agent-input]').value==='' && document.querySelectorAll('.message-attachments').length===2 && document.body.textContent.includes('DeepSeek · deepseek-v4-pro · 生成完成')",
+      "document.querySelector('[data-testid=agent-input]').value==='' && document.querySelectorAll('.message-attachments').length===3 && document.body.textContent.includes('DeepSeek · deepseek-v4-pro · 生成完成')",
     );
     const ocrMs = Date.now() - started;
     items = await settled();

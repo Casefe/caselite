@@ -16,7 +16,7 @@ import { createPiRuntime } from './adapters/pi-runtime';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
 import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
-import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,6 +75,7 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'agent-preview') entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -501,8 +502,11 @@ if (taskDemoPhase) {
       'project-files',
       'project-files-read',
       'agent',
+      'agent-preview',
       'agent-crash',
       'agent-read',
+      'agent-crash-synthetic',
+      'agent-read-synthetic',
       'appearance-write',
       'appearance-read',
     ].includes(taskDemoPhase)
@@ -604,22 +608,26 @@ app
     // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
     let materialDemoModel: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
     const materialDemoKeys = new Set(['openai', 'deepseek']);
-    const agentCredentials = taskDemoPhase?.startsWith('materials')
-      ? {
-          get: (provider = 'openai') =>
-            materialDemoKeys.has(provider) ? 'synthetic-material-demo-only' : undefined,
-          set: async (_key: string, provider = 'openai') => {
-            materialDemoKeys.add(provider);
-          },
-          clear: async (provider = 'openai') => {
-            materialDemoKeys.delete(provider);
-          },
-          getDefaultModel: () => materialDemoModel,
-          setDefaultModel: async (model: typeof materialDemoModel) => {
-            materialDemoModel = model;
-          },
-        }
-      : await createAgentCredentials(taskRoot);
+    const agentCredentials =
+      taskDemoPhase?.startsWith('materials') ||
+      taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase === 'agent-crash-synthetic' ||
+      taskDemoPhase === 'agent-read-synthetic'
+        ? {
+            get: (provider = 'openai') =>
+              materialDemoKeys.has(provider) ? 'synthetic-material-demo-only' : undefined,
+            set: async (_key: string, provider = 'openai') => {
+              materialDemoKeys.add(provider);
+            },
+            clear: async (provider = 'openai') => {
+              materialDemoKeys.delete(provider);
+            },
+            getDefaultModel: () => materialDemoModel,
+            setDefaultModel: async (model: typeof materialDemoModel) => {
+              materialDemoModel = model;
+            },
+          }
+        : await createAgentCredentials(taskRoot);
     if (taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
       await agentCredentials.set('sk-synthetic-openai');
     let historyReady = true;
@@ -631,6 +639,7 @@ app
 
     const agent = createAgentApplication({
       credentials: agentCredentials,
+      copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
       history: {
         ...taskStore.agentHistory,
@@ -640,7 +649,9 @@ app
         },
       },
       runtime: createPiRuntime(
-        taskDemoPhase === 'agent-read' || taskDemoPhase === 'materials-read'
+        taskDemoPhase === 'agent-read' ||
+          taskDemoPhase === 'agent-read-synthetic' ||
+          taskDemoPhase === 'materials-read'
           ? () => {
               writeFileSync(join(taskDemoRoot!, 'unexpected-runtime.txt'), 'unexpected dispatch');
               throw new Error('Unexpected restart dispatch');
@@ -661,6 +672,10 @@ app
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoPhase === 'agent-preview')
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
     if (taskDemoRoot && taskDemoPhase?.startsWith('materials')) {
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
@@ -669,8 +684,17 @@ app
       app.exit(0);
       return;
     }
-    if (taskDemoRoot && (taskDemoPhase === 'agent-crash' || taskDemoPhase === 'agent-read')) {
-      await runAgentHistoryProbe(() => createWindow(), taskDemoRoot, taskDemoPhase);
+    if (
+      taskDemoRoot &&
+      ['agent-crash', 'agent-read', 'agent-crash-synthetic', 'agent-read-synthetic'].includes(
+        taskDemoPhase ?? '',
+      )
+    ) {
+      await runAgentHistoryProbe(
+        () => createWindow(),
+        taskDemoRoot,
+        taskDemoPhase!.startsWith('agent-crash') ? 'agent-crash' : 'agent-read',
+      );
       app.exit(0);
       return;
     }
@@ -703,7 +727,12 @@ app
       app.exit(0);
       return;
     }
-    if (taskDemoRoot && taskDemoPhase && taskDemoPhase !== 'preview') {
+    if (
+      taskDemoRoot &&
+      taskDemoPhase &&
+      taskDemoPhase !== 'preview' &&
+      taskDemoPhase !== 'agent-preview'
+    ) {
       await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;

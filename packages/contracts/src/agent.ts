@@ -34,6 +34,9 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('select_model'), model: agentModelSchema }).strict(),
   z.object({ ...base, operation: z.literal('read'), scope }).strict(),
   z
+    .object({ ...base, operation: z.literal('copy_output'), scope, run_id: z.string().uuid() })
+    .strict(),
+  z
     .object({
       ...base,
       operation: z.literal('start'),

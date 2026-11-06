@@ -44,6 +44,87 @@ const profile: AgentResponse = {
   runs: [],
 };
 describe('AI submission UI lifecycle', () => {
+  it('renders safe Markdown, labels both roles, and copies the original output without dispatch', async () => {
+    const output =
+      '## 核对事项\n\n- **付款**待核实\n\n<script>alert(1)</script>\n\n[候选链接](javascript:alert)\n\n![图片](https://example.invalid/tracker.png)';
+    let copyFails = false;
+    const agent = vi.fn(async (request: AgentRequest) =>
+      copyFails && request.operation === 'copy_output'
+        ? { ok: false, code: 'COPY_FAILED', message: '复制失败' }
+        : {
+            ...profile,
+            runs: [
+              {
+                id: '12121212-1212-4212-8212-121212121212',
+                scope: 'home',
+                prompt: '请核对',
+                output,
+                model: 'gpt-4.1-mini',
+                provider: 'openai',
+                status: 'succeeded',
+                sequence: 1,
+                message: '生成完成，内容待人工核对。',
+                usage: null,
+              },
+            ],
+          },
+    );
+    window.caselite = { agent } as unknown as Window['caselite'];
+    const onConversationChange = vi.fn();
+    render(<AgentPanel scope="home" onConversationChange={onConversationChange} />);
+    await screen.findByRole('heading', { name: '核对事项' });
+    expect(screen.getByText('你')).toBeTruthy();
+    expect(screen.getByText('CaseLite')).toBeTruthy();
+    expect(document.querySelector('.assistant-markdown strong')?.textContent).toBe('付款');
+    expect(
+      document.querySelector(
+        '.assistant-markdown script, .assistant-markdown img, .assistant-markdown a',
+      ),
+    ).toBeNull();
+    expect(onConversationChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: '复制' }));
+    await screen.findByRole('button', { name: '已复制' });
+    expect(agent).toHaveBeenLastCalledWith({
+      protocol_version: 1,
+      operation: 'copy_output',
+      scope: 'home',
+      run_id: '12121212-1212-4212-8212-121212121212',
+    });
+    copyFails = true;
+    fireEvent.click(screen.getByRole('button', { name: '已复制' }));
+    await screen.findByRole('button', { name: '复制失败，请选择文字复制' });
+    expect(screen.getByRole('heading', { name: '核对事项' })).toBeTruthy();
+    expect(agent.mock.calls).toHaveLength(3);
+  });
+  it('refills an interrupted prompt only on request, retaining partial output without automatically retrying', async () => {
+    const agent = vi.fn(async () => ({
+      ...profile,
+      runs: [
+        {
+          id: '13131313-1313-4313-8313-131313131313',
+          scope: '13131313-1313-4313-8313-131313131313',
+          prompt: '上次工作要求',
+          output: '部分结果',
+          model: 'gpt-4.1-mini',
+          provider: 'openai',
+          status: 'interrupted',
+          sequence: 1,
+          message: '上次运行被中断',
+          usage: null,
+        },
+      ],
+    }));
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope="13131313-1313-4313-8313-131313131313" />);
+    const refill = await screen.findByRole('button', { name: '重新填写上次要求 · 附件请重新添加' });
+    expect(screen.getByText('部分结果')).toBeTruthy();
+    fireEvent.click(refill);
+    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe(
+      '上次工作要求',
+    );
+    expect(agent.mock.calls).toHaveLength(1);
+    expect((refill as HTMLButtonElement).disabled).toBe(true);
+  });
   it('selects a configured model without starting an AI run', async () => {
     let current: AgentResponse = {
       ...profile,

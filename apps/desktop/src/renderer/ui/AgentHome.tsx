@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
@@ -37,9 +37,25 @@ export default function AgentHome({
   onOpen(id: string): void;
 }) {
   const draft = useRef<DraftEditorHandle>(null);
+  const [conversation, setConversation] = useState(false);
+  const [overview, setOverview] = useState(false);
   return (
-    <section className="home-view agent-home" data-layout="three-column" aria-label="Agent 首页">
+    <section
+      className={`home-view agent-home${conversation && !overview ? ' home-conversation' : ''}`}
+      data-layout="three-column"
+      aria-label="Agent 首页"
+    >
       <div className="agent-main">
+        {conversation && (
+          <header className="home-conversation-toolbar">
+            <span>
+              <BrandLogo /> AI 工作对话
+            </span>
+            <button onClick={() => setOverview(!overview)}>
+              {overview ? '返回对话' : '工作概览与快捷项'}
+            </button>
+          </header>
+        )}
         <div className="agent-topline">
           <span>
             <Icon name="home" size={15} /> 首页
@@ -57,6 +73,7 @@ export default function AgentHome({
             onDraft={onPrompt}
             editorRef={draft}
             onCreate={onStart}
+            onConversationChange={setConversation}
           />
           <div className="agent-starters">
             {starters.map((item) => (

@@ -46,6 +46,7 @@ export function createAgentApplication(ports: {
   credentials: AgentCredentialPort;
   runtime: AgentRuntimePort;
   history?: AgentHistoryPort;
+  copyOutput?(text: string): void | Promise<void>;
   taskExists(id: string): boolean;
   resolveContext?(
     id: string,
@@ -136,6 +137,32 @@ export function createAgentApplication(ports: {
         }
         if ('scope' in request && request.scope !== 'home' && !ports.taskExists(request.scope))
           return failure('NOT_FOUND', '任务不存在，未读取或发送任何正文。');
+        if (request.operation === 'copy_output') {
+          if (historyUnavailable) return failure('HISTORY_UNAVAILABLE', '运行记录不可用，未复制。');
+          const item = runs.get(request.run_id);
+          if (
+            !item ||
+            (item.owner !== owner && item.owner !== '') ||
+            item.run.scope !== request.scope
+          )
+            return failure('NOT_FOUND', '未找到当前范围的回答。');
+          // 只从获准Run读取有界输出；Renderer不能借复制入口传入任意正文或秘密。
+          if (!item.run.output || item.run.output.length > 64_000 || !ports.copyOutput)
+            return failure('COPY_UNAVAILABLE', '回答暂不能复制，请选择文字手动复制。');
+          try {
+            await ports.copyOutput(item.run.output);
+          } catch {
+            return failure('COPY_FAILED', '复制失败，请选择文字手动复制。');
+          }
+          const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
+          return {
+            ok: true,
+            configured: providers[item.run.provider],
+            providers,
+            model: item.run.model,
+            runs: [{ ...item.run }],
+          };
+        }
         if (request.operation === 'start') {
           const selectedModel = request.model ?? 'gpt-4.1-mini';
           const provider = agentProviderFor(selectedModel);

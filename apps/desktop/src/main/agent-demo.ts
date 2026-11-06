@@ -1,6 +1,6 @@
-import { BrowserWindow, session } from 'electron';
+import { BrowserWindow, clipboard, session } from 'electron';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai';
@@ -28,12 +28,18 @@ export const syntheticAgentStream: StreamFn = (_model, _context, options) => {
     },
   };
   const parts = [
-    '【合成演示 · 非真实模型】\n',
-    '事实：两份材料的交付日期不同。\n',
-    '矛盾：一份写10月10日，另一份写10月12日。\n',
-    '缺件：缺少签收凭证，需人工核对。\n',
-    '内部沟通初稿：建议先补齐签收材料，再核对时间线。',
+    '## 合成演示 · MOCK_ONLY\n\n非真实模型，以下为固定 UI 测试内容，不是材料分析。\n\n',
+    '### 待核对事项\n\n- **事实**：两份演示材料的交付日期不同。\n',
+    '- **矛盾**：一份写10月10日，另一份写10月12日。\n',
+    '- **缺件**：缺少签收凭证，需人工核对。\n\n',
+    '> 内部沟通初稿：建议先补齐签收材料，再核对时间线。',
   ];
+  if (JSON.stringify(_context.messages).includes('长文展示测试'))
+    parts[4] = Array.from(
+      { length: 24 },
+      (_, i) =>
+        `\n\n### 展示检查 ${i + 1}\n\n这段合成文字仅验证长文滚动、Markdown 标题和底部输入位置。请逐项核对原文、日期、付款记录和缺件；此演示不证明真实模型完成分析。`,
+    ).join('');
   let index = 0;
   const timer = setInterval(() => {
     if (options?.signal?.aborted) {
@@ -160,11 +166,66 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     await type('[data-testid=agent-input]', '重新分析：梳理事实、矛盾与缺件。');
     await clickText('发送');
     await wait("document.body.innerText.includes('生成完成，内容待人工核对。')");
+    window.focus();
+    await window.webContents.executeJavaScript(
+      "[...document.querySelectorAll('.assistant-message-footer button')].at(-1).click()",
+      true,
+    );
+    await wait(
+      "[...document.querySelectorAll('.assistant-message-footer button')].at(-1)?.textContent.includes('已复制')",
+    );
+    const copied = await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
+    );
+    const actualClipboard = await clipboard.readText();
+    const expectedClipboard = copied.runs.at(-1).output;
+    writeFileSync(
+      join(root, 'clipboard-check.json'),
+      JSON.stringify(
+        {
+          actualLength: actualClipboard.length,
+          expectedLength: expectedClipboard.length,
+          actualSha256: createHash('sha256').update(actualClipboard).digest('hex'),
+          expectedSha256: createHash('sha256').update(expectedClipboard).digest('hex'),
+          lineEndingsMatch:
+            actualClipboard.replace(/\r\n/g, '\n') === expectedClipboard.replace(/\r\n/g, '\n'),
+        },
+        null,
+        2,
+      ),
+    );
+    if (actualClipboard !== expectedClipboard)
+      throw new Error('Native clipboard did not receive the original Markdown');
     const screenshot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
     });
     writeFileSync(join(root, 'agent-home.png'), Buffer.from(screenshot.data, 'base64'));
+    await type('[data-testid=agent-input]', '长文展示测试：仅检查滚动和输入位置。');
+    await clickText('发送');
+    await wait(
+      "document.querySelector('.assistant-markdown') && document.body.innerText.includes('展示检查 24') && document.querySelector('.assistant-run-status.succeeded')",
+    );
+    const layout = await evaluate(`(()=>{
+      const input=document.querySelector('.assistant-compose').getBoundingClientRect();
+      const viewport=document.querySelector('.assistant-viewport');
+      return { composerBottom:input.bottom, composerTop:input.top, height:innerHeight,
+        scrollHeight:viewport.scrollHeight, clientHeight:viewport.clientHeight,
+        conversation:document.querySelector('.agent-home').classList.contains('home-conversation') };
+    })()`);
+    if (
+      !layout.conversation ||
+      layout.composerBottom > layout.height ||
+      layout.composerTop < 0 ||
+      layout.scrollHeight <= layout.clientHeight
+    )
+      throw new Error('Conversation layout did not retain the composer and scrollable output');
+    const long = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: false,
+    });
+    writeFileSync(join(root, 'agent-long-output.png'), Buffer.from(long.data, 'base64'));
+    writeFileSync(join(root, 'agent-layout.json'), JSON.stringify(layout, null, 2));
     await new Promise<void>((resolve, reject) => {
       const child = spawn(process.execPath, [], {
         env: { ...process.env, CASELITE_TASK_DEMO: 'agent-read', CASELITE_TASK_DEMO_DIR: root },
@@ -292,6 +353,8 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
             'actual SDK streaming',
             'cancel',
             'second explicit run',
+            'safe Markdown and native clipboard original output',
+            'long output scrolls while composer remains visible',
             'home/task isolation',
             'draft survives property tab',
             'sidebar streaming',

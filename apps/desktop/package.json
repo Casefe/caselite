@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@assistant-ui/react": "0.15.32",
+    "@assistant-ui/react-markdown": "0.14.24",
     "@caselite/application": "workspace:*",
     "@caselite/contracts": "workspace:*",
     "@caselite/local-db": "workspace:*",

@@ -1,6 +1,7 @@
 import { useMaterials } from './useMaterials';
 import type { MaterialPreview } from '../../preload/caselite-api';
 import PdfAttachments from './PdfAttachments';
+import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
 import {
   createContext,
   forwardRef,
@@ -35,13 +36,35 @@ const confirmedMaterials = new Map<string, MaterialPreview>();
 const submissions = new Map<string, Extract<AgentRequest, { operation: 'start' }>>();
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
+function MarkdownText() {
+  return (
+    <MarkdownTextPrimitive
+      className="assistant-markdown"
+      skipHtml
+      components={{
+        // 模型链接和图片仅作文字展示，不能触发联网或被当成已核验来源。
+        a: ({ children }) => <span title="模型提供的链接，未经核验">{children}</span>,
+        img: ({ alt }) => <span>{alt ? `[图片：${alt}]` : '[模型图片未加载]'}</span>,
+      }}
+    />
+  );
+}
 function Message() {
   const attachments = useAuiState(
     (state) => state.message.metadata.custom?.attachments,
   ) as AgentRun['attachments'];
+  const role = useAuiState((state) => state.message.role);
+  const run = useAuiState((state) => state.message.metadata.custom?.run) as
+    | (Pick<AgentRun, 'id' | 'scope' | 'model' | 'status' | 'message'> & { copyable: boolean })
+    | undefined;
+  const [copyState, setCopyState] = useState('复制');
   const read = useContext(AttachmentReader);
   return (
-    <MessagePrimitive.Root className="assistant-message">
+    <MessagePrimitive.Root className={`assistant-message assistant-message--${role}`}>
+      <header className="assistant-message-heading">
+        <strong>{role === 'user' ? '你' : 'CaseLite'}</strong>
+        {role === 'assistant' && <span>{run ? agentModelLabel(run.model) : 'AI 辅助'}</span>}
+      </header>
       {attachments?.length ? (
         <div className="message-attachments">
           {attachments.map((file) => (
@@ -59,7 +82,34 @@ function Message() {
           ))}
         </div>
       ) : null}
-      <MessagePrimitive.Parts />
+      <MessagePrimitive.Parts
+        components={role === 'assistant' ? { Text: MarkdownText } : undefined}
+      />
+      {role === 'assistant' && run && run.status !== 'running' && (
+        <footer className="assistant-message-footer">
+          <span>{run.status === 'succeeded' ? '待人工核对' : run.message}</span>
+          <button
+            type="button"
+            disabled={!run.copyable}
+            onClick={async () => {
+              try {
+                const result = await window.caselite.agent({
+                  protocol_version: 1,
+                  operation: 'copy_output',
+                  scope: run.scope,
+                  run_id: run.id,
+                });
+                if (!result.ok) throw new Error('Copy failed');
+                setCopyState('已复制');
+              } catch {
+                setCopyState('复制失败，请选择文字复制');
+              }
+            }}
+          >
+            {copyState}
+          </button>
+        </footer>
+      )}
     </MessagePrimitive.Root>
   );
 }
@@ -109,14 +159,17 @@ export default function AgentPanel({
   draft: controlled,
   onDraft,
   editorRef,
+  onConversationChange,
 }: {
   scope: string;
   draft?: RichDraft;
   onDraft?(value: RichDraft): void;
   editorRef?: RefObject<DraftEditorHandle | null>;
   onCreate?(): void;
+  onConversationChange?(hasRuns: boolean): void;
 }) {
   const materials = useMaterials(scope);
+  const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
   const [localDraft, setLocalDraft] = useState(() => drafts.get(scope) ?? emptyDraft());
   const draft = controlled ?? localDraft;
   const setDraft = (value: RichDraft) => {
@@ -138,6 +191,9 @@ export default function AgentPanel({
   const preparationGeneration = useRef(0);
   const preparingAbort = useRef<AbortController | null>(null);
   const active = runs.find((run) => run.status === 'running');
+  useEffect(() => {
+    onConversationChange?.(runs.length > 0);
+  }, [onConversationChange, runs.length]);
   const current = useRef({ draft, setDraft, materials });
   useLayoutEffect(() => {
     current.current = { draft, setDraft, materials };
@@ -288,6 +344,18 @@ export default function AgentPanel({
     {
       id: `${run.id}:output`,
       role: 'assistant' as const,
+      metadata: {
+        custom: {
+          run: {
+            id: run.id,
+            scope: run.scope,
+            model: run.model,
+            status: run.status,
+            message: run.message,
+            copyable: Boolean(run.output),
+          },
+        },
+      },
       content: [
         {
           type: 'text' as const,
@@ -324,9 +392,14 @@ export default function AgentPanel({
         value={(id, task, name) => void materials.readReference(id, task, name)}
       >
         <section
-          className="assistant-panel"
+          className={`assistant-panel${runs.length ? ' assistant-panel--conversation' : ''}`}
           aria-label={scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'}
         >
+          {mockPreview && (
+            <p className="assistant-run-status" role="status">
+              MOCK_ONLY · 离线演示 · 不调用真实模型，固定输出只验证界面流程。
+            </p>
+          )}
           {scope !== 'home' && (
             <div className="assistant-model">
               <span>
@@ -351,6 +424,9 @@ export default function AgentPanel({
           <ThreadPrimitive.Root className="assistant-thread">
             <ThreadPrimitive.Viewport className="assistant-viewport">
               <ThreadPrimitive.Messages components={{ Message }} />
+              <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
+                回到最新回答 ↓
+              </ThreadPrimitive.ScrollToBottom>
             </ThreadPrimitive.Viewport>
           </ThreadPrimitive.Root>
           {latest && (
@@ -368,6 +444,21 @@ export default function AgentPanel({
               <button onClick={() => void refresh()}>刷新状态</button>
             </div>
           )}
+          {latest &&
+            (latest.status === 'failed' ||
+              latest.status === 'interrupted' ||
+              latest.status === 'cancelled') &&
+            !unknown &&
+            !active && (
+              <button
+                type="button"
+                className="assistant-refill"
+                disabled={pending || Boolean(draft.text.trim())}
+                onClick={() => setDraft({ text: latest.prompt, state: null })}
+              >
+                重新填写上次要求 · 附件请重新添加
+              </button>
+            )}
           <ComposerPrimitive.Root
             className={scope === 'home' ? 'assistant-compose agent-prompt' : 'assistant-compose'}
             onSubmit={(event) => {
@@ -391,10 +482,19 @@ export default function AgentPanel({
               />
             </PdfAttachments>
             <p className="composer-send-note">
-              发送时将本轮要求与附件交给 {agentModelLabel(model)}；可能产生 API 费用。
+              {mockPreview ? (
+                'MOCK_ONLY · 合成 Provider，无真实 API 调用。'
+              ) : (
+                <>发送时将本轮要求与附件交给 {agentModelLabel(model)}；可能产生 API 费用。</>
+              )}
               {pending ? '正在准备附件并发送…' : '不会自动携带以前的材料或对话。'}
             </p>
             <div className="assistant-actions">
+              {scope === 'home' && !configured && openSettings && (
+                <button type="button" onClick={() => openSettings()}>
+                  配置模型
+                </button>
+              )}
               {scope === 'home' && (
                 <div className="home-composer-options">
                   <button type="button" disabled title="项目上下文尚未接入">

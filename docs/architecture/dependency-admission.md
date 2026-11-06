@@ -8,6 +8,7 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 | Desktop / DEV-1592、1732 | Tiptap 四包 3.32.3、Yjs 13.6.33 | Tiptap / Yjs 官方包，MIT | Y.Doc保存重启与真实编辑；不是实时协作证明。退出保留body_revisions，先验证旧快照可读，禁止以HTML覆盖正文 |
 | Desktop / DEV-1650、1652、1648 | assistant-ui 0.15.32、Pi Core / AI 1.5.0 | 官方 npm 包，MIT；传递许可见生成的许可证报告及 ADR-008 | SDK及合成Provider打包验证，真实Key另验。只有一个Loop；没有Coding Agent、Shell或Pi session。退出关闭AI，人工Task/正文继续可读，保全原Run |
 | Application | contracts workspace | 自有公开入口 | 不导入驱动与Provider；退出由调用链合同验证 |
+| Desktop / DEV-1735 | @assistant-ui/react-markdown 0.14.24 | 官方 npm 包 MIT；@ungap/structured-clone 1.4.0 ISC 精确许可见 ADR-008 与随包通知 | 只读 CommonMark；关闭原始 HTML、链接导航和远程图片。回退恢复原展示，Run 原始文本保持可读；不增加正文或 Agent 内核 |
 | Contracts / DEV-1578 | Zod 4.6.7 | 官方包，MIT | 运行时输入校验；协议升级独立评估兼容 |
 | Local DB / DEV-1567、1590 | better-sqlite3 13.0.3、Drizzle 0.45.4、Yjs 13.6.33 | 官方包，MIT / Apache-2.0 / MIT | 原生ABI、旧库迁移、事务与重启；回退前备份，旧二进制不直接打开不可逆新库 |
 
