@@ -3,6 +3,26 @@ import { catalogRequestSchema, CATALOG_CHANNEL } from '../../packages/contracts/
 import { createCaseLitePreloadApi } from '../../apps/desktop/src/preload/caselite-api';
 import { createCatalogApplication } from '../../packages/application/src/catalog-application';
 describe('catalog boundary', () => {
+  it('validates promotion identity and version without accepting workspace or path overrides', () => {
+    const valid = {
+      operation: 'promote_task',
+      protocol_version: 1,
+      request_id: crypto.randomUUID(),
+      idempotency_key: crypto.randomUUID(),
+      task_id: crypto.randomUUID(),
+      expected_version: 1,
+      title: '从任务创建',
+    };
+    expect(catalogRequestSchema.safeParse(valid).success).toBe(true);
+    for (const extra of [
+      { workspace: 'other' },
+      { path: '/private/file' },
+      { expected_version: 0 },
+      { task_id: 'not-an-id' },
+      { title: '  ' },
+    ])
+      expect(catalogRequestSchema.safeParse({ ...valid, ...extra }).success).toBe(false);
+  });
   it('rejects unapproved fields, paths and legacy envelopes before accessing the store', () => {
     const execute = vi.fn();
     const app = createCatalogApplication({ execute });

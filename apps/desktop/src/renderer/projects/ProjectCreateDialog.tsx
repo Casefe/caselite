@@ -8,6 +8,7 @@ export default function ProjectCreateDialog({
   onCreate,
   onCancel,
   onRetry,
+  sourceTaskTitle,
 }: {
   pending: boolean;
   unknown: boolean;
@@ -15,11 +16,12 @@ export default function ProjectCreateDialog({
   onCreate(title: string): void;
   onCancel(): void;
   onRetry(): void;
+  sourceTaskTitle?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     name = useRef<HTMLInputElement>(null),
     composing = useRef(false);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(sourceTaskTitle ?? '');
   const locked = pending || unknown;
   useEffect(() => {
     const modal = dialog.current;
@@ -63,8 +65,12 @@ export default function ProjectCreateDialog({
           <span className="project-create-symbol">
             <Icon name="folder" size={24} />
           </span>
-          <h2 id="project-create-title">新建项目</h2>
-          <p id="project-create-description">用项目组织相关任务。先起一个名称，创建后完善概述。</p>
+          <h2 id="project-create-title">{sourceTaskTitle ? '从任务创建项目' : '新建项目'}</h2>
+          <p id="project-create-description">
+            {sourceTaskTitle
+              ? `将“${sourceTaskTitle}”作为项目中的首个任务。原任务、材料与正文保持原样。`
+              : '用项目组织相关任务。先起一个名称，创建后完善概述。'}
+          </p>
           <label htmlFor="project-create-name">项目名称</label>
           <input
             ref={name}
@@ -105,7 +111,9 @@ export default function ProjectCreateDialog({
               ? '正在保存项目…'
               : unknown
                 ? '结果待核对，请勿重复创建。'
-                : '创建后打开项目概述'}
+                : sourceTaskTitle
+                  ? '创建后继续使用原任务'
+                  : '创建后打开项目概述'}
           </span>
           <button type="button" disabled={locked} onClick={cancel}>
             取消

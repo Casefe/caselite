@@ -2,13 +2,19 @@ import { app, type BrowserWindow, session } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
-import type { CatalogResponse } from '@caselite/contracts';
+import type { CatalogResponse, TaskResponse } from '@caselite/contracts';
 
 // 沿用宿主校验过的合成目录和正式IPC；只测项目，不改全工作台演示的既有断言。
 export async function runProjectDemo(
   createWindow: () => Promise<BrowserWindow>,
   root: string,
-  phase: 'project-write' | 'project-read' | 'project-edit' | 'project-restore',
+  phase:
+    | 'project-write'
+    | 'project-read'
+    | 'project-edit'
+    | 'project-restore'
+    | 'project-promote'
+    | 'project-promote-read',
 ) {
   const isolation = {
     userData: app.getPath('userData'),
@@ -48,7 +54,104 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
-    if (phase === 'project-write') {
+    if (phase === 'project-promote' || phase === 'project-promote-read') {
+      if (phase === 'project-promote') {
+        await evaluate("document.querySelector('[data-nav=tasks]').click()");
+        await wait("document.querySelector('[data-testid=new-task]')");
+        await evaluate("document.querySelector('[data-testid=new-task]').click()");
+        await wait("document.querySelector('[data-testid=task-title]')");
+        await evaluate(`(()=>{
+          const input=document.querySelector('[data-testid=task-title]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'独立任务转项目验收');
+          input.dispatchEvent(new Event('input',{bubbles:true}));
+        })()`);
+        await evaluate("document.querySelector('[data-testid=create-task]').click()");
+        await wait("document.querySelector('[data-testid=body-editor]')");
+        await evaluate(
+          "(()=>{const body=document.querySelector('[data-testid=body-editor]');body.focus();document.execCommand('insertText',false,'原任务正文与引用保全样本。');})()",
+        );
+        await wait("!document.querySelector('[data-testid=save-body]').disabled");
+        if (
+          !(await evaluate(
+            "Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='从任务创建项目')?.disabled",
+          ))
+        )
+          throw new Error('Unsaved Task can be promoted while editing');
+        await evaluate("document.querySelector('[data-testid=save-body]').click()");
+        await wait(
+          "document.querySelector('[data-testid=save-status]')?.textContent.includes('已保存到此设备')",
+        );
+        const original: TaskResponse = await evaluate(
+          "window.caselite.task({operation:'list',protocol_version:1})",
+        );
+        if (!original.ok || original.tasks.length !== 1)
+          throw new Error('Original Task fixture missing');
+        const before: TaskResponse = await evaluate(
+          `window.caselite.task({operation:'read',protocol_version:1,task_id:${JSON.stringify(original.tasks[0].id)}})`,
+        );
+        if (!before.ok) throw new Error('Original Task read failed');
+        await button('从任务创建项目');
+        await wait("document.querySelector('dialog[open]')");
+        await capture('project-from-task.png');
+        await button('保存项目');
+        await wait("!document.querySelector('dialog[open]')");
+        await wait(
+          "!Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='从任务创建项目')",
+        );
+        await wait(
+          "Array.from(document.querySelectorAll('.task-inspector dd')).some(e=>e.textContent==='独立任务转项目验收')",
+        );
+        const after: TaskResponse = await evaluate(
+          `window.caselite.task({operation:'read',protocol_version:1,task_id:${JSON.stringify(original.tasks[0].id)}})`,
+        );
+        if (
+          !after.ok ||
+          after.tasks[0].id !== before.tasks[0].id ||
+          after.tasks[0].document_id !== before.tasks[0].document_id ||
+          after.tasks[0].body_id !== before.tasks[0].body_id ||
+          !after.tasks[0].matter_id ||
+          JSON.stringify(after.state) !== JSON.stringify(before.state)
+        )
+          throw new Error('Promotion changed original Task identity or body');
+        writeFileSync(
+          join(root, 'promotion-expected.json'),
+          JSON.stringify(
+            {
+              task: after.tasks[0],
+              bodySha256: createHash('sha256').update(JSON.stringify(after.state)).digest('hex'),
+            },
+            null,
+            2,
+          ),
+        );
+        await capture('project-task-linked.png');
+      } else {
+        const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+        const result: TaskResponse = await evaluate(
+          `window.caselite.task({operation:'read',protocol_version:1,task_id:${JSON.stringify(expected.task.id)}})`,
+        );
+        if (
+          !result.ok ||
+          result.tasks[0].matter_id !== expected.task.matter_id ||
+          result.tasks[0].document_id !== expected.task.document_id ||
+          result.tasks[0].body_id !== expected.task.body_id ||
+          createHash('sha256').update(JSON.stringify(result.state)).digest('hex') !==
+            expected.bodySha256
+        )
+          throw new Error('Promotion restart lost original identity or body');
+        await wait("document.querySelector('.project-title-link')");
+        await button('独立任务转项目验收');
+        await wait("document.querySelector('[aria-label=编辑项目名称]')");
+        await button('独立任务转项目验收');
+        await wait(
+          `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
+        );
+        await wait(
+          "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
+        );
+        await capture('project-original-task-reopened.png');
+      }
+    } else if (phase === 'project-write') {
       await button('创建项目');
       await wait("document.querySelector('dialog[open] input')===document.activeElement");
       if (!(await evaluate("document.querySelector('dialog button[type=submit]').disabled")))

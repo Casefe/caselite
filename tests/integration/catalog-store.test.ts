@@ -39,6 +39,134 @@ function setup() {
   return { root, file, store, app: createCatalogApplication(store.catalog) };
 }
 describe('Five-page catalog persistence', () => {
+  it('promotes an original Task once and preserves its document, body and receipt across restart', () => {
+    const { file, store, app } = setup();
+    const created = ok(
+      store.execute({ ...ids(), operation: 'create', title: '原任务', objective: '原目标' }),
+    ).tasks[0];
+    ok(
+      store.execute({
+        ...ids(),
+        operation: 'save',
+        task_id: created.id,
+        document_id: created.document_id,
+        body_id: created.body_id,
+        expected_revision: 0,
+        editor_schema: 1,
+        state: binary('原任务正文不得复制或覆盖'),
+      }),
+    );
+    const original = ok(
+      store.execute({ operation: 'read', protocol_version: 1, task_id: created.id }),
+    );
+    const task = original.tasks[0];
+    const request = {
+      ...ids(),
+      operation: 'promote_task' as const,
+      task_id: task.id,
+      expected_version: task.version,
+      title: '由原任务创建',
+    };
+    const result = ok(app.execute(request));
+    const projectId = result.target_id;
+    expect(projectId).toBe(result.projects[0].id);
+    expect(ok(app.execute({ ...request, request_id: randomUUID() })).target_id).toBe(projectId);
+    expect(app.execute({ ...request, title: '同键异内容' })).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    const after = ok(store.execute({ operation: 'read', protocol_version: 1, task_id: task.id }));
+    expect(after.tasks[0]).toMatchObject({
+      id: task.id,
+      document_id: task.document_id,
+      body_id: task.body_id,
+      body_revision: task.body_revision,
+      matter_id: projectId,
+      version: task.version + 1,
+    });
+    expect(after.state).toEqual(original.state);
+    expect(app.execute({ ...request, ...ids(), expected_version: task.version + 1 })).toMatchObject(
+      { ok: false, code: 'CONFLICT' },
+    );
+    store.close();
+    const next = openTaskStore(file, migrations);
+    expect(
+      ok(
+        next.catalog.execute({
+          operation: 'status',
+          protocol_version: 1,
+          idempotency_key: request.idempotency_key,
+        }),
+      ).target_id,
+    ).toBe(projectId);
+    expect(ok(next.catalog.execute(request)).projects).toHaveLength(1);
+    expect(
+      ok(next.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).state,
+    ).toEqual(original.state);
+    next.close();
+  });
+  it('rolls promotion back before linking and after linking, then reuses the same request safely', () => {
+    for (const trigger of [
+      "CREATE TRIGGER reject_promotion BEFORE INSERT ON task_projects BEGIN SELECT RAISE(ABORT,'synthetic link failure'); END",
+      "CREATE TRIGGER reject_promotion BEFORE INSERT ON catalog_activity BEGIN SELECT RAISE(ABORT,'synthetic receipt failure'); END",
+    ]) {
+      const { file, store, app } = setup();
+      const task = ok(
+        store.execute({ ...ids(), operation: 'create', title: '原任务', objective: '' }),
+      ).tasks[0];
+      const connection = openToolchainProbe(file, migrations);
+      connection.sqlite.exec(trigger);
+      const request = {
+        ...ids(),
+        operation: 'promote_task' as const,
+        task_id: task.id,
+        expected_version: task.version,
+        title: '原子项目',
+      };
+      expect(app.execute(request)).toMatchObject({ ok: false });
+      expect(ok(app.execute({ operation: 'list', protocol_version: 1 })).projects).toEqual([]);
+      expect(
+        ok(store.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0],
+      ).toMatchObject({ version: task.version, matter_id: null });
+      expect(
+        app.execute({
+          operation: 'status',
+          protocol_version: 1,
+          idempotency_key: request.idempotency_key,
+        }),
+      ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+      connection.sqlite.exec('DROP TRIGGER reject_promotion');
+      expect(ok(app.execute(request)).projects).toHaveLength(1);
+      expect(ok(app.execute(request)).projects).toHaveLength(1);
+      connection.sqlite.close();
+      store.close();
+    }
+  });
+  it('rejects stale and cross-workspace promotion before creating any project', () => {
+    const { file, store, app } = setup();
+    const task = ok(
+      store.execute({ ...ids(), operation: 'create', title: '原任务', objective: '' }),
+    ).tasks[0];
+    const request = {
+      ...ids(),
+      operation: 'promote_task' as const,
+      task_id: task.id,
+      expected_version: task.version,
+      title: '受限项目',
+    };
+    expect(app.execute({ ...request, expected_version: 99 })).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    const other = openTaskStore(file, migrations, 'other');
+    expect(other.catalog.execute(request)).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(ok(other.catalog.execute({ operation: 'list', protocol_version: 1 })).projects).toEqual(
+      [],
+    );
+    expect(ok(app.execute({ operation: 'list', protocol_version: 1 })).projects).toEqual([]);
+    other.close();
+    store.close();
+  });
   it('keeps the same document/body across organization, archive, restart and restore', () => {
     const { file, store, app } = setup();
     const t = ok(store.execute({ ...ids(), operation: 'create', title: '中文成果', objective: '' }))

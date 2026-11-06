@@ -92,6 +92,33 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           db.prepare(
             'INSERT INTO matters(id,workspace_id,title,version,body_id,updated_at) VALUES(?,?,?,1,?,?)',
           ).run(target, workspace, request.title, randomUUID(), now);
+        } else if (request.operation === 'promote_task') {
+          const task = db
+            .prepare('SELECT version FROM task_items WHERE id=? AND workspace_id=?')
+            .get(request.task_id, workspace) as { version: number } | undefined;
+          if (!task) return fail('NOT_FOUND', '任务不在当前工作区。');
+          if (task.version !== request.expected_version)
+            return fail('CONFLICT', '任务已有更新，请重新打开后创建项目。');
+          if (
+            db.prepare('SELECT matter_id FROM task_projects WHERE task_id=?').get(request.task_id)
+          )
+            return fail('CONFLICT', '任务已经归入项目，请在原项目中继续。');
+          // 创建、原任务关联和回执共用事务；中断时不留下空项目或复制任务。
+          target = randomUUID();
+          db.prepare(
+            'INSERT INTO matters(id,workspace_id,title,version,body_id,updated_at) VALUES(?,?,?,1,?,?)',
+          ).run(target, workspace, request.title, randomUUID(), now);
+          db.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(
+            request.task_id,
+            target,
+          );
+          db.prepare('UPDATE task_items SET version=version+1,updated_at=? WHERE id=?').run(
+            now,
+            request.task_id,
+          );
+          db.prepare(
+            'INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)',
+          ).run(randomUUID(), request.task_id, 'promote_task', now);
         } else if (request.operation === 'assign_task') {
           target = request.task_id;
           const task = db

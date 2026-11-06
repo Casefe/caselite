@@ -541,7 +541,16 @@ function Workbench() {
                   </section>
                 )}
               </div>
-              <TaskInspector key={active.id} task={active} />
+              <TaskInspector
+                key={active.id}
+                task={active}
+                projectDisabled={dirty || busy || uncertain}
+                onProjectDirty={setDirty}
+                onProjectChanged={(task) => {
+                  setActive(task);
+                  void refresh().catch(() => setError('项目已保存，任务列表刷新失败。'));
+                }}
+              />
             </div>
           </section>
         ) : view === 'documents' || view === 'knowledge' ? (

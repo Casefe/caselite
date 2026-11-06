@@ -2,15 +2,22 @@ import { useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import AgentPanel from './AgentPanel';
+import TaskProjectAction from '../projects/TaskProjectAction';
 
 export default function TaskInspector({
   task,
   documents = false,
   onOpen,
+  onProjectChanged,
+  onProjectDirty,
+  projectDisabled = false,
 }: {
   task: Task | null;
   documents?: boolean;
   onOpen?(id: string): void;
+  onProjectChanged?(task: Task): void;
+  onProjectDirty?(dirty: boolean): void;
+  projectDisabled?: boolean;
 }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
   return (
@@ -81,6 +88,14 @@ export default function TaskInspector({
             <dt>最近更新</dt>
             <dd>{new Date(task.updated_at).toLocaleDateString('zh-CN')}</dd>
           </dl>
+          {!documents && onProjectChanged && onProjectDirty && (
+            <TaskProjectAction
+              task={task}
+              disabled={projectDisabled}
+              onChanged={onProjectChanged}
+              onDirty={onProjectDirty}
+            />
+          )}
           <hr />
           <div className="property-note">
             <Icon name="file" size={16} />

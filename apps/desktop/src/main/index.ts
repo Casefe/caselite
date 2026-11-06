@@ -496,6 +496,8 @@ if (taskDemoPhase) {
       'project-read',
       'project-edit',
       'project-restore',
+      'project-promote',
+      'project-promote-read',
       'agent',
       'agent-crash',
       'agent-read',
@@ -689,7 +691,9 @@ app
       (taskDemoPhase === 'project-write' ||
         taskDemoPhase === 'project-read' ||
         taskDemoPhase === 'project-edit' ||
-        taskDemoPhase === 'project-restore')
+        taskDemoPhase === 'project-restore' ||
+        taskDemoPhase === 'project-promote' ||
+        taskDemoPhase === 'project-promote-read')
     ) {
       await runProjectDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);

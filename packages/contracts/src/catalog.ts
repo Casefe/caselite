@@ -45,6 +45,15 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
   z
     .object({
       ...mutation,
+      operation: z.literal('promote_task'),
+      task_id: id,
+      expected_version: version,
+      title: z.string().trim().min(1).max(160),
+    })
+    .strict(),
+  z
+    .object({
+      ...mutation,
       operation: z.literal('update_project'),
       id,
       expected_version: version,
