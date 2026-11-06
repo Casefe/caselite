@@ -86,15 +86,18 @@ export async function runTaskDemo(
         const center=document.querySelector('.task-work-area, .agent-main, .collection-main');
         const right=document.querySelector('.task-inspector, .agent-context, .project-properties');
         const c=center?.getBoundingClientRect(), r=right?.getBoundingClientRect();
+        const header=document.querySelector('header[aria-label="工作台顶部栏"]');
+        const h=header?.getBoundingClientRect();
         return {page:document.querySelector('[data-nav][aria-current=page]')?.getAttribute('data-nav'),
           width:innerWidth, height:innerHeight, navWidth:nav.width,
           centerLeft:c?.left, centerRight:c?.right, rightWidth:r?.width,
           geometry:c && r ? [c.left,c.top,c.width,c.height,r.left,r.top,r.width,r.height] : null,
-          headerAbsent:!document.querySelector('.global-bar, .brand-caption, [data-testid=new-task], .collection-search, input[type=search]'),
+          legacyHeaderAbsent:!document.querySelector('.global-bar, .brand-caption'),
+          headerValid:Boolean(h && h.left===0 && h.top===0 && Math.abs(h.width-innerWidth)<=1 && h.height===48 && header.querySelector('.workspace-navigation-toggle[aria-controls="primary-navigation"]') && !header.querySelector('input, [data-testid=new-task], .collection-search') && (!c || c.top===h.bottom) && (!r || r.top===h.bottom)),
           profileValid:rect.left>=nav.left && rect.right<=nav.right && rect.bottom>=innerHeight-20 && rect.bottom<=innerHeight && Boolean(profile.querySelector('.profile-avatar')) && Boolean(profile.querySelector('.profile-name'))};
       })()`);
-      if (!shell.headerAbsent || !shell.profileValid)
-        throw new Error('Removed header or bottom profile regression: ' + JSON.stringify(shell));
+      if (!shell.legacyHeaderAbsent || !shell.headerValid || !shell.profileValid)
+        throw new Error('Workspace header or bottom profile regression: ' + JSON.stringify(shell));
       if (shell.centerLeft !== undefined) {
         const navWidth = size.width > 1250 ? 200 : 180,
           rightWidth = size.width > 1250 ? 300 : 250;
