@@ -187,35 +187,33 @@ it('refuses images for the installed text-only DeepSeek model before dispatch', 
 it('serializes the scan image into the installed DeepSeek provider HTTP request (mock transport)', async () => {
   const png =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1kAAAAASUVORK5CYII=';
-  const fetchMock = vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(
-      async () =>
-        new Response(
-          [
-            'data: ' +
-              JSON.stringify({
-                id: 'synthetic',
-                choices: [
-                  {
-                    index: 0,
-                    delta: { role: 'assistant', content: '合成结果' },
-                    finish_reason: null,
-                  },
-                ],
-              }),
-            'data: ' +
-              JSON.stringify({
-                id: 'synthetic',
-                choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-              }),
-            'data: [DONE]',
-            '',
-          ].join('\n\n'),
-          { headers: { 'content-type': 'text/event-stream' } },
-        ),
-    );
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
+    async () =>
+      new Response(
+        [
+          'data: ' +
+            JSON.stringify({
+              id: 'synthetic',
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: 'assistant', content: '合成结果' },
+                  finish_reason: null,
+                },
+              ],
+            }),
+          'data: ' +
+            JSON.stringify({
+              id: 'synthetic',
+              choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            }),
+          'data: [DONE]',
+          '',
+        ].join('\n\n'),
+        { headers: { 'content-type': 'text/event-stream' } },
+      ),
+  );
   try {
     const result = await new Promise((resolve) =>
       createPiRuntime().start({
