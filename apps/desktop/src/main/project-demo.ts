@@ -226,6 +226,12 @@ export async function runProjectDemo(
       } else
         await evaluate(`document.querySelector('[data-source-id="${file.id}"] button').click()`);
       await wait("document.querySelector('.material-paper canvas')?.width>0");
+      await wait(
+        "document.querySelector('.material-paper .react-pdf__Page__textContent')?.textContent.length>0",
+      );
+      await evaluate(
+        "document.querySelector('.material-paper canvas').scrollIntoView({block:'center'})",
+      );
       await capture(
         phase === 'project-files' ? 'project-files-recovered.png' : 'project-files-reopened.png',
       );
