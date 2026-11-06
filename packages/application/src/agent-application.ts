@@ -19,6 +19,8 @@ export interface AgentHistoryPort {
   register(run: AgentRun): { created: boolean; run: AgentRun };
   load(): AgentRun[];
   save(run: AgentRun): void;
+  pinnedIds?(): string[];
+  setPinned?(id: string, pinned: boolean): 'OK' | 'LIMIT' | 'NOT_FOUND';
 }
 
 export type AgentImage = { type: 'image'; mimeType: 'image/png'; data: string };
@@ -108,7 +110,9 @@ export function createAgentApplication(ports: {
         historyUnavailable &&
         (request.operation === 'start' ||
           request.operation === 'read' ||
-          request.operation === 'cancel')
+          request.operation === 'cancel' ||
+          request.operation === 'history' ||
+          request.operation === 'pin_history')
       )
         return failure(
           'HISTORY_UNAVAILABLE',
@@ -124,6 +128,42 @@ export function createAgentApplication(ports: {
       )
         return failure('BUSY', '模型配置正在保存，请稍后核对。');
       try {
+        if (request.operation === 'history' || request.operation === 'pin_history') {
+          if (!ports.history?.pinnedIds || !ports.history.setPinned)
+            return failure('HISTORY_UNAVAILABLE', '历史对话暂不可用，请稍后重试。');
+          const visible = [...runs.values()].filter(
+            ({ owner: runOwner, run }) =>
+              (runOwner === owner || runOwner === '') &&
+              (run.scope === 'home' || ports.taskExists(run.scope)),
+          );
+          if (request.operation === 'pin_history') {
+            if (!visible.some(({ run }) => run.id === request.run_id))
+              return failure('NOT_FOUND', '未找到可访问的对话记录。');
+            const status = ports.history.setPinned(request.run_id, request.pinned);
+            if (status === 'LIMIT') return failure('LIMIT', '最多置顶三轮对话，请先取消一条置顶。');
+            if (status !== 'OK') return failure('NOT_FOUND', '未找到可访问的对话记录。');
+          }
+          const pins = new Set(ports.history.pinnedIds());
+          const history = visible
+            .reverse()
+            .map(({ run }) => ({ ...run, pinned: pins.has(run.id) }))
+            .sort(
+              (a, b) =>
+                Number(b.pinned) - Number(a.pinned) ||
+                (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+            )
+            .slice(0, 5);
+          const model = ports.credentials.getDefaultModel();
+          const state = configuration();
+          const { providers } = state;
+          return {
+            ok: true,
+            configured: providers[agentProviderFor(model)],
+            model,
+            ...state,
+            runs: history,
+          };
+        }
         const active = [...runs.values()].find((item) => item.run.status === 'running');
         if (
           request.operation === 'configure' ||

@@ -37,6 +37,15 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
   z
     .object({ ...base, operation: z.literal('copy_output'), scope, run_id: z.string().uuid() })
     .strict(),
+  z.object({ ...base, operation: z.literal('history') }).strict(),
+  z
+    .object({
+      ...base,
+      operation: z.literal('pin_history'),
+      run_id: z.string().uuid(),
+      pinned: z.boolean(),
+    })
+    .strict(),
   z
     .object({
       ...base,
@@ -76,6 +85,7 @@ export const agentRunSchema = z.object({
   sequence: z.number().int().nonnegative(),
   message: z.string(),
   usage: z.object({ input: z.number(), output: z.number() }).nullable(),
+  pinned: z.boolean().optional(),
 });
 export const agentResponseSchema = z.discriminatedUnion('ok', [
   z.object({

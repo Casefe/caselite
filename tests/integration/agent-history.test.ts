@@ -40,6 +40,132 @@ function setup() {
   return { file, store: openTaskStore(file, migrations) };
 }
 describe('durable local Run projections', () => {
+  it('reads a legacy Run and preserves a pin through later checkpoints and restart', () => {
+    const { file, store: old } = setup();
+    const id = randomUUID();
+    old.agentHistory.register({
+      id,
+      scope: 'home',
+      prompt: '旧输入',
+      output: '旧回答',
+      status: 'succeeded',
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      sequence: 1,
+      message: '',
+      usage: null,
+    });
+    old.close();
+    const upgraded = openTaskStore(file, migrations);
+    expect(upgraded.agentHistory.load()).toMatchObject([
+      { id, prompt: '旧输入', output: '旧回答' },
+    ]);
+    expect(upgraded.agentHistory.pinnedIds()).toEqual([]);
+    expect(upgraded.agentHistory.setPinned(id, true)).toBe('OK');
+    const stale = upgraded.agentHistory.load()[0];
+    upgraded.agentHistory.save({ ...stale, pinned: false, output: '继续输出', sequence: 2 });
+    expect(upgraded.agentHistory.pinnedIds()).toEqual([id]);
+    expect(upgraded.agentHistory.load()[0].output).toBe('继续输出');
+    upgraded.close();
+  });
+  it('lists five recent rounds, atomically limits pins, and restores them without dispatch', async () => {
+    const { file, store } = setup();
+    const ids = Array.from({ length: 7 }, () => randomUUID());
+    const task = randomUUID();
+    ids.forEach((id, index) =>
+      store.agentHistory.register({
+        id,
+        scope: index === 6 ? task : 'home',
+        prompt: `问题 ${index}`,
+        output: `回答 ${index}`,
+        status: 'succeeded',
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        sequence: 1,
+        created_at: `2026-11-06T00:00:0${index}.000Z`,
+        message: '',
+        usage: null,
+      }),
+    );
+    const runtime = { start: vi.fn(() => ({ cancel() {} })) };
+    const app = createAgentApplication({
+      credentials,
+      runtime,
+      history: store.agentHistory,
+      taskExists: (id) => id === task,
+    });
+    const history = { protocol_version: 1, operation: 'history' } as const;
+    const pin = (id: string, pinned = true) =>
+      ({ protocol_version: 1, operation: 'pin_history', run_id: id, pinned }) as const;
+    expect(ok(await app.execute(history, 'owner')).runs.map((run) => run.id)).toEqual(
+      ids.slice(2).reverse(),
+    );
+    for (const id of ids.slice(2, 5))
+      expect(
+        ok(await app.execute(pin(id), 'owner')).runs.some((run) => run.id === id && run.pinned),
+      ).toBe(true);
+    expect(await app.execute(pin(ids[5]), 'owner')).toMatchObject({ ok: false, code: 'LIMIT' });
+    expect(
+      ok(await app.execute(pin(ids[2]), 'owner')).runs.filter((run) => run.pinned),
+    ).toHaveLength(3);
+    store.close();
+    const next = openTaskStore(file, migrations);
+    const reopened = createAgentApplication({
+      credentials,
+      runtime,
+      history: next.agentHistory,
+      taskExists: (id) => id === task,
+    });
+    const restored = ok(await reopened.execute(history, 'new-window')).runs;
+    expect(restored).toHaveLength(5);
+    expect(
+      restored
+        .filter((run) => run.pinned)
+        .map((run) => run.id)
+        .sort(),
+    ).toEqual(ids.slice(2, 5).sort());
+    expect(
+      ok(await reopened.execute(pin(ids[2], false), 'new-window')).runs.filter((run) => run.pinned),
+    ).toHaveLength(2);
+    expect(
+      ok(await reopened.execute(pin(ids[5]), 'new-window')).runs.filter((run) => run.pinned),
+    ).toHaveLength(3);
+    expect(runtime.start).not.toHaveBeenCalled();
+    next.close();
+  });
+  it('does not expose inaccessible task or another window’s live run through the history list', async () => {
+    const { store } = setup();
+    const task = randomUUID();
+    const callbacks: Parameters<AgentRuntimePort['start']>[0][] = [];
+    const app = createAgentApplication({
+      credentials,
+      history: store.agentHistory,
+      taskExists: (id) => id === task,
+      runtime: {
+        start(input) {
+          callbacks.push(input);
+          return { cancel() {} };
+        },
+      },
+    });
+    const first = request(task);
+    ok(await app.execute(first, 'first-window'));
+    expect(
+      ok(await app.execute({ protocol_version: 1, operation: 'history' }, 'other-window')).runs,
+    ).toEqual([]);
+    expect(
+      await app.execute(
+        { protocol_version: 1, operation: 'pin_history', run_id: first.run_id, pinned: true },
+        'other-window',
+      ),
+    ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    callbacks[0].onEnd({ status: 'succeeded', message: '', usage: null });
+    app.release('first-window');
+    expect(
+      ok(await app.execute({ protocol_version: 1, operation: 'history' }, 'other-window')).runs,
+    ).toHaveLength(1);
+    store.close();
+  });
   it('recovers interrupted output without another dispatch, and replays the same run after restart', async () => {
     const { file, store } = setup();
     let callbacks: Parameters<AgentRuntimePort['start']>[0] | undefined;

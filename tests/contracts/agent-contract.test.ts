@@ -340,9 +340,11 @@ describe('credential failure projection', () => {
         load: () => [],
         register: (run) => ({ created: true, run }),
         save() {},
+        pinnedIds: () => [],
+        setPinned: () => 'OK',
       },
     });
-    for (const operation of ['profile', 'read'] as const) {
+    for (const operation of ['profile', 'read', 'history'] as const) {
       const result = await app.execute(
         { protocol_version: 1, operation, ...(operation === 'read' ? { scope: 'home' } : {}) },
         'window',

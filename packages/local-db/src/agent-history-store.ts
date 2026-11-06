@@ -36,12 +36,14 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
   const save = (input: AgentRun) =>
     db.transaction(() => {
       // 这里只更新已登记Run；输入身份固定，不能借检查点覆盖其他收费请求。
-      const run = agentRunSchema.parse(input),
+      const incoming = agentRunSchema.parse(input),
         row = db
           .prepare('SELECT payload FROM agent_runs WHERE id=? AND workspace_id=?')
-          .get(run.id, workspace) as { payload: string } | undefined;
+          .get(incoming.id, workspace) as { payload: string } | undefined;
       if (!row) throw new Error('Run not registered');
       const old = decode(row);
+      // 运行检查点不得覆盖用户刚保存的置顶状态；两者共用同一事务连接。
+      const run = { ...incoming, pinned: old.pinned };
       if (
         old.scope !== run.scope ||
         old.prompt !== run.prompt ||
@@ -66,6 +68,35 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
     save,
     register,
     load,
+    pinnedIds: () =>
+      (
+        db
+          .prepare(
+            "SELECT id FROM agent_runs WHERE workspace_id=? AND json_extract(payload,'$.pinned')=1",
+          )
+          .all(workspace) as { id: string }[]
+      ).map((row) => row.id),
+    setPinned: (id: string, pinned: boolean) =>
+      db.transaction(() => {
+        const row = db
+          .prepare(
+            "SELECT json_extract(payload,'$.pinned') AS pinned FROM agent_runs WHERE id=? AND workspace_id=?",
+          )
+          .get(id, workspace) as { pinned: number } | undefined;
+        if (!row) return 'NOT_FOUND' as const;
+        if (pinned && !row.pinned) {
+          const count = db
+            .prepare(
+              "SELECT count(*) AS n FROM agent_runs WHERE workspace_id=? AND json_extract(payload,'$.pinned')=1",
+            )
+            .get(workspace) as { n: number };
+          if (count.n >= 3) return 'LIMIT' as const;
+        }
+        db.prepare(
+          "UPDATE agent_runs SET payload=json_set(payload,'$.pinned',json(?)) WHERE id=? AND workspace_id=?",
+        ).run(pinned ? 'true' : 'false', id, workspace);
+        return 'OK' as const;
+      })(),
     recoverInterrupted: () =>
       db.transaction(() => {
         for (const run of load())
