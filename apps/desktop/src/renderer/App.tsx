@@ -10,7 +10,7 @@ import TaskInspector from './ui/TaskInspector';
 
 import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
 import { AppearanceProvider } from './ui/Appearance';
-import RecordList from './ui/RecordList';
+import RecordList, { initialTaskListState } from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
 import AgentHistory from './ui/AgentHistory';
 import {
@@ -172,7 +172,7 @@ function Workbench() {
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
-  const [taskFilter, setTaskFilter] = useState('全部任务');
+  const [taskListState, setTaskListState] = useState(initialTaskListState);
   const [detailTab, setDetailTab] = useState('成果正文');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
@@ -325,11 +325,6 @@ function Workbench() {
       setBusy(false);
     }
   }
-  const filtered = tasks.filter(
-    (t) =>
-      taskFilter === '全部任务' ||
-      (taskFilter === '已写正文' ? t.body_revision > 0 : t.body_revision === 0),
-  );
   const resetTask = () => {
     if (!canLeave()) return;
     readSequence.current++;
@@ -619,10 +614,9 @@ function Workbench() {
         ) : view === 'tasks' ? (
           <RecordList
             key={view}
-            tasks={filtered}
-            documents={false}
-            filter={taskFilter}
-            onFilter={setTaskFilter}
+            tasks={tasks}
+            viewState={taskListState}
+            onViewState={setTaskListState}
             onOpen={(id) => void open(id)}
             onNew={newTask}
             propertiesBlocked={propertiesBlocked}

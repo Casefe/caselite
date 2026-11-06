@@ -199,7 +199,7 @@ export function createCaseLitePreloadApi(
   };
 }
 
-export type { Task, TaskRequest, TaskResponse } from '@caselite/contracts';
+export type { Task, TaskRequest, TaskResponse, TaskListQuery } from '@caselite/contracts';
 export type {
   AgentRun,
   AgentRequest,

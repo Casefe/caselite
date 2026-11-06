@@ -194,6 +194,51 @@ export async function runTaskStatusDemo(
       await wait(
         "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='false'",
       );
+      const filter = async (label: string, value: string) =>
+        evaluate(
+          `(()=>{const p=document.querySelector('[aria-label="${label}"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(value)});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        );
+      await filter('筛选任务状态', 'todo');
+      await wait("document.querySelector('.task-query-list .table-empty')");
+      await filter('筛选任务状态', 'done');
+      await wait(`document.querySelector('[data-row-task="${id}"]')`);
+      await filter('筛选任务优先级', '1');
+      await wait("document.querySelector('.task-query-list .table-empty')");
+      await filter('筛选任务优先级', '2');
+      await wait(`document.querySelector('[data-row-task="${id}"]')`);
+      await filter('筛选普通日期', 'undated');
+      await wait("document.querySelector('.task-query-list .table-empty')");
+      await filter('筛选普通日期', 'dated');
+      await wait(`document.querySelector('[data-row-task="${id}"]')`);
+      await evaluate(
+        "(()=>{const p=document.querySelector('[aria-label=搜索任务]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(p,'状态');p.dispatchEvent(new Event('input',{bubbles:true}));})()",
+      );
+      await wait(`document.querySelector('[data-row-task="${id}"]')`);
+      await evaluate(`document.querySelector('[data-row-task="${id}"]').focus()`);
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+      await wait(
+        `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
+      );
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait(`document.querySelector('[data-row-task="${id}"][aria-current=true]')`);
+      if (
+        !(await evaluate(
+          "document.querySelector('[aria-label=搜索任务]').value==='状态' && document.querySelector('[aria-label=筛选任务优先级]').value==='2'",
+        ))
+      )
+        throw new Error('Task list return lost its filters');
+      for (const width of [640, 1440]) {
+        window.setSize(width, 900);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        if (
+          !(await evaluate(
+            "document.documentElement.scrollWidth<=innerWidth && document.querySelector('.task-query-list').getBoundingClientRect().right<=innerWidth+1",
+          ))
+        )
+          throw new Error('Task list overflow at ' + width);
+        await capture(`task-list-${width}.png`);
+      }
       const final = await read(id),
         task = final.tasks[0];
       if (

@@ -39,3 +39,9 @@ UI属性草稿/未决提交与正文dirty分别跟踪，不能以属性保存清
 task:v1新增strict update_attributes，要求两个字段显式出现；沿原workspace、expected_version、原键回执、Activity同事务。旧create/update/save/change_status的请求及digest不加默认值；仅响应解码历史回执补priority=0/due_date=null，确认后仍须重读当前Task。新0007用两条ALTER ADD COLUMN及具名CHECK，保留0000—0006和旧行ID/正文/状态/版本/时间/回执。生成器重建SQL留隔离证据，snapshot按同一约束核对。
 
 UI复用原属性草稿和未知提交恢复，一次只编辑状态或普通属性，原提交未决时不切换对象。设置、清空、闰年、过去日期、时区字面值、旧请求保留、迁移和事务故障需分验。回退只撤代码，保留新列/迁移与已保存数据，不降级覆盖。系统时区、中文IME和律师体验另记人工验收。
+
+## DEV-1605｜Task列表查询（2026-11-07）
+
+原task:v1的list增加strict query，明确当前workspace或project范围；旧无query入口仍仅当前workspace兼容。标题/说明使用原SQLite投影参数化检索，状态/优先级/普通日期/正文、排序均白名单，20项分页并以id打破同值排序；项目每次验证当前workspace与归档状态。不建FTS或第二Task缓存Owner。返回page元数据仅为查询投影，不写Activity或Run。
+
+UI会话内保留query/选中ID/滚动位置，属性未决时禁换范围；每次查询清楚显示loading/error，旧异步响应失效，已保存变更通过原Task读回使列表重查。筛选不是授权，Store仍做workspace/project检查。跨页是当前数据的offset分页，不宣称并发快照；回退只撤代码，无数据迁移。

@@ -47,6 +47,65 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
       if (request.operation === 'list') {
+        const q = request.query;
+        if (q) {
+          if (
+            q.scope.type === 'project' &&
+            !db
+              .prepare(
+                'SELECT id FROM matters WHERE id=? AND workspace_id=? AND archived_at IS NULL',
+              )
+              .get(q.scope.id, workspace)
+          )
+            return fail('NOT_FOUND', '项目不存在、已归档或不在当前工作区。');
+          const clauses = ['t.workspace_id=?'],
+            params: (string | number)[] = [workspace];
+          if (q.scope.type === 'project') {
+            clauses.push('p.matter_id=?');
+            params.push(q.scope.id);
+          }
+          if (q.text) {
+            clauses.push("instr(lower(t.title || ' ' || t.objective),lower(?)) > 0");
+            params.push(q.text);
+          }
+          if (q.status !== null) {
+            clauses.push('t.status=?');
+            params.push(q.status);
+          }
+          if (q.priority !== null) {
+            clauses.push('t.priority=?');
+            params.push(q.priority);
+          }
+          if (q.dates !== 'all')
+            clauses.push(q.dates === 'dated' ? 't.due_date IS NOT NULL' : 't.due_date IS NULL');
+          if (q.from) {
+            clauses.push('t.due_date>=?');
+            params.push(q.from);
+          }
+          if (q.to) {
+            clauses.push('t.due_date<=?');
+            params.push(q.to);
+          }
+          if (q.body !== 'all')
+            clauses.push(q.body === 'written' ? 'd.body_revision>0' : 'd.body_revision=0');
+          const order = {
+            updated: 't.updated_at DESC,t.id',
+            title: 't.title COLLATE NOCASE,t.id',
+            priority: '(t.priority=0),t.priority,t.id',
+            due_date: '(t.due_date IS NULL),t.due_date,t.id',
+          }[q.sort];
+          const filtered = `${select} WHERE ${clauses.join(' AND ')}`;
+          const total = (
+            db.prepare(`SELECT count(*) AS n FROM (${filtered})`).get(...params) as { n: number }
+          ).n;
+          const rows = db
+            .prepare(`${filtered} ORDER BY ${order} LIMIT 20 OFFSET ?`)
+            .all(...params, q.offset) as Row[];
+          return {
+            ...ok(rows),
+            page: { offset: q.offset, total, has_more: q.offset + rows.length < total },
+          };
+        }
         const rows = db
           .prepare(`${select} WHERE t.workspace_id=? ORDER BY t.updated_at DESC,t.id`)
           .all(workspace) as Row[];

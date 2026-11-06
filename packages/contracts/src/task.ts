@@ -5,6 +5,27 @@ export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export const taskPrioritySchema = z.number().int().min(0).max(4);
 export const ordinaryDateSchema = z.iso.date().refine((value) => !value.startsWith('0000-'));
+export const taskListQuerySchema = z
+  .object({
+    scope: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('workspace') }).strict(),
+      z.object({ type: z.literal('project'), id: taskIdSchema }).strict(),
+    ]),
+    text: z.string().trim().max(160),
+    status: taskStatusSchema.nullable(),
+    priority: taskPrioritySchema.nullable(),
+    dates: z.enum(['all', 'dated', 'undated']),
+    from: ordinaryDateSchema.nullable(),
+    to: ordinaryDateSchema.nullable(),
+    body: z.enum(['all', 'written', 'empty']),
+    sort: z.enum(['updated', 'title', 'priority', 'due_date']),
+    offset: z.number().int().min(0).max(1_000_000),
+  })
+  .strict()
+  .refine(
+    (q) => (!q.from || !q.to || q.from <= q.to) && (q.dates !== 'undated' || (!q.from && !q.to)),
+  );
+export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 export const taskSchema = z.object({
   id: taskIdSchema,
   title: z.string().min(1).max(160),
@@ -23,7 +44,13 @@ export const taskSchema = z.object({
   updated_at: z.string(),
 });
 export const taskQuerySchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('list'), protocol_version: z.literal(1) }).strict(),
+  z
+    .object({
+      operation: z.literal('list'),
+      protocol_version: z.literal(1),
+      query: taskListQuerySchema.optional(),
+    })
+    .strict(),
   z
     .object({ operation: z.literal('read'), protocol_version: z.literal(1), task_id: taskIdSchema })
     .strict(),
@@ -102,6 +129,13 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     state: z.array(z.number().int().min(0).max(255)).nullable(),
     receipt: taskIdSchema.nullable(),
     objective_state: richState.nullable().optional(),
+    page: z
+      .object({
+        offset: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        has_more: z.boolean(),
+      })
+      .optional(),
   }),
   z.object({
     ok: z.literal(false),
