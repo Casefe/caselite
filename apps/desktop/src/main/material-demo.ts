@@ -53,6 +53,13 @@ export async function runMaterialDemo(
     }
     throw new Error('Processing timeout');
   }
+  const materialSnapshot = (items: Material[]) =>
+    items.map((item) => ({
+      id: item.id,
+      hash: item.sha256,
+      status: item.status,
+      pages: item.pages.map((page) => ({ page: page.page, text: page.text, origin: page.origin })),
+    }));
   async function capture(name: string) {
     await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
     const shot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
@@ -93,11 +100,42 @@ export async function runMaterialDemo(
     }
     await waitFor("Boolean(document.querySelector('.material-staged'))");
   }
+  async function reattach(file: string) {
+    const before = await list();
+    await drop(file);
+    await waitFor("!document.querySelector('.material-staged')");
+    const after = await settled();
+    const added = after.filter((item) => !before.some((old) => old.id === item.id));
+    // 重新上传创建新来源版本；旧原件身份与字节不得被覆盖，也不能自动选回旧材料。
+    if (
+      added.length !== 1 ||
+      after.length !== before.length + 1 ||
+      !before.some((old) => old.name === file && old.sha256 === added[0].sha256) ||
+      before.some((old) => after.find((item) => item.id === old.id)?.sha256 !== old.sha256)
+    )
+      throw new Error('Reattaching a PDF changed existing sources');
+    return added[0];
+  }
+  async function assertSelection(ids: string[]) {
+    const state = await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
+    );
+    const actual = state.runs
+      .at(-1)
+      ?.attachments?.map((item: { source_id: string }) => item.source_id)
+      .sort();
+    if (!state.ok || JSON.stringify(actual) !== JSON.stringify([...ids].sort()))
+      throw new Error('Run included an unselected source version');
+  }
   try {
     await waitFor("Boolean(document.querySelector('.material-composer'))");
     if (phase === 'materials-read') {
       const items = await list();
-      if (items.length !== 2 || items.some((item) => !item.pages.length))
+      const saved = JSON.parse(readFileSync(join(directory, 'materials-write.json'), 'utf8'));
+      if (
+        items.length !== 4 ||
+        JSON.stringify(materialSnapshot(items)) !== JSON.stringify(saved.materials)
+      )
         throw new Error('Restart lost material');
       await waitFor("document.querySelectorAll('.message-attachments').length===3");
       await evaluate(
@@ -171,9 +209,7 @@ export async function runMaterialDemo(
       JSON.stringify(singleContext, null, 2),
     );
     await capture('chat-single-pdf-output');
-    await evaluate(
-      "document.querySelector('.material-library').open=true;[...document.querySelectorAll('.material-library > div')].find(row=>row.textContent.includes('text.pdf')).querySelectorAll('button')[1].click()",
-    );
+    const secondText = await reattach('text.pdf');
     stage = 'drop-and-send-scan';
     await drop('scan.pdf');
     await evaluate("document.querySelector('[data-testid=agent-input]').focus()");
@@ -188,8 +224,9 @@ export async function runMaterialDemo(
       "document.querySelector('.assistant-run-status.succeeded') && document.querySelector('[data-testid=agent-input]').value==='' && !document.querySelector('[aria-label=待发送附件]')",
     );
     items = await settled();
-    if (items.length !== 2) throw new Error('Missing second attachment');
-    const scan = items.find((item) => item.name === 'scan.pdf')!;
+    if (items.length !== 3) throw new Error('Missing second attachment');
+    let scan = items.find((item) => item.name === 'scan.pdf')!;
+    await assertSelection([secondText.id, scan.id]);
     if (scan.status !== 'needs_ocr')
       throw new Error('Visual path unexpectedly waited for local OCR');
     const context = JSON.parse(readFileSync(join(directory, 'material-pi-context.json'), 'utf8'));
@@ -221,9 +258,7 @@ export async function runMaterialDemo(
       "(()=>{const select=document.querySelector('[aria-label=选择大模型]');select.value='deepseek-v4-pro';select.dispatchEvent(new Event('change',{bubbles:true}));})()",
     );
     await waitFor("document.querySelector('[aria-label=选择大模型]').value==='deepseek-v4-pro'");
-    await evaluate(
-      "document.querySelector('.material-library').open=true;[...document.querySelectorAll('.material-library > div')].find(row=>row.textContent.includes('scan.pdf')).querySelectorAll('button')[1].click()",
-    );
+    scan = await reattach('scan.pdf');
     await evaluate(
       "document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,'核对这份扫描材料的付款条款。')",
     );
@@ -234,6 +269,8 @@ export async function runMaterialDemo(
     );
     const ocrMs = Date.now() - started;
     items = await settled();
+    if (items.length !== 4) throw new Error('Missing reattached scan source');
+    await assertSelection([scan.id]);
     if (
       !items
         .find((item) => item.id === scan.id)
@@ -265,7 +302,7 @@ export async function runMaterialDemo(
       throw new Error('Demo keys were not cleared');
     const oldDerivation = items.find((item) => item.id === scan.id)!.derivation_id;
     await evaluate(
-      "[...document.querySelectorAll('.message-attachments button')].find(b=>b.textContent.includes('scan.pdf')).click()",
+      "[...document.querySelectorAll('.message-attachments button')].filter(b=>b.textContent.includes('scan.pdf')).at(-1).click()",
     );
     await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
     await click('提取文字（离线）');
@@ -274,6 +311,7 @@ export async function runMaterialDemo(
     );
     await capture('chat-offline-reader');
     await click('收起阅读');
+    items = await settled();
     stage = 'task-body-regression';
     await openTask(items[0].task_id);
     await evaluate(
@@ -296,22 +334,13 @@ export async function runMaterialDemo(
         {
           passed: true,
           ids: items.map((item) => item.id),
-          materials: items.map((item: Material) => ({
-            id: item.id,
-            hash: item.sha256,
-            status: item.status,
-            pages: item.pages.map((page) => ({
-              page: page.page,
-              text: page.text,
-              origin: page.origin,
-            })),
-          })),
+          materials: materialSnapshot(items),
           ocrMs,
           importPendingAtSend,
           visualImages: images.length,
           inputCleared: true,
           offlineReaderWithoutKey: true,
-          attachmentMessages: 2,
+          attachmentMessages: 3,
           network: 'HTTP(S) blocked; no Key or remote model used',
           agentDispatch:
             'MOCK_ONLY: real Pi Runtime with synthetic Provider; real Pi receives both selected sources, one scan image; second run local OCR only and excludes first-round text attachment',

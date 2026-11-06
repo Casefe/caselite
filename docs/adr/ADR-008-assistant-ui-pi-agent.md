@@ -12,7 +12,7 @@
 
 来源：[官方 npm 包](https://www.npmjs.com/package/@assistant-ui/react-markdown)、安装包 `LICENSE` / `package.json`，以及本仓原 assistant-ui ExternalStoreRuntime。
 
-> 2026-11-06 用户指定首页及 AI 辅助栏改用 assistant-ui Composer 默认文本输入；本条取代下文 Agent 输入保留 Tiptap 的旧决定。任务正文仍使用既有 Tiptap/Yjs，发送仍需预览和确认。
+> 2026-11-06 用户指定首页及 AI 辅助栏改用 assistant-ui Composer 默认文本输入；本条取代下文 Agent 输入保留 Tiptap 的旧决定。任务正文仍使用既有 Tiptap/Yjs；发送按现行04的 PDF-CHAT1／HOMEUI1，以本轮附件卡和所选模型表达范围，发送时固定输入，不另加二次预览确认。删除常驻发送说明不改变权限、预算或未知回执保护。
 
 > 2026-11-05 更新：用户已授权 DeepSeek 接入；下文单 OpenAI 限制由 [ADR-009](./ADR-009-provider-model-selection.md) 覆盖，其他边界保持。
 

@@ -1,5 +1,12 @@
 import { spawnSync, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  copyFileSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
@@ -31,7 +38,13 @@ for (const phase of [
     elapsedMs: Date.now() - startedAt,
   });
   writeFileSync(join(dir, 'agent-phases.json'), JSON.stringify(phases, null, 2));
-  if (phase.startsWith('agent-crash') ? result.signal !== 'SIGKILL' : result.status !== 0)
+  if (
+    phase.startsWith('agent-crash')
+      ? result.signal !== 'SIGKILL' ||
+        Boolean(result.error) ||
+        !existsSync(join(dir, 'crashed-run.json'))
+      : result.status !== 0
+  )
     throw new Error(`Agent ${phase} demo failed: ${dir}; ${result.stderr}`);
 }
 const out = join(root, 'artifacts/evidence/agent-demo');

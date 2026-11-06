@@ -123,7 +123,11 @@ it('keeps saved-material read, selection and original restoration available in t
   };
   const c = controller({ items: [file] });
   const user = userEvent.setup();
-  render(<PdfAttachments controller={c}>输入</PdfAttachments>);
+  render(
+    <PdfAttachments controller={c} showSavedMaterials>
+      输入
+    </PdfAttachments>,
+  );
   await user.click(screen.getByRole('button', { name: '添加文件与材料' }));
   await user.click(screen.getByRole('menuitem', { name: '已保存材料' }));
   await user.click(screen.getByRole('button', { name: file.name }));
@@ -262,7 +266,7 @@ it('uses menu arrows, Enter, Escape and Tab while keeping the saved-material con
   const c = controller({ items: [file] });
   const user = userEvent.setup();
   render(
-    <PdfAttachments controller={c} actions={<button>后续操作</button>}>
+    <PdfAttachments controller={c} showSavedMaterials actions={<button>后续操作</button>}>
       <textarea />
     </PdfAttachments>,
   );
@@ -279,6 +283,8 @@ it('uses menu arrows, Enter, Escape and Tab while keeping the saved-material con
   expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '已保存材料' }));
   await user.keyboard('{Home}{ArrowUp}');
   expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '已保存材料' }));
+  await user.keyboard('{ArrowDown}');
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '文件' }));
   await user.keyboard('{Escape}');
   expect(document.activeElement).toBe(trigger);
   await user.keyboard('{ArrowDown}{Tab}');
@@ -288,10 +294,54 @@ it('uses menu arrows, Enter, Escape and Tab while keeping the saved-material con
 
 it('hides the empty library command and formats actual byte sizes without changing PDF budgets', async () => {
   const user = userEvent.setup();
-  render(<PdfAttachments controller={controller()}>输入</PdfAttachments>);
-  await user.click(screen.getByRole('button', { name: '添加文件与材料' }));
-  expect(screen.queryByRole('menuitem', { name: '已保存材料' })).toBeNull();
-  expect(screen.getByRole('menuitem', { name: '文件' }).title).toContain('20 MB / 200 页');
+  const file: Material = {
+    id: 'source',
+    task_id: 'task',
+    asset_version_id: 'asset',
+    name: '合成合同.pdf',
+    sha256: '0'.repeat(64),
+    bytes: 1297,
+    page_count: 1,
+    derivation_id: null,
+    status: 'ready',
+    pages: [],
+  };
+  const empty = controller();
+  const populated = controller({ items: [file] });
+  const view = render(<PdfAttachments controller={empty}>输入</PdfAttachments>);
+  for (const c of [empty, populated]) {
+    view.rerender(<PdfAttachments controller={c}>输入</PdfAttachments>);
+    await user.click(screen.getByRole('button', { name: '添加文件与材料' }));
+    expect(screen.queryByRole('menuitem', { name: '已保存材料' })).toBeNull();
+    expect(view.container.querySelector('.material-library')).toBeNull();
+    expect(
+      screen
+        .getAllByRole('menuitem')
+        .map((item) => item.getAttribute('aria-label') ?? item.querySelector('span')?.textContent),
+    ).toEqual(['文件', 'Skill', 'MCP connectors']);
+    expect(screen.getByRole('menuitem', { name: '文件' }).title).toContain('20 MB / 200 页');
+    for (const name of ['Skill', 'MCP connectors']) {
+      if (!screen.queryByRole('menu'))
+        await user.click(screen.getByRole('button', { name: '添加文件与材料' }));
+      const item = screen.getByRole('menuitem', { name });
+      expect((item as HTMLButtonElement).disabled).toBe(true);
+      expect(item.getAttribute('aria-disabled')).toBe('true');
+      expect(item.textContent).toContain('暂未接入');
+      await user.click(item);
+      fireEvent.keyDown(item, { key: 'Enter' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
+    const trigger = screen.getByRole('button', { name: '添加文件与材料' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}{End}');
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '文件' }));
+    await user.keyboard('{Escape}');
+    expect(document.activeElement).toBe(trigger);
+    expect(c.add).not.toHaveBeenCalled();
+    expect(c.readReference).not.toHaveBeenCalled();
+    expect(c.select).not.toHaveBeenCalled();
+    expect(c.restore).not.toHaveBeenCalled();
+  }
   expect(materialSize(1297)).toBe('1.27 KB');
   expect(materialSize(20 * 1024 * 1024)).toBe('20 MB');
 });

@@ -3722,3 +3722,51 @@ select,
   background: transparent;
   font-size: 11px;
 }
+
+/* 窄屏首页不能继承共享双栏的590px最小宽；上下文仍可在工作概览中滚动访问。 */
+@media (max-width: 1100px) {
+  .agent-home {
+    display: block;
+    min-width: 0;
+    overflow-y: auto;
+  }
+  .agent-home .agent-main {
+    overflow: visible;
+  }
+  .agent-home .agent-context {
+    height: auto;
+    padding: 0 20px 20px;
+    border-left: 0;
+  }
+  .agent-home.home-conversation {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .home-conversation .agent-main {
+    overflow: hidden;
+  }
+  .home-conversation .agent-context {
+    display: none;
+  }
+  .home-conversation .assistant-panel {
+    overflow-y: auto;
+  }
+  .agent-home .assistant-message-heading {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 850px) {
+  .agent-home .agent-start,
+  .agent-home .home-task-feed {
+    width: calc(100% - 32px);
+  }
+  .agent-home .home-conversation-toolbar {
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .home-conversation .assistant-viewport {
+    padding: 16px 8px 8px;
+  }
+}

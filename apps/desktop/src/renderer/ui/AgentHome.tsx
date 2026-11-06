@@ -51,7 +51,7 @@ export default function AgentHome({
             <span>
               <BrandLogo /> AI 工作对话
             </span>
-            <button onClick={() => setOverview(!overview)}>
+            <button aria-expanded={overview} onClick={() => setOverview(!overview)}>
               {overview ? '返回对话' : '工作概览与快捷项'}
             </button>
           </header>

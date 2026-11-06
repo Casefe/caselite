@@ -48,15 +48,18 @@ describe('AI submission UI lifecycle', () => {
   it('keeps disclosure outside the composer and preserves Enter, Shift+Enter and IME submission semantics', async () => {
     const agent = vi.fn(async () => profile);
     window.caselite = { agent } as unknown as Window['caselite'];
-    render(<AgentPanel scope="41414141-4141-4141-8141-414141414141" />);
+    const view = render(<AgentPanel scope="41414141-4141-4141-8141-414141414141" />);
     await screen.findByText('已配置 · 模型设置');
     const input = screen.getByLabelText('AI 工作要求');
     const composer = input.closest('form')!;
     expect(composer.querySelector('.composer-send-note')).toBeNull();
+    expect(view.container.querySelector('.composer-send-note')).toBeNull();
+    expect(screen.queryByRole('button', { name: '配置模型' })).toBeNull();
+    expect(screen.queryByText(/仅发送本次文字与所选材料/)).toBeNull();
+    expect(screen.queryByText('发送说明')).toBeNull();
+    expect(screen.queryByText(/本次发送只包含输入框内的文字/)).toBeNull();
     expect(screen.queryByText('项目（未接入）')).toBeNull();
     const user = userEvent.setup();
-    await user.click(screen.getByText(/仅发送本次文字与所选材料/));
-    expect(screen.getByText(/本次发送只包含输入框内的文字/)).toBeTruthy();
     await user.click(input);
     await user.type(input, '第一行');
     await user.keyboard('{Shift>}{Enter}{/Shift}第二行');

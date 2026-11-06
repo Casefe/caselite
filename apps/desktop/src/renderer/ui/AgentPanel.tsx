@@ -476,14 +476,10 @@ export default function AgentPanel({
           >
             <PdfAttachments
               controller={materials}
+              showSavedMaterials={scope !== 'home'}
               disabled={pending || unknown || Boolean(active)}
               actions={
                 <>
-                  {scope === 'home' && !configured && openSettings && (
-                    <button type="button" onClick={() => openSettings()}>
-                      配置模型
-                    </button>
-                  )}
                   {scope === 'home' && (
                     <select
                       className="home-model-select"
@@ -567,24 +563,6 @@ export default function AgentPanel({
               />
             </PdfAttachments>
           </ComposerPrimitive.Root>
-          <details className="composer-send-note">
-            <summary>
-              {mockPreview
-                ? '仅发送本次文字与所选材料 · 演示无真实 API 调用'
-                : '仅发送本次文字与所选材料 · 可能产生 API 费用'}
-              <span>发送说明</span>
-            </summary>
-            <div>
-              <p>
-                本次发送只包含输入框内的文字与上方明确列出的附件。已保存材料须重新添加，不会自动携带以前的材料或对话。
-              </p>
-              <p>
-                {mockPreview
-                  ? '当前使用离线合成 Provider，固定输出只验证界面流程。'
-                  : '内容将发送给所选模型对应的外部服务商；停止本地生成后，远端可能已处理或计费。'}
-              </p>
-            </div>
-          </details>
           {scope !== 'home' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。

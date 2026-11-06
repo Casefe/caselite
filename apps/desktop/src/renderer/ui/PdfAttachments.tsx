@@ -44,16 +44,18 @@ export default function PdfAttachments({
   children,
   actions,
   disabled = false,
+  showSavedMaterials = false,
   controller: c,
 }: {
   children: ReactNode;
   actions?: ReactNode;
   disabled?: boolean;
+  showSavedMaterials?: boolean;
   controller: MaterialController;
 }) {
   const [over, setOver] = useState(false);
   const [layer, setLayer] = useState<'closed' | 'commands' | 'library'>('closed');
-  const menuOpen = layer !== 'closed';
+  const menuOpen = layer === 'commands' || (showSavedMaterials && layer === 'library');
   const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   const shortcut = isMac ? '⌘⇧U' : 'Ctrl⇧U';
   const composing = useRef(false);
@@ -378,7 +380,7 @@ export default function PdfAttachments({
               <span id={`${menuId}-capability`} hidden>
                 仅支持 PDF，每份不超过 20 MB 和 200 页。
               </span>
-              {c.items.some((item) => !(item.id in c.selected)) && (
+              {showSavedMaterials && c.items.some((item) => !(item.id in c.selected)) && (
                 <button
                   type="button"
                   role="menuitem"
@@ -392,58 +394,87 @@ export default function PdfAttachments({
                   <Icon name="chevron" size={14} />
                 </button>
               )}
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                aria-label="Skill"
+                aria-describedby={`${menuId}-skill-status`}
+                aria-disabled="true"
+                disabled
+              >
+                <Icon name="spark" size={16} />
+                <span>Skill</span>
+                <small id={`${menuId}-skill-status`}>暂未接入</small>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                aria-label="MCP connectors"
+                aria-describedby={`${menuId}-mcp-status`}
+                aria-disabled="true"
+                disabled
+              >
+                <Icon name="grid" size={16} />
+                <span>MCP connectors</span>
+                <small id={`${menuId}-mcp-status`}>暂未接入</small>
+              </button>
             </div>
-            <section
-              className="material-library"
-              hidden={layer !== 'library'}
-              aria-label="材料列表"
-            >
-              <header className="material-library-heading">
-                <button
-                  type="button"
-                  aria-label="返回添加菜单"
-                  onClick={() => openCommands('library')}
-                >
-                  <Icon name="back" size={16} />
-                </button>
-                <strong>已保存材料</strong>
-                <button type="button" aria-label="收起材料" onClick={() => closeMenu(true)}>
-                  ×
-                </button>
-              </header>
-              {c.items
-                .filter((item) => !(item.id in c.selected))
-                .map((item) => (
-                  <div key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => void c.readReference(item.id, item.task_id, item.name)}
-                    >
-                      {item.name}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => {
-                        c.select(item.id, true);
-                        closeMenu(true);
-                      }}
-                    >
-                      添加到本轮
-                    </button>
-                    <details>
-                      <summary>更多</summary>
+            {showSavedMaterials && (
+              <section
+                className="material-library"
+                hidden={layer !== 'library'}
+                aria-label="材料列表"
+              >
+                <header className="material-library-heading">
+                  <button
+                    type="button"
+                    aria-label="返回添加菜单"
+                    onClick={() => openCommands('library')}
+                  >
+                    <Icon name="back" size={16} />
+                  </button>
+                  <strong>已保存材料</strong>
+                  <button type="button" aria-label="收起材料" onClick={() => closeMenu(true)}>
+                    ×
+                  </button>
+                </header>
+                {c.items.every((item) => item.id in c.selected) && <p>暂无可添加的材料</p>}
+                {c.items
+                  .filter((item) => !(item.id in c.selected))
+                  .map((item) => (
+                    <div key={item.id}>
                       <button
                         type="button"
-                        disabled={disabled || c.busy}
-                        onClick={() => void c.restore(item)}
+                        onClick={() => void c.readReference(item.id, item.task_id, item.name)}
                       >
-                        恢复原件
+                        {item.name}
                       </button>
-                    </details>
-                  </div>
-                ))}
-            </section>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          c.select(item.id, true);
+                          closeMenu(true);
+                        }}
+                      >
+                        添加到本轮
+                      </button>
+                      <details>
+                        <summary>更多</summary>
+                        <button
+                          type="button"
+                          disabled={disabled || c.busy}
+                          onClick={() => void c.restore(item)}
+                        >
+                          恢复原件
+                        </button>
+                      </details>
+                    </div>
+                  ))}
+              </section>
+            )}
           </div>
         </div>
         {actions}
