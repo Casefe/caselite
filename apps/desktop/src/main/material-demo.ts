@@ -61,6 +61,15 @@ export async function runMaterialDemo(
     });
     writeFileSync(join(directory, name + '.png'), Buffer.from(shot.data, 'base64'));
   }
+  const bodyText = '合成回归：已保存的律师内部沟通初稿；金额和日期仍待核对。';
+  async function openTask(id: string) {
+    await evaluate("document.querySelector('[data-nav=tasks]').click()");
+    await waitFor(`Boolean(document.querySelector('[data-row-task="${id}"]'))`);
+    await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
+    await waitFor("Boolean(document.querySelector('[data-testid=inspector-open]'))");
+    await evaluate("document.querySelector('[data-testid=inspector-open]').click()");
+    await waitFor("Boolean(document.querySelector('[data-testid=body-editor]'))");
+  }
   async function drop(file: string) {
     // CDP 将固定合成文件装入浏览器 File，再发真实 drop；沿产品 preload/webUtils/IPC 导入。
     await evaluate(
@@ -95,6 +104,11 @@ export async function runMaterialDemo(
       if (existsSync(join(directory, 'unexpected-runtime.txt')))
         throw new Error('Unexpected restart dispatch');
       await capture('materials-reopened');
+      await openTask(items[0].task_id);
+      await waitFor(
+        `document.querySelector('[data-testid=body-editor]').textContent.includes(${JSON.stringify(bodyText)})`,
+      );
+      await capture('task-body-reopened');
       writeFileSync(
         join(directory, 'materials-read.json'),
         JSON.stringify(
@@ -201,6 +215,22 @@ export async function runMaterialDemo(
         : message.content.map((part: { text?: string }) => part.text ?? '').join('');
     if (sent !== preview) throw new Error('Pi input differs from confirmed preview');
     await capture('agent-material-analysis-synthetic');
+    stage = 'task-body-regression';
+    await openTask(items[0].task_id);
+    await evaluate(
+      `(()=>{document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,${JSON.stringify(bodyText)});})()`,
+    );
+    await waitFor("document.querySelector('[data-testid=save-body]')?.disabled===false");
+    await evaluate("document.querySelector('[data-testid=save-body]').click()");
+    await waitFor(
+      "document.querySelector('[data-testid=revision]')?.textContent==='1' && document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备'",
+    );
+    await evaluate("document.querySelector('[data-nav=home]').click()");
+    await openTask(items[0].task_id);
+    await waitFor(
+      `document.querySelector('[data-testid=body-editor]').textContent.includes(${JSON.stringify(bodyText)})`,
+    );
+    await capture('task-body-saved');
     writeFileSync(
       join(directory, 'materials-write.json'),
       JSON.stringify(

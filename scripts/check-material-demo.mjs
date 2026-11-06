@@ -40,6 +40,8 @@ for (const file of [
   'pdf-ocr-text.png',
   'agent-selected-materials.png',
   'materials-reopened.png',
+  'task-body-saved.png',
+  'task-body-reopened.png',
   'agent-material-analysis-synthetic.png',
   'material-pi-context.json',
   'materials-write.json',
