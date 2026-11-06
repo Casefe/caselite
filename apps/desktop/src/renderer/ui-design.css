@@ -3131,6 +3131,63 @@ dd {
   background: #fff4eb;
 }
 
+.workbench {
+  display: grid;
+  grid-template-columns: var(--workspace-navigation-width) minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+.workbench.is-collapsed {
+  grid-template-columns: var(--workspace-navigation-collapsed-width) minmax(0, 1fr);
+}
+.workspace-topbar {
+  grid-column: 1 / -1;
+  background: #f5f6f7;
+  border-bottom: 1px solid #e2e6e8;
+}
+.workspace-topbar-navigation {
+  width: var(--workspace-navigation-width);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 20px;
+  background: var(--nav);
+  color: #d7e2e4;
+}
+.is-collapsed .workspace-topbar-navigation {
+  width: var(--workspace-navigation-collapsed-width);
+  justify-content: center;
+  padding: 0;
+}
+.workspace-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 18px;
+  letter-spacing: -0.6px;
+}
+.workspace-topbar-brand .brand-logo {
+  width: 28px;
+  height: 28px;
+}
+.workspace-navigation-toggle {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #c8d5d7;
+}
+.workspace-navigation-toggle:hover {
+  background: #234047;
+  color: white;
+}
+.primary-sidebar {
+  min-height: 0;
+  padding-top: 12px;
+}
+
 /* 工作台主题仅控制视觉，偏好由桌面受控接口保存。 */
 :root {
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;

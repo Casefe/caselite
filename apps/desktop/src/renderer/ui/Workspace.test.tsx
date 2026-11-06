@@ -8,7 +8,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
   it('routes primary objects and keeps the sidebar collapse accessible', () => {
     const navigate = vi.fn(),
       collapse = vi.fn();
-    render(
+    const { rerender } = render(
       <WorkspaceShell
         view="home"
         collapsed={false}
@@ -24,9 +24,31 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     expect(navigate).toHaveBeenCalledWith('projects');
     fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
     expect(collapse).toHaveBeenCalledOnce();
+    expect(screen.getByText('本地用户')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('banner', { name: '工作台顶部栏' })
+        .contains(screen.getByRole('button', { name: '收起导航' })),
+    ).toBe(true);
+    rerender(
+      <WorkspaceShell
+        view="home"
+        collapsed
+        onCollapse={collapse}
+        onNavigate={navigate}
+        tasks={[]}
+        onOpen={vi.fn()}
+      >
+        <p>内容区域</p>
+      </WorkspaceShell>,
+    );
+    expect(screen.getByRole('button', { name: '展开导航' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    fireEvent.click(screen.getByRole('button', { name: '展开导航' }));
+    expect(collapse).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: '设置', exact: true }));
     expect(navigate).toHaveBeenCalledWith('settings');
-    expect(screen.getByText('本地用户')).toBeTruthy();
     expect(document.querySelector('.global-bar')).toBeNull();
     expect(screen.queryByText('个人法律工作台')).toBeNull();
     expect(screen.getByText('内容区域')).toBeTruthy();

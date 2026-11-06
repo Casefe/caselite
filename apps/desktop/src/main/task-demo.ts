@@ -449,7 +449,26 @@ export async function runTaskDemo(
       await openTask(expected.id);
       await wait("document.querySelector('[data-testid=body-editor]')");
     }
-    await wait("getComputedStyle(document.querySelector('.workbench')).display==='flex'");
+    await wait(`(()=>{
+      const shell=document.querySelector('.workbench');
+      const top=document.querySelector('.workspace-topbar');
+      const nav=document.querySelector('.primary-sidebar');
+      const main=document.querySelector('.workspace-main');
+      const toggle=document.querySelector('.workspace-topbar [aria-label="收起导航"]');
+      if (!shell || !top || !nav || !main || !toggle) return false;
+      const t=top.getBoundingClientRect(), n=nav.getBoundingClientRect(), m=main.getBoundingClientRect();
+      return getComputedStyle(shell).display==='grid' && Math.abs(t.height-48)<=1 &&
+        t.left===0 && Math.abs(t.right-innerWidth)<=1 && n.top>=t.bottom-1 &&
+        m.top>=t.bottom-1 && n.right<=m.left+1;
+    })()`);
+    await click('.workspace-topbar [aria-label="收起导航"]');
+    await wait(
+      "document.querySelector('.workbench.is-collapsed') && document.querySelector('.workspace-topbar [aria-label=展开导航]') && Math.abs(document.querySelector('.primary-sidebar').getBoundingClientRect().width-65)<=1",
+    );
+    await click('.workspace-topbar [aria-label="展开导航"]');
+    await wait(
+      "!document.querySelector('.workbench.is-collapsed') && document.querySelector('.workspace-topbar [aria-label=收起导航]') && Math.abs(document.querySelector('.primary-sidebar').getBoundingClientRect().width-200)<=1",
+    );
     if (phase === 'read')
       await wait(
         "document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备'",
@@ -470,14 +489,15 @@ export async function runTaskDemo(
       const density = await evaluate(`(()=>{
       const editor = document.querySelector('[data-testid=body-editor]').getBoundingClientRect();
       const tabs = document.querySelector('.detail-tabs').getBoundingClientRect();
-      return {width:innerWidth,height:innerHeight,scale:visualViewport.scale,tabs:tabs.height,editorTop:editor.top};
+      const topbar = document.querySelector('.workspace-topbar').getBoundingClientRect();
+      return {width:innerWidth,height:innerHeight,scale:visualViewport.scale,tabs:tabs.height,editorTop:editor.top,topbarHeight:topbar.height};
     })()`);
       if (
         density.width !== 1920 ||
         density.height !== 1080 ||
         density.scale !== 1 ||
         density.tabs > 34 ||
-        density.editorTop >= 240
+        density.editorTop - density.topbarHeight >= 240
       )
         throw new Error(
           '1080p viewport or compact editor geometry does not match: ' + JSON.stringify(density),

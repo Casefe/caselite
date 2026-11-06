@@ -132,16 +132,28 @@ export function WorkspaceShell({
   return (
     <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
       <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
-      <aside className="primary-sidebar" aria-label="一级导航">
-        <div className="brand">
-          <BrandLogo />
+      <header className="workspace-topbar" aria-label="工作台顶部栏">
+        <div className="workspace-topbar-navigation">
           {!collapsed && (
-            <>
+            <div className="workspace-topbar-brand">
+              <BrandLogo />
               <b>CaseLite</b>
-            </>
+            </div>
           )}
+          <button
+            className="workspace-navigation-toggle"
+            aria-label={collapsed ? '展开导航' : '收起导航'}
+            aria-expanded={!collapsed}
+            aria-controls="primary-navigation"
+            title={collapsed ? '展开导航' : '收起导航'}
+            onClick={onCollapse}
+          >
+            <Icon name="panel" size={18} />
+          </button>
         </div>
-        <nav className="primary-navigation">
+      </header>
+      <aside className="primary-sidebar" aria-label="一级导航">
+        <nav className="primary-navigation" id="primary-navigation">
           {navigation.map((item) => (
             <button
               key={item.id}
@@ -186,14 +198,6 @@ export function WorkspaceShell({
               {!collapsed && 'Agent 草稿'}
             </button>
           )}
-          <button
-            className="sidebar-collapse"
-            aria-label={collapsed ? '展开导航' : '收起导航'}
-            onClick={onCollapse}
-          >
-            <Icon name="panel" size={16} />
-            {!collapsed && '收起导航'}
-          </button>
           <button
             className="profile-settings"
             data-nav="settings"
