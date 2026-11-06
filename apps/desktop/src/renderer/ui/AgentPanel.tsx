@@ -1,3 +1,4 @@
+import PdfAttachments from './PdfAttachments';
 import {
   forwardRef,
   useContext,
@@ -301,6 +302,7 @@ export default function AgentPanel({
             composing.current = false;
           }}
         >
+          <PdfAttachments disabled={pending || unknown || Boolean(active)}>
           <ComposerInput
             ref={editorRef}
             scope={scope}
@@ -311,6 +313,7 @@ export default function AgentPanel({
             }}
             disabled={pending || unknown}
           />
+          </PdfAttachments>
           <div className="assistant-actions">
             {onCreate && (
               <button

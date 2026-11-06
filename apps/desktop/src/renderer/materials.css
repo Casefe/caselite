@@ -1,0 +1,123 @@
+.material-composer {
+  position: relative;
+  min-width: 0;
+}
+.material-drag-over {
+  outline: 2px solid var(--accent, #426e65);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.material-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: #eef5f3ee;
+  pointer-events: none;
+  color: #254c43;
+  font-size: 14px;
+}
+.material-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted, #717782);
+}
+.material-controls button,
+.material-reader button {
+  font-size: 12px;
+  padding: 5px 9px;
+}
+.material-cards {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0;
+}
+.material-cards li {
+  display: flex;
+  align-items: center;
+  max-width: 340px;
+  border: 1px solid var(--line, #e0e3e7);
+  border-radius: 7px;
+  background: var(--panel, #fff);
+}
+.material-card-open {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  padding: 9px;
+}
+.material-card-open strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 230px;
+  font-size: 12px;
+}
+.material-card-open small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted, #717782);
+  margin-top: 4px;
+}
+.material-file-icon {
+  font-size: 9px;
+  color: #a34e48;
+  border: 1px solid #ecd3d0;
+  border-radius: 3px;
+  padding: 8px 4px;
+}
+.material-cards li > button:last-child {
+  border: 0;
+  background: transparent;
+  padding: 6px;
+}
+.material-notice,
+.material-error {
+  font-size: 12px;
+  padding: 0 12px;
+}
+.material-error {
+  color: #ad433b;
+}
+.material-reader {
+  border: 1px solid var(--line, #e0e3e7);
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+.material-reader header {
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.material-reader header > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.material-paper {
+  max-height: 65vh;
+  overflow: auto;
+  background: #e9ecef;
+  padding: 20px;
+}
+.material-paper .react-pdf__Page {
+  width: fit-content;
+  margin: auto;
+}
