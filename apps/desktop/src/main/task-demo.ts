@@ -31,6 +31,8 @@ export async function runTaskDemo(
     callback({ cancel: /^https?:/i.test(details.url) }),
   );
   const window = await createWindow();
+  // 合成演示需要稳定绘制帧；产品窗口的后台节流策略不变。
+  window.webContents.setBackgroundThrottling(false);
   window.webContents.on('console-message', (event) => {
     if (event.level === 'error') writeFileSync(join(root, 'renderer-error.txt'), event.message);
   });
@@ -45,6 +47,18 @@ export async function runTaskDemo(
         deviceScaleFactor: 2,
         mobile: false,
       });
+      // 导航栏宽度有过渡动画；等待布局达到断言目标，避免把过渡帧当最终布局。
+      for (let i = 0; i < 150; i++) {
+        const settled = await window.webContents.executeJavaScript(`(()=>{
+          const nav = document.querySelector('.primary-sidebar');
+          if (!nav) return false;
+          const expected = document.querySelector('.workbench.is-collapsed') ? 65 : ${width} > 1250 ? 200 : 180;
+          return Math.abs(nav.getBoundingClientRect().width - expected) <= 1;
+        })()`);
+        if (settled) return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error(`Navigation layout did not settle at viewport ${width}x${height}`);
     };
     await setViewport(1920, 1080);
     const evaluate = (code: string) => window.webContents.executeJavaScript(code);

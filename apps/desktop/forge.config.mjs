@@ -17,6 +17,8 @@ const electronArtifactChecksums = {
 };
 
 export default {
+  // 文件提供商目录可能重建 FinderInfo；可选择本地构建目录，严格签名校验保持开启。
+  outDir: process.env.CASELITE_FORGE_OUT_DIR || undefined,
   packagerConfig: {
     appBundleId: 'com.caselite.desktop',
     asar: true,
@@ -37,6 +39,8 @@ export default {
       if (result.platform === 'darwin')
         for (const output of result.outputPaths) {
           const bundle = join(output, 'CaseLite.app');
+          // 只清理刚生成的应用包元数据，不触及源码、用户资料或签名校验。
+          execFileSync('/usr/bin/xattr', ['-cr', bundle]);
           execFileSync('/usr/bin/codesign', [
             '--force',
             '--deep',

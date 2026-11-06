@@ -102,6 +102,8 @@ ls -la
 
 macOS 打包首次仍须从 Electron 官方发布源取得锁定版本的 ZIP；下载成功后，Forge 使用 Electron 包内记录的 SHA-256 校验本机缓存，不会为了再次下载 `SHASUMS256.txt` 而让已有缓存失效。缓存不是仓库内容，也不提交二进制。升级 Electron 时必须同时更新 `apps/desktop/forge.config.mjs` 的校验值，并重新执行打包验证。
 
+如果文件提供商目录反复生成 `FinderInfo` 导致严格签名检查失败，可设置 `CASELITE_FORGE_OUT_DIR` 指向本机非同步的空构建目录后运行 `pnpm package`。此时应用位于该目录的 `CaseLite-darwin-arm64/CaseLite.app`；现有演示脚本默认查找 `apps/desktop/out`，不会自动跟随覆盖目录。构建只清理生成包的扩展属性，仍执行 ad-hoc 签名和 `codesign --verify --deep --strict`；发布签名与公证仍需单独验收。
+
 若漏洞审计因 npm 服务不可用而失败，应如实记录为“未完成”，待网络恢复后重跑；不得删除该检查或把失败改为通过。
 
 ## 6. 依赖准入
