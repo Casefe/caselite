@@ -11,3 +11,5 @@ export * from './catalog';
 export * from './source';
 export * from './agent-input';
 export * from './appearance';
+
+export * from './material';

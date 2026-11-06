@@ -121,3 +121,60 @@
   width: fit-content;
   margin: auto;
 }
+.material-staged {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px;
+  padding: 10px;
+  border: 1px dashed #b8c5c1;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.material-cards .material-saved-card {
+  display: block;
+  max-width: 100%;
+  min-width: 260px;
+}
+.material-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.material-card-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 8px 8px;
+  font-size: 11px;
+}
+.material-card-actions label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.material-card-actions input:not([type='checkbox']) {
+  width: 128px;
+  padding: 4px 6px;
+  font-size: 11px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 4px;
+}
+.material-card-actions button {
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.material-recognized {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line, #ddd);
+  font-size: 12px;
+}
+.material-recognized pre {
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+  font: inherit;
+  line-height: 1.7;
+}

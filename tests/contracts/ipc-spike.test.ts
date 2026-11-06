@@ -109,7 +109,10 @@ describe('typed preload to main IPC Spike', () => {
       'catalog',
       'createAnchor',
       'createMatter',
+      'dropPdf',
+      'material',
       'offlineProbe',
+      'pickPdf',
       'task',
     ]);
   });

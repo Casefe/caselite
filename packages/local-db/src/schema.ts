@@ -117,3 +117,44 @@ export const agentRuns = sqliteTable('agent_runs', {
   updatedAt: text('updated_at').notNull(),
   payload: text('payload').notNull(),
 });
+
+// 文件字节仍在不可变原件目录；SQLite 只拥有身份、恢复阶段和派生结果。
+export const materialStages = sqliteTable('material_stages', {
+  token: text('token').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  payload: text('payload').notNull(),
+});
+export const materialSources = sqliteTable('material_sources', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => taskItems.id),
+  assetVersionId: text('asset_version_id').notNull(),
+  name: text('name').notNull(),
+  sha256: text('sha256').notNull(),
+  bytes: integer('bytes').notNull(),
+  pageCount: integer('page_count').notNull(),
+  derivationId: text('derivation_id'),
+});
+export const materialDerivations = sqliteTable('material_derivations', {
+  id: text('id').primaryKey(),
+  sourceId: text('source_id')
+    .notNull()
+    .references(() => materialSources.id),
+  configuration: text('configuration').notNull(),
+  status: text('status').notNull(),
+  pages: text('pages').notNull(),
+});
+export const materialHome = sqliteTable('material_home', {
+  workspaceId: text('workspace_id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => taskItems.id),
+});
+export const materialPreviews = sqliteTable('material_previews', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  scope: text('scope').notNull(),
+  payload: text('payload').notNull(),
+});

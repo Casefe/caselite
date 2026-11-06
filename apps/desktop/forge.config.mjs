@@ -30,9 +30,21 @@ export default {
     extraResource: [
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
+      localPath('../../artifacts/native/caselite-vision'),
     ],
   },
   hooks: {
+    generateAssets: async () => {
+      const output = localPath('../../artifacts/native');
+      execFileSync('/bin/mkdir', ['-p', output]);
+      execFileSync('/usr/bin/xcrun', [
+        'swiftc',
+        '-O',
+        localPath('./native/VisionOCR.swift'),
+        '-o',
+        join(output, 'caselite-vision'),
+      ]);
+    },
     postPackage: async (_config, result) => {
       // 内部安装构建须绑定实际Bundle身份/资源，避免原Electron签名令Keychain加密失败。
       // 这只是本机adhoc签名；公开分发仍须独立Developer ID签名与公证验收。
@@ -71,6 +83,11 @@ export default {
         config: localPath('./webpack.renderer.config.mjs'),
         nodeIntegration: false,
         entryPoints: [
+          {
+            name: 'pdf_worker',
+            html: localPath('./src/renderer/pdf-worker.html'),
+            js: localPath('./src/renderer/pdf-worker.ts'),
+          },
           {
             name: 'main_window',
             html: localPath('./src/renderer/index.html'),

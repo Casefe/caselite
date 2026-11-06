@@ -1,3 +1,8 @@
+import { runMaterialDemo } from './material-demo';
+import { createMaterialApplication } from '@caselite/application';
+import { createMaterialFiles } from './adapters/material-files';
+import { createPdfProcessor } from './adapters/pdf-processor';
+import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runAppearanceDemo } from './appearance-demo';
 import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
@@ -11,7 +16,7 @@ import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
 import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
 import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
@@ -385,7 +390,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 5
+      result.value?.migration_count !== 6
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -482,6 +487,8 @@ if (taskDemoPhase) {
     ![
       'write',
       'read',
+      'materials',
+      'materials-read',
       'crash',
       'preview',
       'agent',
@@ -518,7 +525,9 @@ const isolatedProbe =
 const ownsWorkspace = isolatedProbe || app.requestSingleInstanceLock();
 if (!ownsWorkspace) app.exit(0);
 app.on('second-instance', () => {
-  const existing = BrowserWindow.getAllWindows()[0];
+  const existing = BrowserWindow.getAllWindows().find((window) =>
+    window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),
+  );
   if (existing) {
     if (existing.isMinimized()) existing.restore();
     existing.show();
@@ -561,8 +570,40 @@ app
     const tasks = createTaskApplication(taskStore);
     registerTaskIpc(tasks);
     registerCatalogIpc(createCatalogApplication(taskStore.catalog));
-    const agentCredentials = await createAgentCredentials(taskRoot);
-    if (taskDemoPhase === 'agent') await agentCredentials.set('sk-synthetic-openai');
+    const materials = createMaterialApplication({
+      store: taskStore.materials,
+      files: createMaterialFiles(join(taskRoot, 'materials')),
+      processor: createPdfProcessor(),
+      id: randomUUID,
+      hash: (text) => createHash('sha256').update(text).digest('hex'),
+      taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+      createTask(token, name) {
+        const result = tasks.execute({
+          protocol_version: 1,
+          operation: 'create',
+          request_id: randomUUID(),
+          idempotency_key: token,
+          title: name.replace(/\.pdf$/i, '').slice(0, 200) || '材料分析',
+          objective: '',
+        });
+        if (!result.ok) throw new Error('Cannot create material task');
+        return result.tasks[0].id;
+      },
+    });
+    registerMaterialIpc(materials);
+    app.on('will-quit', () => materials.close());
+    // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
+    const agentCredentials = taskDemoPhase?.startsWith('materials')
+      ? {
+          get: () => 'synthetic-material-demo-only',
+          set: async () => {},
+          clear: async () => {},
+          getDefaultModel: () => 'gpt-4.1-mini' as const,
+          setDefaultModel: async () => {},
+        }
+      : await createAgentCredentials(taskRoot);
+    if (taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
+      await agentCredentials.set('sk-synthetic-openai');
     let historyReady = true;
     try {
       taskStore.agentHistory.recoverInterrupted();
@@ -572,6 +613,7 @@ app
 
     const agent = createAgentApplication({
       credentials: agentCredentials,
+      resolveContext: materials.resolveContext,
       history: {
         ...taskStore.agentHistory,
         load() {
@@ -580,19 +622,35 @@ app
         },
       },
       runtime: createPiRuntime(
-        taskDemoPhase === 'agent-read'
+        taskDemoPhase === 'agent-read' || taskDemoPhase === 'materials-read'
           ? () => {
               writeFileSync(join(taskDemoRoot!, 'unexpected-runtime.txt'), 'unexpected dispatch');
               throw new Error('Unexpected restart dispatch');
             }
-          : taskDemoPhase?.startsWith('agent')
-            ? syntheticAgentStream
-            : undefined,
+          : taskDemoPhase === 'materials'
+            ? (model, context, options) => {
+                writeFileSync(
+                  join(taskDemoRoot!, 'material-pi-context.json'),
+                  JSON.stringify(context, null, 2),
+                );
+                return syntheticAgentStream(model, context, options);
+              }
+            : taskDemoPhase?.startsWith('agent')
+              ? syntheticAgentStream
+              : undefined,
       ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase?.startsWith('materials')) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      await runMaterialDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
     if (taskDemoRoot && (taskDemoPhase === 'agent-crash' || taskDemoPhase === 'agent-read')) {
       await runAgentHistoryProbe(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
@@ -624,7 +682,11 @@ app
       );
     }
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (
+        !BrowserWindow.getAllWindows().some((window) =>
+          window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),
+        )
+      ) {
         void createWindow().catch(reportStartupFailure);
       }
     });

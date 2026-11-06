@@ -1,4 +1,13 @@
 import {
+  MATERIAL_CHANNEL,
+  MATERIAL_PICK_CHANNEL,
+  MATERIAL_DROP_CHANNEL,
+  materialResponseSchema,
+  type MaterialScope,
+  type MaterialRequest,
+  type MaterialResponse,
+} from '@caselite/contracts';
+import {
   APPEARANCE_CHANNEL,
   appearanceResponseSchema,
   type AppearanceRequest,
@@ -69,7 +78,8 @@ async function invokeBusinessCommand(
     | TaskRequest
     | AgentRequest
     | CatalogRequest
-    | AppearanceRequest,
+    | AppearanceRequest
+    | MaterialRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -87,6 +97,9 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  material(request: MaterialRequest): Promise<MaterialResponse>;
+  pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
+  dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
   appearance(request: AppearanceRequest): Promise<AppearanceResponse>;
   catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
@@ -96,8 +109,31 @@ export type CaseLitePreloadApi = {
   offlineProbe(request: OfflineProbeRequest): Promise<OfflineProbeResult>;
 };
 
-export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi {
+export function createCaseLitePreloadApi(
+  invoke: IpcInvoke,
+  droppedPath?: (file: File) => string,
+): CaseLitePreloadApi {
+  const materialResult = async (call: Promise<unknown>): Promise<MaterialResponse> => {
+    try {
+      const result = materialResponseSchema.safeParse(await call);
+      if (result.success) return result.data;
+    } catch {
+      /* 保留原暂存身份，不能把未知回执当失败重建。 */
+    }
+    return {
+      ok: false,
+      code: 'RESULT_UNKNOWN',
+      message: '无法确认材料操作结果，请保留当前文件并重新读取。',
+    };
+  };
   return {
+    material: (request) => materialResult(invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request)),
+    pickPdf: (scope) => materialResult(invoke(MATERIAL_PICK_CHANNEL, { scope })),
+    async dropPdf(file, scope) {
+      const path = droppedPath?.(file);
+      if (!path) return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF。' };
+      return materialResult(invoke(MATERIAL_DROP_CHANNEL, { scope, path }));
+    },
     async appearance(request) {
       const result = appearanceResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, APPEARANCE_CHANNEL, request),
@@ -167,3 +203,12 @@ export type {
 
 export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';
 export type { Theme, AppearanceRequest, AppearanceResponse } from '@caselite/contracts';
+
+export type {
+  Material,
+  MaterialScope,
+  MaterialResponse,
+  MaterialRequest,
+  MaterialPreview,
+  TextPage,
+} from '@caselite/contracts';

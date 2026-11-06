@@ -40,6 +40,12 @@ export function createAgentApplication(ports: {
   runtime: AgentRuntimePort;
   history?: AgentHistoryPort;
   taskExists(id: string): boolean;
+  resolveContext?(
+    id: string,
+    scope: string,
+    instruction: string,
+    model: AgentModel,
+  ): Promise<string>;
 }) {
   const runs = new Map<string, { owner: string; run: AgentRun; cancel?: () => void }>();
   let historyUnavailable = false;
@@ -65,6 +71,8 @@ export function createAgentApplication(ports: {
     }
   };
   let configuring = false;
+  let preparing = false;
+  const ownerGeneration = new Map<string, number>();
   const failure = (code: string, message: string): AgentResponse => ({ ok: false, code, message });
   const configured = (provider: AgentProvider) => {
     try {
@@ -89,7 +97,7 @@ export function createAgentApplication(ports: {
           '本地运行记录无法读取，未发起模型请求；人工任务与正文仍可使用。',
         );
       if (
-        configuring &&
+        (configuring || preparing) &&
         (request.operation === 'configure' ||
           request.operation === 'clear_key' ||
           request.operation === 'select_model' ||
@@ -130,6 +138,7 @@ export function createAgentApplication(ports: {
               (existing.owner !== owner && existing.owner !== '') ||
               existing.run.scope !== request.scope ||
               existing.run.prompt !== request.prompt ||
+              existing.run.context_id !== request.context_id ||
               existing.run.model !== selectedModel
             )
               return failure('CONFLICT', '运行标识不匹配，未重复发送。');
@@ -145,6 +154,26 @@ export function createAgentApplication(ports: {
                 'NO_KEY',
                 '请先配置所选服务商的 API Key。不会使用其他软件的登录或额度。',
               );
+            let runtimePrompt: string | undefined;
+            const generation = ownerGeneration.get(owner) ?? 0;
+            ownerGeneration.set(owner, generation);
+            preparing = true;
+            try {
+              runtimePrompt = request.context_id
+                ? await ports.resolveContext?.(
+                    request.context_id,
+                    request.scope,
+                    request.prompt,
+                    selectedModel,
+                  )
+                : request.prompt;
+            } finally {
+              preparing = false;
+            }
+            if ((ownerGeneration.get(owner) ?? 0) !== generation)
+              return failure('CANCELLED', '窗口已关闭，材料请求未发送。');
+            if (!runtimePrompt)
+              return failure('STALE_PREVIEW', '材料预览不可用，请重新选择并预览。');
             const run: AgentRun = {
               provider,
               created_at: new Date().toISOString(),
@@ -152,6 +181,7 @@ export function createAgentApplication(ports: {
               id: request.run_id,
               scope: request.scope,
               prompt: request.prompt,
+              ...(request.context_id ? { context_id: request.context_id } : {}),
               output: '',
               status: 'running',
               sequence: 0,
@@ -164,6 +194,7 @@ export function createAgentApplication(ports: {
               if (
                 old.scope !== run.scope ||
                 old.prompt !== run.prompt ||
+                old.context_id !== run.context_id ||
                 old.model !== run.model ||
                 old.provider !== run.provider
               )
@@ -177,7 +208,7 @@ export function createAgentApplication(ports: {
                 dispatched++;
                 const handle = ports.runtime.start({
                   model: selectedModel,
-                  prompt: run.prompt,
+                  prompt: runtimePrompt,
                   key,
                   onText(text) {
                     if (run.status === 'running') {
@@ -253,6 +284,10 @@ export function createAgentApplication(ports: {
       }
     },
     release(owner?: string) {
+      if (owner) ownerGeneration.set(owner, (ownerGeneration.get(owner) ?? 0) + 1);
+      else
+        for (const key of ownerGeneration.keys())
+          ownerGeneration.set(key, (ownerGeneration.get(key) ?? 0) + 1);
       for (const item of runs.values())
         if (!owner || item.owner === owner) {
           if (item.run.status === 'running') {

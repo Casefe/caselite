@@ -45,6 +45,7 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
       if (
         old.scope !== run.scope ||
         old.prompt !== run.prompt ||
+        old.context_id !== run.context_id ||
         old.model !== run.model ||
         old.provider !== run.provider ||
         run.sequence < old.sequence

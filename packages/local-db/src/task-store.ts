@@ -1,3 +1,4 @@
+import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateBody, bodyPlainText } from './body-schema';
 import {
@@ -41,6 +42,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    materials: createMaterialStore(db, workspace),
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {

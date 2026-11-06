@@ -42,6 +42,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       run_id: z.string().uuid(),
       prompt: z.string().trim().min(1).max(4000),
       confirmed: z.literal(true),
+      context_id: z.string().uuid().optional(),
     })
     .strict(),
   z.object({ ...base, operation: z.literal('cancel'), scope, run_id: z.string().uuid() }).strict(),
@@ -53,6 +54,7 @@ export const agentRunSchema = z.object({
   scope,
   prompt: z.string(),
   output: z.string(),
+  context_id: z.string().uuid().optional(),
   status: z.enum(['running', 'succeeded', 'cancelled', 'failed', 'interrupted']),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),

@@ -1,156 +1,176 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
+import type { MaterialController } from './useMaterials';
 const PdfReader = lazy(() => import('./PdfReader'));
-
-type Attachment = { id: string; name: string; bytes: Uint8Array };
-const MAX_BYTES = 20 * 1024 * 1024;
-
 export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | null {
   if (!/\.pdf$/i.test(file.name)) return '当前仅支持 PDF，请选择 PDF 文件。';
-  if (!file.size || file.size > MAX_BYTES) return '请选择非空且不超过 20 MB 的 PDF。';
+  if (!file.size || file.size > 20 * 1024 * 1024) return '请选择非空且不超过 20 MB 的 PDF。';
   return null;
 }
-
+const labels = {
+  imported: '已保存 · 待提取文字',
+  processing: '正在处理',
+  ready: '文字可用',
+  needs_ocr: '扫描页待识别',
+  cancelled: '已取消 · 可继续',
+  interrupted: '上次中断 · 可继续',
+  failed: '处理失败 · 可重试',
+};
 export default function PdfAttachments({
   children,
   disabled = false,
+  controller: c,
 }: {
   children: ReactNode;
   disabled?: boolean;
+  controller: MaterialController;
 }) {
-  const picker = useRef<HTMLInputElement>(null);
-  const generation = useRef(0);
-  const [items, setItems] = useState<Attachment[]>([]);
-  const [reading, setReading] = useState<Attachment | null>(null);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
-  useEffect(
-    () => () => {
-      generation.current++;
-    },
-    [],
-  );
-  async function add(files: FileList | File[]) {
-    if (disabled || busy) return;
-    if (files.length !== 1) {
-      setError('每次添加一份 PDF，可多次添加。');
-      return;
-    }
-    const file = files[0];
-    const invalid = validatePdfFile(file);
-    if (invalid) {
-      setError(invalid);
-      return;
-    }
-    const ticket = ++generation.current;
-    setBusy(true);
-    setError('');
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (ticket !== generation.current) return;
-      if (new TextDecoder().decode(bytes.slice(0, 1024)).indexOf('%PDF-') < 0)
-        throw new Error('INVALID_PDF');
-      setItems((old) => [...old, { id: crypto.randomUUID(), name: file.name, bytes }]);
-    } catch {
-      if (ticket === generation.current) setError('无法读取 PDF，请检查文件后重试。');
-    } finally {
-      if (ticket === generation.current) setBusy(false);
-    }
-  }
   return (
     <div
       className={`material-composer${over ? ' material-drag-over' : ''}`}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes('Files')) {
           event.preventDefault();
-          setOver(true);
+          if (!disabled) setOver(true);
         }
       }}
       onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node)) setOver(false);
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          setOver(false);
       }}
       onDrop={(event) => {
         event.preventDefault();
         setOver(false);
-        void add(event.dataTransfer.files);
+        if (disabled || c.busy) return;
+        const files = event.dataTransfer.files;
+        if (files.length !== 1) {
+          c.errorMessage('每次添加一份 PDF，可多次添加。');
+          return;
+        }
+        const error = validatePdfFile(files[0]);
+        if (error) c.errorMessage(error);
+        else void c.add(files[0]);
       }}
     >
       {over && <div className="material-drop-hint">松开以添加 PDF</div>}
       {children}
       <div className="material-controls">
-        <button type="button" disabled={disabled || busy} onClick={() => picker.current?.click()}>
+        <button
+          type="button"
+          disabled={disabled || c.busy || !c.available}
+          onClick={() => void c.add()}
+        >
           ＋ 文件
         </button>
-        <span>拖入 PDF · 每份不超过 20 MB</span>
-        <input
-          ref={picker}
-          type="file"
-          accept="application/pdf,.pdf"
-          aria-label="选择 PDF 文件"
-          hidden
-          onChange={(event) => {
-            if (event.target.files?.length) void add(event.target.files);
-            event.target.value = '';
-          }}
-        />
-        {busy && (
-          <button
-            type="button"
-            onClick={() => {
-              generation.current++;
-              setBusy(false);
-            }}
-          >
-            取消读取
+        <span>拖入 PDF · 每份 ≤20 MB / 200页 · 本地处理</span>
+        {c.items.length > 0 && c.canNewHome && (
+          <button type="button" disabled={disabled || c.busy} onClick={() => void c.newHome()}>
+            新一组材料
           </button>
         )}
       </div>
-      {error && (
+      {c.error && (
         <p role="alert" className="material-error">
-          {error}
+          {c.error}
         </p>
       )}
-      {items.length > 0 && (
-        <>
-          <ul className="material-cards" aria-label="本次材料">
-            {items.map((item) => (
-              <li key={item.id}>
+      {c.staged && (
+        <div className="material-staged">
+          <strong>{c.staged.name}</strong>
+          <span>待导入 · {(c.staged.bytes / 1024).toFixed(0)} KB</span>
+          <button type="button" disabled={disabled || c.busy} onClick={() => void c.commit()}>
+            导入并保存
+          </button>
+          <button type="button" disabled={disabled || c.busy} onClick={() => void c.discard()}>
+            取消导入
+          </button>
+        </div>
+      )}
+      {c.items.length > 0 && (
+        <ul className="material-cards" aria-label="本次材料">
+          {c.items.map((item) => (
+            <li key={item.id} className="material-saved-card">
+              <div className="material-card-heading">
                 <button
                   type="button"
                   className="material-card-open"
-                  onClick={() => setReading(item)}
+                  onClick={() => void c.read(item)}
                 >
                   <span className="material-file-icon">PDF</span>
                   <span>
                     <strong>{item.name}</strong>
-                    <small>暂存 · 尚未保存或发送给 AI</small>
+                    <small>
+                      {item.status === 'ready' &&
+                      item.pages.some((page) => page.origin === 'ocr_candidate')
+                        ? 'OCR 已完成 · 待核对'
+                        : labels[item.status]}{' '}
+                      · {item.pages.length}/{item.page_count}页
+                    </small>
                   </span>
                 </button>
                 <button
                   type="button"
-                  aria-label={`移除 ${item.name}`}
-                  onClick={() => {
-                    setItems((old) => old.filter((entry) => entry.id !== item.id));
-                    if (reading?.id === item.id) setReading(null);
-                  }}
+                  aria-label={`恢复原件 ${item.name}`}
+                  disabled={c.busy || disabled}
+                  onClick={() => void c.restore(item)}
                 >
-                  ×
+                  恢复
                 </button>
-              </li>
-            ))}
-          </ul>
-          <p className="material-notice">
-            当前为附件交互增量：重开不保留暂存文件，AI 尚不读取附件。
-          </p>
-        </>
+              </div>
+              <div className="material-card-actions">
+                <label>
+                  <input
+                    type="checkbox"
+                    aria-label={`纳入分析 ${item.name}`}
+                    checked={item.id in c.selected}
+                    disabled={disabled || c.busy}
+                    onChange={(e) => c.select(item.id, e.target.checked)}
+                  />
+                  纳入分析
+                </label>
+                {item.id in c.selected && (
+                  <input
+                    aria-label={`页范围 ${item.name}`}
+                    placeholder="全部页，如 1-3,5"
+                    value={c.selected[item.id]}
+                    disabled={disabled || c.busy}
+                    onChange={(e) => c.range(item.id, e.target.value)}
+                  />
+                )}
+                {item.status === 'processing' ? (
+                  <button type="button" disabled={c.busy} onClick={() => void c.cancel(item)}>
+                    取消处理
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={c.busy || disabled}
+                    onClick={() => void c.process(item, true)}
+                  >
+                    本地 OCR
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-      {reading && (
+      {c.items.length > 0 && (
+        <p className="material-notice">
+          原件已保存在本机。勾选材料并预览后才发送文字；OCR 结果需核对。未选材料不进入 AI。
+        </p>
+      )}
+      {c.reading && (
         <Suspense fallback={<p>正在加载阅读器…</p>}>
           <PdfReader
-            key={reading.id}
-            name={reading.name}
-            bytes={reading.bytes}
-            onClose={() => setReading(null)}
+            key={c.reading.id}
+            name={c.reading.name}
+            bytes={c.reading.bytes}
+            textPages={c.items.find((item) => item.id === c.reading?.id)?.pages}
+            onClose={c.clearReading}
           />
         </Suspense>
       )}

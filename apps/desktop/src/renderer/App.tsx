@@ -194,6 +194,13 @@ function Workbench() {
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
+    const refreshMaterials = () => {
+      void refresh().catch(() => setError('材料已保存，任务列表刷新失败。'));
+    };
+    window.addEventListener('caselite:material-task-saved', refreshMaterials);
+    return () => window.removeEventListener('caselite:material-task-saved', refreshMaterials);
+  }, []);
+  useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
