@@ -13,7 +13,7 @@ vi.stubGlobal(
   },
 );
 
-// 本测试聚焦发送身份与草稿生命周期；真实Tiptap/assistant-ui/Pi另由打包演示覆盖。
+// 本测试聚焦发送身份与草稿生命周期；真实 assistant-ui/Pi 联动另由打包演示覆盖。
 vi.mock('../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   DraftEditor: ({
@@ -44,6 +44,49 @@ const profile: AgentResponse = {
   runs: [],
 };
 describe('AI submission UI lifecycle', () => {
+  it('opens a preview on composer submit without starting a run, including after composition', async () => {
+    const agent = vi
+      .fn<(request: AgentRequest) => Promise<AgentResponse>>()
+      .mockResolvedValue(profile);
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope="44444444-4444-4444-8444-444444444444" />);
+    const input = screen.getByLabelText('AI 工作要求');
+    expect(input.tagName).toBe('TEXTAREA');
+    fireEvent.change(input, { target: { value: '中文输入\n第二行' } });
+    const form = input.closest('form')!;
+    fireEvent.compositionStart(input);
+    fireEvent.submit(form);
+    expect(screen.queryByLabelText('发送预览')).toBeNull();
+    fireEvent.compositionEnd(input);
+    fireEvent.submit(form);
+    expect(screen.getByLabelText('发送预览').textContent).toContain('中文输入\n第二行');
+    expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+  });
+  it('invalidates a preview when a starter is appended', () => {
+    window.caselite = { agent: vi.fn(async () => profile) } as unknown as Window['caselite'];
+    function Home() {
+      const [draft, setDraft] = React.useState<{ text: string; state: number[] | null }>({
+        text: '',
+        state: null,
+      });
+      const ref = React.useRef<{ append(text: string): void }>(null);
+      return (
+        <>
+          <AgentPanel scope="home" draft={draft} onDraft={setDraft} editorRef={ref} />
+          <button onClick={() => ref.current?.append('补充提示')}>追加</button>
+        </>
+      );
+    }
+    render(<Home />);
+    fireEvent.change(screen.getByLabelText('Agent 工作目标'), { target: { value: '原始内容' } });
+    fireEvent.click(screen.getByLabelText('预览发送'));
+    expect(screen.getByLabelText('发送预览').textContent).toContain('原始内容');
+    fireEvent.click(screen.getByText('追加'));
+    expect(screen.queryByLabelText('发送预览')).toBeNull();
+    expect((screen.getByLabelText('Agent 工作目标') as HTMLTextAreaElement).value).toBe(
+      '原始内容\n补充提示',
+    );
+  });
   it('a late response from an unmounted panel cannot erase a newer unknown submission', async () => {
     let resolveA: (value: AgentResponse) => void = () => {};
     let resolveB: (value: AgentResponse) => void = () => {};

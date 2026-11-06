@@ -226,27 +226,30 @@ export async function runTaskDemo(
       );
       await click('[data-nav=home]');
       await wait("document.querySelector('.agent-home [data-testid=agent-input]')");
-      await input('[data-testid=agent-input]', '/');
-      await wait("document.querySelector('.agent-prompt [data-block-command=heading2]')");
-      await capture('notion-slash.png');
-      await click('.agent-prompt [data-block-command=heading2]');
-      await wait("document.querySelector('[data-testid=agent-input] h2')");
-      await insertText('核对两份材料的事实、矛盾及缺件，形成内部沟通初稿');
-      await selectAllText('[data-testid=agent-input]');
-      await wait("document.querySelector('.agent-prompt [aria-label=选区格式]')");
-      await click('.agent-prompt [aria-label=选区格式] [aria-label=加粗]');
-      await wait("document.querySelector('[data-testid=agent-input] h2 strong')");
-      await wait(`(()=>{
-        const toolbar=document.querySelector('.agent-prompt .selection-tools')?.getBoundingClientRect();
-        const heading=document.querySelector('[data-testid=agent-input] h2')?.getBoundingClientRect();
-        return toolbar && heading && toolbar.bottom<=heading.top+2;
-      })()`);
-      await capture('notion-agent.png');
+      await wait("document.querySelector('[data-testid=agent-input]').tagName==='TEXTAREA'");
+      await capture('agent-composer-empty.png');
+      await input('[data-testid=agent-input]', '核对两份材料的事实、矛盾及缺件，形成内部沟通初稿');
+      await wait(
+        "document.querySelector('[data-testid=agent-input]').value.includes('事实、矛盾')",
+      );
+      await capture('agent-composer-filled.png');
       await click('[data-testid=create-from-agent]');
       await wait("document.querySelector('[data-testid=task-title]')");
       await wait(
         "document.querySelector('[data-testid=task-objective]').textContent==='核对两份材料的事实、矛盾及缺件，形成内部沟通初稿'",
       );
+      await input('[data-testid=task-objective]', '/');
+      await wait("document.querySelector('.create-objective [data-block-command=heading2]')");
+      await click('.create-objective [data-block-command=heading2]');
+      await insertText('核对两份材料的事实、矛盾及缺件，形成内部沟通初稿');
+      await selectAllText('[data-testid=task-objective]');
+      await wait("document.querySelector('.create-objective [aria-label=选区格式]')");
+      await wait(`(()=>{
+        const toolbar=document.querySelector('.create-objective .selection-tools')?.getBoundingClientRect();
+        const heading=document.querySelector('[data-testid=task-objective] h2')?.getBoundingClientRect();
+        return toolbar && heading && toolbar.bottom<=heading.top+2;
+      })()`);
+      await click('.create-objective [aria-label=选区格式] [aria-label=加粗]');
       await wait("document.querySelector('[data-testid=task-objective] h2 strong')");
       await input('[data-testid=task-title]', '服务合同事实梳理');
       await click('[data-testid=create-task]');

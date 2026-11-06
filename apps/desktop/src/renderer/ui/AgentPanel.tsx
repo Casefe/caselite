@@ -1,20 +1,25 @@
-import { useContext, useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  forwardRef,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import {
   AssistantRuntimeProvider,
+  ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAui,
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { ModelSettingsNavigation } from './SettingsView';
 import { agentModelLabel, agentProviderFor } from './model-labels';
 import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
-import {
-  DraftEditor,
-  emptyDraft,
-  type DraftEditorHandle,
-  type RichDraft,
-} from '../editors/RichEditor';
+import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 // 仅保留尚未提交的编辑草稿/发送身份，避免面板卸载丢字或未知回执触发新收费Run。
 const drafts = new Map<string, RichDraft>();
@@ -27,6 +32,46 @@ function Message() {
     </MessagePrimitive.Root>
   );
 }
+
+const ComposerInput = forwardRef<
+  DraftEditorHandle,
+  {
+    draft: RichDraft;
+    onDraft(value: RichDraft): void;
+    disabled: boolean;
+    scope: string;
+  }
+>(function ComposerInput({ draft, onDraft, disabled, scope }, ref) {
+  const aui = useAui();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      append(text) {
+        if (disabled) return;
+        onDraft({ text: draft.text.trim() ? `${draft.text}\n${text}` : text, state: null });
+        inputRef.current?.focus();
+      },
+    }),
+    [disabled, draft.text, onDraft],
+  );
+  useEffect(() => {
+    if (aui.composer.getState().text !== draft.text) aui.composer.setText(draft.text);
+  }, [aui, draft.text]);
+  return (
+    <ComposerPrimitive.Input
+      ref={inputRef}
+      aria-label={scope === 'home' ? 'Agent 工作目标' : 'AI 工作要求'}
+      data-testid={scope === 'home' ? 'agent-input' : 'assistant-input'}
+      className="assistant-input"
+      placeholder="描述你的工作目标或问题…"
+      rows={1}
+      disabled={disabled}
+      addAttachmentOnPaste={false}
+      onChange={(event) => onDraft({ text: event.target.value, state: null })}
+    />
+  );
+});
 
 export default function AgentPanel({
   scope,
@@ -233,8 +278,22 @@ export default function AgentPanel({
             <button onClick={() => void refresh()}>刷新状态</button>
           </div>
         )}
-        <div
+        <ComposerPrimitive.Root
           className={scope === 'home' ? 'assistant-compose agent-prompt' : 'assistant-compose'}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (
+              !composing.current &&
+              !unknown &&
+              !pending &&
+              !active &&
+              draft.text.trim() &&
+              draft.text.length <= 4000
+            ) {
+              setPreviewModel(model);
+              setPreview(draft.text.trim());
+            }
+          }}
           onCompositionStart={() => {
             composing.current = true;
           }}
@@ -242,21 +301,20 @@ export default function AgentPanel({
             composing.current = false;
           }}
         >
-          <DraftEditor
+          <ComposerInput
             ref={editorRef}
-            value={draft}
-            onChange={(value) => {
+            scope={scope}
+            draft={draft}
+            onDraft={(value) => {
               setDraft(value);
               setPreview(null);
             }}
-            label={scope === 'home' ? 'Agent 工作目标' : 'AI 工作要求'}
-            testId={scope === 'home' ? 'agent-input' : 'assistant-input'}
-            placeholder="描述工作要求，输入 / 插入内容块…"
             disabled={pending || unknown}
           />
           <div className="assistant-actions">
             {onCreate && (
               <button
+                type="button"
                 data-testid="create-from-agent"
                 disabled={!draft.text.trim() || draft.text.length > 4000}
                 onClick={onCreate}
@@ -265,25 +323,26 @@ export default function AgentPanel({
               </button>
             )}
             {active ? (
-              <button className="primary" onClick={() => void runtime.thread.cancelRun()}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void runtime.thread.cancelRun()}
+              >
                 停止生成
               </button>
             ) : (
               <button
-                className="primary"
-                disabled={pending || !draft.text.trim() || draft.text.length > 4000}
-                onClick={() => {
-                  if (!composing.current && !unknown) {
-                    setPreviewModel(model);
-                    setPreview(draft.text.trim());
-                  }
-                }}
+                className="primary assistant-submit"
+                type="submit"
+                aria-label="预览发送"
+                title="预览发送"
+                disabled={pending || unknown || !draft.text.trim() || draft.text.length > 4000}
               >
                 预览发送
               </button>
             )}
           </div>
-        </div>
+        </ComposerPrimitive.Root>
         {preview !== null && (
           <section className="assistant-preview" aria-label="发送预览">
             <h3>本次发送内容</h3>

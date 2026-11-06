@@ -1,5 +1,7 @@
 # ADR-008｜assistant-ui 与 Pi 单运行适配
 
+> 2026-11-06 用户指定首页及 AI 辅助栏改用 assistant-ui Composer 默认文本输入；本条取代下文 Agent 输入保留 Tiptap 的旧决定。任务正文仍使用既有 Tiptap/Yjs，发送仍需预览和确认。
+
 > 2026-11-05 更新：用户已授权 DeepSeek 接入；下文单 OpenAI 限制由 [ADR-009](./ADR-009-provider-model-selection.md) 覆盖，其他边界保持。
 
 状态：2026-11-05 用户指定采用，增量实施；完整 R1 验收未完成。

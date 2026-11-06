@@ -198,7 +198,7 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     await clickText('属性');
     await clickText('AI 助手');
     await wait(
-      "document.querySelector('[data-testid=assistant-input]')?.textContent.includes('保留本任务')",
+      "document.querySelector('[data-testid=assistant-input]')?.value.includes('保留本任务')",
     );
     if (await evaluate("document.querySelector('.ai-inspector').innerText.includes('【合成演示')"))
       throw new Error('Home output leaked into task');

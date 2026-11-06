@@ -63,8 +63,8 @@ for (const name of [
     'appearance',
     'personalization',
   ].map((name) => `settings-${name}.png`),
-  'notion-slash.png',
-  'notion-agent.png',
+  'agent-composer-empty.png',
+  'agent-composer-filled.png',
   'task-content.png',
   'project-editors.png',
 ])
