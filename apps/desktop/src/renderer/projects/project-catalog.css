@@ -1,0 +1,108 @@
+.project-create-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow: 0 24px 90px #0004;
+}
+.project-create-dialog::backdrop {
+  background: #0c17265c;
+}
+.project-create-dialog header,
+.project-create-dialog footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+}
+.project-create-dialog header {
+  justify-content: space-between;
+}
+.project-create-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-create-content {
+  padding: 8px 32px 32px;
+}
+.project-create-symbol {
+  display: inline-flex;
+  padding: 12px;
+  margin-bottom: 20px;
+  color: var(--accent);
+  background: var(--active);
+  border-radius: 12px;
+}
+.project-create-content h2 {
+  margin-bottom: 8px;
+  font-size: 25px;
+  letter-spacing: -0.6px;
+}
+.project-create-content p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.project-create-content label,
+.project-create-hint {
+  display: block;
+  margin: 24px 0 8px;
+  font-size: 12px;
+}
+.project-create-content input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 16px;
+}
+.project-create-hint {
+  margin-top: 10px;
+  color: var(--muted);
+}
+.project-create-content .project-create-error {
+  margin-top: 20px;
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+}
+.project-create-dialog footer {
+  border-top: 1px solid var(--line);
+}
+.project-create-dialog footer > span {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+}
+.catalog-table .project-title-link {
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  justify-content: flex-start;
+}
+.catalog-table .project-title-link:hover {
+  color: var(--accent);
+}
+.project-open-recovery {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 640px) {
+  .project-create-content {
+    padding: 8px 20px 24px;
+  }
+  .project-create-dialog footer {
+    flex-wrap: wrap;
+  }
+  .project-create-dialog footer > span {
+    flex-basis: 100%;
+  }
+}

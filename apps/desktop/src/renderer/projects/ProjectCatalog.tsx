@@ -4,6 +4,7 @@ import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
 import { Icon } from '../ui/Workspace';
 import AgentPanel from '../ui/AgentPanel';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
+import ProjectCreateDialog from './ProjectCreateDialog';
 const names = { planned: '待开始', active: '进行中', done: '已完成' };
 export default function ProjectCatalog({
   tasks,
@@ -20,7 +21,6 @@ export default function ProjectCatalog({
     [selected, setSelected] = useState<string | null>(null),
     [archived, setArchived] = useState(false),
     [creating, setCreating] = useState(false),
-    [title, setTitle] = useState(''),
     [editor, setEditor] = useState<{
       project: Matter;
       state: number[] | null;
@@ -33,7 +33,8 @@ export default function ProjectCatalog({
   const alive = useRef(true),
     readId = useRef(0);
   const [reading, setReading] = useState(false),
-    [readError, setReadError] = useState('');
+    [readError, setReadError] = useState(''),
+    [createdId, setCreatedId] = useState<string | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -62,7 +63,10 @@ export default function ProjectCatalog({
       if (!alive.current || sequence !== readId.current) return;
       if (r.ok) {
         const actual = r.projects.find((p) => p.id === id);
-        if (actual) setEditor({ project: actual, state: r.state, epoch: sequence });
+        if (actual) {
+          setEditor({ project: actual, state: r.state, epoch: sequence });
+          setCreatedId(null);
+        } else setReadError('未能读取该项目，请重试打开。');
       } else setReadError(r.message);
     } catch {
       if (alive.current && sequence === readId.current) setReadError('无法读取项目说明，请重试。');
@@ -117,61 +121,32 @@ export default function ProjectCatalog({
             ))}
           </div>
           <button
-            disabled={reading || dirty || c.pending || c.unknown}
+            disabled={reading || dirty || creating || c.pending || c.unknown}
             onClick={() => setCreating(true)}
           >
             创建项目
           </button>
         </div>
         {readError && <p role="alert">{readError}</p>}
-        {c.error && (
+        {createdId && readError && (
+          <div className="project-open-recovery">
+            <p>项目已保存，暂时无法打开。请重试打开这个项目。</p>
+            <button disabled={reading} onClick={() => void read(createdId)}>
+              重新打开已创建项目
+            </button>
+          </div>
+        )}
+        {c.error && !creating && (
           <p role="alert" className="assistant-error">
             {c.error}
           </p>
         )}
-        {c.unknown && (
+        {c.unknown && !creating && (
           <button disabled={c.pending} onClick={() => void c.retry()}>
             核对原提交
           </button>
         )}
         <div className="collection-scroll">
-          {creating && (
-            <form
-              className="catalog-actions"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void command(
-                  catalogMutation({ operation: 'create_project' as const, title }),
-                  (r) => {
-                    setCreating(false);
-                    setTitle('');
-                    setSelected(r.target_id);
-                  },
-                );
-              }}
-            >
-              <label>
-                项目名称
-                <input
-                  aria-label="项目名称"
-                  value={title}
-                  maxLength={160}
-                  disabled={c.pending || c.unknown}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </label>
-              <button className="primary" disabled={!title.trim() || c.pending || c.unknown}>
-                保存项目
-              </button>
-              <button
-                type="button"
-                disabled={c.pending || c.unknown}
-                onClick={() => setCreating(false)}
-              >
-                取消
-              </button>
-            </form>
-          )}
           {editor ? (
             <ProjectEditor
               key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
@@ -225,7 +200,17 @@ export default function ProjectCatalog({
                       onDoubleClick={() => void open(m)}
                     >
                       <td>
-                        <Icon name="folder" size={14} /> {m.title}
+                        <button
+                          className="project-title-link"
+                          disabled={reading || creating || dirty || c.pending || c.unknown}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelected(m.id);
+                            void open(m);
+                          }}
+                        >
+                          <Icon name="folder" size={14} /> {m.title}
+                        </button>
                       </td>
                       <td>{names[m.status]}</td>
                       <td>{m.task_count}</td>
@@ -385,6 +370,30 @@ export default function ProjectCatalog({
           <p>选择项目查看实际属性。</p>
         )}
       </aside>
+      {creating && (
+        <ProjectCreateDialog
+          pending={c.pending}
+          unknown={c.unknown}
+          error={c.error}
+          onCancel={() => setCreating(false)}
+          onRetry={() => void c.retry()}
+          onCreate={(title) => {
+            void command(
+              catalogMutation({ operation: 'create_project' as const, title }),
+              async (r) => {
+                setCreating(false);
+                setArchived(false);
+                setSelected(r.target_id);
+                setEditor(null);
+                if (r.target_id) {
+                  setCreatedId(r.target_id);
+                  await read(r.target_id);
+                }
+              },
+            );
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -412,7 +421,7 @@ function ProjectEditor({
     onDirty(true);
   };
   return (
-    <div className="catalog-actions">
+    <div className="catalog-actions" data-project-id={data.project.id}>
       <button disabled={dirty || pending} onClick={onBack}>
         返回项目列表
       </button>

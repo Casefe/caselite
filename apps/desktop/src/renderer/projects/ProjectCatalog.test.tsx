@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CatalogRequest, CatalogResponse, Matter } from '../../preload/caselite-api';
 import ProjectCatalog from './ProjectCatalog';
 vi.mock('../editors/RichEditor', () => ({
@@ -24,7 +24,19 @@ vi.mock('../editors/RichEditor', () => ({
     />
   ),
 }));
-afterEach(cleanup);
+beforeAll(() => {
+  // jsdom不实现原生模态窗口；焦点圈定和Escape另在真实Electron走查。
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 const project = (id = '11111111-1111-4111-8111-111111111111', title = 'A'): Matter => ({
   id,
   title,
@@ -54,6 +66,105 @@ function show() {
   return changed;
 }
 describe('durable project UI receipts and target identity', () => {
+  it('opens the exact saved project, including when creating from the archive view', async () => {
+    const p = project(undefined, '中文项目');
+    const requests: CatalogRequest[] = [];
+    let rows: Matter[] = [];
+    window.caselite = {
+      catalog: vi.fn(async (r: CatalogRequest) => {
+        requests.push(r);
+        if (r.operation === 'create_project') rows = [p];
+        return response(rows, p.id);
+      }),
+    } as unknown as Window['caselite'];
+    show();
+    await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    fireEvent.click(screen.getByText('已归档'));
+    fireEvent.click(screen.getByText('创建项目'));
+    const name = screen.getByLabelText('项目名称');
+    expect(document.activeElement).toBe(name);
+    expect((screen.getByText('保存项目') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(name, { target: { value: ' 中文项目 ' } });
+    fireEvent.click(screen.getByText('保存项目'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('编辑项目名称') as HTMLInputElement).value).toBe('中文项目'),
+    );
+    expect(requests.filter((r) => r.operation === 'create_project')).toHaveLength(1);
+    expect(requests.find((r) => r.operation === 'create_project')).toMatchObject({
+      title: '中文项目',
+    });
+    expect(requests.find((r) => r.operation === 'read_project')).toMatchObject({ id: p.id });
+    fireEvent.click(screen.getByText('返回项目列表'));
+    expect(screen.getByRole('button', { name: '中文项目' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '中文项目' }));
+    await screen.findByLabelText('编辑项目名称');
+  });
+  it('keeps input after a rejected write and never submits an IME confirmation', async () => {
+    const sent: CatalogRequest[] = [];
+    window.caselite = {
+      catalog: vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+        if (r.operation === 'create_project') {
+          sent.push(r);
+          return { ok: false, code: 'INVALID_REQUEST', message: '未保存，请修改后重试。' };
+        }
+        return response([]);
+      }),
+    } as unknown as Window['caselite'];
+    show();
+    await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    fireEvent.click(screen.getByText('创建项目'));
+    const name = screen.getByLabelText('项目名称');
+    fireEvent.change(name, { target: { value: '验收项目' } });
+    fireEvent.compositionStart(name);
+    fireEvent.submit(name.closest('form')!);
+    expect(sent).toHaveLength(0);
+    fireEvent.compositionEnd(name);
+    fireEvent.click(screen.getByText('保存项目'));
+    await screen.findByRole('alert');
+    expect((name as HTMLInputElement).value).toBe('验收项目');
+    expect(screen.getByRole('dialog', { name: '新建项目' })).toBeTruthy();
+    expect(screen.queryByLabelText('编辑项目名称')).toBeNull();
+  });
+  it('requires discarding a named draft and restores focus without creating a project', async () => {
+    const catalog = vi.fn(async () => response([]));
+    window.caselite = { catalog } as unknown as Window['caselite'];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    show();
+    await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    const trigger = screen.getByText('创建项目');
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '未提交项目' } });
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.getByLabelText('项目名称')).toBeTruthy();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByText('取消'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(catalog.mock.calls).toHaveLength(1);
+  });
+  it('retries opening a saved ID after a read failure without creating a second project', async () => {
+    const p = project();
+    let reads = 0;
+    const creates: CatalogRequest[] = [];
+    window.caselite = {
+      catalog: vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+        if (r.operation === 'create_project') creates.push(r);
+        if (r.operation === 'read_project' && ++reads === 1)
+          return { ok: false, code: 'UNAVAILABLE', message: '读取暂不可用' };
+        return response(creates.length ? [p] : [], p.id);
+      }),
+    } as unknown as Window['caselite'];
+    show();
+    await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
+    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(await screen.findByText('重新打开已创建项目'));
+    await screen.findByLabelText('编辑项目名称');
+    expect(creates).toHaveLength(1);
+    expect(reads).toBe(2);
+  });
   it('reconciles unknown create with the same identity and closes the create form once', async () => {
     const p = project();
     let rows: Matter[] = [];

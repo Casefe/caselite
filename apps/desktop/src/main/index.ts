@@ -4,6 +4,7 @@ import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
+import { runProjectDemo } from './project-demo';
 import { runAppearanceDemo } from './appearance-demo';
 import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
 import { createCatalogApplication } from '@caselite/application';
@@ -491,6 +492,8 @@ if (taskDemoPhase) {
       'materials-read',
       'crash',
       'preview',
+      'project-write',
+      'project-read',
       'agent',
       'agent-crash',
       'agent-read',
@@ -679,6 +682,11 @@ app
       return;
     }
     app.on('will-quit', () => taskStore.close());
+    if (taskDemoRoot && (taskDemoPhase === 'project-write' || taskDemoPhase === 'project-read')) {
+      await runProjectDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
     if (taskDemoRoot && taskDemoPhase && taskDemoPhase !== 'preview') {
       await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
