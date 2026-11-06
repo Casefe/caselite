@@ -1,4 +1,8 @@
 import {
+  APPEARANCE_CHANNEL,
+  appearanceResponseSchema,
+  type AppearanceRequest,
+  type AppearanceResponse,
   CATALOG_CHANNEL,
   catalogResponseSchema,
   type CatalogRequest,
@@ -59,7 +63,13 @@ function timeoutFailure(): CommandFailure {
 async function invokeBusinessCommand(
   invoke: IpcInvoke,
   channel: string,
-  request: CreateMatterRequest | CreateAnchorRequest | TaskRequest | AgentRequest | CatalogRequest,
+  request:
+    | CreateMatterRequest
+    | CreateAnchorRequest
+    | TaskRequest
+    | AgentRequest
+    | CatalogRequest
+    | AppearanceRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -77,6 +87,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  appearance(request: AppearanceRequest): Promise<AppearanceResponse>;
   catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
   task(request: TaskRequest): Promise<TaskResponse>;
@@ -87,6 +98,14 @@ export type CaseLitePreloadApi = {
 
 export function createCaseLitePreloadApi(invoke: IpcInvoke): CaseLitePreloadApi {
   return {
+    async appearance(request) {
+      const result = appearanceResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, APPEARANCE_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : { ok: false, message: '无法确认本机主题设置，请重新读取后重试。' };
+    },
     async catalog(request) {
       const r = catalogResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, CATALOG_CHANNEL, request),
@@ -147,3 +166,4 @@ export type {
 } from '@caselite/contracts';
 
 export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';
+export type { Theme, AppearanceRequest, AppearanceResponse } from '@caselite/contracts';

@@ -1,6 +1,10 @@
 import { runTaskDemo } from './task-demo';
+import { runAppearanceDemo } from './appearance-demo';
 import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
 import { createCatalogApplication } from '@caselite/application';
+import { createAppearanceApplication } from '@caselite/application';
+import { createAppearancePreferences } from './adapters/appearance-preferences';
+import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
 import { createAgentApplication } from '@caselite/application';
 import { createPiRuntime } from './adapters/pi-runtime';
 import { createAgentCredentials } from './adapters/agent-credentials';
@@ -475,9 +479,17 @@ let taskDemoRoot: string | undefined;
 const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
-    !['write', 'read', 'crash', 'preview', 'agent', 'agent-crash', 'agent-read'].includes(
-      taskDemoPhase,
-    )
+    ![
+      'write',
+      'read',
+      'crash',
+      'preview',
+      'agent',
+      'agent-crash',
+      'agent-read',
+      'appearance-write',
+      'appearance-read',
+    ].includes(taskDemoPhase)
   )
     throw new Error('Invalid demo phase');
   const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
@@ -539,6 +551,7 @@ app
     registerIpcSpike();
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
+    registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
     const taskStore = openTaskStore(
       join(taskRoot, 'caselite.sqlite'),
       app.isPackaged
@@ -587,6 +600,14 @@ app
     }
     if (taskDemoRoot && taskDemoPhase === 'agent') {
       await runAgentDemo(() => createWindow(), taskDemoRoot);
+      app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'appearance-write' || taskDemoPhase === 'appearance-read')
+    ) {
+      await runAppearanceDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;
     }

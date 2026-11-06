@@ -9,6 +9,7 @@ import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
 
 import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
+import { AppearanceProvider } from './ui/Appearance';
 import RecordList from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
 import {
@@ -573,6 +574,8 @@ export default function App() {
   return new URLSearchParams(window.location.search).has('engineering') ? (
     <EngineeringApp />
   ) : (
-    <Workbench />
+    <AppearanceProvider>
+      <Workbench />
+    </AppearanceProvider>
   );
 }

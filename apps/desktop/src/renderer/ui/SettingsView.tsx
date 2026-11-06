@@ -2,6 +2,7 @@ import { createContext, useEffect, useRef, useState } from 'react';
 import { agentProviderFor, agentModelLabel } from './model-labels';
 import type { AgentModel, AgentProvider, AgentRequest } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
+import { ThemeSetting } from './Appearance';
 
 export const ModelSettingsNavigation = createContext<(() => void) | null>(null);
 export const settingsSections = ['系统设置', '账户管理', '外观', '模型', '个性化'] as const;
@@ -99,6 +100,7 @@ export default function SettingsView({
           ) : section === '系统设置' ? (
             <>
               <p className="settings-lead">管理本地工作区及数据使用方式。</p>
+              <ThemeSetting />
               <SettingRow
                 title="工作方式"
                 description="任务和正文保存在此设备，无需注册。"
@@ -134,22 +136,8 @@ export default function SettingsView({
             </>
           ) : section === '外观' ? (
             <>
-              <p className="settings-lead">当前工作台采用浅色内容区、深色导航和紧凑列表。</p>
-              <div className="appearance-preview" aria-label="当前外观预览">
-                <i />
-                <div>
-                  <b />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <aside />
-              </div>
-              <SettingRow
-                title="主题"
-                description="当前默认主题；更多主题将在后续提供。"
-                value="浅色工作区"
-              />
+              <p className="settings-lead">选择适合你的工作台外观。</p>
+              <ThemeSetting />
               <SettingRow
                 title="布局与密度"
                 description="左侧导航、中间工作区、右侧属性与 AI；以 1920×1080 为设计基准。"

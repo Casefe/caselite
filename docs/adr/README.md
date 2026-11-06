@@ -26,5 +26,6 @@
 
 | [ADR-010](./ADR-010-local-catalog-persistence.md) | 已实现增量 | 五页本地目录与Document/Matter持久化 | 空旧库迁移、原生CRUD与重启 |
 | [ADR-011](./ADR-011-local-agent-run-history.md) | 已实现增量（真实API另验） | Run本地登记、历史及中断恢复 | 原子登记、窗口/进程重开、零恢复派发 |
+| [ADR-012](./ADR-012-device-appearance-preference.md) | 提议 | 设备外观偏好与受控接口 | UI接收、独立复核及未来迁移 |
 
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。
