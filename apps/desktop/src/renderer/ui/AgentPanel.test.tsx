@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AgentRequest, AgentResponse } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
+import userEvent from '@testing-library/user-event';
 vi.stubGlobal(
   'ResizeObserver',
   class {
@@ -44,6 +45,38 @@ const profile: AgentResponse = {
   runs: [],
 };
 describe('AI submission UI lifecycle', () => {
+  it('keeps disclosure outside the composer and preserves Enter, Shift+Enter and IME submission semantics', async () => {
+    const agent = vi.fn(async () => profile);
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope="41414141-4141-4141-8141-414141414141" />);
+    await screen.findByText('已配置 · 模型设置');
+    const input = screen.getByLabelText('AI 工作要求');
+    const composer = input.closest('form')!;
+    expect(composer.querySelector('.composer-send-note')).toBeNull();
+    expect(screen.queryByText('项目（未接入）')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByText(/仅发送本次文字与所选材料/));
+    expect(screen.getByText(/本次发送只包含输入框内的文字/)).toBeTruthy();
+    await user.click(input);
+    await user.type(input, '第一行');
+    await user.keyboard('{Shift>}{Enter}{/Shift}第二行');
+    expect((input as HTMLTextAreaElement).value).toBe('第一行\n第二行');
+    expect(
+      agent.mock.calls.some(([request]) => (request as AgentRequest)?.operation === 'start'),
+    ).toBe(false);
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', isComposing: true });
+    expect(
+      agent.mock.calls.some(([request]) => (request as AgentRequest)?.operation === 'start'),
+    ).toBe(false);
+    fireEvent.compositionEnd(input);
+    await user.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(
+        agent.mock.calls.filter(([request]) => (request as AgentRequest)?.operation === 'start'),
+      ).toHaveLength(1),
+    );
+  });
   it('renders safe Markdown, labels both roles, and copies the original output without dispatch', async () => {
     const output =
       '## 核对事项\n\n- **付款**待核实\n\n<script>alert(1)</script>\n\n[候选链接](javascript:alert)\n\n![图片](https://example.invalid/tracker.png)';

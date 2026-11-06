@@ -147,6 +147,8 @@ const ComposerInput = forwardRef<
       className="assistant-input"
       placeholder="描述你的工作目标或问题…"
       rows={1}
+      minRows={1}
+      maxRows={6}
       disabled={disabled}
       addAttachmentOnPaste={false}
       onChange={(event) => onDraft({ text: event.target.value, state: null })}
@@ -472,7 +474,90 @@ export default function AgentPanel({
               composing.current = false;
             }}
           >
-            <PdfAttachments controller={materials} disabled={pending || unknown || Boolean(active)}>
+            <PdfAttachments
+              controller={materials}
+              disabled={pending || unknown || Boolean(active)}
+              actions={
+                <>
+                  {scope === 'home' && !configured && openSettings && (
+                    <button type="button" onClick={() => openSettings()}>
+                      配置模型
+                    </button>
+                  )}
+                  {scope === 'home' && (
+                    <select
+                      className="home-model-select"
+                      aria-label="选择大模型"
+                      value={active?.model ?? model}
+                      disabled={Boolean(active) || pending || unknown}
+                      onChange={(event) =>
+                        void command({
+                          protocol_version: 1,
+                          operation: 'select_model',
+                          model: event.target.value as AgentModel,
+                        })
+                      }
+                    >
+                      <option
+                        value="gpt-4.1-mini"
+                        disabled={!providers.openai && model !== 'gpt-4.1-mini'}
+                      >
+                        gpt-4.1-mini
+                      </option>
+                      <option
+                        value="deepseek-flash"
+                        disabled={!providers.deepseek && model !== 'deepseek-flash'}
+                      >
+                        deepseek-flash
+                      </option>
+                      <option
+                        value="deepseek-v4-pro"
+                        disabled={!providers.deepseek && model !== 'deepseek-v4-pro'}
+                      >
+                        deepseek-v4-pro
+                      </option>
+                    </select>
+                  )}
+                  {pending && !submissions.has(scope) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        preparationGeneration.current++;
+                        preparingAbort.current?.abort();
+                        setError('已取消发送，附件和输入保留。');
+                        void materials.cancelPreparation().catch(() => {});
+                      }}
+                    >
+                      取消发送
+                    </button>
+                  )}
+                  {active ? (
+                    <button
+                      type="button"
+                      className="primary assistant-stop"
+                      aria-label="停止生成"
+                      title="停止生成"
+                      onClick={() => void runtime.thread.cancelRun()}
+                    >
+                      停止生成
+                    </button>
+                  ) : (
+                    <button
+                      className={`primary ${unknown ? 'assistant-reconcile' : 'assistant-submit'}`}
+                      aria-busy={pending}
+                      type="submit"
+                      aria-label={unknown ? '核对原发送（同一标识）' : '发送'}
+                      title="发送"
+                      disabled={
+                        pending || (!unknown && (!draft.text.trim() || draft.text.length > 4000))
+                      }
+                    >
+                      {pending ? '正在准备…' : unknown ? '核对原发送（同一标识）' : '发送'}
+                    </button>
+                  )}
+                </>
+              }
+            >
               <ComposerInput
                 ref={editorRef}
                 scope={scope}
@@ -481,104 +566,25 @@ export default function AgentPanel({
                 disabled={false}
               />
             </PdfAttachments>
-            <p className="composer-send-note">
-              {mockPreview ? (
-                'MOCK_ONLY · 合成 Provider，无真实 API 调用。'
-              ) : (
-                <>发送时将本轮要求与附件交给 {agentModelLabel(model)}；可能产生 API 费用。</>
-              )}
-              {pending ? '正在准备附件并发送…' : '不会自动携带以前的材料或对话。'}
-            </p>
-            <div className="assistant-actions">
-              {scope === 'home' && !configured && openSettings && (
-                <button type="button" onClick={() => openSettings()}>
-                  配置模型
-                </button>
-              )}
-              {scope === 'home' && (
-                <div className="home-composer-options">
-                  <button type="button" disabled title="项目上下文尚未接入">
-                    项目（未接入）
-                  </button>
-                </div>
-              )}
-              {scope === 'home' && (
-                <select
-                  className="home-model-select"
-                  style={{
-                    maxWidth: 160,
-                    border: 0,
-                    background: 'transparent',
-                    color: 'var(--ink)',
-                    fontSize: 12,
-                  }}
-                  aria-label="选择大模型"
-                  value={active?.model ?? model}
-                  disabled={Boolean(active) || pending || unknown}
-                  onChange={(event) =>
-                    void command({
-                      protocol_version: 1,
-                      operation: 'select_model',
-                      model: event.target.value as AgentModel,
-                    })
-                  }
-                >
-                  <option
-                    value="gpt-4.1-mini"
-                    disabled={!providers.openai && model !== 'gpt-4.1-mini'}
-                  >
-                    gpt-4.1-mini
-                  </option>
-                  <option
-                    value="deepseek-flash"
-                    disabled={!providers.deepseek && model !== 'deepseek-flash'}
-                  >
-                    deepseek-flash
-                  </option>
-                  <option
-                    value="deepseek-v4-pro"
-                    disabled={!providers.deepseek && model !== 'deepseek-v4-pro'}
-                  >
-                    deepseek-v4-pro
-                  </option>
-                </select>
-              )}
-              {pending && !submissions.has(scope) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    preparationGeneration.current++;
-                    preparingAbort.current?.abort();
-                    setError('已取消发送，附件和输入保留。');
-                    void materials.cancelPreparation().catch(() => {});
-                  }}
-                >
-                  取消发送
-                </button>
-              )}
-              {active ? (
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => void runtime.thread.cancelRun()}
-                >
-                  停止生成
-                </button>
-              ) : (
-                <button
-                  className="primary assistant-submit"
-                  type="submit"
-                  aria-label={unknown ? '核对原发送（同一标识）' : '发送'}
-                  title="发送"
-                  disabled={
-                    pending || (!unknown && (!draft.text.trim() || draft.text.length > 4000))
-                  }
-                >
-                  {pending ? '正在准备…' : unknown ? '核对原发送（同一标识）' : '发送'}
-                </button>
-              )}
-            </div>
           </ComposerPrimitive.Root>
+          <details className="composer-send-note">
+            <summary>
+              {mockPreview
+                ? '仅发送本次文字与所选材料 · 演示无真实 API 调用'
+                : '仅发送本次文字与所选材料 · 可能产生 API 费用'}
+              <span>发送说明</span>
+            </summary>
+            <div>
+              <p>
+                本次发送只包含输入框内的文字与上方明确列出的附件。已保存材料须重新添加，不会自动携带以前的材料或对话。
+              </p>
+              <p>
+                {mockPreview
+                  ? '当前使用离线合成 Provider，固定输出只验证界面流程。'
+                  : '内容将发送给所选模型对应的外部服务商；停止本地生成后，远端可能已处理或计费。'}
+              </p>
+            </div>
+          </details>
           {scope !== 'home' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。

@@ -1508,48 +1508,6 @@ dd {
   font-size: 13px;
   line-height: 1.8;
 }
-.agent-prompt {
-  border: 1px solid #d8dee4;
-  border-radius: 9px;
-  padding: 16px;
-  margin-top: 30px;
-  box-shadow: 0 3px 12px #182c3805;
-}
-.agent-prompt:focus-within {
-  border-color: #6d929d;
-}
-.agent-prompt textarea {
-  width: 100%;
-  min-height: 100px;
-  border: 0;
-  resize: vertical;
-  padding: 0;
-  background: transparent;
-  line-height: 1.8;
-  font-size: 14px;
-  outline: none;
-  color: #364552;
-}
-.agent-prompt textarea:focus-visible {
-  outline: none;
-}
-.agent-prompt-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-.agent-prompt-actions > span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: #97a1aa;
-}
-.agent-prompt-actions button {
-  font-size: 12px;
-  padding: 6px 11px;
-}
 .agent-starters {
   display: flex;
   flex-wrap: wrap;
@@ -1907,16 +1865,6 @@ dd {
 .create-objective .tiptap {
   min-height: 150px;
 }
-.agent-prompt .rich-editor .tiptap {
-  min-height: 110px;
-  padding-top: 0;
-  padding-bottom: 14px;
-  font-size: 14px;
-}
-.agent-prompt .rich-editor[data-empty='true']:before {
-  top: 0;
-  font-size: 14px;
-}
 .task-content-panel.goal-panel {
   padding: 0;
 }
@@ -2077,78 +2025,97 @@ dd {
   border: 1px solid #e6e8ec;
 }
 .assistant-compose {
-  border: 1px solid #dfe1e5;
-  border-radius: 24px;
-  background: #fff;
-  padding: 14px 16px 10px;
-  box-shadow: 0 2px 10px #1823350b;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--theme-panel, white);
+  padding: 12px;
+  box-shadow: 0 2px 8px #18233508;
+}
+.assistant-compose:focus-within {
+  border-color: var(--theme-secondary);
 }
 .assistant-compose .assistant-input {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 32px;
-  max-height: 220px;
+  min-height: 0;
+  max-height: 160px;
+  padding: 4px 8px;
+  margin: 0 0 8px;
   overflow-y: auto;
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
-  color: #263740;
+  color: var(--ink);
   font: inherit;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 22px;
 }
 .assistant-compose .assistant-input::placeholder {
-  color: #929ca3;
-}
-.assistant-compose:focus-within {
-  border-color: #8aabb2;
-}
-.agent-prompt.assistant-compose {
-  padding: 18px 20px 12px;
-}
-.agent-prompt .assistant-input {
-  min-height: 72px;
+  color: var(--theme-secondary);
 }
 .assistant-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-  margin-top: 10px;
+  gap: 8px;
+  min-height: 34px;
 }
 .assistant-actions button,
 .assistant-error button {
   padding: 6px 10px;
-  border-radius: 5px;
-  border: 1px solid #dfe1e5;
-  background: #fff;
-  color: #505661;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--theme-panel, white);
+  color: var(--theme-secondary);
+  font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 .assistant-actions .primary {
-  background: #4b53bc;
-  border-color: #4b53bc;
-  color: white;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--theme-panel, white);
 }
-.assistant-actions .assistant-submit {
+.assistant-actions :is(.assistant-submit, .assistant-stop) {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
   width: 34px;
   height: 34px;
   padding: 0;
   border-radius: 50%;
-  border-color: #25383b;
-  background: #25383b;
   font-size: 0;
 }
-.assistant-actions .assistant-submit::after {
+.assistant-submit::after {
   content: '↑';
   font-size: 21px;
   line-height: 1;
 }
+.assistant-stop::after {
+  content: '■';
+  font-size: 12px;
+}
 .assistant-actions button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
+}
+.home-model-select {
+  min-width: 0;
+  max-width: 160px;
+  border: 0;
+  padding: 6px 3px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.assistant-actions :is(button, select):focus-visible {
+  outline: 2px solid var(--theme-secondary);
+  outline-offset: 2px;
 }
 .assistant-preview {
   margin-top: 10px;
@@ -3363,8 +3330,6 @@ select,
   border-color: var(--line);
   color: var(--ink);
 }
-.assistant-compose,
-.agent-prompt,
 .create-form,
 .provider-detail,
 .account-card,
@@ -3378,23 +3343,10 @@ select,
   border-color: var(--line);
   color: var(--ink);
 }
-.assistant-compose .assistant-input,
-.agent-prompt textarea {
-  color: var(--ink);
-}
-.assistant-actions button,
-.assistant-error button,
-.agent-starters button,
-.home-composer-options label,
-.home-composer-options select {
+.agent-starters button {
   background: var(--theme-panel);
   color: var(--theme-secondary);
   border-color: var(--line);
-}
-.assistant-actions .assistant-submit {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--theme-panel);
 }
 .assistant-message,
 .assistant-run-status,
@@ -3662,17 +3614,11 @@ select,
   flex: 1;
   min-width: 0;
   max-height: none;
-  padding: 20px 3px 8px;
+  padding: 20px 20px 8px;
 }
-.home-conversation .assistant-compose {
+.home-conversation .assistant-compose,
+.home-conversation .composer-send-note {
   flex-shrink: 0;
-  max-height: 45%;
-  overflow-y: auto;
-}
-.agent-prompt .assistant-input {
-  min-height: 40px;
-  max-height: 150px;
-  field-sizing: content;
 }
 .assistant-message {
   padding: 16px 0;

@@ -47,6 +47,10 @@ const context = {
     },
   ],
 };
+function addPdf() {
+  fireEvent.click(screen.getByRole('button', { name: '添加文件与材料' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '文件' }));
+}
 function fixture() {
   let finishImport!: (r: MaterialResponse) => void;
   let finishRun!: (r: AgentResponse) => void;
@@ -112,11 +116,34 @@ function fixture() {
     },
   };
 }
+it('cancelling the system file picker preserves existing text and selected attachments without starting an Agent run', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="d2d2d2d2-d2d2-42d2-82d2-d2d2d2d2d2d2" />);
+  await screen.findByText('已配置 · 模型设置');
+  addPdf();
+  await waitFor(() =>
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
+  );
+  await act(async () => f.finishImport({ ok: true, materials: [file] }));
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '原有工作要求' } });
+  vi.mocked(window.caselite.pickPdf).mockResolvedValueOnce({ ok: true, materials: [] });
+  addPdf();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: '添加文件与材料' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  expect(input.value).toBe('原有工作要求');
+  expect(screen.getByLabelText('待发送附件').textContent).toContain(file.name);
+  expect(f.material.mock.calls.filter(([r]) => r.operation === 'commit')).toHaveLength(1);
+  expect(f.sent).toHaveLength(0);
+});
 it('waits for pending import on one Send, then moves the attachment to the message and clears the composer', async () => {
   const f = fixture();
   render(<AgentPanel scope="abababab-abab-4bab-8bab-abababababab" />);
   await screen.findByText('已配置 · 模型设置');
-  fireEvent.click(screen.getByText('＋ 文件'));
+  addPdf();
   await waitFor(() =>
     expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
   );
@@ -137,7 +164,7 @@ it('does not erase next-round typing on late acceptance and never dispatches mis
   const f = fixture();
   render(<AgentPanel scope="bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc" />);
   await screen.findByText('已配置 · 模型设置');
-  fireEvent.click(screen.getByText('＋ 文件'));
+  addPdf();
   await waitFor(() =>
     expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
   );
@@ -154,7 +181,7 @@ it('preserves later edits after a successful attachment submission', async () =>
   const f = fixture();
   render(<AgentPanel scope="cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd" />);
   await screen.findByText('已配置 · 模型设置');
-  fireEvent.click(screen.getByText('＋ 文件'));
+  addPdf();
   await waitFor(() =>
     expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
   );
@@ -212,7 +239,7 @@ it('cancels a pending upload submission without starting a paid run', async () =
   const f = fixture();
   render(<AgentPanel scope="fafafafa-fafa-4afa-8afa-fafafafafafa" />);
   await screen.findByText('已配置 · 模型设置');
-  fireEvent.click(screen.getByText('＋ 文件'));
+  addPdf();
   await waitFor(() =>
     expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
   );
@@ -239,7 +266,7 @@ it('restores a pending staged upload without locking forever when Add is clicked
   window.caselite = { material, agent } as unknown as Window['caselite'];
   render(<AgentPanel scope="a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1" />);
   await screen.findByText('上次附件尚未完成');
-  fireEvent.click(screen.getByText('＋ 文件'));
+  addPdf();
   await waitFor(() =>
     expect((screen.getByText('继续添加') as HTMLButtonElement).disabled).toBe(false),
   );

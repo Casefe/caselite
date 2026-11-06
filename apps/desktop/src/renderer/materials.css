@@ -18,15 +18,96 @@
   color: #254c43;
   font-size: 14px;
 }
-.material-controls {
+.material-menu {
+  margin-right: auto;
+}
+.assistant-actions .material-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  white-space: nowrap;
+}
+.material-menu-trigger:hover,
+.material-menu-trigger[aria-expanded='true'] {
+  background: var(--theme-subtle);
+}
+.material-menu-popover {
+  position: fixed;
+  z-index: 20;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--theme-panel, white);
+  box-shadow: 0 8px 28px #18233524;
+}
+.material-menu-popover[hidden],
+.material-commands[hidden],
+.material-library[hidden] {
+  display: none;
+}
+.assistant-actions .material-commands > button {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  font-size: 11px;
-  color: var(--muted, #717782);
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 8px;
+  text-align: left;
+  border-color: transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
 }
-.material-controls button,
+.material-commands > button:hover,
+.material-commands > button:focus-visible {
+  background: var(--theme-subtle);
+}
+.material-commands > button > span:first-of-type {
+  flex: 1;
+}
+.material-commands kbd,
+.material-format {
+  color: var(--theme-secondary);
+  font: inherit;
+  font-size: 10px;
+}
+.material-format {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.material-menu-library {
+  width: 320px;
+}
+.material-library-heading {
+  position: sticky;
+  top: -5px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 6px;
+  background: var(--theme-panel, white);
+}
+.material-library-heading strong {
+  flex: 1;
+  font-size: 12px;
+}
+.assistant-actions .material-library-heading button {
+  display: grid;
+  place-items: center;
+  padding: 4px 6px;
+  border-color: transparent;
+}
 .material-reader button {
   font-size: 12px;
   padding: 5px 9px;
@@ -34,35 +115,46 @@
 .material-cards {
   list-style: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  max-height: 192px;
+  overflow-y: auto;
+  overflow-x: hidden;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 0 4px 8px;
   margin: 0;
 }
 .material-cards li {
   display: flex;
   align-items: center;
-  max-width: 340px;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
   border: 1px solid var(--line, #e0e3e7);
   border-radius: 7px;
-  background: var(--panel, #fff);
+  background: var(--theme-subtle, #f5f6f8);
 }
 .material-card-open {
   display: flex;
+  flex: 1;
+  min-height: 52px;
   align-items: center;
   text-align: left;
-  gap: 10px;
+  gap: 8px;
   border: 0;
   background: transparent;
   min-width: 0;
-  padding: 9px;
+  padding: 8px 10px;
+}
+.material-card-open > span:last-child {
+  min-width: 0;
+  flex: 1;
 }
 .material-card-open strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 230px;
+  max-width: 100%;
   font-size: 12px;
 }
 .material-card-open small {
@@ -126,11 +218,23 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin: 8px 12px;
-  padding: 10px;
+  margin: 0 4px 8px;
+  padding: 8px;
   border: 1px dashed #b8c5c1;
   border-radius: 6px;
   font-size: 12px;
+}
+.material-staged strong {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.material-staged small {
+  color: var(--theme-secondary);
+  font-size: 11px;
 }
 .material-cards .material-saved-card {
   display: block;
@@ -180,19 +284,34 @@
 }
 
 .material-library {
-  margin: 4px 12px 8px;
-  color: var(--muted);
+  margin: 0;
+  color: var(--theme-secondary);
   font-size: 11px;
 }
 .material-library summary {
   cursor: pointer;
-  width: fit-content;
+  padding: 8px;
+}
+.material-library summary span {
+  float: right;
+}
+.material-library > p {
+  padding: 0 8px;
 }
 .material-library > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 0;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.material-library > div > button:first-child {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.material-library > div > details {
+  grid-column: 1 / -1;
 }
 .material-library button,
 .material-error button {
@@ -200,10 +319,34 @@
   font-size: 11px;
 }
 .composer-send-note {
-  color: var(--muted);
-  font-size: 10px;
+  color: var(--theme-secondary);
+  font-size: 11px;
   line-height: 1.5;
-  margin: 4px 12px;
+  margin: 8px 4px 0;
+}
+.composer-send-note > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.composer-send-note summary::-webkit-details-marker {
+  display: none;
+}
+.composer-send-note summary > span {
+  flex-shrink: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.composer-send-note > div {
+  padding: 4px 8px;
+  border-left: 2px solid var(--line);
+  margin-top: 8px;
+}
+.composer-send-note p {
+  margin: 6px 0;
 }
 .message-attachments {
   display: flex;
@@ -240,4 +383,19 @@
 .material-reader-tools button {
   font-size: 11px;
   padding: 4px 8px;
+}
+.material-reader-dialog {
+  width: min(960px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--theme-panel, white);
+  color: var(--ink);
+}
+.material-reader-dialog::backdrop {
+  background: #15202366;
+}
+.material-reader-dialog .material-paper {
+  max-height: 55vh;
 }
