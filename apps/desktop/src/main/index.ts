@@ -510,6 +510,8 @@ if (taskDemoPhase) {
       'project-promote-read',
       'project-files',
       'project-files-read',
+      'project-activity',
+      'project-activity-read',
       'agent',
       'agent-preview',
       'agent-crash',
@@ -820,6 +822,8 @@ app
         taskDemoPhase === 'project-promote' ||
         taskDemoPhase === 'project-files' ||
         taskDemoPhase === 'project-files-read' ||
+        taskDemoPhase === 'project-activity' ||
+        taskDemoPhase === 'project-activity-read' ||
         taskDemoPhase === 'project-promote-read')
     ) {
       await runProjectDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);

@@ -86,6 +86,7 @@ describe('durable project UI receipts and target identity', () => {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
       const panel = screen.getByRole('tabpanel', { name: label, exact: true });
       if (label === '文件') expect(within(panel).getByLabelText('搜索项目文件')).toBeTruthy();
+      else if (label === '活动') expect(within(panel).getByLabelText('真实业务活动')).toBeTruthy();
       else expect(panel.textContent).toContain('尚未接入');
     }
     fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));

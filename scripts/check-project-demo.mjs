@@ -8,7 +8,8 @@ const root = resolve(import.meta.dirname, '..');
 const isolated = mkdtempSync(join(tmpdir(), 'caselite-task-demo-project-'));
 const lifecycle = process.argv.includes('--lifecycle');
 const promotion = process.argv.includes('--promote');
-const files = process.argv.includes('--files');
+const activity = process.argv.includes('--activity');
+const files = process.argv.includes('--files') || activity;
 copyFileSync(
   join(root, 'tests/fixtures/case-materials/development/contract-v1-text.pdf'),
   join(isolated, 'fixture.pdf'),
@@ -16,23 +17,33 @@ copyFileSync(
 const output = join(
   root,
   'artifacts/evidence',
-  files
-    ? 'project-files-demo'
-    : promotion
-      ? 'project-promotion-demo'
-      : lifecycle
-        ? 'project-lifecycle-demo'
-        : 'project-demo',
+  activity
+    ? 'project-activity-demo'
+    : files
+      ? 'project-files-demo'
+      : promotion
+        ? 'project-promotion-demo'
+        : lifecycle
+          ? 'project-lifecycle-demo'
+          : 'project-demo',
 );
 mkdirSync(output, { recursive: true });
 const phases = [];
-const requestedPhases = files
-  ? ['project-promote', 'project-files', 'project-files-read']
-  : promotion
-    ? ['project-promote', 'project-promote-read']
-    : lifecycle
-      ? ['project-write', 'project-edit', 'project-restore']
-      : ['project-write', 'project-read'];
+const requestedPhases = activity
+  ? [
+      'project-promote',
+      'project-files',
+      'project-files-read',
+      'project-activity',
+      'project-activity-read',
+    ]
+  : files
+    ? ['project-promote', 'project-files', 'project-files-read']
+    : promotion
+      ? ['project-promote', 'project-promote-read']
+      : lifecycle
+        ? ['project-write', 'project-edit', 'project-restore']
+        : ['project-write', 'project-read'];
 for (const phase of requestedPhases) {
   const result = spawnSync(
     join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite'),
@@ -84,33 +95,46 @@ for (const phase of requestedPhases) {
   );
   if (result.status !== 0) throw new Error(`Project ${phase} failed; inspect ${isolated}`);
 }
-for (const name of files
+for (const name of activity
   ? [
       'project-files-list.png',
       'project-files-missing.png',
       'project-files-recovered.png',
       'project-files-reopened.png',
       'files-expected.json',
-      'project-files.json',
-      'project-files-read.json',
+      'project-activity-save-failed.png',
+      'project-activity-saved.png',
+      'project-activity-reopened.png',
+      'project-activity-original-task.png',
+      'activity-expected.json',
     ]
-  : promotion
+  : files
     ? [
-        'project-from-task.png',
-        'project-task-linked.png',
-        'project-original-task-reopened.png',
-        'project-overview-summary.png',
-        'project-sections.png',
-        'promotion-expected.json',
+        'project-files-list.png',
+        'project-files-missing.png',
+        'project-files-recovered.png',
+        'project-files-reopened.png',
+        'files-expected.json',
+        'project-files.json',
+        'project-files-read.json',
       ]
-    : [
-        'project-create.png',
-        'project-created.png',
-        'project-reopened.png',
-        'project-expected.json',
-        ...(lifecycle
-          ? ['project-edited.png', 'project-archived.png', 'project-restored.png']
-          : []),
-      ])
+    : promotion
+      ? [
+          'project-from-task.png',
+          'project-task-linked.png',
+          'project-original-task-reopened.png',
+          'project-overview-summary.png',
+          'project-sections.png',
+          'promotion-expected.json',
+        ]
+      : [
+          'project-create.png',
+          'project-created.png',
+          'project-reopened.png',
+          'project-expected.json',
+          ...(lifecycle
+            ? ['project-edited.png', 'project-archived.png', 'project-restored.png']
+            : []),
+        ])
   copyFileSync(join(isolated, name), join(output, name));
 process.stdout.write(`Project create/reopen passed; evidence ${output}\n`);

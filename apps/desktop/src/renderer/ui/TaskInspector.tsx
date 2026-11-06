@@ -3,6 +3,7 @@ import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import AgentPanel from './AgentPanel';
 import TaskProjectAction from '../projects/TaskProjectAction';
+import ActivityList from '../projects/ActivityList';
 
 export default function TaskInspector({
   task,
@@ -11,6 +12,7 @@ export default function TaskInspector({
   onProjectChanged,
   onProjectDirty,
   projectDisabled = false,
+  onActivityOpen,
 }: {
   task: Task | null;
   documents?: boolean;
@@ -18,8 +20,10 @@ export default function TaskInspector({
   onProjectChanged?(task: Task): void;
   onProjectDirty?(dirty: boolean): void;
   projectDisabled?: boolean;
+  onActivityOpen?(id: string): void;
 }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
+  const [activityOpen, setActivityOpen] = useState(false);
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <div className="inspector-tabs" role="tablist" aria-label="侧边栏栏目">
@@ -97,6 +101,19 @@ export default function TaskInspector({
             />
           )}
           <hr />
+          {!documents && onActivityOpen && (
+            <details onToggle={(e) => setActivityOpen(e.currentTarget.open)}>
+              <summary>任务活动</summary>
+              {activityOpen && (
+                <ActivityList
+                  key={task.id}
+                  scope={{ type: 'task', id: task.id }}
+                  disabled={projectDisabled}
+                  onTask={onActivityOpen}
+                />
+              )}
+            </details>
+          )}
           <div className="property-note">
             <Icon name="file" size={16} />
             <p>

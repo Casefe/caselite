@@ -4,6 +4,17 @@ const version = z.number().int().positive();
 const bytes = z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000);
 const base = { protocol_version: z.literal(1) };
 const mutation = { ...base, request_id: id, idempotency_key: id };
+export const activityScopeSchema = z.object({ type: z.enum(['project', 'task']), id }).strict();
+export const activityEventSchema = z.object({
+  id,
+  origin: z.enum(['task', 'catalog']),
+  target_id: id,
+  target_type: z.enum(['project', 'task', 'document']),
+  operation: z.string(),
+  committed_at: z.string(),
+  actor: z.null(),
+  recorded_version: z.null(),
+});
 export const matterSchema = z.object({
   id,
   title: z.string(),
@@ -32,6 +43,23 @@ export const catalogDocumentSchema = z.object({
   updated_at: z.string(),
 });
 export const catalogRequestSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      ...base,
+      operation: z.literal('list_activity'),
+      scope: activityScopeSchema,
+      offset: z.number().int().min(0).max(1_000_000),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      operation: z.literal('activity_target'),
+      scope: activityScopeSchema,
+      event_id: id,
+      origin: z.enum(['task', 'catalog']),
+    })
+    .strict(),
   z.object({ ...base, operation: z.literal('list') }).strict(),
   z.object({ ...base, operation: z.literal('read_project'), id }).strict(),
   z.object({ ...base, operation: z.literal('status'), idempotency_key: id }).strict(),
@@ -111,6 +139,16 @@ export const catalogResponseSchema = z.discriminatedUnion('ok', [
     state: bytes.nullable(),
     target_id: id.nullable(),
     receipt: id.nullable(),
+    activity: z.array(activityEventSchema).optional(),
+    activity_has_more: z.boolean().optional(),
+    activity_target: z
+      .object({
+        type: z.enum(['project', 'task', 'document']),
+        id,
+        task_id: id.nullable(),
+        current_version: version,
+      })
+      .optional(),
   }),
   z.object({
     ok: z.literal(false),
@@ -130,3 +168,5 @@ export type CatalogRequest = z.infer<typeof catalogRequestSchema>;
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>;
 export type Matter = z.infer<typeof matterSchema>;
 export type CatalogDocument = z.infer<typeof catalogDocumentSchema>;
+export type ActivityEvent = z.infer<typeof activityEventSchema>;
+export type ActivityScope = z.infer<typeof activityScopeSchema>;

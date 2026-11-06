@@ -64,7 +64,9 @@ export default function ProjectSummary({
               {!!visible.length && <p>打开关联任务的成果正文；保存不代表正式交付。</p>}
             </section>
           </div>
-          <p className="project-summary-boundary">文件、活动与正式交付摘要尚未接入。</p>
+          <p className="project-summary-boundary">
+            文件与活动可从上方栏目查看；正式交付摘要尚未接入。
+          </p>
         </>
       )}
     </section>

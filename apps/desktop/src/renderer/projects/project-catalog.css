@@ -202,3 +202,22 @@
   color: var(--text-secondary);
   margin-top: 5px;
 }
+.activity-list ol {
+  list-style: none;
+  padding: 0;
+  max-width: 760px;
+}
+.activity-list li {
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+}
+.activity-list li > div {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+.activity-list time,
+.activity-list li p {
+  color: var(--theme-secondary);
+  font-size: 12px;
+}

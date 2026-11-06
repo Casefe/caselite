@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
+import { openToolchainProbe } from '@caselite/local-db';
 
 // 沿用宿主校验过的合成目录和正式IPC；只测项目，不改全工作台演示的既有断言。
 export async function runProjectDemo(
@@ -16,6 +17,8 @@ export async function runProjectDemo(
     | 'project-promote'
     | 'project-files'
     | 'project-files-read'
+    | 'project-activity'
+    | 'project-activity-read'
     | 'project-promote-read',
 ) {
   const isolation = {
@@ -56,7 +59,80 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
-    if (phase === 'project-files' || phase === 'project-files-read') {
+    if (phase === 'project-activity' || phase === 'project-activity-read') {
+      const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const scope = { type: 'project', id: expected.task.matter_id };
+      const list = async () => {
+        const r: CatalogResponse = await evaluate(
+          `window.caselite.catalog(${JSON.stringify({ protocol_version: 1, operation: 'list_activity', scope, offset: 0 })})`,
+        );
+        if (!r.ok || !r.activity) throw new Error('Committed activity query unavailable');
+        return r.activity;
+      };
+      await wait("document.querySelector('.project-title-link')");
+      await button('独立任务转项目验收');
+      await wait("document.querySelector('[aria-label=编辑项目名称]')");
+      const before = await list();
+      if (phase === 'project-activity') {
+        const connection = openToolchainProbe(
+          join(isolation.userData, 'caselite.sqlite'),
+          join(process.resourcesPath, 'migrations'),
+        );
+        connection.sqlite.exec(
+          "CREATE TRIGGER project_probe_reject BEFORE INSERT ON catalog_activity BEGIN SELECT RAISE(ABORT,'synthetic activity commit failure'); END",
+        );
+        try {
+          await evaluate(
+            "(()=>{const input=document.querySelector('[aria-label=项目状态]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'active');input.dispatchEvent(new Event('change',{bubbles:true}));})()",
+          );
+          await button('保存项目概述');
+          await wait(
+            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交')",
+          );
+          if (JSON.stringify(await list()) !== JSON.stringify(before))
+            throw new Error('Failed save created success activity');
+          await capture('project-activity-save-failed.png');
+        } finally {
+          connection.sqlite.exec('DROP TRIGGER project_probe_reject');
+          connection.sqlite.close();
+        }
+        await button('核对原提交');
+        await wait(
+          "!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交') && document.querySelector('[aria-label=项目状态]')?.value==='active'",
+        );
+        const after = await list();
+        if (
+          after.length !== before.length + 1 ||
+          after.filter((e) => e.operation === 'update_project').length !== 1
+        )
+          throw new Error('Recovery duplicated or lost committed activity');
+        writeFileSync(join(root, 'activity-expected.json'), JSON.stringify(after, null, 2));
+      } else {
+        const prior = JSON.parse(readFileSync(join(root, 'activity-expected.json'), 'utf8'));
+        if (JSON.stringify(before) !== JSON.stringify(prior))
+          throw new Error('Restart changed committed history');
+      }
+      await button('活动');
+      await wait("document.querySelectorAll('[data-activity-id]').length>=3");
+      await capture(
+        phase === 'project-activity'
+          ? 'project-activity-saved.png'
+          : 'project-activity-reopened.png',
+      );
+      const taskEvent = (await list()).find((e) => e.target_type === 'task')!;
+      await evaluate(
+        `document.querySelector('[data-activity-id="${taskEvent.id}"] button').click()`,
+      );
+      await wait(
+        `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
+      );
+      await wait(
+        "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
+      );
+      await evaluate("document.querySelector('.task-inspector details').open=true");
+      await wait("document.querySelector('.task-inspector [data-activity-id]')");
+      await capture('project-activity-original-task.png');
+    } else if (phase === 'project-files' || phase === 'project-files-read') {
       const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
       const projectId = expected.task.matter_id;
       const request = { protocol_version: 1, operation: 'list_project', project_id: projectId };

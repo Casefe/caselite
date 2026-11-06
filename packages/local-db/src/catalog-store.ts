@@ -6,6 +6,8 @@ import {
   type CatalogResponse,
   type Matter,
   type CatalogDocument,
+  type ActivityScope,
+  type ActivityEvent,
 } from '@caselite/contracts';
 import { validateBody } from './body-schema';
 
@@ -52,8 +54,90 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     receipt,
   });
   const getProject = (id: string) => projects().find((p) => p.id === id);
+  const scopeExists = (scope: ActivityScope) =>
+    scope.type === 'project'
+      ? !!getProject(scope.id)
+      : !!db
+          .prepare('SELECT id FROM task_items WHERE id=? AND workspace_id=?')
+          .get(scope.id, workspace);
+  const activityRows = (
+    scope: ActivityScope,
+    offset = 0,
+    event?: { id: string; origin: string },
+  ): ActivityEvent[] => {
+    // 两种既有成功事件按明确来源聚合；不把诊断日志、材料登记或推测动作补写为历史。
+    const rows = db
+      .prepare(
+        `SELECT * FROM (
+      SELECT a.id,'task' AS origin,a.task_id AS target_id,'task' AS target_type,a.operation,a.created_at AS committed_at
+      FROM task_activity a JOIN task_items t ON t.id=a.task_id LEFT JOIN task_projects p ON p.task_id=t.id
+      WHERE t.workspace_id=@workspace AND ((@kind='task' AND t.id=@scope) OR (@kind='project' AND p.matter_id=@scope AND a.operation NOT IN ('assign_project','promote_task')))
+      UNION ALL
+      SELECT a.id,'catalog' AS origin,a.target_id,
+        CASE WHEN a.operation IN ('create_project','promote_task','update_project','archive_project') THEN 'project'
+             WHEN a.operation='assign_task' THEN 'task' ELSE 'document' END AS target_type,
+        a.operation,a.created_at AS committed_at
+      FROM catalog_activity a
+      LEFT JOIN task_items t ON t.id=a.target_id AND t.workspace_id=a.workspace_id
+      LEFT JOIN documents d ON d.id=a.target_id
+      LEFT JOIN task_items dt ON dt.id=d.task_id AND dt.workspace_id=a.workspace_id
+      LEFT JOIN task_projects p ON p.task_id=COALESCE(t.id,dt.id)
+      WHERE a.workspace_id=@workspace
+        AND ((@kind='project' AND (a.target_id=@scope OR p.matter_id=@scope))
+          OR (@kind='task' AND dt.id=@scope))
+    ) WHERE (@event IS NULL OR (id=@event AND origin=@origin))
+    ORDER BY committed_at DESC,origin,id DESC LIMIT 21 OFFSET @offset`,
+      )
+      .all({
+        workspace,
+        kind: scope.type,
+        scope: scope.id,
+        event: event?.id ?? null,
+        origin: event?.origin ?? null,
+        offset,
+      }) as Omit<ActivityEvent, 'actor' | 'recorded_version'>[];
+    return rows.map((row) => ({ ...row, actor: null, recorded_version: null }));
+  };
   return {
     execute(request: CatalogRequest): CatalogResponse {
+      if (request.operation === 'list_activity' || request.operation === 'activity_target') {
+        if (!scopeExists(request.scope)) return fail('NOT_FOUND', '活动范围不可访问。');
+        if (request.operation === 'list_activity') {
+          const rows = activityRows(request.scope, request.offset);
+          return { ...result(), activity: rows.slice(0, 20), activity_has_more: rows.length > 20 };
+        }
+        const event = activityRows(request.scope, 0, {
+          id: request.event_id,
+          origin: request.origin,
+        })[0];
+        if (!event) return fail('NOT_FOUND', '活动已不在当前范围，请重新读取。');
+        const project = event.target_type === 'project' ? getProject(event.target_id) : undefined;
+        const doc =
+          event.target_type === 'document'
+            ? documents().find((d) => d.id === event.target_id)
+            : undefined;
+        const task = db
+          .prepare(
+            `SELECT t.id,t.version,d.archived_at FROM task_items t JOIN documents d ON d.task_id=t.id WHERE t.id=? AND t.workspace_id=?`,
+          )
+          .get(event.target_type === 'task' ? event.target_id : (doc?.task_id ?? ''), workspace) as
+          { id: string; version: number; archived_at: string | null } | undefined;
+        if (
+          (event.target_type === 'project' && (!project || project.archived_at)) ||
+          (event.target_type === 'document' && (!doc || doc.archived_at)) ||
+          (event.target_type !== 'project' && (!task || task.archived_at))
+        )
+          return fail('NOT_FOUND', '目标已归档或不可访问，历史记录保留。');
+        return {
+          ...result(),
+          activity_target: {
+            type: event.target_type,
+            id: event.target_id,
+            task_id: task?.id ?? null,
+            current_version: project?.version ?? doc?.version ?? task!.version,
+          },
+        };
+      }
       if (request.operation === 'list') return result();
       if (request.operation === 'status') {
         const row = db

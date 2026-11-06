@@ -7,6 +7,7 @@ import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';
+import ActivityList from './ActivityList';
 const names = { planned: '待开始', active: '进行中', done: '已完成' };
 const sections = {
   overview: '概述',
@@ -284,7 +285,15 @@ export default function ProjectCatalog({
                 className="project-record-panel"
               >
                 <h2>活动</h2>
-                <p>项目活动列表尚未接入。</p>
+                {section === 'activity' && (
+                  <ActivityList
+                    key={editor.project.id}
+                    scope={{ type: 'project', id: editor.project.id }}
+                    disabled={reading || dirty || c.pending || c.unknown}
+                    onTask={onOpen}
+                    onProject={(id) => void read(id)}
+                  />
+                )}
               </section>
             </>
           ) : (

@@ -573,6 +573,7 @@ function Workbench() {
                 key={active.id}
                 task={active}
                 projectDisabled={dirty || busy || uncertain}
+                onActivityOpen={(id) => void open(id)}
                 onProjectDirty={setDirty}
                 onProjectChanged={(task) => {
                   setActive(task);
