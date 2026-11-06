@@ -29,6 +29,6 @@
 | [ADR-012](./ADR-012-device-appearance-preference.md) | 提议 | 设备外观偏好与受控接口 | UI接收、独立复核及未来迁移 |
 | [ADR-013](./ADR-013-personal-daily-document.md) | 提议 | 个人每日 Document 与首页备忘录 | DEV-1689、迁移与恢复 Spike |
 
-| [ADR-014](./ADR-014-local-pdf-materials-and-ocr.md) | 已实现增量（打包验证中） | 本地 PDF 导入、版本化派生与选材快照 | DEV-1733、1609、1649、1651 |
+| [ADR-014](./ADR-014-local-pdf-materials-and-ocr.md) | 已实现增量（OCR质量未验收） | 本地 PDF 导入、版本化派生与选材快照 | DEV-1733、1609、1649、1651 |
 
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。
