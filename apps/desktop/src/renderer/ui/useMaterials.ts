@@ -12,8 +12,9 @@ import type {
 type DraftFiles = {
   ids: Set<string>;
   upload?: Promise<void>;
-  staged?: { token: string; name: string; bytes: number };
+  staged?: { token: string; name: string; bytes: number; restore_source_id?: string };
   error: string;
+  importError?: string;
   name?: string;
 };
 const drafts = new Map<string, DraftFiles>();
@@ -93,6 +94,7 @@ export function useMaterials(scope: MaterialScope) {
   async function importFile(file?: File, retry = false) {
     if (draft.upload) return draft.upload;
     draft.error = '';
+    draft.importError = '';
     draft.name = file?.name ?? draft.staged?.name;
     const work = (async () => {
       try {
@@ -109,17 +111,21 @@ export function useMaterials(scope: MaterialScope) {
           draft.name = staged.name;
           render();
         }
-        const result = await command({ operation: 'commit', token: staged.token } as Omit<
-          MaterialRequest,
-          'scope' | 'protocol_version'
-        >);
-        if (!result.materials.some((item) => item.id === staged!.token))
+        const result = await command({
+          operation: staged.restore_source_id ? 'restore' : 'commit',
+          token: staged.token,
+          ...(staged.restore_source_id ? { source_id: staged.restore_source_id } : {}),
+        } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
+        if (
+          !result.materials.some((item) => item.id === (staged!.restore_source_id ?? staged!.token))
+        )
           throw new Error('尚未确认附件导入，请重试原附件。');
-        draft.ids.add(staged.token);
+        if (!staged.restore_source_id) draft.ids.add(staged.token);
         draft.staged = undefined;
         window.dispatchEvent(new Event('caselite:material-task-saved'));
       } catch (error) {
         draft.error = error instanceof Error ? error.message : '附件未导入，请重试。';
+        draft.importError = draft.error;
       }
     })().finally(() => {
       draft.upload = undefined;
@@ -159,6 +165,7 @@ export function useMaterials(scope: MaterialScope) {
           >);
         draft.staged = undefined;
         draft.error = '';
+        draft.importError = '';
         render();
       } catch (error) {
         draft.error = String(error);
@@ -174,6 +181,62 @@ export function useMaterials(scope: MaterialScope) {
       ids.forEach((id) => draft.ids.delete(id));
       render();
     },
+    async localText(item: Material) {
+      try {
+        await command({
+          operation: 'process',
+          source_id: item.id,
+          ocr: true,
+          force: item.status === 'ready',
+        } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
+      } catch (error) {
+        draft.error = error instanceof Error ? error.message : '暂不能提取文字。';
+        render();
+      }
+    },
+    async stopLocalText(item: Material) {
+      try {
+        await command({ operation: 'cancel', source_id: item.id } as Omit<
+          MaterialRequest,
+          'scope' | 'protocol_version'
+        >);
+      } catch (error) {
+        draft.error = error instanceof Error ? error.message : '取消结果尚未确认。';
+        render();
+      }
+    },
+    async restore(item: Material) {
+      if (draft.upload || draft.staged || draft.importError) {
+        draft.error = '请先完成或移除当前待添加附件。';
+        render();
+        return;
+      }
+      const work = (async () => {
+        try {
+          const picked = await window.caselite.pickPdf(scope);
+          if (!picked.ok) throw new Error(picked.message);
+          if (!picked.staged) return;
+          draft.staged = { ...picked.staged, restore_source_id: item.id };
+          const restored = await command({
+            operation: 'restore',
+            source_id: item.id,
+            token: picked.staged.token,
+          } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
+          if (!restored.ok) throw new Error('恢复未完成');
+          draft.error = '';
+          draft.staged = undefined;
+        } catch (error) {
+          draft.error = error instanceof Error ? error.message : '恢复未完成。';
+          render();
+        }
+      })().finally(() => {
+        draft.upload = undefined;
+        render();
+      });
+      draft.upload = work;
+      render();
+      await work;
+    },
     async readReference(id: string, task: string, name: string) {
       try {
         const result = await command(
@@ -184,6 +247,8 @@ export function useMaterials(scope: MaterialScope) {
           task,
         );
         if (alive.current && result.data) setReading({ id, name, bytes: result.data });
+        draft.error = draft.importError ?? '';
+        render();
       } catch (error) {
         draft.error = error instanceof Error ? error.message : '无法打开附件。';
         render();

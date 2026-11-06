@@ -481,3 +481,89 @@ it('a user resend retries failed local preparation without dropping pages', asyn
   expect(r.preview?.payload).toContain(page.text);
   s.store.close();
 });
+
+it('keeps the target of a failed original-file restore and refuses to turn it into a new import', async () => {
+  const s = setup();
+  const { source } = await s.add();
+  await s.settled();
+  const wrong = join(s.root, 'wrong.pdf');
+  writeFileSync(wrong, '%PDF-1.4 synthetic wrong original');
+  const staged = ok(await s.app.stage(wrong, 'home')).staged!;
+  expect(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'restore',
+      source_id: source.id,
+      token: staged.token,
+    }),
+  ).toMatchObject({ ok: false, code: 'MISMATCH' });
+  expect(
+    ok(await s.app.execute({ protocol_version: 1, scope: 'home', operation: 'list' })).staged,
+  ).toMatchObject({ token: staged.token, restore_source_id: source.id });
+  expect(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'commit',
+      token: staged.token,
+    }),
+  ).toMatchObject({ ok: false, code: 'RESTORE_REQUIRED' });
+  expect(s.store.materials.list('home')).toHaveLength(1);
+  expect(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'read',
+      source_id: source.id,
+    }),
+  ).toMatchObject({ ok: true });
+  s.store.close();
+  const reopened = openTaskStore(join(s.root, 'db.sqlite'), migrations);
+  expect(reopened.materials.pending('home')).toMatchObject({
+    token: staged.token,
+    restore_source_id: source.id,
+  });
+  reopened.close();
+});
+
+it('does not rewrite a staged import intent while its commit is already in flight', async () => {
+  let pause = false;
+  let resume!: () => void;
+  const s = setup({
+    configuration: 'intent-lock',
+    async inspect() {
+      if (pause)
+        await new Promise<void>((done) => {
+          resume = done;
+        });
+      return 1;
+    },
+    process: async (_bytes, input) => input.onPage(page),
+  });
+  const first = await s.add();
+  await s.settled();
+  const staged = ok(await s.app.stage(s.fixture, 'home')).staged!;
+  pause = true;
+  const commit = s.app.execute({
+    protocol_version: 1,
+    scope: 'home',
+    operation: 'commit',
+    token: staged.token,
+  });
+  while (!resume) await new Promise((done) => setTimeout(done, 1));
+  expect(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'restore',
+      token: staged.token,
+      source_id: first.source.id,
+    }),
+  ).toMatchObject({ ok: false, code: 'BUSY' });
+  expect(s.store.materials.stage(staged.token)?.restore_source_id).toBeUndefined();
+  resume();
+  expect(await commit).toMatchObject({ ok: true });
+  await s.settled();
+  s.store.close();
+});

@@ -223,3 +223,67 @@ it('cancels a pending upload submission without starting a paid run', async () =
   expect(f.sent).toHaveLength(0);
   expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('核对材料');
 });
+
+it('restores a pending staged upload without locking forever when Add is clicked again', async () => {
+  const staged = { token: file.id, name: file.name, bytes: file.bytes };
+  const material = vi.fn(async (r) =>
+    r.operation === 'list' ? { ok: true, materials: [], staged } : { ok: true, materials: [file] },
+  );
+  const agent = vi.fn(async () => ({
+    ok: true,
+    configured: false,
+    providers: { openai: false, deepseek: false },
+    model: 'gpt-4.1-mini',
+    runs: [],
+  }));
+  window.caselite = { material, agent } as unknown as Window['caselite'];
+  render(<AgentPanel scope="a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1" />);
+  await screen.findByText('上次附件尚未完成');
+  fireEvent.click(screen.getByText('＋ 文件'));
+  await waitFor(() =>
+    expect((screen.getByText('继续添加') as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(screen.getByText('继续添加'));
+  await waitFor(() =>
+    expect(material.mock.calls.some(([r]) => r.operation === 'commit' && r.token === file.id)).toBe(
+      true,
+    ),
+  );
+  expect(agent.mock.calls.some(([r]) => (r as AgentRequest)?.operation === 'start')).toBe(false);
+});
+
+it('retries a restored original with its original operation and target, without adding it as a chat attachment', async () => {
+  const staged = {
+    token: 'b1b1b1b1-b1b1-41b1-81b1-b1b1b1b1b1b1',
+    name: file.name,
+    bytes: file.bytes,
+    restore_source_id: file.id,
+  };
+  const material = vi.fn(async (r) =>
+    r.operation === 'list'
+      ? { ok: true, materials: [file], staged }
+      : { ok: true, materials: [file] },
+  );
+  window.caselite = {
+    material,
+    agent: vi.fn(async () => ({
+      ok: true,
+      configured: false,
+      providers: { openai: false, deepseek: false },
+      model: 'gpt-4.1-mini',
+      runs: [],
+    })),
+  } as unknown as Window['caselite'];
+  render(<AgentPanel scope="c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1" />);
+  await screen.findByText('上次原件恢复尚未完成');
+  fireEvent.click(screen.getByText('重试恢复'));
+  await waitFor(() =>
+    expect(
+      material.mock.calls.some(
+        ([r]) => r.operation === 'restore' && r.source_id === file.id && r.token === staged.token,
+      ),
+    ).toBe(true),
+  );
+  expect(material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(false);
+  expect(screen.queryByLabelText('待发送附件')).toBeNull();
+});

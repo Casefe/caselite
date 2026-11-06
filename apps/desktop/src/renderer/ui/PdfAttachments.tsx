@@ -68,9 +68,9 @@ export default function PdfAttachments({
       {c.staged && !c.busy && (
         <div className="material-staged">
           <strong>{c.staged.name}</strong>
-          <span>上次附件尚未完成</span>
+          <span>{c.staged.restore_source_id ? '上次原件恢复尚未完成' : '上次附件尚未完成'}</span>
           <button type="button" disabled={disabled} onClick={() => void c.retry()}>
-            继续添加
+            {c.staged.restore_source_id ? '重试恢复' : '继续添加'}
           </button>
           <button type="button" disabled={disabled} onClick={() => void c.discard()}>
             移除
@@ -137,10 +137,43 @@ export default function PdfAttachments({
                 <button type="button" disabled={disabled} onClick={() => c.select(item.id, true)}>
                   添加到本轮
                 </button>
+                <details>
+                  <summary>更多</summary>
+                  <button
+                    type="button"
+                    disabled={disabled || c.busy}
+                    onClick={() => void c.restore(item)}
+                  >
+                    恢复原件
+                  </button>
+                </details>
               </div>
             ))}
         </details>
       )}
+      {c.reading &&
+        c.items
+          .filter((item) => item.id === c.reading?.id)
+          .map((item) => (
+            <div className="material-reader-tools" key={item.id}>
+              <span>
+                {item.status === 'processing'
+                  ? '正在本地提取文字…'
+                  : item.pages.some((page) => page.origin === 'ocr_candidate')
+                    ? '本地识别文字 · 待核对'
+                    : '原件阅读'}
+              </span>
+              <button
+                type="button"
+                disabled={disabled || c.busy}
+                onClick={() =>
+                  void (item.status === 'processing' ? c.stopLocalText(item) : c.localText(item))
+                }
+              >
+                {item.status === 'processing' ? '停止提取' : '提取文字（离线）'}
+              </button>
+            </div>
+          ))}
       {c.reading && (
         <Suspense fallback={<p>正在加载阅读器…</p>}>
           <PdfReader

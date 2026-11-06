@@ -18,6 +18,7 @@ export type MaterialStage = {
   state: 'staged' | 'committed' | 'cancelled';
   task_id?: string;
   restored_source_id?: string;
+  restore_source_id?: string;
 };
 export interface MaterialStorePort {
   stage(token: string): MaterialStage | undefined;
@@ -101,7 +102,14 @@ export function createMaterialApplication(ports: {
     return {
       ok: true,
       materials: store.list(scope),
-      staged: pending ? { token: pending.token, name: pending.name, bytes: pending.bytes } : null,
+      staged: pending
+        ? {
+            token: pending.token,
+            name: pending.name,
+            bytes: pending.bytes,
+            ...(pending.restore_source_id ? { restore_source_id: pending.restore_source_id } : {}),
+          }
+        : null,
     };
   };
   const start = (source: Material, ocr: boolean, force = false) => {
@@ -209,6 +217,11 @@ export function createMaterialApplication(ports: {
             await files.discard(r.token);
             return success(r.scope);
           }
+          if (staged.restore_source_id)
+            return fail(
+              'RESTORE_REQUIRED',
+              '这是恢复原件的暂存，请重试恢复或移除；不能导入为新附件。',
+            );
           committing = true;
           try {
             const bytes = await files.placedOrStaged(r.token, staged.sha256);
@@ -242,6 +255,12 @@ export function createMaterialApplication(ports: {
             staged = store.stage(r.token);
           if (staged?.state === 'committed' && staged.restored_source_id === source.id)
             return success(r.scope);
+          if (jobs.has(source.id) || committing) return fail('BUSY', '当前文件正在处理。');
+          if (staged?.state === 'staged' && staged.scope === r.scope) {
+            if (staged.restore_source_id && staged.restore_source_id !== source.id)
+              return fail('MISMATCH', '恢复目标不一致。');
+            store.putStage({ ...staged, restore_source_id: source.id });
+          }
           if (
             !staged ||
             staged.scope !== r.scope ||
@@ -249,7 +268,6 @@ export function createMaterialApplication(ports: {
             staged.sha256 !== source.sha256
           )
             return fail('MISMATCH', '恢复文件与固定原件的哈希不一致，未替换原件。');
-          if (jobs.has(source.id) || committing) return fail('BUSY', '当前文件正在处理。');
           committing = true;
           try {
             await files.restore(staged.token, source.asset_version_id, source.sha256);

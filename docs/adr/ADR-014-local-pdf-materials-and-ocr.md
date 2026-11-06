@@ -26,3 +26,5 @@ PDF.js 阅读当前固定版本。后台 PDF.js 在无 preload、无 Node 的隔
 复用 material_previews 记录固定来源、物理页、渲染配置及图像摘要，图像不存入消息/SQLite；派发前从受管原件重建并验证摘要。最多 12 张扫描页、合计 24 MiB base64、文字 32,000 字符；超限明确失败，不能静默漏页。只保留现有 Pi Runtime；发送后的附件名称/来源/页码从 Application 清单投影到 Run，旧 Run 可无此字段，原件可从消息回看。
 
 参考机制（未复制源码）：OpenAI File Uploads FAQ、Claude Upload files to Claude、DeepSeek Vision 官方文档（2026-11-06），以及已安装 Pi AI 1.5.0 模型表与 Agent.prompt(input, images)。工程校验、合成 Provider 与真实 Key 质量/费用分别留证。
+
+阅读器保留无需 Key 的离线文字提取与停止，材料“更多”保留原件恢复，均非日常发送前置。恢复暂存持久保留 restore_source_id，失败/未知后按同 token/目标恢复；commit拒绝把恢复暂存变成新导入。界面读取诊断与导入阻断分开，不能因历史阅读错误永久阻止已恢复附件发送。

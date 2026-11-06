@@ -39,6 +39,7 @@ for (const file of [
   'chat-visual-analysis.png',
   'chat-message-reader.png',
   'chat-local-fallback.png',
+  'chat-offline-reader.png',
   'materials-reopened.png',
   'task-body-saved.png',
   'task-body-reopened.png',

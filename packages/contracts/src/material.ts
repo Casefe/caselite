@@ -55,6 +55,7 @@ export const materialSchema = z.object({
 export type Material = z.infer<typeof materialSchema>;
 export const stagedPdfSchema = z.object({
   token: id,
+  restore_source_id: id.optional(),
   name: z.string(),
   bytes: z.number().int().positive(),
 });

@@ -224,6 +224,27 @@ export async function runMaterialDemo(
     )
       throw new Error('Local fallback selection mismatch');
     await capture('chat-local-fallback');
+    stage = 'offline-reader-ocr-without-key';
+    await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'clear_key',provider:'deepseek'})",
+    );
+    await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'clear_key',provider:'openai'})",
+    );
+    const noKey = await evaluate("window.caselite.agent({protocol_version:1,operation:'profile'})");
+    if (noKey.providers.openai || noKey.providers.deepseek)
+      throw new Error('Demo keys were not cleared');
+    const oldDerivation = items.find((item) => item.id === scan.id)!.derivation_id;
+    await evaluate(
+      "[...document.querySelectorAll('.message-attachments button')].find(b=>b.textContent.includes('scan.pdf')).click()",
+    );
+    await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
+    await click('提取文字（离线）');
+    await waitFor(
+      `window.caselite.material({protocol_version:1,operation:'list',scope:'home'}).then(r=>r.ok && r.materials.some(m=>m.id===${JSON.stringify(scan.id)} && m.derivation_id!==${JSON.stringify(oldDerivation)} && m.status==='ready'))`,
+    );
+    await capture('chat-offline-reader');
+    await click('收起阅读');
     stage = 'task-body-regression';
     await openTask(items[0].task_id);
     await evaluate(
@@ -260,6 +281,7 @@ export async function runMaterialDemo(
           importPendingAtSend,
           visualImages: images.length,
           inputCleared: true,
+          offlineReaderWithoutKey: true,
           attachmentMessages: 2,
           network: 'HTTP(S) blocked; no Key or remote model used',
           agentDispatch:
