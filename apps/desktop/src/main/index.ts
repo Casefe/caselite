@@ -516,6 +516,7 @@ if (taskDemoPhase) {
       'agent-preview',
       'agent-crash',
       'agent-read',
+      'agent-credential-read',
       'agent-crash-synthetic',
       'agent-read-synthetic',
       'appearance-write',
@@ -740,6 +741,7 @@ app
       runtime: createPiRuntime(
         credentialUi ||
           taskDemoPhase === 'agent-read' ||
+          taskDemoPhase === 'agent-credential-read' ||
           taskDemoPhase === 'agent-read-synthetic' ||
           taskDemoPhase === 'materials-read'
           ? () => {
@@ -787,14 +789,18 @@ app
     }
     if (
       taskDemoRoot &&
-      ['agent-crash', 'agent-read', 'agent-crash-synthetic', 'agent-read-synthetic'].includes(
-        taskDemoPhase ?? '',
-      )
+      [
+        'agent-crash',
+        'agent-read',
+        'agent-credential-read',
+        'agent-crash-synthetic',
+        'agent-read-synthetic',
+      ].includes(taskDemoPhase ?? '')
     ) {
       await runAgentHistoryProbe(
         () => createWindow(),
         taskDemoRoot,
-        taskDemoPhase!.startsWith('agent-crash') ? 'agent-crash' : 'agent-read',
+        taskDemoPhase!.startsWith('agent-crash') ? 'agent-crash' : taskDemoPhase!,
       );
       app.exit(0);
       return;

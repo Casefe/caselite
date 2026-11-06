@@ -398,6 +398,79 @@ export async function runAgentHistoryProbe(
   };
   try {
     await wait("document.querySelector('[data-testid=agent-input]')");
+    const profile = await evaluate(
+      "window.caselite.agent({protocol_version:1,operation:'profile'})",
+    );
+    if (phase === 'agent-credential-read') {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      const unavailable = Boolean(
+        profile.credential_errors?.[profile.model.startsWith('deepseek') ? 'deepseek' : 'openai'],
+      );
+      if (unavailable) {
+        await wait("document.body.innerText.includes('系统安全凭据暂不可读')");
+        const denied = await evaluate(
+          `window.caselite.agent({protocol_version:1,operation:'start',scope:'home',run_id:${JSON.stringify(randomUUID())},prompt:'不应派发的合成测试',confirmed:true,model:${JSON.stringify(profile.model)}})`,
+        );
+        if (denied.ok || denied.code !== 'CREDENTIAL_UNAVAILABLE')
+          throw new Error('Unavailable credential was not rejected');
+      }
+      const capture = async (name: string) => {
+        const image = await window.webContents.capturePage();
+        writeFileSync(join(root, name), image.toPNG());
+      };
+      await capture('credential-home.png');
+      await evaluate("document.querySelector('[data-nav=settings]').click()");
+      await evaluate(
+        "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='模型')?.click()",
+      );
+      if (unavailable)
+        await wait(
+          "document.body.innerText.includes('凭据不可读') && document.body.innerText.includes('不表示密钥已删除')",
+        );
+      await capture('credential-settings.png');
+      await evaluate("document.querySelector('[data-nav=tasks]').click()");
+      await wait("document.querySelector('[data-testid=new-task]')");
+      await evaluate("document.querySelector('[data-testid=new-task]').click()");
+      await wait("document.querySelector('[data-testid=task-title]')");
+      await evaluate(
+        `(()=>{const e=document.querySelector('[data-testid=task-title]');const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(e,'系统凭据等待时的人工任务');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+      );
+      await evaluate("document.querySelector('[data-testid=create-task]').click()");
+      await wait("document.querySelector('[data-testid=body-editor]')");
+      await evaluate(
+        "document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,'合成人工正文，安全存储失败不阻止保存。')",
+      );
+      await wait("document.querySelector('[data-testid=save-body]')?.disabled===false");
+      await evaluate("document.querySelector('[data-testid=save-body]').click()");
+      await wait(
+        "document.querySelector('[data-testid=save-body]')?.disabled===true && document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备' && document.querySelector('[data-testid=revision]')?.textContent==='1'",
+      );
+      await capture('credential-manual-task.png');
+      if (existsSync(join(root, 'unexpected-runtime.txt')))
+        throw new Error('Credential probe dispatched a Provider');
+      writeFileSync(
+        join(root, 'credential-recovery-result.json'),
+        JSON.stringify(
+          {
+            homepage: 'PASS_REAL',
+            manualTaskAndBodySave: 'PASS_REAL',
+            providerDispatch: 0,
+            credentialRecovery: unavailable
+              ? 'FAIL'
+              : profile.configured
+                ? 'PASS_REAL synthetic Key'
+                : 'NOT_RUN no Key',
+            profile,
+            realByok: 'NOT_RUN',
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     if (phase === 'agent-crash') {
       const profile = await evaluate(
           "window.caselite.agent({protocol_version:1,operation:'profile'})",
@@ -439,6 +512,10 @@ export async function runAgentHistoryProbe(
         throw new Error('Restarted Run statuses incorrect');
       if (existsSync(join(root, 'unexpected-runtime.txt')))
         throw new Error('Restart dispatched a Provider');
+      if (phase === 'agent-read' && (!profile.configured || profile.credential_errors))
+        throw new Error(
+          'System credential recovery unavailable; history recovered, Key not recovered',
+        );
       window.webContents.debugger.attach('1.3');
       await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
         width: 1920,
