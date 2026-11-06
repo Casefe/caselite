@@ -196,6 +196,9 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     );
     if (actualClipboard !== expectedClipboard)
       throw new Error('Native clipboard did not receive the original Markdown');
+    await wait("document.querySelector('.home-history-pin')");
+    await evaluate("document.querySelector('.home-history-pin').click()");
+    await wait("document.querySelector('.home-history-pin[aria-pressed=true]')");
     const screenshot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
@@ -410,6 +413,14 @@ export async function runAgentHistoryProbe(
       process.kill(process.pid, 'SIGKILL');
     } else {
       await wait("document.body.innerText.includes('上次运行被中断')");
+      await wait("document.querySelector('.home-history-pin[aria-pressed=true]')");
+      const history = await evaluate(
+        "window.caselite.agent({protocol_version:1,operation:'history'})",
+      );
+      if (!history.ok || history.runs.filter((r: { pinned?: boolean }) => r.pinned).length !== 1)
+        throw new Error('Pinned history did not survive restart');
+      await evaluate("document.querySelector('.home-history-open').click()");
+      await wait("document.querySelector('.home-history-detail')?.textContent.includes('演示')");
       const result = await evaluate(
         "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
       );

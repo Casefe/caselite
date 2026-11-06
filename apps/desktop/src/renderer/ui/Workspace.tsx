@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
 
-export type WorkspaceView = 'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings';
+export type WorkspaceView =
+  'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings' | 'agent-history';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
   { id: 'home', label: '首页', icon: 'home' },
   { id: 'tasks', label: '任务', icon: 'check' },

@@ -12,6 +12,7 @@ import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './u
 import { AppearanceProvider } from './ui/Appearance';
 import RecordList from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
+import AgentHistory from './ui/AgentHistory';
 import {
   DraftEditor,
   EditorSurface,
@@ -444,7 +445,14 @@ function Workbench() {
               setObjective(agentPrompt);
               setAgentPrompt(emptyDraft());
             }}
+            onNavigate={navigate}
             tasks={tasks}
+            onOpen={(id) => void open(id)}
+          />
+        ) : view === 'agent-history' ? (
+          <AgentHistory
+            tasks={tasks}
+            onBack={() => navigate('home')}
             onOpen={(id) => void open(id)}
           />
         ) : view === 'tasks' && active ? (

@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
-import type { Task } from '../../preload/caselite-api';
+import type { AgentRun, Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import BrandLogo from './BrandLogo';
 import AgentPanel from './AgentPanel';
@@ -26,17 +26,72 @@ const starters = [
 export default function AgentHome({
   prompt,
   onPrompt,
+  onNavigate,
   onStart,
   tasks,
   onOpen,
 }: {
   prompt: RichDraft;
   onPrompt(value: RichDraft): void;
-  onStart(): void;
+  onNavigate(view: 'tasks' | 'projects' | 'agent-history'): void;
+  onStart?(): void;
   tasks: Task[];
   onOpen(id: string): void;
 }) {
   const draft = useRef<DraftEditorHandle>(null);
+  const [history, setHistory] = useState<AgentRun[] | null>(null);
+  const [historyError, setHistoryError] = useState('');
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  const historyVersion = useRef(0);
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const read = async () => {
+      const version = historyVersion.current;
+      try {
+        const result = await window.caselite.agent({ protocol_version: 1, operation: 'history' });
+        if (stopped) return;
+        if (version !== historyVersion.current) {
+          timer = setTimeout(() => void read(), 2000);
+          return;
+        }
+        if (result.ok) {
+          setHistory(result.runs);
+          setHistoryError('');
+        } else setHistoryError(result.message);
+      } catch {
+        if (!stopped) setHistoryError('历史对话读取失败，请稍后重试。');
+      }
+      if (!stopped) timer = setTimeout(() => void read(), 2000);
+    };
+    void read();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, []);
+  const changePin = async (run: AgentRun) => {
+    historyVersion.current++;
+    setPinBusy(true);
+    try {
+      const result = await window.caselite.agent({
+        protocol_version: 1,
+        operation: 'pin_history',
+        run_id: run.id,
+        pinned: !run.pinned,
+      });
+      if (result.ok) {
+        setHistory(result.runs);
+        setHistoryError('');
+      } else setHistoryError(result.message);
+    } catch {
+      setHistoryError('置顶状态保存失败，请重试。');
+    } finally {
+      historyVersion.current++;
+      setPinBusy(false);
+    }
+  };
   const [conversation, setConversation] = useState(false);
   const [overview, setOverview] = useState(false);
   return (
@@ -92,25 +147,66 @@ export default function AgentHome({
             ))}
           </div>
         </div>
-        <section className="home-task-feed" aria-label="继续工作">
+        <section className="home-task-feed home-history" aria-label="历史对话">
           <header>
-            <h2>继续工作</h2>
-            <span>{tasks.length} 个本地任务</span>
+            <h2>
+              <button className="home-section-link" onClick={() => onNavigate('agent-history')}>
+                历史对话
+              </button>
+            </h2>
+            <span>最近五轮 · 最多置顶三轮</span>
           </header>
-          {tasks.slice(0, 5).map((task) => (
-            <button key={task.id} onClick={() => onOpen(task.id)}>
-              <Icon name="check" size={16} />
-              <span>
-                <strong>{task.title}</strong>
-                <small>{task.objective || '独立任务'}</small>
-              </span>
-              <span className="revision-badge">
-                {task.body_revision ? `修订 ${task.body_revision}` : '待起草'}
-              </span>
-              <Icon name="chevron" size={13} />
-            </button>
+          {historyError && (
+            <p role="alert" className="home-task-empty">
+              {historyError}
+            </p>
+          )}
+          {!history && !historyError && <p className="home-task-empty">正在读取历史对话…</p>}
+          {history && !history.length && (
+            <p className="home-task-empty">还没有 AI 对话，开始提问后会显示在这里。</p>
+          )}
+          {history?.map((run) => (
+            <article key={run.id} className="home-history-item">
+              <div className="home-history-row">
+                <button
+                  className="home-history-open"
+                  aria-expanded={expandedRun === run.id}
+                  onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
+                >
+                  <Icon name="clock" size={16} />
+                  <span>
+                    <strong>{run.prompt}</strong>
+                    <small>
+                      {run.scope === 'home'
+                        ? '首页对话'
+                        : `任务对话 · ${tasks.find((task) => task.id === run.scope)?.title ?? '任务'}`}
+                      {run.created_at
+                        ? ` · ${new Date(run.created_at).toLocaleString('zh-CN')}`
+                        : ''}
+                    </small>
+                  </span>
+                </button>
+                <button
+                  className="home-history-pin"
+                  disabled={pinBusy}
+                  aria-label={`${run.pinned ? '取消置顶' : '置顶'}：${run.prompt}`}
+                  aria-pressed={Boolean(run.pinned)}
+                  onClick={() => void changePin(run)}
+                >
+                  {run.pinned ? '已置顶' : '置顶'}
+                </button>
+              </div>
+              {expandedRun === run.id && (
+                <div className="home-history-detail">
+                  <p>{run.prompt}</p>
+                  <p>{run.output || run.message || '等待模型响应…'}</p>
+                  {run.scope !== 'home' && (
+                    <button onClick={() => onOpen(run.scope)}>打开所属任务</button>
+                  )}
+                </div>
+              )}
+            </article>
           ))}
-          {!tasks.length && <p>还没有任务。写下工作目标并选择“创建本地任务”。</p>}
         </section>
         <div className="agent-local">
           <i className="local-dot" />
