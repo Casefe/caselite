@@ -30,19 +30,19 @@ for (const phase of ['materials', 'materials-read']) {
     process.exit(1);
   }
 }
-const out = join(root, 'artifacts/evidence/material-demo');
+const out = join(root, 'artifacts/evidence/material-chat-demo');
 mkdirSync(out, { recursive: true });
 for (const file of [
   'pdf-drop-staged.png',
   'pdf-text-reader.png',
-  'pdf-ocr-progress.png',
-  'pdf-scan-ocr-reader.png',
-  'pdf-ocr-text.png',
-  'agent-selected-materials.png',
+  'chat-preparing.png',
+  'chat-visual-analysis.png',
+  'chat-message-reader.png',
+  'chat-local-fallback.png',
   'materials-reopened.png',
   'task-body-saved.png',
   'task-body-reopened.png',
-  'agent-material-analysis-synthetic.png',
+  'vision-pi-context.json',
   'material-pi-context.json',
   'materials-write.json',
   'materials-read.json',

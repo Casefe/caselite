@@ -20,10 +20,17 @@ export interface AgentHistoryPort {
   save(run: AgentRun): void;
 }
 
+export type AgentImage = { type: 'image'; mimeType: 'image/png'; data: string };
+export type AgentContext = {
+  text: string;
+  images?: AgentImage[];
+  attachments?: AgentRun['attachments'];
+};
 export interface AgentRuntimePort {
   start(input: {
     model: AgentModel;
     prompt: string;
+    images?: AgentImage[];
     key: string;
     onText(text: string): void;
     onEnd(result: {
@@ -45,7 +52,7 @@ export function createAgentApplication(ports: {
     scope: string,
     instruction: string,
     model: AgentModel,
-  ): Promise<string>;
+  ): Promise<string | AgentContext>;
 }) {
   const runs = new Map<string, { owner: string; run: AgentRun; cancel?: () => void }>();
   let historyUnavailable = false;
@@ -154,7 +161,7 @@ export function createAgentApplication(ports: {
                 'NO_KEY',
                 '请先配置所选服务商的 API Key。不会使用其他软件的登录或额度。',
               );
-            let runtimePrompt: string | undefined;
+            let runtimePrompt: string | AgentContext | undefined;
             const generation = ownerGeneration.get(owner) ?? 0;
             ownerGeneration.set(owner, generation);
             preparing = true;
@@ -182,6 +189,9 @@ export function createAgentApplication(ports: {
               scope: request.scope,
               prompt: request.prompt,
               ...(request.context_id ? { context_id: request.context_id } : {}),
+              ...(typeof runtimePrompt === 'object'
+                ? { attachments: runtimePrompt.attachments }
+                : {}),
               output: '',
               status: 'running',
               sequence: 0,
@@ -208,7 +218,8 @@ export function createAgentApplication(ports: {
                 dispatched++;
                 const handle = ports.runtime.start({
                   model: selectedModel,
-                  prompt: runtimePrompt,
+                  prompt: typeof runtimePrompt === 'string' ? runtimePrompt : runtimePrompt.text,
+                  images: typeof runtimePrompt === 'object' ? runtimePrompt.images : undefined,
                   key,
                   onText(text) {
                     if (run.status === 'running') {

@@ -2,46 +2,14 @@
 import React from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { AgentRequest, MaterialPreview } from '../../preload/caselite-api';
-const state = vi.hoisted(() => ({ preview: vi.fn(), signature: 'selected-original' }));
-vi.mock('./useMaterials', () => ({
-  useMaterials: () => ({
-    available: true,
-    items: [],
-    error: '',
-    busy: false,
-    staged: null,
-    reading: null,
-    selected: { one: '' },
-    signature: state.signature,
-    canNewHome: false,
-    preview: state.preview,
-  }),
-}));
-vi.mock('./PdfAttachments', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-vi.mock('../editors/RichEditor', () => ({
-  emptyDraft: () => ({ text: '', state: null }),
-  DraftEditor: ({
-    value,
-    onChange,
-    label,
-    disabled,
-  }: {
-    value: { text: string };
-    onChange(v: { text: string; state: null }): void;
-    label: string;
-    disabled: boolean;
-  }) => (
-    <textarea
-      aria-label={label}
-      value={value.text}
-      disabled={disabled}
-      onChange={(e) => onChange({ text: e.target.value, state: null })}
-    />
-  ),
-}));
+import type {
+  AgentRequest,
+  AgentResponse,
+  AgentRun,
+  MaterialResponse,
+  Material,
+} from '../../preload/caselite-api';
+import AgentPanel from './AgentPanel';
 vi.stubGlobal(
   'ResizeObserver',
   class {
@@ -50,67 +18,208 @@ vi.stubGlobal(
     disconnect() {}
   },
 );
-import AgentPanel from './AgentPanel';
-afterEach(() => {
-  cleanup();
-  state.preview.mockReset();
-  state.signature = 'selected-original';
-});
-const profile = {
-  ok: true,
-  configured: true,
-  model: 'gpt-4.1-mini',
-  providers: { openai: true, deepseek: false },
-  runs: [],
-};
-const context: MaterialPreview = {
+afterEach(cleanup);
+const file: Material = {
   id: '22222222-2222-4222-8222-222222222222',
   task_id: '33333333-3333-4333-8333-333333333333',
+  asset_version_id: '22222222-2222-4222-8222-222222222222',
+  name: '合同.pdf',
+  sha256: '0'.repeat(64),
+  bytes: 100,
+  page_count: 1,
+  derivation_id: null,
+  status: 'imported',
+  pages: [],
+};
+const context = {
+  id: '44444444-4444-4444-8444-444444444444',
+  task_id: file.task_id,
   instruction: '核对材料',
   model: 'gpt-4.1-mini',
-  payload: '合同.pdf 物理页1 合成材料',
+  payload: '唯一附件内容',
   sha256: '0'.repeat(64),
-  selections: [],
+  selections: [
+    {
+      source_id: file.id,
+      derivation_id: '55555555-5555-4555-8555-555555555555',
+      name: file.name,
+      pages: [1],
+    },
+  ],
 };
-it('discards an asynchronous material preview when the instruction changes', async () => {
-  let finish!: (value: MaterialPreview) => void;
-  state.preview.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  window.caselite = { agent: vi.fn(async () => profile) } as unknown as Window['caselite'];
-  render(<AgentPanel scope="55555555-5555-4555-8555-555555555555" />);
-  const input = screen.getByLabelText('AI 工作要求');
-  fireEvent.change(input, { target: { value: '核对材料' } });
-  fireEvent.submit(input.closest('form')!);
-  fireEvent.change(input, { target: { value: '新的要求' } });
-  await act(async () => finish(context));
-  expect(screen.queryByLabelText('发送预览')).toBeNull();
-});
-it('restores the same material manifest when an unknown send is reopened', async () => {
-  state.preview.mockResolvedValue(context);
-  const agent = vi.fn(async (r: AgentRequest) =>
-    r.operation === 'start' ? { ok: false, code: 'RESULT_UNKNOWN', message: '结果未知' } : profile,
-  );
-  window.caselite = { agent } as unknown as Window['caselite'];
-  const scope = '66666666-6666-4666-8666-666666666666';
-  const view = render(<AgentPanel scope={scope} />);
-  const input = screen.getByLabelText('AI 工作要求');
-  fireEvent.change(input, { target: { value: '核对材料' } });
-  fireEvent.submit(input.closest('form')!);
-  await screen.findByText(context.payload);
+function fixture() {
+  let finishImport!: (r: MaterialResponse) => void;
+  let finishRun!: (r: AgentResponse) => void;
+  let items: Material[] = [];
+  let runs: AgentRun[] = [];
+  const sent: Extract<AgentRequest, { operation: 'start' }>[] = [];
+  const profile = (): AgentResponse => ({
+    ok: true,
+    configured: true,
+    providers: { openai: true, deepseek: false },
+    model: 'gpt-4.1-mini',
+    runs,
+  });
+  const material = vi.fn(async (r) => {
+    if (r.operation === 'commit') {
+      const result = await new Promise<MaterialResponse>((done) => {
+        finishImport = done;
+      });
+      if (result.ok) items = result.materials;
+      return result;
+    }
+    if (r.operation === 'preview') return { ok: true, materials: items, preview: context };
+    return { ok: true, materials: items };
+  });
+  window.caselite = {
+    pickPdf: vi.fn(async () => ({
+      ok: true,
+      materials: [],
+      staged: { token: file.id, name: file.name, bytes: file.bytes },
+    })),
+    material,
+    agent: vi.fn(async (r: AgentRequest) => {
+      if (r.operation !== 'start') return profile();
+      sent.push(r);
+      return new Promise<AgentResponse>((done) => {
+        finishRun = done;
+      });
+    }),
+  } as unknown as Window['caselite'];
+  return {
+    material,
+    sent,
+    finishImport: (r: MaterialResponse) => finishImport(r),
+    finishRun: (r: AgentResponse) => finishRun(r),
+    accept() {
+      const r = sent[0];
+      runs = [
+        {
+          id: r.run_id,
+          scope: r.scope,
+          model: 'gpt-4.1-mini',
+          provider: 'openai',
+          prompt: r.prompt,
+          output: '合成回答',
+          attachments: [{ source_id: file.id, task_id: file.task_id, name: file.name, pages: [1] }],
+          status: 'succeeded',
+          sequence: 1,
+          message: '完成',
+          usage: null,
+        },
+      ];
+      finishRun(profile());
+    },
+  };
+}
+it('waits for pending import on one Send, then moves the attachment to the message and clears the composer', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="abababab-abab-4bab-8bab-abababababab" />);
+  await screen.findByText('已配置 · 模型设置');
+  fireEvent.click(screen.getByText('＋ 文件'));
   await waitFor(() =>
-    expect((screen.getByRole('button', { name: '确认发送' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    ),
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
   );
-  fireEvent.click(screen.getByRole('button', { name: '确认发送' }));
-  await screen.findByText('结果未知');
-  view.unmount();
-  render(<AgentPanel scope={scope} />);
-  expect(screen.getByText(context.payload)).toBeTruthy();
-  expect(screen.getByLabelText('发送预览').textContent).toContain('包含下列指令和所选材料文字');
-  expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(1);
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '核对材料' } });
+  expect(f.sent).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  expect(f.sent).toHaveLength(0);
+  await act(async () => f.finishImport({ ok: true, materials: [file] }));
+  await waitFor(() => expect(f.sent).toHaveLength(1));
+  expect(f.sent[0]).toMatchObject({ prompt: '核对材料', context_id: context.id });
+  await act(async () => f.accept());
+  await waitFor(() => expect(input.value).toBe(''));
+  expect(screen.queryByLabelText('待发送附件')).toBeNull();
+  expect(document.querySelector('.message-attachments')?.textContent).toContain('合同.pdf');
+});
+it('does not erase next-round typing on late acceptance and never dispatches missing attachments', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc" />);
+  await screen.findByText('已配置 · 模型设置');
+  fireEvent.click(screen.getByText('＋ 文件'));
+  await waitFor(() =>
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
+  );
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '核对材料' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  fireEvent.change(input, { target: { value: '下一轮要求' } });
+  await act(async () => f.finishImport({ ok: false, code: 'FAILED', message: '文件无法导入' }));
+  await screen.findAllByText('文件无法导入');
+  expect(f.sent).toHaveLength(0);
+  expect(input.value).toBe('下一轮要求');
+});
+it('preserves later edits after a successful attachment submission', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd" />);
+  await screen.findByText('已配置 · 模型设置');
+  fireEvent.click(screen.getByText('＋ 文件'));
+  await waitFor(() =>
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
+  );
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '核对材料' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  fireEvent.change(input, { target: { value: '不要擦掉下一轮' } });
+  await act(async () => f.finishImport({ ok: true, materials: [file] }));
+  await waitFor(() => expect(f.sent).toHaveLength(1));
+  await act(async () => f.accept());
+  expect(input.value).toBe('不要擦掉下一轮');
+  expect(screen.queryByLabelText('待发送附件')).toBeNull();
+});
+
+it('an old unmounted instance cannot erase a new controlled draft when its acknowledgement arrives', async () => {
+  const f = fixture();
+  const scope = 'dededede-dede-4ede-8ede-dededededede';
+  function Host() {
+    const [visible, setVisible] = React.useState(true);
+    const [draft, setDraft] = React.useState({ text: '', state: null });
+    return (
+      <>
+        <button onClick={() => setVisible(!visible)}>切换面板</button>
+        {visible && <AgentPanel scope={scope} draft={draft} onDraft={setDraft} />}
+      </>
+    );
+  }
+  render(<Host />);
+  await screen.findByText('已配置 · 模型设置');
+  fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: 'A' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(f.sent).toHaveLength(1));
+  fireEvent.click(screen.getByText('切换面板'));
+  fireEvent.click(screen.getByText('切换面板'));
+  fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: 'B' } });
+  await act(async () => f.accept());
+  await waitFor(() => expect(document.querySelector('.assistant-message')).toBeTruthy());
+  expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('B');
+  expect(f.sent).toHaveLength(1);
+});
+it('a new edit with identical text is still a new draft and survives acknowledgement', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="efefefef-efef-4fef-8fef-efefefefefef" />);
+  await screen.findByText('已配置 · 模型设置');
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '继续' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(f.sent).toHaveLength(1));
+  fireEvent.change(input, { target: { value: '新的问题' } });
+  fireEvent.change(input, { target: { value: '继续' } });
+  await act(async () => f.accept());
+  expect(input.value).toBe('继续');
+});
+it('cancels a pending upload submission without starting a paid run', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="fafafafa-fafa-4afa-8afa-fafafafafafa" />);
+  await screen.findByText('已配置 · 模型设置');
+  fireEvent.click(screen.getByText('＋ 文件'));
+  await waitFor(() =>
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
+  );
+  fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: '核对材料' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  fireEvent.click(screen.getByText('取消发送'));
+  await act(async () => f.finishImport({ ok: true, materials: [file] }));
+  expect(f.sent).toHaveLength(0);
+  expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('核对材料');
 });

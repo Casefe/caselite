@@ -44,26 +44,52 @@ const profile: AgentResponse = {
   runs: [],
 };
 describe('AI submission UI lifecycle', () => {
-  it('opens a preview on composer submit without starting a run, including after composition', async () => {
-    const agent = vi
-      .fn<(request: AgentRequest) => Promise<AgentResponse>>()
-      .mockResolvedValue(profile);
+  it('selects a configured model without starting an AI run', async () => {
+    let current: AgentResponse = {
+      ...profile,
+      providers: { openai: true, deepseek: true },
+    };
+    const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+      if (request.operation === 'select_model') current = { ...current, model: request.model };
+      return current;
+    });
     window.caselite = { agent } as unknown as Window['caselite'];
-    render(<AgentPanel scope="44444444-4444-4444-8444-444444444444" />);
-    const input = screen.getByLabelText('AI 工作要求');
-    expect(input.tagName).toBe('TEXTAREA');
-    fireEvent.change(input, { target: { value: '中文输入\n第二行' } });
-    const form = input.closest('form')!;
-    fireEvent.compositionStart(input);
-    fireEvent.submit(form);
-    expect(screen.queryByLabelText('发送预览')).toBeNull();
-    fireEvent.compositionEnd(input);
-    fireEvent.submit(form);
-    expect(screen.getByLabelText('发送预览').textContent).toContain('中文输入\n第二行');
+    render(<AgentPanel scope="home" />);
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('option', { name: 'deepseek-flash' }) as HTMLOptionElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.change(screen.getByLabelText('选择大模型'), { target: { value: 'deepseek-flash' } });
+    await waitFor(() =>
+      expect(agent).toHaveBeenCalledWith({
+        protocol_version: 1,
+        operation: 'select_model',
+        model: 'deepseek-flash',
+      }),
+    );
     expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
   });
-  it('invalidates a preview when a starter is appended', () => {
-    window.caselite = { agent: vi.fn(async () => profile) } as unknown as Window['caselite'];
+  it('typing and IME never dispatch; one submit sends the text without a confirmation screen', async () => {
+    const agent = vi.fn(async () => profile);
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope="10101010-1010-4010-8010-101010101010" />);
+    await screen.findByText('已配置 · 模型设置');
+    const input = screen.getByLabelText('AI 工作要求');
+    fireEvent.change(input, { target: { value: '中文输入\n第二行' } });
+    fireEvent.compositionStart(input);
+    fireEvent.submit(input.closest('form')!);
+    expect(agent.mock.calls.some(([r]) => (r as AgentRequest)?.operation === 'start')).toBe(false);
+    fireEvent.compositionEnd(input);
+    fireEvent.submit(input.closest('form')!);
+    await waitFor(() =>
+      expect(agent.mock.calls.some(([r]) => (r as AgentRequest)?.operation === 'start')).toBe(true),
+    );
+    expect(screen.queryByLabelText('发送预览')).toBeNull();
+  });
+  it('a starter appends to the editable input without dispatch', () => {
+    const agent = vi.fn(async () => profile);
+    window.caselite = { agent } as unknown as Window['caselite'];
     function Home() {
       const [draft, setDraft] = React.useState<{ text: string; state: number[] | null }>({
         text: '',
@@ -79,13 +105,11 @@ describe('AI submission UI lifecycle', () => {
     }
     render(<Home />);
     fireEvent.change(screen.getByLabelText('Agent 工作目标'), { target: { value: '原始内容' } });
-    fireEvent.click(screen.getByLabelText('预览发送'));
-    expect(screen.getByLabelText('发送预览').textContent).toContain('原始内容');
     fireEvent.click(screen.getByText('追加'));
-    expect(screen.queryByLabelText('发送预览')).toBeNull();
     expect((screen.getByLabelText('Agent 工作目标') as HTMLTextAreaElement).value).toBe(
       '原始内容\n补充提示',
     );
+    expect(agent.mock.calls.some(([r]) => (r as AgentRequest)?.operation === 'start')).toBe(false);
   });
   it('a late response from an unmounted panel cannot erase a newer unknown submission', async () => {
     let resolveA: (value: AgentResponse) => void = () => {};
@@ -131,11 +155,8 @@ describe('AI submission UI lifecycle', () => {
     const scope = '88888888-8888-4888-8888-888888888888';
     const first = render(<AgentPanel scope={scope} />);
     fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: 'A' } });
-    fireEvent.click(screen.getByText('预览发送'));
-    await waitFor(() =>
-      expect((screen.getByText('确认发送') as HTMLButtonElement).disabled).toBe(false),
-    );
-    fireEvent.click(screen.getByText('确认发送'));
+    await screen.findByText('已配置 · 模型设置');
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sent.length).toBe(1));
     first.unmount();
     accepted = true;
@@ -144,8 +165,7 @@ describe('AI submission UI lifecycle', () => {
       expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).disabled).toBe(false),
     );
     fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: 'B' } });
-    fireEvent.click(screen.getByText('预览发送'));
-    fireEvent.click(screen.getByText('确认发送'));
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sent.length).toBe(2));
     await act(async () => {
       resolveA(snapshot());
@@ -178,13 +198,10 @@ describe('AI submission UI lifecycle', () => {
     const scope = '55555555-5555-4555-8555-555555555555';
     const first = render(<AgentPanel scope={scope} />);
     fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: '保留发送身份' } });
-    fireEvent.click(screen.getByText('预览发送'));
-    await waitFor(() =>
-      expect((screen.getByText('确认发送') as HTMLButtonElement).disabled).toBe(false),
-    );
-    fireEvent.click(screen.getByText('确认发送'));
+    await screen.findByText('已配置 · 模型设置');
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText('核对原发送（同一标识）');
-    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).disabled).toBe(false);
     first.unmount();
     render(<AgentPanel scope={scope} />);
     await waitFor(() =>
@@ -216,8 +233,7 @@ describe('AI submission UI lifecycle', () => {
     render(<AgentPanel scope="77777777-7777-4777-8777-777777777777" />);
     expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('');
   });
-  it('freezes the DeepSeek model in a preview even if the default changes before confirmation', async () => {
-    let model: 'deepseek-flash' | 'gpt-4.1-mini' = 'deepseek-flash';
+  it('retains the draft when the host rejects a changed model', async () => {
     const sent: AgentRequest[] = [];
     window.caselite = {
       agent: vi.fn(async (r: AgentRequest) => {
@@ -225,19 +241,18 @@ describe('AI submission UI lifecycle', () => {
           sent.push(r);
           return { ok: false, code: 'MODEL_CHANGED', message: '默认模型已变化，本次未发送。' };
         }
-        return { ...profile, model, providers: { openai: true, deepseek: true } };
+        return { ...profile, model: 'deepseek-flash', providers: { openai: true, deepseek: true } };
       }),
     } as unknown as Window['caselite'];
     render(<AgentPanel scope="99999999-9999-4999-8999-999999999999" />);
     await screen.findByText('DeepSeek · deepseek-flash');
     fireEvent.change(screen.getByLabelText('AI 工作要求'), { target: { value: '冻结目标测试' } });
-    fireEvent.click(screen.getByText('预览发送'));
-    model = 'gpt-4.1-mini';
-    await screen.findByText('OpenAI · gpt-4.1-mini');
-    expect(screen.getByLabelText('发送预览').textContent).toContain('deepseek-flash');
-    fireEvent.click(screen.getByText('确认发送'));
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText('默认模型已变化，本次未发送。');
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ model: 'deepseek-flash' });
+    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe(
+      '冻结目标测试',
+    );
   });
 });

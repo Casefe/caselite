@@ -10,27 +10,23 @@ vi.mock('./PdfReader', () => ({
 afterEach(cleanup);
 function controller(extra: Partial<MaterialController> = {}): MaterialController {
   return {
-    canNewHome: true,
     available: true,
     items: [],
     error: '',
     busy: false,
-    staged: null,
+    staged: undefined,
+    uploadingName: undefined,
     reading: null,
     selected: {},
-    signature: '',
     clearReading: vi.fn(),
     add: vi.fn(),
     errorMessage: vi.fn(),
-    commit: vi.fn(),
+    retry: vi.fn(),
+    acknowledge: vi.fn(),
+    cancelPreparation: vi.fn(),
     discard: vi.fn(),
-    read: vi.fn(),
-    process: vi.fn(),
-    cancel: vi.fn(),
-    restore: vi.fn(),
-    newHome: vi.fn(),
+    readReference: vi.fn(),
     select: vi.fn(),
-    range: vi.fn(),
     preview: vi.fn(),
     ...extra,
   };
@@ -50,13 +46,15 @@ it('sends only a real single-file drop to the controlled port and preserves the 
   expect(c.errorMessage).toHaveBeenCalledWith('每次添加一份 PDF，可多次添加。');
   expect(c.add).toHaveBeenCalledTimes(1);
 });
-it('staging offers explicit commit and cancel without claiming saved data', () => {
+it('restored incomplete staging offers retry and remove without claiming saved data', () => {
   const c = controller({ staged: { token: 'staged', name: '合同.pdf', bytes: 100 } });
   render(<PdfAttachments controller={c}>输入</PdfAttachments>);
-  expect(screen.getByText(/待导入/)).toBeTruthy();
-  fireEvent.click(screen.getByText('取消导入'));
+  expect(screen.getByText(/上次附件尚未完成/)).toBeTruthy();
+  fireEvent.click(screen.getByText('继续添加'));
+  expect(c.retry).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText('移除'));
   expect(c.discard).toHaveBeenCalledTimes(1);
-  expect(c.commit).not.toHaveBeenCalled();
+  expect(c.add).not.toHaveBeenCalled();
 });
 it('does not accept drops while an AI request is pending', () => {
   const c = controller(),

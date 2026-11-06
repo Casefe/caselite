@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   Material,
   MaterialScope,
-  MaterialResponse,
   MaterialRequest,
   MaterialPreview,
   AgentModel,
 } from '../../preload/caselite-api';
+
+// 这里只存输入框选择，原件与版本始终由 Application/SQLite 拥有。
+// 面板卸载不能丢失正在导入的附件，或让下一次发送绕过它。
+type DraftFiles = {
+  ids: Set<string>;
+  upload?: Promise<void>;
+  staged?: { token: string; name: string; bytes: number };
+  error: string;
+  name?: string;
+};
+const drafts = new Map<string, DraftFiles>();
 export function pageRange(value: string, count: number): number[] | null {
   if (!value.trim()) return Array.from({ length: count }, (_, i) => i + 1);
   const result = new Set<number>();
@@ -20,35 +30,58 @@ export function pageRange(value: string, count: number): number[] | null {
   }
   return [...result].sort((a, b) => a - b);
 }
+function getDraft(scope: string) {
+  if (!drafts.has(scope)) drafts.set(scope, { ids: new Set(), error: '' });
+  return drafts.get(scope)!;
+}
 export function useMaterials(scope: MaterialScope) {
-  const [items, setItems] = useState<Material[]>([]),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
-  const [staged, setStaged] = useState<{ token: string; name: string; bytes: number } | null>(null);
-  const [selected, setSelected] = useState<Record<string, string>>({});
+  const draft = getDraft(scope);
+  const [items, setItems] = useState<Material[]>([]);
+  const [, update] = useState(0);
   const [reading, setReading] = useState<{ id: string; name: string; bytes: Uint8Array } | null>(
     null,
   );
-  const alive = useRef(true),
-    lock = useRef(false);
+  const alive = useRef(true);
   const available = typeof window.caselite?.material === 'function';
+  const render = () => {
+    if (alive.current) update((n) => n + 1);
+  };
+  async function command(
+    request: Omit<MaterialRequest, 'protocol_version' | 'scope'>,
+    readScope = scope,
+  ) {
+    const result = await window.caselite.material({
+      protocol_version: 1,
+      scope: readScope,
+      ...request,
+    } as MaterialRequest);
+    if (!result.ok) throw new Error(result.message);
+    if (alive.current && readScope === scope) setItems(result.materials);
+    return result;
+  }
   useEffect(() => {
+    const draft = getDraft(scope);
     alive.current = true;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       if (!available) return;
       try {
-        const r = await window.caselite.material({ protocol_version: 1, operation: 'list', scope });
+        const result = await window.caselite.material({
+          protocol_version: 1,
+          operation: 'list',
+          scope,
+        });
         if (stopped) return;
-        if (r.ok) {
-          setItems(r.materials);
-          if (!lock.current) setStaged(r.staged ?? null);
-        } else setError(r.message);
+        if (result.ok) {
+          setItems(result.materials);
+          if (!draft.upload && result.staged) draft.staged = result.staged;
+          update((n) => n + 1);
+        }
       } catch {
-        if (!stopped) setError('材料列表暂不可用。');
+        /* 轮询失败不覆盖输入或导入回执；发送时重新核对。 */
       }
-      if (!stopped) timer = setTimeout(() => void poll(), 1000);
+      if (!stopped) timer = setTimeout(() => void poll(), 500);
     }
     void poll();
     return () => {
@@ -57,152 +90,153 @@ export function useMaterials(scope: MaterialScope) {
       clearTimeout(timer);
     };
   }, [scope, available]);
-  async function perform(call: () => Promise<MaterialResponse>) {
-    if (lock.current) return null;
-    lock.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      const r = await call();
-      if (!alive.current) return null;
-      if (!r.ok) {
-        setError(r.message);
-        return null;
+  async function importFile(file?: File, retry = false) {
+    if (draft.upload) return draft.upload;
+    draft.error = '';
+    draft.name = file?.name ?? draft.staged?.name;
+    const work = (async () => {
+      try {
+        let staged = draft.staged;
+        if (!retry && staged) throw new Error('上次附件尚未完成，请重试或移除后添加。');
+        if (!staged) {
+          const result = await (file
+            ? window.caselite.dropPdf(file, scope)
+            : window.caselite.pickPdf(scope));
+          if (!result.ok) throw new Error(result.message);
+          staged = result.staged ?? undefined;
+          if (!staged) return;
+          draft.staged = staged;
+          draft.name = staged.name;
+          render();
+        }
+        const result = await command({ operation: 'commit', token: staged.token } as Omit<
+          MaterialRequest,
+          'scope' | 'protocol_version'
+        >);
+        if (!result.materials.some((item) => item.id === staged!.token))
+          throw new Error('尚未确认附件导入，请重试原附件。');
+        draft.ids.add(staged.token);
+        draft.staged = undefined;
+        window.dispatchEvent(new Event('caselite:material-task-saved'));
+      } catch (error) {
+        draft.error = error instanceof Error ? error.message : '附件未导入，请重试。';
       }
-      setItems(r.materials);
-      return r;
-    } catch {
-      if (alive.current) setError('操作结果尚未确认，请保留输入并重试原提交。');
-      return null;
-    } finally {
-      lock.current = false;
-      if (alive.current) setBusy(false);
-    }
+    })().finally(() => {
+      draft.upload = undefined;
+      draft.name = undefined;
+      render();
+    });
+    draft.upload = work;
+    render();
+    return work;
   }
-  const command = (request: Omit<MaterialRequest, 'protocol_version' | 'scope'>) =>
-    perform(() =>
-      window.caselite.material({ protocol_version: 1, scope, ...request } as MaterialRequest),
-    );
-  const signature = JSON.stringify({
-    scope,
-    selected,
-    versions: items
-      .filter((item) => item.id in selected)
-      .map((item) => [item.id, item.derivation_id, item.status]),
-  });
-  const selection = useMemo(
-    () =>
-      Object.entries(selected).map(([id, range]) => ({
-        source_id: id,
-        pages: pageRange(range, items.find((item) => item.id === id)?.page_count ?? 0),
-      })),
-    [items, selected],
-  );
   return {
     available,
     items,
-    error,
-    busy,
-    staged,
     reading,
-    selected,
-    signature,
-    canNewHome: scope === 'home',
+    busy: Boolean(draft.upload),
+    staged: draft.staged,
+    uploadingName: draft.name,
+    error: draft.error,
+    selected: Object.fromEntries([...draft.ids].map((id) => [id, ''])),
     clearReading: () => setReading(null),
-    async add(file?: File) {
-      if (staged) {
-        setError('请先保存或取消当前暂存文件。');
-        return;
-      }
-      const r = await perform(() =>
-        file ? window.caselite.dropPdf(file, scope) : window.caselite.pickPdf(scope),
-      );
-      if (r?.staged) setStaged(r.staged);
+    async cancelPreparation() {
+      await command({ operation: 'cancel_prepare' });
     },
-    errorMessage: setError,
-    async commit() {
-      if (!staged) return;
-      const r = await command({ operation: 'commit', token: staged.token } as Omit<
-        MaterialRequest,
-        'scope' | 'protocol_version'
-      >);
-      if (r) {
-        setStaged(null);
-        window.dispatchEvent(new Event('caselite:material-task-saved'));
-      }
+    errorMessage(message: string) {
+      draft.error = message;
+      render();
     },
+    add: (file?: File) => importFile(file),
+    retry: () => importFile(undefined, true),
     async discard() {
-      if (!staged) return;
-      const r = await command({ operation: 'discard', token: staged.token } as Omit<
-        MaterialRequest,
-        'scope' | 'protocol_version'
-      >);
-      if (r) setStaged(null);
-    },
-    async read(item: Material) {
-      const r = await command({ operation: 'read', source_id: item.id } as Omit<
-        MaterialRequest,
-        'scope' | 'protocol_version'
-      >);
-      if (r?.data) setReading({ id: item.id, name: item.name, bytes: r.data });
-    },
-    async process(item: Material, ocr: boolean) {
-      await command({
-        operation: 'process',
-        source_id: item.id,
-        ocr,
-        force: item.status === 'ready',
-      } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
-    },
-    async cancel(item: Material) {
-      await command({ operation: 'cancel', source_id: item.id } as Omit<
-        MaterialRequest,
-        'scope' | 'protocol_version'
-      >);
-    },
-    async restore(item: Material) {
-      const stagedResult = await perform(() => window.caselite.pickPdf(scope));
-      if (stagedResult?.staged)
-        await command({
-          operation: 'restore',
-          source_id: item.id,
-          token: stagedResult.staged.token,
-        } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
-    },
-    async newHome() {
-      const r = await command({ operation: 'new_home' });
-      if (r) {
-        setSelected({});
-        setReading(null);
+      if (draft.upload) return;
+      try {
+        if (draft.staged)
+          await command({ operation: 'discard', token: draft.staged.token } as Omit<
+            MaterialRequest,
+            'scope' | 'protocol_version'
+          >);
+        draft.staged = undefined;
+        draft.error = '';
+        render();
+      } catch (error) {
+        draft.error = String(error);
+        render();
       }
     },
-    select(id: string, value: boolean) {
-      setSelected((old) => {
-        const next = { ...old };
-        if (value) next[id] = '';
-        else delete next[id];
-        return next;
-      });
+    select(id: string, selected: boolean) {
+      if (selected) draft.ids.add(id);
+      else draft.ids.delete(id);
+      render();
     },
-    range(id: string, value: string) {
-      setSelected((old) => ({ ...old, [id]: value }));
+    acknowledge(ids: string[]) {
+      ids.forEach((id) => draft.ids.delete(id));
+      render();
+    },
+    async readReference(id: string, task: string, name: string) {
+      try {
+        const result = await command(
+          { operation: 'read', source_id: id } as Omit<
+            MaterialRequest,
+            'scope' | 'protocol_version'
+          >,
+          task,
+        );
+        if (alive.current && result.data) setReading({ id, name, bytes: result.data });
+      } catch (error) {
+        draft.error = error instanceof Error ? error.message : '无法打开附件。';
+        render();
+      }
     },
     async preview(
       instruction: string,
       model: AgentModel,
-    ): Promise<MaterialPreview | null | undefined> {
-      if (!selection.length) return undefined;
-      if (selection.some((item) => !item.pages?.length)) {
-        setError('页范围无效，请输入如 1-3,5。');
-        return null;
-      }
-      const r = await command({
-        operation: 'preview',
-        instruction,
-        model,
-        selected: selection,
-      } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
-      return r?.preview ?? null;
+      signal?: AbortSignal,
+    ): Promise<MaterialPreview | undefined> {
+      // 点击发送时等待已开始的导入；UI在此期间锁定附件，但仍允许编辑下一轮文字。
+      const cancelled = () => {
+        if (signal?.aborted) throw new Error('已取消发送，附件和输入保留。');
+      };
+      const wait = async <T>(work: Promise<T>): Promise<T> => {
+        cancelled();
+        let stop = () => {};
+        try {
+          return await Promise.race([
+            work,
+            new Promise<never>((_resolve, reject) => {
+              stop = () => reject(new Error('已取消发送，附件和输入保留。'));
+              signal?.addEventListener('abort', stop, { once: true });
+            }),
+          ]);
+        } finally {
+          signal?.removeEventListener('abort', stop);
+        }
+      };
+      await wait(draft.upload ?? Promise.resolve());
+      cancelled();
+      if (draft.error || draft.staged) throw new Error(draft.error || '附件尚未导入完成，请重试。');
+      const ids = [...draft.ids];
+      if (!ids.length) return undefined;
+      const result = await wait(command({ operation: 'list' }));
+      cancelled();
+      const selected = ids.map((id) => {
+        const item = result.materials.find((material) => material.id === id);
+        if (!item || !item.page_count) throw new Error('附件尚不可用，本轮未发送。');
+        return { source_id: id, pages: pageRange('', item.page_count)! };
+      });
+      const prepared = await wait(
+        command({
+          operation: 'preview',
+          instruction,
+          model,
+          selected,
+          automatic: true,
+        } as Omit<MaterialRequest, 'scope' | 'protocol_version'>),
+      );
+      cancelled();
+      if (!prepared.preview) throw new Error('未获得完整附件，本轮未发送。');
+      return prepared.preview;
     },
   };
 }

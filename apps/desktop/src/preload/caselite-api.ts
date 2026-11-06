@@ -127,7 +127,14 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
-    material: (request) => materialResult(invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request)),
+    // 本地准备可能包含 OCR，使用受控 Worker 的处理预算；15秒业务回执只用于短操作和付费Run。
+    // cancel_prepare 可中止本地准备，准备本身永不调用外部模型。
+    material: (request) =>
+      materialResult(
+        request.operation === 'preview' && request.automatic
+          ? invoke(MATERIAL_CHANNEL, request)
+          : invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request),
+      ),
     pickPdf: (scope) => materialResult(invoke(MATERIAL_PICK_CHANNEL, { scope })),
     async dropPdf(file, scope) {
       const path = droppedPath?.(file);

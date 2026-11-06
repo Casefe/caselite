@@ -99,7 +99,10 @@ export async function runMaterialDemo(
       const items = await list();
       if (items.length !== 2 || items.some((item) => !item.pages.length))
         throw new Error('Restart lost material');
-      await click('scan.pdf');
+      await waitFor("document.querySelectorAll('.message-attachments').length===2");
+      await evaluate(
+        "[...document.querySelectorAll('.message-attachments button')].find(b=>b.textContent.includes('scan.pdf')).click()",
+      );
       await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
       if (existsSync(join(directory, 'unexpected-runtime.txt')))
         throw new Error('Unexpected restart dispatch');
@@ -128,7 +131,6 @@ export async function runMaterialDemo(
     await drop('text.pdf');
     await capture('pdf-drop-staged');
     stage = 'import-text';
-    await click('导入并保存');
     await waitFor("!document.querySelector('.material-staged')");
     let items = await settled();
     if (items.length !== 1 || items[0].status !== 'ready')
@@ -143,78 +145,85 @@ export async function runMaterialDemo(
       await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
       await click('收起阅读');
     }
-    stage = 'drop-scan';
+    stage = 'drop-and-send-scan';
     await drop('scan.pdf');
-    await click('导入并保存');
-    await waitFor("!document.querySelector('.material-staged')");
-    items = await settled();
-    const scan = items.find((item) => item.name === 'scan.pdf')!;
-    if (scan.status !== 'needs_ocr') throw new Error('Scan not classified');
-    stage = 'ocr';
-    await waitFor("document.body.textContent.includes('扫描页待识别')");
-    const started = Date.now();
-    await evaluate(
-      "[...document.querySelectorAll('.material-saved-card')].find(el=>el.textContent.includes('scan.pdf')).querySelector('.material-card-actions button').click()",
+    await evaluate("document.querySelector('[data-testid=agent-input]').focus()");
+    const instruction = '梳理两份材料中的事实、矛盾和缺件，形成律师内部沟通初稿。';
+    await evaluate(`document.execCommand('insertText',false,${JSON.stringify(instruction)})`);
+    const importPendingAtSend = await evaluate(
+      "Boolean(document.querySelector('.material-staged'))",
     );
-    await waitFor(
-      "[...document.querySelectorAll('.material-saved-card')].some(el=>el.textContent.includes('scan.pdf') && (el.textContent.includes('正在处理') || el.textContent.includes('OCR 已完成')))",
-    );
-    await capture('pdf-ocr-progress');
-    items = await settled();
-    const recognized = items.find((item) => item.id === scan.id)!;
-    if (
-      recognized.status !== 'ready' ||
-      !recognized.pages.some(
-        (page) => page.origin === 'ocr_candidate' && page.text.includes('合同'),
-      )
-    )
-      throw new Error('Vision did not recognize synthetic contract');
-    const ocrMs = Date.now() - started;
-    await click('scan.pdf');
-    await waitFor(
-      "Boolean(document.querySelector('.material-paper canvas')?.width) && document.body.textContent.includes('本地 OCR 文字')",
-    );
-    await capture('pdf-scan-ocr-reader');
-    await evaluate(
-      "document.querySelector('.material-recognized').scrollIntoView({block:'center'})",
-    );
-    await capture('pdf-ocr-text');
-    await click('收起阅读');
-    stage = 'selected-preview';
-    await evaluate(
-      "document.querySelectorAll('.material-card-actions input[type=checkbox]').forEach(input=>input.click())",
-    );
-    await evaluate(
-      "(()=>{const editor=document.querySelector('[data-testid=agent-input]');editor.focus();})()",
-    );
-    await evaluate(
-      "document.execCommand('insertText',false,'梳理两份材料中的事实、矛盾和缺件，形成律师内部沟通初稿。')",
-    );
-    await waitFor("!document.querySelector('.assistant-submit').disabled");
     await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
-    await waitFor("Boolean(document.querySelector('.assistant-preview'))");
-    const preview = (await evaluate(
-      "document.querySelector('.assistant-preview pre').textContent",
-    )) as string;
-    if (
-      !preview.includes('text.pdf') ||
-      !preview.includes('scan.pdf') ||
-      !preview.includes('OCR 文字')
-    )
-      throw new Error('Preview missing source');
-    await evaluate("document.querySelector('.assistant-preview').scrollIntoView({block:'start'})");
-    await capture('agent-selected-materials');
-    stage = 'agent-synthetic-dispatch';
-    await click('确认发送');
-    await waitFor("document.body.textContent.includes('生成完成')");
+    await capture('chat-preparing');
+    await waitFor(
+      "document.body.textContent.includes('生成完成') && document.querySelector('[data-testid=agent-input]').value==='' && !document.querySelector('[aria-label=待发送附件]')",
+    );
+    items = await settled();
+    if (items.length !== 2) throw new Error('Missing second attachment');
+    const scan = items.find((item) => item.name === 'scan.pdf')!;
+    if (scan.status !== 'needs_ocr')
+      throw new Error('Visual path unexpectedly waited for local OCR');
     const context = JSON.parse(readFileSync(join(directory, 'material-pi-context.json'), 'utf8'));
     const message = context.messages.find((entry: { role: string }) => entry.role === 'user');
-    const sent =
-      typeof message.content === 'string'
-        ? message.content
-        : message.content.map((part: { text?: string }) => part.text ?? '').join('');
-    if (sent !== preview) throw new Error('Pi input differs from confirmed preview');
-    await capture('agent-material-analysis-synthetic');
+    const text = message.content
+      .filter((part: { type: string }) => part.type === 'text')
+      .map((part: { text: string }) => part.text)
+      .join('');
+    const images = message.content.filter((part: { type: string }) => part.type === 'image');
+    if (
+      !text.includes(instruction) ||
+      !text.includes('text.pdf') ||
+      !text.includes('scan.pdf') ||
+      !text.includes('对应附图 1') ||
+      images.length !== 1
+    )
+      throw new Error('Incomplete visual dispatch');
+    writeFileSync(join(directory, 'vision-pi-context.json'), JSON.stringify(context, null, 2));
+    await capture('chat-visual-analysis');
+    stage = 'message-attachment-reader';
+    await evaluate(
+      "[...document.querySelectorAll('.message-attachments button')].find(b=>b.textContent.includes('scan.pdf')).click()",
+    );
+    await waitFor("Boolean(document.querySelector('.material-paper canvas')?.width)");
+    await capture('chat-message-reader');
+    await click('收起阅读');
+    stage = 'automatic-local-fallback';
+    await evaluate(
+      "(()=>{const select=document.querySelector('[aria-label=选择大模型]');select.value='deepseek-v4-pro';select.dispatchEvent(new Event('change',{bubbles:true}));})()",
+    );
+    await waitFor("document.querySelector('[aria-label=选择大模型]').value==='deepseek-v4-pro'");
+    await evaluate(
+      "document.querySelector('.material-library').open=true;[...document.querySelectorAll('.material-library > div')].find(row=>row.textContent.includes('scan.pdf')).querySelectorAll('button')[1].click()",
+    );
+    await evaluate(
+      "document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,'核对这份扫描材料的付款条款。')",
+    );
+    const started = Date.now();
+    await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+    await waitFor(
+      "document.querySelector('[data-testid=agent-input]').value==='' && document.querySelectorAll('.message-attachments').length===2 && document.body.textContent.includes('DeepSeek · deepseek-v4-pro · 生成完成')",
+    );
+    const ocrMs = Date.now() - started;
+    items = await settled();
+    if (
+      !items
+        .find((item) => item.id === scan.id)
+        ?.pages.some((page) => page.origin === 'ocr_candidate' && page.text.includes('合同'))
+    )
+      throw new Error('Automatic local OCR failed');
+    const localContext = JSON.parse(
+      readFileSync(join(directory, 'material-pi-context.json'), 'utf8'),
+    );
+    const localUser = localContext.messages.find(
+      (entry: { role: string }) => entry.role === 'user',
+    );
+    if (
+      localUser.content.some((part: { type: string }) => part.type === 'image') ||
+      !JSON.stringify(localUser).includes('OCR 文字') ||
+      JSON.stringify(localUser).includes('text.pdf')
+    )
+      throw new Error('Local fallback selection mismatch');
+    await capture('chat-local-fallback');
     stage = 'task-body-regression';
     await openTask(items[0].task_id);
     await evaluate(
@@ -248,10 +257,13 @@ export async function runMaterialDemo(
             })),
           })),
           ocrMs,
-          preview,
+          importPendingAtSend,
+          visualImages: images.length,
+          inputCleared: true,
+          attachmentMessages: 2,
           network: 'HTTP(S) blocked; no Key or remote model used',
           agentDispatch:
-            'MOCK_ONLY: real Pi Runtime with synthetic Provider; exact payload equality verified',
+            'MOCK_ONLY: real Pi Runtime with synthetic Provider; real Pi receives both selected sources, one scan image; second run local OCR only and excludes first-round text attachment',
         },
         null,
         2,

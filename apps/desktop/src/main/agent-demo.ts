@@ -142,15 +142,11 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     });
     await wait("document.querySelector('[data-testid=agent-input]')");
     await type('[data-testid=agent-input]', '演示：梳理两份材料中的事实、矛盾与缺件。');
-    await clickText('预览发送');
-    await wait(
-      "document.querySelector('[aria-label=发送预览]') && document.body.innerText.includes('确认发送')",
-    );
     const before = await evaluate(
       "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
     );
-    if (!before.ok || before.runs.length) throw new Error('Preview dispatched a run');
-    await clickText('确认发送');
+    if (!before.ok || before.runs.length) throw new Error('Typing dispatched a run');
+    await clickText('发送');
     await wait(
       "document.querySelector('.assistant-message')?.textContent.includes('演示') && document.body.innerText.includes('停止生成')",
     );
@@ -161,8 +157,8 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
       "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
     );
     if (!stopped.ok || stopped.runs[0].status !== 'cancelled') throw new Error('Stop failed');
-    await clickText('预览发送');
-    await clickText('确认发送');
+    await type('[data-testid=agent-input]', '重新分析：梳理事实、矛盾与缺件。');
+    await clickText('发送');
     await wait("document.body.innerText.includes('生成完成，内容待人工核对。')");
     const screenshot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
@@ -202,8 +198,7 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     );
     if (await evaluate("document.querySelector('.ai-inspector').innerText.includes('【合成演示')"))
       throw new Error('Home output leaked into task');
-    await clickText('预览发送');
-    await clickText('确认发送');
+    await clickText('发送');
     await wait(
       "document.querySelector('.ai-inspector').innerText.includes('生成完成，内容待人工核对。')",
     );
@@ -238,13 +233,10 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     await wait("document.querySelector('.task-inspector')");
     await clickText('AI 助手');
     await wait("document.querySelector('[data-testid=assistant-input]')");
-    await wait("document.querySelector('.assistant-panel')?.innerText.includes('预览发送')");
+    await wait("document.querySelector('.assistant-panel')?.innerText.includes('发送')");
     await new Promise((resolve) => setTimeout(resolve, 500));
-    await clickText('预览发送');
-    await wait(
-      "document.querySelector('[aria-label=发送预览]')?.textContent.includes('deepseek-v4-pro')",
-    );
-    await clickText('确认发送');
+    await type('[data-testid=assistant-input]', 'DeepSeek 重新分析本轮要求。');
+    await clickText('发送');
     await wait(
       "document.querySelector('.ai-inspector .assistant-run-status.succeeded')?.textContent.includes('deepseek-v4-pro')",
     );
@@ -269,16 +261,15 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
       "document.querySelector('.agent-home .assistant-model')?.textContent.includes('deepseek-v4-pro')",
     );
     await type('[data-testid=agent-input]', 'DeepSeek 合成演示：梳理事实、矛盾与缺件。');
-    await clickText('预览发送');
     await wait(
-      "document.querySelector('[aria-label=发送预览]')?.textContent.includes('deepseek-v4-pro')",
+      "document.querySelector('.composer-send-note')?.textContent.includes('deepseek-v4-pro')",
     );
     const previewImage = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
     });
     writeFileSync(join(root, 'deepseek-preview.png'), Buffer.from(previewImage.data, 'base64'));
-    await clickText('确认发送');
+    await clickText('发送');
     await wait(
       "document.querySelector('.agent-home .assistant-run-status.succeeded')?.textContent.includes('deepseek-v4-pro')",
     );

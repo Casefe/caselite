@@ -13,6 +13,8 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
     start(input) {
       const model = models.getModel(agentProviderFor(input.model), input.model);
       if (!model) throw new Error('Required model unavailable');
+      if (input.images?.length && !model.input.includes('image'))
+        throw new Error('Vision unavailable');
       let dispatches = 0;
       let settled = false;
       const agent = new Agent({
@@ -93,7 +95,7 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
         finish('failed', '运行超时，远端结果及费用可能未知；未自动重试。');
       }, 60_000);
       void agent
-        .prompt(input.prompt)
+        .prompt(input.prompt, input.images)
         .then(() => {
           if (!settled) finish('failed', '未收到完整模型结果。');
         })

@@ -70,6 +70,7 @@ export const materialSelectionSchema = z
   .strict();
 export const materialRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('list') }).strict(),
+  z.object({ ...base, operation: z.literal('cancel_prepare') }).strict(),
   z.object({ ...base, operation: z.literal('commit'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('discard'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('read'), source_id: id }).strict(),
@@ -92,6 +93,7 @@ export const materialRequestSchema = z.discriminatedUnion('operation', [
       instruction: z.string().trim().min(1).max(4000),
       model: agentModelSchema,
       selected: z.array(materialSelectionSchema).min(1).max(16),
+      automatic: z.boolean().optional(),
     })
     .strict(),
 ]);
@@ -103,6 +105,17 @@ export const materialPreviewSchema = z.object({
   model: agentModelSchema,
   payload: z.string().max(MATERIAL_MAX_CONTEXT),
   sha256: z.string(),
+  images: z
+    .array(
+      z.object({
+        source_id: id,
+        page: z.number().int().positive(),
+        sha256: z.string(),
+        configuration: z.string(),
+      }),
+    )
+    .max(12)
+    .optional(),
   selections: z.array(
     z.object({ source_id: id, derivation_id: id, name: z.string(), pages: z.array(z.number()) }),
   ),

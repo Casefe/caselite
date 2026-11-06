@@ -178,3 +178,53 @@
   font: inherit;
   line-height: 1.7;
 }
+
+.material-library {
+  margin: 4px 12px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.material-library summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.material-library > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.material-library button,
+.material-error button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.composer-send-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 4px 12px;
+}
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.message-attachments button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: var(--panel, #fff);
+  font-size: 12px;
+  text-align: left;
+}
+.message-attachments small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 4px;
+}

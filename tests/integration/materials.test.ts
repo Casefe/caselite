@@ -213,9 +213,9 @@ it('freezes preview content and rejects changed model, task scope, incomplete pa
   const preview = ok(await s.app.execute(request)).preview!;
   expect(preview.payload).toContain(page.text);
   expect(preview.payload).toContain('物理页 1');
-  expect(await s.app.resolveContext(preview.id, 'home', request.instruction, 'gpt-4.1-mini')).toBe(
-    preview.payload,
-  );
+  expect(
+    await s.app.resolveContext(preview.id, 'home', request.instruction, 'gpt-4.1-mini'),
+  ).toMatchObject({ text: preview.payload });
   await expect(
     s.app.resolveContext(preview.id, 'home', request.instruction, 'deepseek-flash'),
   ).rejects.toThrow();
@@ -371,5 +371,113 @@ it('keeps the home identity while an import still needs commit or discard', asyn
   expect(s.store.materials.task('home')).toBe(source.task_id);
   expect(s.store.materials.list('home')).toHaveLength(1);
   s.app.close();
+  s.store.close();
+});
+
+it('automatically awaits text extraction and freezes scan images without local OCR for a vision model', async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((done) => {
+    release = done;
+  });
+  const modes: boolean[] = [];
+  let image = 'c3ludGhldGljLWltYWdl';
+  const s = setup({
+    configuration: 'vision-test',
+    inspect: async () => 1,
+    async process(_bytes, input) {
+      modes.push(input.ocr);
+      await wait;
+      input.onPage({ ...page, origin: 'needs_ocr', text: '' });
+    },
+    render: async () => [image],
+  });
+  const { source } = await s.add();
+  const pending = s.app.execute({
+    protocol_version: 1,
+    scope: 'home',
+    operation: 'preview',
+    instruction: '分析扫描件',
+    model: 'deepseek-flash',
+    automatic: true,
+    selected: [{ source_id: source.id, pages: [1] }],
+  });
+  release();
+  const preview = ok(await pending).preview!;
+  expect(modes).toEqual([false]);
+  expect(preview.images).toHaveLength(1);
+  expect(preview.payload).toContain('物理页 1｜对应附图 1');
+  expect(
+    await s.app.resolveContext(preview.id, 'home', '分析扫描件', 'deepseek-flash'),
+  ).toMatchObject({
+    images: [{ type: 'image', data: image }],
+    attachments: [{ source_id: source.id, pages: [1] }],
+  });
+  image = 'changed';
+  await expect(
+    s.app.resolveContext(preview.id, 'home', '分析扫描件', 'deepseek-flash'),
+  ).rejects.toThrow('IMAGE_CHANGED');
+  s.store.close();
+});
+it('automatically uses local OCR only for a text model and includes the complete derived text', async () => {
+  const modes: boolean[] = [];
+  const s = setup({
+    configuration: 'ocr-test',
+    inspect: async () => 1,
+    async process(_bytes, input) {
+      modes.push(input.ocr);
+      input.onPage({
+        ...page,
+        origin: input.ocr ? 'ocr_candidate' : 'needs_ocr',
+        text: input.ocr ? page.text : '',
+      });
+    },
+    render: async () => {
+      throw new Error('Must not render to text model');
+    },
+  });
+  const { source } = await s.add();
+  const preview = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      instruction: '分析扫描件',
+      model: 'deepseek-v4-pro',
+      automatic: true,
+      selected: [{ source_id: source.id, pages: [1] }],
+    }),
+  ).preview!;
+  expect(modes).toEqual([false, true]);
+  expect(preview.images).toBeUndefined();
+  expect(preview.payload).toContain(page.text);
+  s.store.close();
+});
+
+it('a user resend retries failed local preparation without dropping pages', async () => {
+  let fail = true;
+  const s = setup({
+    configuration: 'retry-test',
+    inspect: async () => 1,
+    async process(_bytes, input) {
+      if (fail) throw new Error('Temporary local failure');
+      input.onPage(page);
+    },
+  });
+  const { source } = await s.add();
+  await s.settled();
+  expect(s.store.materials.get(source.id)?.status).toBe('failed');
+  fail = false;
+  const r = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      instruction: '重试',
+      model: 'gpt-4.1-mini',
+      automatic: true,
+      selected: [{ source_id: source.id, pages: [1] }],
+    }),
+  );
+  expect(r.preview?.payload).toContain(page.text);
   s.store.close();
 });

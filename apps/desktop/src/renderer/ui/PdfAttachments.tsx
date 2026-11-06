@@ -6,15 +6,6 @@ export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | nul
   if (!file.size || file.size > 20 * 1024 * 1024) return '请选择非空且不超过 20 MB 的 PDF。';
   return null;
 }
-const labels = {
-  imported: '已保存 · 待提取文字',
-  processing: '正在处理',
-  ready: '文字可用',
-  needs_ocr: '扫描页待识别',
-  cancelled: '已取消 · 可继续',
-  interrupted: '上次中断 · 可继续',
-  failed: '处理失败 · 可重试',
-};
 export default function PdfAttachments({
   children,
   disabled = false,
@@ -65,103 +56,90 @@ export default function PdfAttachments({
         >
           ＋ 文件
         </button>
-        <span>拖入 PDF · 每份 ≤20 MB / 200页 · 本地处理</span>
-        {c.items.length > 0 && c.canNewHome && (
-          <button type="button" disabled={disabled || c.busy} onClick={() => void c.newHome()}>
-            新一组材料
-          </button>
-        )}
+        <span>拖入 PDF · 自动处理 · 每份 ≤20 MB / 200 页</span>
       </div>
-      {c.error && (
-        <p role="alert" className="material-error">
-          {c.error}
-        </p>
+      {c.busy && (
+        <div className="material-staged" role="status">
+          <span className="material-file-icon">PDF</span>
+          <strong>{c.uploadingName ?? '正在添加附件'}</strong>
+          <span>正在准备，可继续输入并发送…</span>
+        </div>
       )}
-      {c.staged && (
+      {c.staged && !c.busy && (
         <div className="material-staged">
           <strong>{c.staged.name}</strong>
-          <span>待导入 · {(c.staged.bytes / 1024).toFixed(0)} KB</span>
-          <button type="button" disabled={disabled || c.busy} onClick={() => void c.commit()}>
-            导入并保存
+          <span>上次附件尚未完成</span>
+          <button type="button" disabled={disabled} onClick={() => void c.retry()}>
+            继续添加
           </button>
-          <button type="button" disabled={disabled || c.busy} onClick={() => void c.discard()}>
-            取消导入
+          <button type="button" disabled={disabled} onClick={() => void c.discard()}>
+            移除
           </button>
         </div>
       )}
-      {c.items.length > 0 && (
-        <ul className="material-cards" aria-label="本次材料">
-          {c.items.map((item) => (
-            <li key={item.id} className="material-saved-card">
-              <div className="material-card-heading">
+      {c.error && (
+        <div role="alert" className="material-error">
+          {c.error}
+          {!c.busy && (
+            <>
+              <button type="button" disabled={disabled} onClick={() => void c.retry()}>
+                重试附件
+              </button>
+              <button type="button" disabled={disabled} onClick={() => void c.discard()}>
+                移除未完成附件
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {Object.keys(c.selected).length > 0 && (
+        <ul className="material-cards" aria-label="待发送附件">
+          {c.items
+            .filter((item) => item.id in c.selected)
+            .map((item) => (
+              <li key={item.id}>
                 <button
                   type="button"
                   className="material-card-open"
-                  onClick={() => void c.read(item)}
+                  onClick={() => void c.readReference(item.id, item.task_id, item.name)}
                 >
                   <span className="material-file-icon">PDF</span>
                   <span>
                     <strong>{item.name}</strong>
-                    <small>
-                      {item.status === 'ready' &&
-                      item.pages.some((page) => page.origin === 'ocr_candidate')
-                        ? 'OCR 已完成 · 待核对'
-                        : labels[item.status]}{' '}
-                      · {item.pages.length}/{item.page_count}页
-                    </small>
+                    <small>{item.page_count} 页 · 将随本轮要求分析</small>
                   </span>
                 </button>
                 <button
                   type="button"
-                  aria-label={`恢复原件 ${item.name}`}
-                  disabled={c.busy || disabled}
-                  onClick={() => void c.restore(item)}
+                  aria-label={`移除附件 ${item.name}`}
+                  disabled={disabled}
+                  onClick={() => c.select(item.id, false)}
                 >
-                  恢复
+                  ×
                 </button>
-              </div>
-              <div className="material-card-actions">
-                <label>
-                  <input
-                    type="checkbox"
-                    aria-label={`纳入分析 ${item.name}`}
-                    checked={item.id in c.selected}
-                    disabled={disabled || c.busy}
-                    onChange={(e) => c.select(item.id, e.target.checked)}
-                  />
-                  纳入分析
-                </label>
-                {item.id in c.selected && (
-                  <input
-                    aria-label={`页范围 ${item.name}`}
-                    placeholder="全部页，如 1-3,5"
-                    value={c.selected[item.id]}
-                    disabled={disabled || c.busy}
-                    onChange={(e) => c.range(item.id, e.target.value)}
-                  />
-                )}
-                {item.status === 'processing' ? (
-                  <button type="button" disabled={c.busy} onClick={() => void c.cancel(item)}>
-                    取消处理
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={c.busy || disabled}
-                    onClick={() => void c.process(item, true)}
-                  >
-                    本地 OCR
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
+              </li>
+            ))}
         </ul>
       )}
-      {c.items.length > 0 && (
-        <p className="material-notice">
-          原件已保存在本机。勾选材料并预览后才发送文字；OCR 结果需核对。未选材料不进入 AI。
-        </p>
+      {c.items.some((item) => !(item.id in c.selected)) && (
+        <details className="material-library">
+          <summary>已保存材料</summary>
+          {c.items
+            .filter((item) => !(item.id in c.selected))
+            .map((item) => (
+              <div key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => void c.readReference(item.id, item.task_id, item.name)}
+                >
+                  {item.name}
+                </button>
+                <button type="button" disabled={disabled} onClick={() => c.select(item.id, true)}>
+                  添加到本轮
+                </button>
+              </div>
+            ))}
+        </details>
       )}
       {c.reading && (
         <Suspense fallback={<p>正在加载阅读器…</p>}>

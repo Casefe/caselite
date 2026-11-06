@@ -54,6 +54,17 @@ export const agentRunSchema = z.object({
   scope,
   prompt: z.string(),
   output: z.string(),
+  attachments: z
+    .array(
+      z.object({
+        source_id: z.string().uuid(),
+        task_id: z.string().uuid(),
+        name: z.string(),
+        pages: z.array(z.number().int().positive()),
+      }),
+    )
+    .max(16)
+    .optional(),
   context_id: z.string().uuid().optional(),
   status: z.enum(['running', 'succeeded', 'cancelled', 'failed', 'interrupted']),
   created_at: z.string().optional(),
