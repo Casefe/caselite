@@ -6,10 +6,18 @@ import { resolve, join } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const isolated = mkdtempSync(join(tmpdir(), 'caselite-task-demo-project-'));
-const output = join(root, 'artifacts/evidence/project-demo');
+const lifecycle = process.argv.includes('--lifecycle');
+const output = join(
+  root,
+  'artifacts/evidence',
+  lifecycle ? 'project-lifecycle-demo' : 'project-demo',
+);
 mkdirSync(output, { recursive: true });
 const phases = [];
-for (const phase of ['project-write', 'project-read']) {
+const requestedPhases = lifecycle
+  ? ['project-write', 'project-edit', 'project-restore']
+  : ['project-write', 'project-read'];
+for (const phase of requestedPhases) {
   const result = spawnSync(
     join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite'),
     [],
@@ -45,7 +53,7 @@ for (const phase of ['project-write', 'project-read']) {
         network: 'HTTP(S) blocked in the test session; physical network remains connected',
         status: phases.some((p) => p.exitCode !== 0)
           ? 'FAIL'
-          : phases.length === 2
+          : phases.length === requestedPhases.length
             ? 'PASS_REAL'
             : 'NOT_COMPLETE',
         unverified: [
@@ -65,6 +73,7 @@ for (const name of [
   'project-created.png',
   'project-reopened.png',
   'project-expected.json',
+  ...(lifecycle ? ['project-edited.png', 'project-archived.png', 'project-restored.png'] : []),
 ])
   copyFileSync(join(isolated, name), join(output, name));
 process.stdout.write(`Project create/reopen passed; evidence ${output}\n`);

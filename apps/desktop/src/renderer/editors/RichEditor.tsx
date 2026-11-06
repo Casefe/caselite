@@ -569,7 +569,8 @@ export const DraftEditor = forwardRef<
     [doc],
   );
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    // 保存中或归档只改变可写性，不应触发正文更新并把已保存页面重新标成未保存。
+    editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
   useImperativeHandle(
     ref,

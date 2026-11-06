@@ -494,6 +494,8 @@ if (taskDemoPhase) {
       'preview',
       'project-write',
       'project-read',
+      'project-edit',
+      'project-restore',
       'agent',
       'agent-crash',
       'agent-read',
@@ -682,7 +684,13 @@ app
       return;
     }
     app.on('will-quit', () => taskStore.close());
-    if (taskDemoRoot && (taskDemoPhase === 'project-write' || taskDemoPhase === 'project-read')) {
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'project-write' ||
+        taskDemoPhase === 'project-read' ||
+        taskDemoPhase === 'project-edit' ||
+        taskDemoPhase === 'project-restore')
+    ) {
       await runProjectDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;

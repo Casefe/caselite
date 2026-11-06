@@ -25,6 +25,26 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 describe('rich input locking', () => {
+  it('does not mark a saved body dirty when a save or archive toggles read-only mode', async () => {
+    const change = vi.fn();
+    const props = {
+      value: { text: '已保存项目说明', state: null },
+      onChange: change,
+      label: '项目说明锁定',
+    };
+    const view = render(<DraftEditor {...props} />);
+    const input = await screen.findByRole('textbox', { name: props.label });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(change).not.toHaveBeenCalled();
+    const content = input.innerHTML;
+    view.rerender(<DraftEditor {...props} disabled />);
+    await waitFor(() => expect(input.getAttribute('contenteditable')).toBe('false'));
+    expect(change).not.toHaveBeenCalled();
+    view.rerender(<DraftEditor {...props} disabled={false} />);
+    await waitFor(() => expect(input.getAttribute('contenteditable')).toBe('true'));
+    expect(change).not.toHaveBeenCalled();
+    expect(input.innerHTML).toBe(content);
+  });
   it('does not let an open block menu or active drag modify a disabled submission', async () => {
     const change = vi.fn();
     const props = {
