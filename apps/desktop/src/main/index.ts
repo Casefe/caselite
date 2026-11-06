@@ -13,6 +13,12 @@ import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
 import { createAgentApplication } from '@caselite/application';
 import { createPiRuntime } from './adapters/pi-runtime';
+import {
+  runCredentialPreflight,
+  readOnlyDemoCredentials,
+  credentialFingerprints,
+  credentialStatus,
+} from './credential-preflight';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
 import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
@@ -482,11 +488,14 @@ function runLocalDatabaseProbe(): void {
   }
 }
 
+const defaultCredentialRoot = app.getPath('userData');
 let taskDemoRoot: string | undefined;
 const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'credential-preflight',
+      'credential-preflight-ui',
       'write',
       'read',
       'materials',
@@ -570,6 +579,12 @@ app
       app.exit(0);
       return;
     }
+    if (taskDemoRoot && taskDemoPhase === 'credential-preflight') {
+      // 只读正式凭据；在任何工作区/Runtime初始化前退出，不消费1650费用账本。
+      const result = await runCredentialPreflight(defaultCredentialRoot, taskDemoRoot);
+      app.exit(result.configured ? 0 : 2);
+      return;
+    }
     registerIpcSpike();
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
@@ -608,7 +623,40 @@ app
     // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
     let materialDemoModel: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
     const materialDemoKeys = new Set(['openai', 'deepseek']);
-    const agentCredentials =
+    const credentialUi = taskDemoPhase === 'credential-preflight-ui';
+    let credentialHttpAttempts = 0;
+    let credentialRuntimeAttempts = 0;
+    let credentialRefreshes = 0;
+    const credentialBefore = credentialUi ? credentialFingerprints(defaultCredentialRoot) : null;
+    if (credentialUi)
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+        const http = /^https?:/i.test(details.url);
+        if (http) credentialHttpAttempts++;
+        callback({ cancel: http });
+      });
+    const credentialStartedAt = Date.now();
+    const credentialStages: {
+      stage: string;
+      state: string;
+      failure?: string;
+      elapsedMs: number;
+    }[] = [];
+    const recordCredentialStage =
+      taskDemoRoot && (taskDemoPhase?.startsWith('agent') || credentialUi)
+        ? (stage: string, state: string, failure?: string) => {
+            credentialStages.push({
+              stage,
+              state,
+              ...(failure ? { failure } : {}),
+              elapsedMs: Date.now() - credentialStartedAt,
+            });
+            writeFileSync(
+              join(taskDemoRoot!, 'credential-initialization.json'),
+              JSON.stringify(credentialStages, null, 2),
+            );
+          }
+        : undefined;
+    const baseAgentCredentials =
       taskDemoPhase?.startsWith('materials') ||
       taskDemoPhase === 'agent-preview' ||
       taskDemoPhase === 'agent-crash-synthetic' ||
@@ -627,7 +675,46 @@ app
               materialDemoModel = model;
             },
           }
-        : await createAgentCredentials(taskRoot);
+        : credentialUi
+          ? readOnlyDemoCredentials(
+              await createAgentCredentials(defaultCredentialRoot, recordCredentialStage),
+            )
+          : await createAgentCredentials(taskRoot, recordCredentialStage);
+    const recordCredentialUi = () => {
+      if (!credentialUi || !taskDemoRoot) return;
+      const after = credentialFingerprints(defaultCredentialRoot);
+      writeFileSync(
+        join(taskDemoRoot, 'credential-ui-state.json'),
+        JSON.stringify(
+          {
+            ...credentialStatus(baseAgentCredentials),
+            before: credentialBefore,
+            after,
+            unchanged: JSON.stringify(credentialBefore) === JSON.stringify(after),
+            refreshes: credentialRefreshes,
+            runtimeAttempts: credentialRuntimeAttempts,
+            providerDispatches: 0,
+            httpAttempts: credentialHttpAttempts,
+            defaultUserData: defaultCredentialRoot,
+            isolatedUserData: taskRoot,
+            elapsedMs: Date.now() - credentialStartedAt,
+          },
+          null,
+          2,
+        ),
+      );
+    };
+    const agentCredentials = credentialUi
+      ? {
+          ...baseAgentCredentials,
+          async refresh() {
+            if (!baseAgentCredentials.refresh) throw new Error('Credential refresh unavailable');
+            await baseAgentCredentials.refresh();
+            credentialRefreshes++;
+            recordCredentialUi();
+          },
+        }
+      : baseAgentCredentials;
     if (taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
       await agentCredentials.set('sk-synthetic-openai');
     let historyReady = true;
@@ -649,10 +736,15 @@ app
         },
       },
       runtime: createPiRuntime(
-        taskDemoPhase === 'agent-read' ||
+        credentialUi ||
+          taskDemoPhase === 'agent-read' ||
           taskDemoPhase === 'agent-read-synthetic' ||
           taskDemoPhase === 'materials-read'
           ? () => {
+              if (credentialUi) {
+                credentialRuntimeAttempts++;
+                recordCredentialUi();
+              }
               writeFileSync(join(taskDemoRoot!, 'unexpected-runtime.txt'), 'unexpected dispatch');
               throw new Error('Unexpected restart dispatch');
             }
@@ -672,6 +764,13 @@ app
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (credentialUi) {
+      recordCredentialUi();
+      const window = await createWindow();
+      window.setTitle('CaseLite · 系统凭据重读验收');
+      return;
+    }
+
     if (taskDemoPhase === 'agent-preview')
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
