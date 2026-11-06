@@ -93,7 +93,7 @@ export default function AgentHome({
               <Icon name="chevron" size={13} />
             </button>
           ))}
-          {!tasks.length && <p>还没有任务。写下工作目标，或从右上角新建任务。</p>}
+          {!tasks.length && <p>还没有任务。写下工作目标并选择“创建本地任务”。</p>}
         </section>
         <div className="agent-local">
           <i className="local-dot" />
