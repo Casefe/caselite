@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, act, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { CatalogRequest, CatalogResponse, Matter } from '../../preload/caselite-api';
+import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../preload/caselite-api';
 import ProjectCatalog from './ProjectCatalog';
 vi.mock('../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
@@ -66,6 +66,38 @@ function show() {
   return changed;
 }
 describe('durable project UI receipts and target identity', () => {
+  it('keeps one project across tabs, exposes unavailable sections and protects an unsaved overview', async () => {
+    const p = project();
+    const original = { id: crypto.randomUUID(), title: '项目原任务', matter_id: p.id } as Task;
+    const open = vi.fn();
+    const catalog = vi.fn(async () => response([p], p.id));
+    window.caselite = { catalog } as unknown as Window['caselite'];
+    render(
+      <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByText('打开项目'));
+    await screen.findByLabelText('编辑项目名称');
+    fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
+    fireEvent.click(
+      within(screen.getByRole('tabpanel', { name: '任务', exact: true })).getByText('项目原任务'),
+    );
+    expect(open).toHaveBeenCalledWith(original.id);
+    for (const label of ['文件', '交付物', '活动']) {
+      fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
+      expect(screen.getByRole('tabpanel', { name: label, exact: true }).textContent).toContain(
+        '尚未接入',
+      );
+    }
+    fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
+    expect(document.querySelector('.catalog-actions')?.getAttribute('data-project-id')).toBe(p.id);
+    fireEvent.change(screen.getByLabelText('编辑项目名称'), { target: { value: '未保存更正' } });
+    expect(
+      (screen.getByRole('tab', { name: '文件', exact: true }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: '文件', exact: true }));
+    expect(screen.getByRole('tabpanel', { name: '概述', exact: true })).toBeTruthy();
+    expect(catalog.mock.calls).toHaveLength(2);
+  });
   it('opens the exact saved project, including when creating from the archive view', async () => {
     const p = project(undefined, '中文项目');
     const requests: CatalogRequest[] = [];

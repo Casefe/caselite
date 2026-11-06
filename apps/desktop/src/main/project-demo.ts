@@ -146,6 +146,23 @@ export async function runProjectDemo(
           "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent).join(',')==='1,1'",
         );
         await capture('project-overview-summary.png');
+        for (const [label, id] of [
+          ['任务', 'tasks'],
+          ['文件', 'files'],
+          ['交付物', 'deliverables'],
+          ['活动', 'activity'],
+        ]) {
+          await button(label);
+          await wait(`document.querySelector('#project-panel-${id}')?.hidden===false`);
+          if (
+            (await evaluate("document.querySelector('.catalog-actions').dataset.projectId")) !==
+            expected.task.matter_id
+          )
+            throw new Error('Project section switch changed identity');
+        }
+        await capture('project-sections.png');
+        await button('概述');
+        await wait("document.querySelector('#project-panel-overview')?.hidden===false");
         await evaluate(
           "document.querySelector('.project-summary-records > section:nth-child(2) button').click()",
         );

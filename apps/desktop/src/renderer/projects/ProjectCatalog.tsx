@@ -7,6 +7,13 @@ import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 const names = { planned: '待开始', active: '进行中', done: '已完成' };
+const sections = {
+  overview: '概述',
+  tasks: '任务',
+  files: '文件',
+  deliverables: '交付物',
+  activity: '活动',
+};
 export default function ProjectCatalog({
   tasks,
   onOpen,
@@ -29,6 +36,7 @@ export default function ProjectCatalog({
     } | null>(null),
     [dirty, setDirty] = useState(false),
     [assigning, setAssigning] = useState('');
+  const [section, setSection] = useState<keyof typeof sections>('overview');
   const [side, setSide] = useState('properties'),
     [aiTask, setAiTask] = useState('');
   const alive = useRef(true),
@@ -66,6 +74,7 @@ export default function ProjectCatalog({
         if (actual) {
           setEditor({ project: actual, state: r.state, epoch: sequence });
           setCreatedId(null);
+          setSection('overview');
         } else setReadError('未能读取该项目，请重试打开。');
       } else setReadError(r.message);
     } catch {
@@ -149,42 +158,127 @@ export default function ProjectCatalog({
         <div className="collection-scroll">
           {editor ? (
             <>
-              <ProjectSummary
-                project={p ?? editor.project}
-                tasks={tasks}
-                documents={c.data?.documents ?? []}
-                unavailable={!!c.error || !c.data}
-                disabled={reading || dirty || c.pending || c.unknown}
-                onOpen={onOpen}
-              />
-              <ProjectEditor
-                key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
-                data={editor}
-                pending={reading || c.pending || c.unknown}
-                onDirty={setDirty}
-                onReload={() => {
-                  setDirty(false);
-                  void read(editor.project.id);
-                }}
-                onSave={async (values) => {
-                  await command(
-                    catalogMutation({
-                      operation: 'update_project' as const,
-                      id: editor.project.id,
-                      expected_version: editor.project.version,
-                      expected_body_revision: editor.project.body_revision,
-                      ...values,
-                    }),
-                    async () => {
-                      setDirty(false);
-                      await read(editor.project.id);
-                    },
-                  );
-                }}
-                onBack={() => {
-                  if (!dirty && !c.pending && !c.unknown) setEditor(null);
-                }}
-              />
+              <div className="project-detail-heading">
+                <button
+                  disabled={reading || dirty || c.pending || c.unknown}
+                  onClick={() => setEditor(null)}
+                >
+                  返回项目列表
+                </button>
+                <strong>{(p ?? editor.project).title}</strong>
+              </div>
+              <div className="project-section-tabs" role="tablist" aria-label="项目栏目">
+                {Object.entries(sections).map(([id, label]) => (
+                  <button
+                    key={id}
+                    role="tab"
+                    id={`project-tab-${id}`}
+                    aria-controls={`project-panel-${id}`}
+                    aria-selected={section === id}
+                    disabled={reading || dirty || c.pending || c.unknown}
+                    onClick={() => setSection(id as keyof typeof sections)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div
+                hidden={section !== 'overview'}
+                role="tabpanel"
+                id="project-panel-overview"
+                aria-labelledby="project-tab-overview"
+              >
+                <ProjectSummary
+                  project={p ?? editor.project}
+                  tasks={tasks}
+                  documents={c.data?.documents ?? []}
+                  unavailable={!!c.error || !c.data}
+                  disabled={reading || dirty || c.pending || c.unknown}
+                  onOpen={onOpen}
+                />
+                <ProjectEditor
+                  key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
+                  data={editor}
+                  pending={reading || c.pending || c.unknown}
+                  onDirty={setDirty}
+                  onReload={() => {
+                    setDirty(false);
+                    void read(editor.project.id);
+                  }}
+                  onSave={async (values) => {
+                    await command(
+                      catalogMutation({
+                        operation: 'update_project' as const,
+                        id: editor.project.id,
+                        expected_version: editor.project.version,
+                        expected_body_revision: editor.project.body_revision,
+                        ...values,
+                      }),
+                      async () => {
+                        setDirty(false);
+                        await read(editor.project.id);
+                      },
+                    );
+                  }}
+                />
+              </div>
+              <section
+                hidden={section !== 'tasks'}
+                role="tabpanel"
+                id="project-panel-tasks"
+                aria-labelledby="project-tab-tasks"
+                className="project-record-panel"
+              >
+                <h2>项目任务</h2>
+                {tasks
+                  .filter((task) => task.matter_id === editor.project.id)
+                  .map((task) => (
+                    <button
+                      key={task.id}
+                      disabled={reading || c.pending || c.unknown}
+                      onClick={() => onOpen(task.id)}
+                    >
+                      {task.title}
+                    </button>
+                  ))}
+                {!tasks.some((task) => task.matter_id === editor.project.id) && (
+                  <p>
+                    {p?.task_count
+                      ? '任务列表正在更新，请稍后重读。'
+                      : '还没有任务。可在右侧归入已有任务，或从独立任务创建项目。'}
+                  </p>
+                )}
+              </section>
+              <section
+                hidden={section !== 'files'}
+                role="tabpanel"
+                id="project-panel-files"
+                aria-labelledby="project-tab-files"
+                className="project-record-panel"
+              >
+                <h2>项目文件</h2>
+                <p>项目文件视图尚未接入。原任务与材料保持原有归属。</p>
+              </section>
+              <section
+                hidden={section !== 'deliverables'}
+                role="tabpanel"
+                id="project-panel-deliverables"
+                aria-labelledby="project-tab-deliverables"
+                className="project-record-panel"
+              >
+                <h2>交付物</h2>
+                <p>正式交付物视图尚未接入。已保存文档可从概述打开，保存不代表正式交付。</p>
+              </section>
+              <section
+                hidden={section !== 'activity'}
+                role="tabpanel"
+                id="project-panel-activity"
+                aria-labelledby="project-tab-activity"
+                className="project-record-panel"
+              >
+                <h2>活动</h2>
+                <p>项目活动列表尚未接入。</p>
+              </section>
             </>
           ) : (
             <>
@@ -412,14 +506,12 @@ function ProjectEditor({
   pending,
   onDirty,
   onSave,
-  onBack,
   onReload,
 }: {
   data: { project: Matter; state: number[] | null };
   pending: boolean;
   onDirty(v: boolean): void;
   onSave(v: { title: string; status: Matter['status']; state?: number[] }): Promise<void>;
-  onBack(): void;
   onReload(): void;
 }) {
   const [title, setTitle] = useState(data.project.title),
@@ -432,9 +524,6 @@ function ProjectEditor({
   };
   return (
     <div className="catalog-actions" data-project-id={data.project.id}>
-      <button disabled={dirty || pending} onClick={onBack}>
-        返回项目列表
-      </button>
       <h2>项目概述</h2>
       <label>
         名称

@@ -77,6 +77,7 @@ for (const name of promotion
       'project-task-linked.png',
       'project-original-task-reopened.png',
       'project-overview-summary.png',
+      'project-sections.png',
       'promotion-expected.json',
     ]
   : [
