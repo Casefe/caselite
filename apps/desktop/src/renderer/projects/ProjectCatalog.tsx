@@ -5,6 +5,7 @@ import { Icon } from '../ui/Workspace';
 import AgentPanel from '../ui/AgentPanel';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
+import ProjectSummary from './ProjectSummary';
 const names = { planned: '待开始', active: '进行中', done: '已完成' };
 export default function ProjectCatalog({
   tasks,
@@ -42,10 +43,9 @@ export default function ProjectCatalog({
     };
   }, []);
   const list = (c.data?.projects ?? []).filter((p) => !!p.archived_at === archived),
-    p =
-      (editor ? c.data?.projects.find((x) => x.id === editor.project.id) : undefined) ??
-      list.find((x) => x.id === selected) ??
-      list[0];
+    p = editor
+      ? (c.data?.projects.find((x) => x.id === editor.project.id) ?? editor.project)
+      : (list.find((x) => x.id === selected) ?? list[0]);
   useEffect(() => {
     onDirty(dirty || creating || reading || c.pending || c.unknown);
     return () => onDirty(false);
@@ -148,34 +148,44 @@ export default function ProjectCatalog({
         )}
         <div className="collection-scroll">
           {editor ? (
-            <ProjectEditor
-              key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
-              data={editor}
-              pending={reading || c.pending || c.unknown}
-              onDirty={setDirty}
-              onReload={() => {
-                setDirty(false);
-                void read(editor.project.id);
-              }}
-              onSave={async (values) => {
-                await command(
-                  catalogMutation({
-                    operation: 'update_project' as const,
-                    id: editor.project.id,
-                    expected_version: editor.project.version,
-                    expected_body_revision: editor.project.body_revision,
-                    ...values,
-                  }),
-                  async () => {
-                    setDirty(false);
-                    await read(editor.project.id);
-                  },
-                );
-              }}
-              onBack={() => {
-                if (!dirty && !c.pending && !c.unknown) setEditor(null);
-              }}
-            />
+            <>
+              <ProjectSummary
+                project={p ?? editor.project}
+                tasks={tasks}
+                documents={c.data?.documents ?? []}
+                unavailable={!!c.error || !c.data}
+                disabled={reading || dirty || c.pending || c.unknown}
+                onOpen={onOpen}
+              />
+              <ProjectEditor
+                key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
+                data={editor}
+                pending={reading || c.pending || c.unknown}
+                onDirty={setDirty}
+                onReload={() => {
+                  setDirty(false);
+                  void read(editor.project.id);
+                }}
+                onSave={async (values) => {
+                  await command(
+                    catalogMutation({
+                      operation: 'update_project' as const,
+                      id: editor.project.id,
+                      expected_version: editor.project.version,
+                      expected_body_revision: editor.project.body_revision,
+                      ...values,
+                    }),
+                    async () => {
+                      setDirty(false);
+                      await read(editor.project.id);
+                    },
+                  );
+                }}
+                onBack={() => {
+                  if (!dirty && !c.pending && !c.unknown) setEditor(null);
+                }}
+              />
+            </>
           ) : (
             <>
               <table className="catalog-table">

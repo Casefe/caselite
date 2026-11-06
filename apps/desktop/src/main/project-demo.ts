@@ -142,7 +142,13 @@ export async function runProjectDemo(
         await wait("document.querySelector('.project-title-link')");
         await button('独立任务转项目验收');
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
-        await button('独立任务转项目验收');
+        await wait(
+          "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent).join(',')==='1,1'",
+        );
+        await capture('project-overview-summary.png');
+        await evaluate(
+          "document.querySelector('.project-summary-records > section:nth-child(2) button').click()",
+        );
         await wait(
           `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
         );
