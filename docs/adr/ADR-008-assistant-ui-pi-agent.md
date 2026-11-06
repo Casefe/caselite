@@ -57,3 +57,11 @@ Electron 45采用异步safeStorage。凭据初始化解密后只在主进程缓�
 - protobufjs@7.6.6：BSD-3-Clause
 - secure-json-parse@4.1.1：BSD-3-Clause
 - tslib@2.8.1：0BSD
+
+## DEV-1691 输入、流式与停止复验｜2026-11-06
+
+以下归档同步前的历史复验；“本轮”指下述 `2929c9a3` 现场，不代表后续提交再次执行。历史 manifest、assertion-matrix 和原始日志已核对；未通过项保持原结论，当前构建及人工接收另留 Issue 记录。
+
+本轮继续复用现有 @assistant-ui/react 0.15.32 ExternalStoreRuntime／Composer、@assistant-ui/react-markdown 0.14.24 与 Pi Core／pi-ai 1.5.0，不引入第二输入内核或 Runtime。基线 HEAD `2929c9a3` 为含历史未提交修改的现场；284项源文件及296项包条目与窄窗构建清单一致，包内 app.asar SHA-256 为 `fd6d95f947ac513d41daa5f08b41bc3f05d224774bfded6da2da45d6168fd164`。现有6个测试文件57项及Provider合成HTTP的8项在 Node 24.22.2 下通过，覆盖输入组合/Enter、未知回执沿用原Run ID、任务隔离、Pi取消与迟到拒绝、错误脱敏、SQLite中断恢复及登记失败零派发。Provider和输入事件均为合成，不作为真实模型或系统IME验收。主控原生IME证据按未变的Composer／附件／Pi指纹复用，窄窗原生操作单列；本轮未重新执行系统IME。
+
+同包 `check-agent-demo.mjs --synthetic-recovery` 首次由Node26驱动，在首阶段合成Key的系统安全存储 availability 检查3001ms超时，脚本退出1；主控授权排除额外包装影响后，仅一次用固定Node24.22.2在新隔离根正常复验，availability再次3001ms超时，脚本60秒期限以SIGKILL结束首阶段（ETIMEDOUT），脚本仍退出1。两次均未进入流式UI，后两阶段未运行，停止同类重试。保留此失败，不修改Keychain权限或采用明文降级；继续复用结论仅限已验证的输入／运行投影技术路径，不能据此宣称本轮桌面流式／重启整体验收通过。逐断言、命令、构建指纹、MOCK_ONLY隔离启动入口及回退补丁留仓库外本卡证据；实际流式桌面复验仍需系统凭据可用后使用原脚本完成。额外系统禁网测试包装与Electron子进程沙箱不兼容，既有synthetic crash phase未进入恢复流程，read phase未运行；这是测试环境阻断，不计作产品恢复失败，未关闭沙箱绕过。主控补充的原生Stop和“重新填写”只证明局部UI行为，Provider仍为合成，不提升为全流程通过。消息修订、完整选材／来源回跳和新Document接受沿各自Owner另验。本轮真实Provider调用0次，无产品代码或数据格式变更；回退只撤销本节，保留隔离证据，不动历史修改和用户数据。
