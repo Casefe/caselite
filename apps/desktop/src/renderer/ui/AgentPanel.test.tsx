@@ -373,3 +373,22 @@ describe('AI submission UI lifecycle', () => {
     );
   });
 });
+
+it('shows a credential failure without blocking manual input or discarding readable output', async () => {
+  const agent = vi.fn(async () => ({
+    ...profile,
+    configured: false,
+    providers: { openai: false, deepseek: false },
+    credential_errors: { openai: 'UNAVAILABLE' },
+  }));
+  window.caselite = { agent } as unknown as Window['caselite'];
+  render(<AgentPanel scope="credential-unavailable-test" />);
+  await screen.findByText(/系统安全凭据暂不可读/);
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  expect(input.disabled).toBe(false);
+  fireEvent.change(input, { target: { value: '保留人工输入' } });
+  expect(input.value).toBe('保留人工输入');
+  expect(
+    agent.mock.calls.every(([request]) => (request as AgentRequest).operation === 'read'),
+  ).toBe(true);
+});

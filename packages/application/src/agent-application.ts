@@ -8,6 +8,7 @@ import {
 } from '@caselite/contracts';
 
 export interface AgentCredentialPort {
+  refresh?(): Promise<void>;
   get(provider?: AgentProvider): string | undefined;
   set(key: string, provider?: AgentProvider): void | Promise<void>;
   clear(provider?: AgentProvider): void;
@@ -82,12 +83,21 @@ export function createAgentApplication(ports: {
   let preparing = false;
   const ownerGeneration = new Map<string, number>();
   const failure = (code: string, message: string): AgentResponse => ({ ok: false, code, message });
-  const configured = (provider: AgentProvider) => {
-    try {
-      return Boolean(ports.credentials.get(provider));
-    } catch {
-      return false;
-    }
+  const configuration = () => {
+    const credential_errors: Partial<Record<AgentProvider, 'UNAVAILABLE'>> = {};
+    const configured = (provider: AgentProvider) => {
+      try {
+        return Boolean(ports.credentials.get(provider));
+      } catch {
+        credential_errors[provider] = 'UNAVAILABLE';
+        return false;
+      }
+    };
+    const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
+    return {
+      providers,
+      ...(Object.keys(credential_errors).length ? { credential_errors } : {}),
+    };
   };
   return {
     async execute(input: unknown, owner: string): Promise<AgentResponse> {
@@ -109,6 +119,7 @@ export function createAgentApplication(ports: {
         (request.operation === 'configure' ||
           request.operation === 'clear_key' ||
           request.operation === 'select_model' ||
+          request.operation === 'refresh_credentials' ||
           (request.operation === 'start' && !runs.has(request.run_id)))
       )
         return failure('BUSY', '模型配置正在保存，请稍后核对。');
@@ -117,7 +128,8 @@ export function createAgentApplication(ports: {
         if (
           request.operation === 'configure' ||
           request.operation === 'clear_key' ||
-          request.operation === 'select_model'
+          request.operation === 'select_model' ||
+          request.operation === 'refresh_credentials'
         ) {
           if (active) return failure('BUSY', '请先停止当前运行，再修改模型配置。');
           if (request.operation !== 'clear_key') {
@@ -125,7 +137,14 @@ export function createAgentApplication(ports: {
             try {
               if (request.operation === 'configure')
                 await ports.credentials.set(request.key, request.provider ?? 'openai');
-              else {
+              else if (request.operation === 'refresh_credentials') {
+                if (!ports.credentials.refresh)
+                  return failure(
+                    'UNAVAILABLE',
+                    '当前凭据入口不支持系统重读；人工任务与正文仍可使用。',
+                  );
+                await ports.credentials.refresh();
+              } else {
                 if (!ports.credentials.get(agentProviderFor(request.model)))
                   return failure('NO_KEY', '请先保存该服务商的 Key，再设为默认模型。');
                 await ports.credentials.setDefaultModel(request.model);
@@ -154,11 +173,12 @@ export function createAgentApplication(ports: {
           } catch {
             return failure('COPY_FAILED', '复制失败，请选择文字手动复制。');
           }
-          const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
+          const state = configuration();
+          const { providers } = state;
           return {
             ok: true,
             configured: providers[item.run.provider],
-            providers,
+            ...state,
             model: item.run.model,
             runs: [{ ...item.run }],
           };
@@ -182,7 +202,15 @@ export function createAgentApplication(ports: {
               return failure('LIMIT', '本次会话已达运行上限，请先保存需要保留的结果。');
             if (ports.credentials.getDefaultModel() !== selectedModel)
               return failure('MODEL_CHANGED', '默认模型已变化，请返回修改并重新预览；本次未发送。');
-            const key = ports.credentials.get(provider);
+            let key: string | undefined;
+            try {
+              key = ports.credentials.get(provider);
+            } catch {
+              return failure(
+                'CREDENTIAL_UNAVAILABLE',
+                '系统安全凭据暂不可读，未发起模型请求；旧密文已保留，人工任务与正文仍可使用。',
+              );
+            }
             if (!key)
               return failure(
                 'NO_KEY',
@@ -300,12 +328,13 @@ export function createAgentApplication(ports: {
           request.operation === 'start'
             ? (request.model ?? 'gpt-4.1-mini')
             : ports.credentials.getDefaultModel();
-        const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
+        const state = configuration();
+        const { providers } = state;
         return {
           ok: true,
           configured: providers[agentProviderFor(model)],
           model,
-          providers,
+          ...state,
           runs:
             'scope' in request
               ? [...runs.values()]
@@ -318,7 +347,10 @@ export function createAgentApplication(ports: {
               : [],
         };
       } catch {
-        return failure('UNAVAILABLE', '模型配置或运行暂不可用。未自动重试，也未修改正文。');
+        return failure(
+          'UNAVAILABLE',
+          '模型配置或系统安全存储暂不可用，请核对状态；不会明文降级或自动重试。人工任务与正文仍可使用。',
+        );
       }
     },
     release(owner?: string) {

@@ -184,6 +184,7 @@ export default function AgentPanel({
   const [providers, setProviders] = useState({ openai: false, deepseek: false });
   const configured = providers[agentProviderFor(model)];
   const [error, setError] = useState('');
+  const [credentialUnavailable, setCredentialUnavailable] = useState(false);
   const openSettings = useContext(ModelSettingsNavigation);
   const [pending, setPending] = useState(false);
   const [unknown, setUnknown] = useState(() => submissions.has(scope));
@@ -223,6 +224,7 @@ export default function AgentPanel({
       setRuns(result.runs);
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
     } else setError(result.message);
   };
   useEffect(() => {
@@ -241,6 +243,9 @@ export default function AgentPanel({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialUnavailable(
+            Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
+          );
           const submitted = submissions.get(scope);
           if (submitted && result.runs.some((run) => run.id === submitted.run_id))
             acceptResponse.current(submitted);
@@ -264,7 +269,11 @@ export default function AgentPanel({
     const prompt = previous?.prompt ?? draft.text.trim();
     if (!prompt || prompt.length > 4000) return;
     if (!previous && !configured) {
-      setError('请在设置中配置当前模型的 Key，附件与输入已保留。');
+      setError(
+        credentialUnavailable
+          ? '系统安全凭据暂不可读，请核对系统安全存储后重启应用。附件与输入已保留。'
+          : '请在设置中配置当前模型的 Key，附件与输入已保留。',
+      );
       return;
     }
     sending.current = true;
@@ -303,6 +312,9 @@ export default function AgentPanel({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialUnavailable(
+            Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
+          );
           setError('');
         }
       } else {
@@ -332,6 +344,7 @@ export default function AgentPanel({
     if (result.ok) {
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
       if ('scope' in request) setRuns(result.runs);
       setError('');
     } else setError(result.message);
@@ -439,6 +452,11 @@ export default function AgentPanel({
                 ? ` 输入 ${latest.usage.input} / 输出 ${latest.usage.output} tokens；费用未知。`
                 : ''}
             </p>
+          )}
+          {credentialUnavailable && (
+            <div role="alert" className="assistant-error">
+              系统安全凭据暂不可读；旧密文已保留，未发起模型请求。可在设置中核对，人工任务与正文仍可使用。
+            </div>
           )}
           {error && (
             <div role="alert" className="assistant-error">

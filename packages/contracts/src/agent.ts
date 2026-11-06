@@ -12,6 +12,7 @@ const scope = z.union([z.literal('home'), z.string().uuid()]);
 const base = { protocol_version: z.literal(1) };
 export const agentRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('profile') }).strict(),
+  z.object({ ...base, operation: z.literal('refresh_credentials') }).strict(),
   z
     .object({
       ...base,
@@ -82,6 +83,13 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
     configured: z.boolean(),
     model: agentModelSchema,
     providers: z.object({ openai: z.boolean(), deepseek: z.boolean() }),
+    credential_errors: z
+      .object({
+        openai: z.literal('UNAVAILABLE').optional(),
+        deepseek: z.literal('UNAVAILABLE').optional(),
+      })
+      .strict()
+      .optional(),
     runs: z.array(agentRunSchema),
   }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),

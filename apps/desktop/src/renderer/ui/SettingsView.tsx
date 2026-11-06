@@ -191,6 +191,9 @@ function SettingRow({
 function ModelSettings() {
   const [selected, setSelected] = useState('openai');
   const [providers, setProviders] = useState<{ openai: boolean; deepseek: boolean } | null>(null);
+  const [credentialErrors, setCredentialErrors] = useState<
+    Partial<Record<AgentProvider, 'UNAVAILABLE'>>
+  >({});
   const [defaultModel, setDefaultModel] = useState<AgentModel>('gpt-4.1-mini');
   const [selectedModel, setSelectedModel] = useState<AgentModel>('gpt-4.1-mini');
   const [key, setKey] = useState('');
@@ -213,12 +216,13 @@ function ModelSettings() {
     setPending(true);
     setError('');
     setNotice('');
-    if (request.operation !== 'profile') setKey('');
+    if (request.operation !== 'profile' && request.operation !== 'refresh_credentials') setKey('');
     try {
       const result = await window.caselite.agent(request);
       if (!mounted.current) return;
       if (result.ok) {
         setProviders(result.providers);
+        setCredentialErrors(result.credential_errors ?? {});
         setDefaultModel(result.model);
         setConfirmDelete(false);
         if (request.operation === 'configure')
@@ -226,6 +230,8 @@ function ModelSettings() {
         if (request.operation === 'select_model')
           setNotice(`默认模型已保存：${agentModelLabel(result.model)}。`);
         if (request.operation === 'clear_key') setNotice('已删除本机密钥，人工编辑不受影响。');
+        if (request.operation === 'refresh_credentials')
+          setNotice('已重新读取系统凭据状态，未发起模型请求。');
       } else {
         setError(result.message);
         setProviders(null);
@@ -249,6 +255,7 @@ function ModelSettings() {
         if (cancelled) return;
         if (result.ok) {
           setProviders(result.providers);
+          setCredentialErrors(result.credential_errors ?? {});
           setDefaultModel(result.model);
         } else setError(result.message);
       })
@@ -303,9 +310,11 @@ function ModelSettings() {
                     ? pending
                       ? '读取中'
                       : '状态未知'
-                    : providers[item.id]
-                      ? '已保存'
-                      : '未配置'
+                    : credentialErrors[item.id]
+                      ? '凭据不可读'
+                      : providers[item.id]
+                        ? '已保存'
+                        : '未配置'
                   : '待接入'}
               </span>
             </button>
@@ -361,7 +370,7 @@ function ModelSettings() {
               maxLength={512}
               placeholder={
                 available
-                  ? configured
+                  ? configured || credentialErrors[provider]
                     ? '输入新 Key 以替换已有密钥'
                     : '输入你的 API Key'
                   : '服务接入后可配置'
@@ -375,6 +384,11 @@ function ModelSettings() {
               ? '密钥仅加密保存在此设备，不回显。保存不会发送材料，也不代表连接验证成功。'
               : '当前预览不收集或保存密钥，不会发起外部请求。'}
           </p>
+          {available && credentialErrors[provider] && (
+            <div className="assistant-error" role="alert">
+              系统安全凭据暂不可读；旧密文已保留，不表示密钥已删除。未发起模型请求，人工任务与正文仍可使用。
+            </div>
+          )}
           {error && (
             <div className="assistant-error" role="alert">
               {error}
@@ -399,12 +413,14 @@ function ModelSettings() {
               <>
                 <button
                   disabled={pending}
-                  onClick={() => void execute({ protocol_version: 1, operation: 'profile' })}
+                  onClick={() =>
+                    void execute({ protocol_version: 1, operation: 'refresh_credentials' })
+                  }
                 >
-                  重新读取状态
+                  重新读取系统凭据
                 </button>
                 <button
-                  disabled={pending || configured !== true}
+                  disabled={pending || (configured !== true && !credentialErrors[provider])}
                   onClick={() => setConfirmDelete(true)}
                 >
                   删除 Key

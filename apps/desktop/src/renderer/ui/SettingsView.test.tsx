@@ -38,7 +38,7 @@ describe('central model settings', () => {
     expect(input.value).toBe('');
     expect(screen.queryByText('已保存')).toBeNull();
     expect((screen.getByText('删除 Key') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByText('重新读取状态'));
+    fireEvent.click(screen.getByText('重新读取系统凭据'));
     await screen.findAllByText('未配置');
     fail = false;
     fireEvent.change(input, { target: { value: 'sk-' + 'synthetic-settings-test' } });
@@ -108,4 +108,68 @@ describe('central model settings', () => {
     expect(screen.getByText('已保存')).toBeTruthy();
     expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
   });
+});
+
+it('distinguishes unavailable saved ciphertext from missing Key and deletes only after confirmation', async () => {
+  let unavailable = true;
+  const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+    if (request.operation === 'clear_key') unavailable = false;
+    return {
+      ...response(false),
+      ...(unavailable ? { credential_errors: { openai: 'UNAVAILABLE' as const } } : {}),
+    };
+  });
+  window.caselite = { agent } as unknown as Window['caselite'];
+  show();
+  await screen.findByText('凭据不可读');
+  expect(screen.getByRole('alert').textContent).toContain('不表示密钥已删除');
+  expect((screen.getByText('设为默认模型') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('重新读取系统凭据'));
+  await screen.findByText('凭据不可读');
+  expect(
+    agent.mock.calls.some(
+      ([r]) =>
+        r.operation === 'configure' || r.operation === 'clear_key' || r.operation === 'start',
+    ),
+  ).toBe(false);
+  await waitFor(() =>
+    expect((screen.getByText('删除 Key') as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(screen.getByText('删除 Key'));
+  expect(agent.mock.calls.some(([r]) => r.operation === 'clear_key')).toBe(false);
+  fireEvent.click(screen.getByText('确认删除'));
+  await screen.findByText('已删除本机密钥，人工编辑不受影响。');
+  expect(screen.queryByText('凭据不可读')).toBeNull();
+});
+
+it('refreshes system credentials exactly once after an explicit click and disables mutations while pending', async () => {
+  let complete!: (value: AgentResponse) => void;
+  const agent = vi.fn((request: AgentRequest): Promise<AgentResponse> =>
+    request.operation === 'refresh_credentials'
+      ? new Promise((resolve) => {
+          complete = resolve;
+        })
+      : Promise.resolve({ ...response(false), credential_errors: { openai: 'UNAVAILABLE' } }),
+  );
+  window.caselite = { agent } as unknown as Window['caselite'];
+  show();
+  await screen.findByText('凭据不可读');
+  expect(agent).toHaveBeenCalledTimes(1);
+  const refresh = screen.getByText('重新读取系统凭据') as HTMLButtonElement;
+  fireEvent.click(refresh);
+  fireEvent.click(refresh);
+  expect(
+    agent.mock.calls.filter(([request]) => request.operation === 'refresh_credentials'),
+  ).toHaveLength(1);
+  expect(refresh.disabled).toBe(true);
+  expect((screen.getByText('删除 Key') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText('OpenAI API Key') as HTMLInputElement).disabled).toBe(true);
+  complete(response(true));
+  await screen.findByText('已重新读取系统凭据状态，未发起模型请求。');
+  expect(screen.queryByText('凭据不可读')).toBeNull();
+  expect(
+    agent.mock.calls.some(
+      ([request]) => request.operation === 'configure' || request.operation === 'start',
+    ),
+  ).toBe(false);
 });

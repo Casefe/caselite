@@ -3,7 +3,7 @@ import {
   createAgentApplication,
   type AgentRuntimePort,
 } from '../../packages/application/src/agent-application';
-import { agentRequestSchema } from '../../packages/contracts/src/agent';
+import { agentRequestSchema, agentResponseSchema } from '../../packages/contracts/src/agent';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const start = {
@@ -317,5 +317,216 @@ describe('Explicit multi-provider selection', () => {
       { protocol_version: 1, operation: 'configure', provider: 'another', key: 'sk-synthetic-key' },
     ])
       expect(agentRequestSchema.safeParse(request).success).toBe(false);
+  });
+});
+
+describe('credential failure projection', () => {
+  it('retains readable history, isolates the unavailable Provider, and rejects dispatch without reflecting the error', async () => {
+    const runtime = { start: vi.fn(() => ({ cancel() {} })) };
+    const app = createAgentApplication({
+      credentials: {
+        get(provider = 'openai') {
+          if (provider === 'openai') throw new Error('private synthetic-system-error');
+          return 'synthetic-deepseek';
+        },
+        set() {},
+        clear() {},
+        getDefaultModel: () => 'gpt-4.1-mini',
+        setDefaultModel() {},
+      },
+      runtime,
+      taskExists: () => true,
+      history: {
+        load: () => [],
+        register: (run) => ({ created: true, run }),
+        save() {},
+      },
+    });
+    for (const operation of ['profile', 'read'] as const) {
+      const result = await app.execute(
+        { protocol_version: 1, operation, ...(operation === 'read' ? { scope: 'home' } : {}) },
+        'window',
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        configured: false,
+        providers: { openai: false, deepseek: true },
+        credential_errors: { openai: 'UNAVAILABLE' },
+        runs: [],
+      });
+      expect(JSON.stringify(result)).not.toContain('private');
+    }
+    expect(await app.execute(start, 'window')).toMatchObject({
+      ok: false,
+      code: 'CREDENTIAL_UNAVAILABLE',
+    });
+    expect(runtime.start).not.toHaveBeenCalled();
+  });
+});
+
+it('validates only bounded credential error enums and accepts older responses without the optional field', () => {
+  const old = {
+    ok: true,
+    configured: false,
+    model: 'gpt-4.1-mini',
+    providers: { openai: false, deepseek: false },
+    runs: [],
+  };
+  expect(agentResponseSchema.safeParse(old).success).toBe(true);
+  expect(
+    agentResponseSchema.safeParse({ ...old, credential_errors: { openai: 'UNAVAILABLE' } }).success,
+  ).toBe(true);
+  expect(
+    agentResponseSchema.safeParse({ ...old, credential_errors: { openai: 'private system error' } })
+      .success,
+  ).toBe(false);
+  expect(
+    agentResponseSchema.safeParse({
+      ...old,
+      credential_errors: { arbitraryProvider: 'UNAVAILABLE' },
+    }).success,
+  ).toBe(false);
+});
+
+describe('explicit credential refresh', () => {
+  it('validates a strict no-secret command and never refreshes during polling', async () => {
+    const refresh = vi.fn(async () => {});
+    const app = createAgentApplication({
+      credentials: {
+        get: () => undefined,
+        getDefaultModel: () => 'gpt-4.1-mini',
+        set() {},
+        clear() {},
+        setDefaultModel() {},
+        refresh,
+      },
+      runtime: { start: vi.fn() },
+      taskExists: () => true,
+    });
+    for (const operation of ['profile', 'read', 'profile'] as const)
+      await app.execute(
+        { protocol_version: 1, operation, ...(operation === 'read' ? { scope: 'home' } : {}) },
+        'window',
+      );
+    expect(refresh).not.toHaveBeenCalled();
+    expect(
+      agentRequestSchema.safeParse({ protocol_version: 1, operation: 'refresh_credentials' })
+        .success,
+    ).toBe(true);
+    for (const extra of [
+      { key: 'sk-synthetic-key' },
+      { provider: 'deepseek' },
+      { root: '/arbitrary' },
+    ])
+      expect(
+        agentRequestSchema.safeParse({
+          protocol_version: 1,
+          operation: 'refresh_credentials',
+          ...extra,
+        }).success,
+      ).toBe(false);
+    expect(
+      await app.execute({ protocol_version: 1, operation: 'refresh_credentials' }, 'window'),
+    ).toMatchObject({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+  it('serializes refresh against save, clear, model selection, start and another refresh without blocking state reads', async () => {
+    let complete!: () => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const set = vi.fn(),
+      clear = vi.fn(),
+      setDefaultModel = vi.fn(),
+      runtime = { start: vi.fn(() => ({ cancel() {} })) };
+    const app = createAgentApplication({
+      credentials: {
+        get: () => 'synthetic-key',
+        getDefaultModel: () => 'gpt-4.1-mini',
+        refresh,
+        set,
+        clear,
+        setDefaultModel,
+      },
+      runtime,
+      taskExists: () => true,
+    });
+    const command = { protocol_version: 1, operation: 'refresh_credentials' };
+    const pending = app.execute(command, 'window');
+    for (const request of [
+      command,
+      { protocol_version: 1, operation: 'configure', key: 'sk-synthetic-key' },
+      { protocol_version: 1, operation: 'clear_key' },
+      { protocol_version: 1, operation: 'select_model', model: 'deepseek-flash' },
+      start,
+    ])
+      expect(await app.execute(request, 'other-window')).toMatchObject({ ok: false, code: 'BUSY' });
+    expect(
+      await app.execute({ protocol_version: 1, operation: 'profile' }, 'window'),
+    ).toMatchObject({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(set).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(setDefaultModel).not.toHaveBeenCalled();
+    expect(runtime.start).not.toHaveBeenCalled();
+    complete();
+    await pending;
+  });
+  it('rejects refresh while running, preparing or encrypting and never reflects system errors', async () => {
+    let finish!: Parameters<AgentRuntimePort['start']>[0]['onEnd'];
+    const refresh = vi.fn(async () => {
+      throw new Error('private system error');
+    });
+    let resolvePreparation!: (text: string) => void;
+    let resolveSave!: () => void;
+    const app = createAgentApplication({
+      credentials: {
+        get: () => 'synthetic-key',
+        getDefaultModel: () => 'gpt-4.1-mini',
+        refresh,
+        clear() {},
+        setDefaultModel() {},
+        set: () =>
+          new Promise<void>((resolve) => {
+            resolveSave = resolve;
+          }),
+      },
+      runtime: {
+        start: (input) => {
+          finish = input.onEnd;
+          return { cancel() {} };
+        },
+      },
+      taskExists: () => true,
+      resolveContext: () =>
+        new Promise<string>((resolve) => {
+          resolvePreparation = resolve;
+        }),
+    });
+    const command = { protocol_version: 1, operation: 'refresh_credentials' };
+    const preparing = app.execute(
+      { ...start, context_id: '34343434-3434-4434-8434-343434343434' },
+      'window',
+    );
+    expect(await app.execute(command, 'window')).toMatchObject({ code: 'BUSY' });
+    resolvePreparation('合成文字');
+    await preparing;
+    expect(await app.execute(command, 'window')).toMatchObject({ code: 'BUSY' });
+    finish({ status: 'succeeded', usage: null, message: '完成' });
+    const saving = app.execute(
+      { protocol_version: 1, operation: 'configure', key: 'sk-synthetic-key' },
+      'window',
+    );
+    expect(await app.execute(command, 'window')).toMatchObject({ code: 'BUSY' });
+    expect(refresh).not.toHaveBeenCalled();
+    resolveSave();
+    await saving;
+    const failed = await app.execute(command, 'window');
+    expect(failed).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+    expect(JSON.stringify(failed)).not.toContain('private');
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
