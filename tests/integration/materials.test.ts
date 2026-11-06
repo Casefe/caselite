@@ -567,3 +567,124 @@ it('does not rewrite a staged import intent while its commit is already in fligh
   await s.settled();
   s.store.close();
 });
+
+it('vision analysis reads the original scan even when a local OCR candidate already exists', async () => {
+  let processing = 0;
+  const s = setup({
+    configuration: 'cached-ocr',
+    inspect: async () => 1,
+    process: async (_bytes, input) => {
+      processing++;
+      input.onPage({ ...page, origin: 'ocr_candidate', text: 'OCR_WRONG_AMOUNT_999' });
+    },
+    render: async () => ['c3ludGhldGljLXBhZ2U='],
+  });
+  const { source } = await s.add();
+  await s.settled();
+  const preview = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      automatic: true,
+      model: 'deepseek-flash',
+      instruction: '分析原件',
+      selected: [{ source_id: source.id, pages: [1] }],
+    }),
+  ).preview!;
+  expect(preview.images).toHaveLength(1);
+  expect(preview.payload).toContain('对应附图 1');
+  expect(preview.payload).not.toContain('OCR_WRONG_AMOUNT_999');
+  expect(processing).toBe(1);
+  s.store.close();
+});
+it('a ready selected file does not wait for unrelated background OCR', async () => {
+  let pause = false;
+  let resume!: () => void;
+  const s = setup({
+    configuration: 'unrelated-job',
+    inspect: async () => 1,
+    process: async (_bytes, input) => {
+      if (pause)
+        await new Promise<void>((done) => {
+          resume = done;
+        });
+      input.onPage(page);
+    },
+  });
+  const first = await s.add();
+  await s.settled();
+  pause = true;
+  await s.add();
+  let completed = false;
+  const pending = s.app
+    .execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      automatic: true,
+      model: 'gpt-4.1-mini',
+      instruction: '只分析第一份',
+      selected: [{ source_id: first.source.id, pages: [1] }],
+    })
+    .then((r) => {
+      completed = true;
+      return r;
+    });
+  try {
+    await new Promise((done) => setTimeout(done, 50));
+    expect(completed).toBe(true);
+    const preview = ok(await pending).preview!;
+    expect(preview.selections.map((item) => item.source_id)).toEqual([first.source.id]);
+  } finally {
+    resume();
+    await s.settled();
+    s.store.close();
+  }
+});
+
+it('queues required local OCR behind a busy worker without making the user resubmit', async () => {
+  let waiting = false;
+  let resume!: () => void;
+  const s = setup({
+    configuration: 'ocr-queue',
+    inspect: async () => 1,
+    process: async (_bytes, input) => {
+      if (waiting) {
+        await new Promise<void>((done) => {
+          resume = done;
+        });
+        waiting = false;
+      }
+      input.onPage({
+        ...page,
+        origin: input.ocr ? 'ocr_candidate' : 'needs_ocr',
+        text: input.ocr ? page.text : '',
+      });
+    },
+  });
+  const first = await s.add();
+  await s.settled();
+  waiting = true;
+  await s.add();
+  const pending = s.app.execute({
+    protocol_version: 1,
+    scope: 'home',
+    operation: 'preview',
+    automatic: true,
+    model: 'deepseek-v4-pro',
+    instruction: '分析第一份',
+    selected: [{ source_id: first.source.id, pages: [1] }],
+  });
+  try {
+    await new Promise((done) => setTimeout(done, 10));
+    resume();
+    const preview = ok(await pending).preview!;
+    expect(preview.payload).toContain(page.text);
+    expect(preview.selections).toHaveLength(1);
+  } finally {
+    s.app.close();
+    await s.settled();
+    s.store.close();
+  }
+});

@@ -311,19 +311,28 @@ export function createMaterialApplication(ports: {
               let source = allowed(r.scope, selection.source_id);
               if (r.automatic) {
                 // 等待本轮受管原件，绝不能把尚未准备好的附件静默排除。
-                for (const job of jobs.values()) await waitForJob(job.done, abort.signal);
+                const selectedJob = jobs.get(source.id);
+                if (selectedJob) await waitForJob(selectedJob.done, abort.signal);
                 checkCancelled();
                 source = allowed(r.scope, source.id);
                 if (
                   !source.derivation_id ||
                   ['imported', 'interrupted', 'cancelled', 'failed'].includes(source.status)
                 ) {
+                  while (jobs.size) {
+                    await waitForJob(jobs.values().next().value!.done, abort.signal);
+                    checkCancelled();
+                  }
                   start(source, false);
                   await waitForJob(jobs.get(source.id)?.done ?? Promise.resolve(), abort.signal);
                   checkCancelled();
                   source = allowed(r.scope, source.id);
                 }
                 if (!vision && source.status === 'needs_ocr') {
+                  while (jobs.size) {
+                    await waitForJob(jobs.values().next().value!.done, abort.signal);
+                    checkCancelled();
+                  }
                   start(source, true);
                   await waitForJob(jobs.get(source.id)?.done ?? Promise.resolve(), abort.signal);
                   checkCancelled();
@@ -335,9 +344,10 @@ export function createMaterialApplication(ports: {
               const bytes = await files.read(source.asset_version_id, source.sha256);
               const pages = [...new Set(selection.pages)].sort((a, b) => a - b);
               const visualPages = vision
-                ? pages.filter(
-                    (number) => source.pages.find((p) => p.page === number)?.origin === 'needs_ocr',
-                  )
+                ? pages.filter((number) => {
+                    const origin = source.pages.find((p) => p.page === number)?.origin;
+                    return origin === 'needs_ocr' || origin === 'ocr_candidate';
+                  })
                 : [];
               if (images.length + visualPages.length > 12)
                 return fail('BUDGET', '本轮扫描页超过 12 页，请拆分 PDF 后发送；未漏页发送。');
