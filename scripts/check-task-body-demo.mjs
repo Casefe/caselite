@@ -21,10 +21,11 @@ for (const phase of ['write', 'crash', 'read']) {
     phase,
     exitCode: result.status,
     signal: result.signal,
+    errorCode: result.error?.code ?? null,
     stdout: result.stdout,
     stderr: result.stderr,
   });
-  if (phase === 'crash' ? result.signal !== 'SIGKILL' : result.status !== 0) {
+  if (result.error || (phase === 'crash' ? result.signal !== 'SIGKILL' : result.status !== 0)) {
     writeFileSync(join(dir, 'failure.json'), JSON.stringify(phases, null, 2));
     throw new Error(`Task ${phase} failed; inspect ${dir}/failure.json`);
   }
@@ -66,6 +67,8 @@ for (const name of [
   'agent-composer-empty.png',
   'agent-composer-filled.png',
   'task-content.png',
+  'task-create-light.png',
+  'task-create-dark.png',
   'project-editors.png',
 ])
   copyFileSync(join(dir, name), join(out, name));

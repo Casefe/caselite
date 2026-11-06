@@ -373,53 +373,80 @@ function Workbench() {
               if (!composing.current) void create();
             }}
           >
-            <p className="eyebrow">开始一次独立工作</p>
-            <h1>新建独立任务</h1>
-            <label>
-              任务名称
-              <input
-                data-testid="task-title"
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  if (!busy) createRequest.current = null;
-                }}
-                required
-                maxLength={160}
+            <header className="create-form-header">
+              <div className="create-form-context">
+                <span className="create-workspace-icon">
+                  <Icon name="check" size={15} />
+                </span>
+                <span>本地工作区</span>
+                <Icon name="chevron" size={13} />
+                <h1>新建任务</h1>
+              </div>
+              <button
+                type="button"
+                className="create-close"
+                aria-label="取消新建任务"
                 disabled={busy || uncertain}
-              />
-            </label>
-            <div className="create-objective">
-              <label id="task-content-label">任务内容</label>
-              <DraftEditor
-                key={creating ? 'create-content' : 'closed'}
-                value={objective}
-                label="任务内容"
-                testId="task-objective"
-                disabled={busy || uncertain}
-                onChange={(value) => {
-                  setObjective(value);
-                  if (!busy) createRequest.current = null;
-                }}
-                placeholder="输入目标和说明，使用 / 插入内容块…"
-              />
-              {objective.text.length > 4000 && (
-                <p role="alert" className="caption">
-                  超过4000字符，请精简后创建；输入仍保留。
-                </p>
-              )}
+                onClick={() => setCreating(false)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="create-form-body">
+              <label className="create-title-label">
+                <span className="sr-only">任务名称</span>
+                <input
+                  data-testid="task-title"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (!busy) createRequest.current = null;
+                  }}
+                  required
+                  maxLength={160}
+                  disabled={busy || uncertain}
+                  placeholder="任务标题"
+                />
+              </label>
+              <div className="create-objective">
+                <span id="task-content-label" className="sr-only">
+                  任务内容
+                </span>
+                <DraftEditor
+                  key={creating ? 'create-content' : 'closed'}
+                  value={objective}
+                  label="任务内容"
+                  testId="task-objective"
+                  disabled={busy || uncertain}
+                  onChange={(value) => {
+                    setObjective(value);
+                    if (!busy) createRequest.current = null;
+                  }}
+                  placeholder="添加说明…"
+                />
+                {objective.text.length > 4000 && (
+                  <p role="alert" className="caption">
+                    超过4000字符，请精简后创建；输入仍保留。
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="caption">可直接开始，不需要先创建项目。</p>
-            <button
-              className="primary"
-              disabled={busy || !title.trim() || objective.text.length > 4000}
-              data-testid="create-task"
-            >
-              {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
-            </button>
-            <button type="button" disabled={busy || uncertain} onClick={() => setCreating(false)}>
-              取消
-            </button>
+            <footer className="create-form-footer">
+              <span className="create-scope">
+                <Icon name="check" size={15} /> 独立任务
+              </span>
+              <span className="create-form-spacer" />
+              <button type="button" disabled={busy || uncertain} onClick={() => setCreating(false)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={busy || !title.trim() || objective.text.length > 4000}
+                data-testid="create-task"
+              >
+                {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
+              </button>
+            </footer>
           </form>
         ) : loading ? (
           <div className="loading-state" role="status">
@@ -438,13 +465,6 @@ function Workbench() {
           <AgentHome
             prompt={agentPrompt}
             onPrompt={setAgentPrompt}
-            onStart={() => {
-              if (!canLeave() || !agentPrompt.text.trim()) return;
-              newTask();
-              setTitle(agentPrompt.text.trim().split('\n')[0].slice(0, 60));
-              setObjective(agentPrompt);
-              setAgentPrompt(emptyDraft());
-            }}
             onNavigate={navigate}
             tasks={tasks}
             onOpen={(id) => void open(id)}
@@ -577,6 +597,7 @@ function Workbench() {
             filter={taskFilter}
             onFilter={setTaskFilter}
             onOpen={(id) => void open(id)}
+            onNew={newTask}
           />
         ) : view === 'settings' ? (
           <SettingsView

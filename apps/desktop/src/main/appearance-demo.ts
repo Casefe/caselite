@@ -90,7 +90,9 @@ export async function runAppearanceDemo(
       await evaluate(
         "(()=>{const e=document.querySelector('[data-testid=agent-input]');e.focus();document.execCommand('insertText',false,'合成主题验证');})()",
       );
-      await click('[data-testid=create-from-agent]');
+      await click('[data-nav=tasks]');
+      await wait("document.querySelector('[data-testid=new-task]')");
+      await click('[data-testid=new-task]');
       await wait("document.querySelector('[data-testid=task-title]')");
       await evaluate(
         "(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'外观合成测试');e.dispatchEvent(new Event('input',{bubbles:true}));})()",

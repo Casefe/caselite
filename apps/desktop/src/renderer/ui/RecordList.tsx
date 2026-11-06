@@ -9,12 +9,14 @@ export default function RecordList({
   filter,
   onFilter,
   onOpen,
+  onNew,
 }: {
   tasks: Task[];
   documents: boolean;
   filter: string;
   onFilter(value: string): void;
   onOpen(id: string): void;
+  onNew?(): void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 筛选后只显示当前结果中的属性，避免右栏仍指向已被隐藏的对象。
@@ -30,6 +32,11 @@ export default function RecordList({
           <Icon name={documents ? 'file' : 'check'} size={18} />
           <h1>{documents ? '文档' : '我的任务'}</h1>
           <span className="collection-total">{tasks.length}</span>
+          {!documents && onNew && (
+            <button data-testid="new-task" onClick={onNew}>
+              新建任务
+            </button>
+          )}
         </div>
         {documents && (
           <div className="document-intro">

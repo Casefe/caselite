@@ -90,6 +90,7 @@ export async function runTaskDemo(
         const h=header?.getBoundingClientRect();
         return {page:document.querySelector('[data-nav][aria-current=page]')?.getAttribute('data-nav'),
           width:innerWidth, height:innerHeight, navWidth:nav.width,
+          alerts:Array.from(document.querySelectorAll('.workspace-main > [role=alert]')).map(e=>e.textContent),
           centerLeft:c?.left, centerRight:c?.right, rightWidth:r?.width,
           geometry:c && r ? [c.left,c.top,c.width,c.height,r.left,r.top,r.width,r.height] : null,
           legacyHeaderAbsent:!document.querySelector('.global-bar, .brand-caption'),
@@ -173,7 +174,7 @@ export async function runTaskDemo(
         `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));}})()`,
       );
     await wait(
-      "document.querySelector('[data-testid=create-from-agent]') && !document.body.textContent.includes('正在读取')",
+      "document.querySelector('[data-testid=agent-input]') && !document.body.textContent.includes('正在读取')",
     );
     const openTask = async (id: string) => {
       await click('[data-nav=tasks]');
@@ -236,11 +237,26 @@ export async function runTaskDemo(
         "document.querySelector('[data-testid=agent-input]').value.includes('事实、矛盾')",
       );
       await capture('agent-composer-filled.png');
-      await click('[data-testid=create-from-agent]');
+      await click('[data-nav=tasks]');
+      await wait("document.querySelector('[data-testid=new-task]')");
+      await click('[data-testid=new-task]');
       await wait("document.querySelector('[data-testid=task-title]')");
+      await input(
+        '[data-testid=task-objective]',
+        '核对两份材料的事实、矛盾及缺件，形成内部沟通初稿',
+      );
       await wait(
         "document.querySelector('[data-testid=task-objective]').textContent==='核对两份材料的事实、矛盾及缺件，形成内部沟通初稿'",
       );
+      const createWidth = await evaluate(
+        "document.querySelector('.create-form').getBoundingClientRect().width",
+      );
+      if (createWidth < 700)
+        throw new Error('Task creation form is too narrow on the wide desktop');
+      await capture('task-create-light.png');
+      await evaluate("document.documentElement.dataset.theme='dark'");
+      await capture('task-create-dark.png');
+      await evaluate("document.documentElement.dataset.theme='light'");
       await input('[data-testid=task-objective]', '/');
       await wait("document.querySelector('.create-objective [data-block-command=heading2]')");
       await click('.create-objective [data-block-command=heading2]');
@@ -322,8 +338,13 @@ export async function runTaskDemo(
       await wait(
         "document.querySelector('[data-testid=task-content-status]')?.textContent==='任务内容已保存'",
       );
-      if (await evaluate("Boolean(document.querySelector('[aria-label=关闭提示]'))"))
-        await click('[aria-label=关闭提示]');
+      if (
+        await evaluate(
+          "Boolean(document.querySelector('.workspace-main > .error [aria-label=关闭提示]'))",
+        )
+      )
+        await click('.workspace-main > .error [aria-label=关闭提示]');
+      await wait("!document.querySelector('.workspace-main > .error')");
       await capture('task-content.png');
       await bodyTab();
       await wait(
@@ -336,7 +357,9 @@ export async function runTaskDemo(
       await click('[data-nav=home]');
       await wait("document.querySelector('[data-testid=agent-input]')");
       await input('[data-testid=agent-input]', '独立任务B，不应显示A的正文');
-      await click('[data-testid=create-from-agent]');
+      await click('[data-nav=tasks]');
+      await wait("document.querySelector('[data-testid=new-task]')");
+      await click('[data-testid=new-task]');
       await wait("document.querySelector('[data-testid=task-title]')");
       await input('[data-testid=task-title]', '采购任务隔离样本B');
       await input('[data-testid=task-objective]', '独立任务B，不应显示A的正文');

@@ -245,7 +245,9 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
         else reject(new Error('Second instance was not refused'));
       });
     });
-    await clickText('创建本地任务');
+    await evaluate("document.querySelector('[data-nav=tasks]').click()");
+    await wait("document.querySelector('[data-testid=new-task]')");
+    await evaluate("document.querySelector('[data-testid=new-task]').click()");
     await wait("document.querySelector('[data-testid=task-title]')");
     await evaluate(
       "(()=>{const e=document.querySelector('[data-testid=task-title]');const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(e,'AI 接入合成演示');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
@@ -322,7 +324,7 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     writeFileSync(join(root, 'deepseek-sidebar.png'), Buffer.from(dsImage.data, 'base64'));
     await evaluate("document.querySelector('[data-nav=home]').click()");
     await wait(
-      "document.querySelector('.agent-home .assistant-model')?.textContent.includes('deepseek-v4-pro')",
+      "document.querySelector('.agent-home [aria-label=选择大模型]')?.value==='deepseek-v4-pro'",
     );
     await type('[data-testid=agent-input]', 'DeepSeek 合成演示：梳理事实、矛盾与缺件。');
     await wait(
@@ -351,7 +353,7 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
           actualUi: 'assistant-ui 0.15.32',
           provider: 'MOCK_ONLY',
           checks: [
-            'Tiptap input',
+            'assistant-ui composer input',
             'preview does not dispatch',
             'actual SDK streaming',
             'cancel',
