@@ -70,6 +70,21 @@ export const materialSelectionSchema = z
   })
   .strict();
 export const materialRequestSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('list_project'),
+      project_id: id,
+    })
+    .strict(),
+  z
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('read_project'),
+      project_id: id,
+      source_id: id,
+    })
+    .strict(),
   z.object({ ...base, operation: z.literal('list') }).strict(),
   z.object({ ...base, operation: z.literal('cancel_prepare') }).strict(),
   z.object({ ...base, operation: z.literal('commit'), token: id }).strict(),

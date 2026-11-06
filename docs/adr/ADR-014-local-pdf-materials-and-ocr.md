@@ -1,5 +1,9 @@
 # ADR-014｜首页材料、本地 PDF 与 OCR 的受控入口
 
+## DEV-1613 项目只读投影｜2026-11-06
+
+沿同一 material IPC 增加 list_project/read_project，只接收明确 project_id；由材料 Owner 联查同 workspace 的 Matter、TaskProject 与 Task，归档项目拒绝查询。打开前及异步读取后均校验当前关联，不能用任意 source_id 扩权。既有 source.id 是当前一对一固定来源版本身份，asset_version_id 仍独立表达字节；不新建 SourceVersion 表或改写旧身份。首片仅已有 PDF、名称、大小与真实派生状态，不虚构标签或多类型。项目归组不会复制文件，独立 Task 的原接口不变。查询与阅读失败保全登记及原件；没有新持久化格式或迁移。
+
 - 状态：按 2026-11-06 用户授权实施；正式验收逐项留原 Linear 卡。
 - 责任：DEV-1733/1609/1610/1611/1614/1615；OCR 归 DEV-1649，选材外发归 DEV-1651。
 

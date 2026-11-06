@@ -54,6 +54,23 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     putStage,
     task,
     get,
+    projectSources(projectId: string): Material[] | undefined {
+      if (
+        !db
+          .prepare('SELECT id FROM matters WHERE id=? AND workspace_id=? AND archived_at IS NULL')
+          .get(projectId, workspace)
+      )
+        return undefined;
+      const rows = db
+        .prepare(
+          `SELECT s.id FROM material_sources s
+        JOIN task_items t ON t.id=s.task_id AND t.workspace_id=s.workspace_id
+        JOIN task_projects p ON p.task_id=t.id
+        WHERE s.workspace_id=? AND p.matter_id=? ORDER BY s.rowid`,
+        )
+        .all(workspace, projectId) as { id: string }[];
+      return rows.map((row) => get(row.id)!);
+    },
     pending(scope: MaterialScope) {
       const row = db
         .prepare(

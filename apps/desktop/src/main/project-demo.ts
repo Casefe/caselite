@@ -1,8 +1,8 @@
 import { app, type BrowserWindow, session } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
-import type { CatalogResponse, TaskResponse } from '@caselite/contracts';
+import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
 
 // 沿用宿主校验过的合成目录和正式IPC；只测项目，不改全工作台演示的既有断言。
 export async function runProjectDemo(
@@ -14,6 +14,8 @@ export async function runProjectDemo(
     | 'project-edit'
     | 'project-restore'
     | 'project-promote'
+    | 'project-files'
+    | 'project-files-read'
     | 'project-promote-read',
 ) {
   const isolation = {
@@ -54,7 +56,117 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
-    if (phase === 'project-promote' || phase === 'project-promote-read') {
+    if (phase === 'project-files' || phase === 'project-files-read') {
+      const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const projectId = expected.task.matter_id;
+      const request = { protocol_version: 1, operation: 'list_project', project_id: projectId };
+      const listFiles = async () => {
+        const result: MaterialResponse = await evaluate(
+          `window.caselite.material(${JSON.stringify(request)})`,
+        );
+        if (!result.ok) throw new Error(result.message);
+        return result.materials;
+      };
+      if (phase === 'project-files') {
+        await evaluate("document.querySelector('[data-nav=tasks]').click()");
+        await wait(`document.querySelector('[data-row-task="${expected.task.id}"]')`);
+        await evaluate(`document.querySelector('[data-row-task="${expected.task.id}"]').click()`);
+        await button('AI 助手');
+        await wait("document.querySelector('.material-composer')");
+        window.webContents.debugger.attach('1.3');
+        for (let index = 0; index < 2; index++) {
+          await evaluate(
+            "(()=>{document.querySelector('#project-file-input')?.remove();const input=document.createElement('input');input.type='file';input.id='project-file-input';input.hidden=true;document.body.append(input);})()",
+          );
+          const doc = await window.webContents.debugger.sendCommand('DOM.getDocument');
+          const { nodeId } = await window.webContents.debugger.sendCommand('DOM.querySelector', {
+            nodeId: doc.root.nodeId,
+            selector: '#project-file-input',
+          });
+          await window.webContents.debugger.sendCommand('DOM.setFileInputFiles', {
+            nodeId,
+            files: [join(root, 'fixture.pdf')],
+          });
+          await evaluate(
+            "(()=>{const data=new DataTransfer();data.items.add(document.querySelector('#project-file-input').files[0]);document.querySelector('.material-composer').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));})()",
+          );
+          await wait(
+            `document.querySelectorAll('.material-chips > *').length>=${index + 1} || document.body.textContent.includes('fixture.pdf')`,
+          );
+          for (let i = 0; i < 100; i++) {
+            if (
+              (await listFiles()).length === index + 1 &&
+              !(await evaluate("Boolean(document.querySelector('.material-staged'))"))
+            )
+              break;
+            await new Promise((r) => setTimeout(r, 100));
+          }
+        }
+        window.webContents.debugger.detach();
+        const files = await listFiles();
+        if (files.length !== 2 || files[0].id === files[1].id)
+          throw new Error('Same-name sources not independently saved');
+        writeFileSync(join(root, 'files-expected.json'), JSON.stringify(files, null, 2));
+        await evaluate("document.querySelector('[data-nav=projects]').click()");
+      }
+      await wait("document.querySelector('.project-title-link')");
+      await button('独立任务转项目验收');
+      await wait("document.querySelector('[aria-label=编辑项目名称]')");
+      await button('文件');
+      await wait("document.querySelectorAll('[data-source-id]').length===2");
+      const files = await listFiles();
+      const prior = JSON.parse(readFileSync(join(root, 'files-expected.json'), 'utf8'));
+      if (
+        JSON.stringify(files.map((m) => [m.id, m.asset_version_id, m.sha256])) !==
+        JSON.stringify(
+          prior.map((m: { id: string; asset_version_id: string; sha256: string }) => [
+            m.id,
+            m.asset_version_id,
+            m.sha256,
+          ]),
+        )
+      )
+        throw new Error('Restart changed fixed material identity');
+      await capture('project-files-list.png');
+      const file = files[1];
+      if (phase === 'project-files') {
+        const path = join(
+          isolation.userData,
+          'materials',
+          'originals',
+          file.asset_version_id + '.pdf',
+        );
+        renameSync(path, path + '.probe-hold');
+        try {
+          await evaluate(`document.querySelector('[data-source-id="${file.id}"] button').click()`);
+          await wait("document.querySelector('.project-files [role=alert]')");
+          await capture('project-files-missing.png');
+          if ((await listFiles()).length !== 2)
+            throw new Error('Read failure erased persisted source');
+        } finally {
+          renameSync(path + '.probe-hold', path);
+        }
+        await button('重试读取');
+      } else
+        await evaluate(`document.querySelector('[data-source-id="${file.id}"] button').click()`);
+      await wait("document.querySelector('.material-paper canvas')?.width>0");
+      await capture(
+        phase === 'project-files' ? 'project-files-recovered.png' : 'project-files-reopened.png',
+      );
+      writeFileSync(
+        join(root, phase + '.json'),
+        JSON.stringify(
+          {
+            status: 'PASS_REAL',
+            files: files.map((m) => ({ id: m.id, asset: m.asset_version_id, sha256: m.sha256 })),
+            missingReadRecovery: phase === 'project-files',
+            isolation,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (phase === 'project-promote' || phase === 'project-promote-read') {
       if (phase === 'project-promote') {
         await evaluate("document.querySelector('[data-nav=tasks]').click()");
         await wait("document.querySelector('[data-testid=new-task]')");

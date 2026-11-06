@@ -84,9 +84,9 @@ describe('durable project UI receipts and target identity', () => {
     expect(open).toHaveBeenCalledWith(original.id);
     for (const label of ['文件', '交付物', '活动']) {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
-      expect(screen.getByRole('tabpanel', { name: label, exact: true }).textContent).toContain(
-        '尚未接入',
-      );
+      const panel = screen.getByRole('tabpanel', { name: label, exact: true });
+      if (label === '文件') expect(within(panel).getByLabelText('搜索项目文件')).toBeTruthy();
+      else expect(panel.textContent).toContain('尚未接入');
     }
     fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
     expect(document.querySelector('.catalog-actions')?.getAttribute('data-project-id')).toBe(p.id);

@@ -6,6 +6,7 @@ import AgentPanel from '../ui/AgentPanel';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
+import ProjectFiles from './ProjectFiles';
 const names = { planned: '待开始', active: '进行中', done: '已完成' };
 const sections = {
   overview: '概述',
@@ -257,7 +258,13 @@ export default function ProjectCatalog({
                 className="project-record-panel"
               >
                 <h2>项目文件</h2>
-                <p>项目文件视图尚未接入。原任务与材料保持原有归属。</p>
+                {section === 'files' && (
+                  <ProjectFiles
+                    key={editor.project.id}
+                    projectId={editor.project.id}
+                    disabled={reading || dirty || c.pending || c.unknown}
+                  />
+                )}
               </section>
               <section
                 hidden={section !== 'deliverables'}

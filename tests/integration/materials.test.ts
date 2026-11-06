@@ -108,6 +108,90 @@ it('preserves fixed bytes, separates same-name imports, and replays a committed 
   expect(reopened.materials.list('home')[0].pages[0].text).toBe(page.text);
   reopened.close();
 });
+it('projects existing fixed sources, rejects foreign scopes, and rechecks membership after an asynchronous read', async () => {
+  const s = setup();
+  const first = await s.add();
+  await s.settled();
+  await s.add();
+  await s.settled();
+  const command = (input: object) =>
+    s.store.catalog.execute({
+      protocol_version: 1,
+      request_id: randomUUID(),
+      idempotency_key: randomUUID(),
+      ...input,
+    } as Parameters<typeof s.store.catalog.execute>[0]);
+  const created = command({ operation: 'create_project', title: '合成项目' });
+  if (!created.ok) throw new Error(created.message);
+  const project = created.target_id!;
+  const query = { protocol_version: 1, operation: 'list_project', project_id: project };
+  expect(ok(await s.app.execute(query)).materials).toEqual([]);
+  const read = s.store.execute({
+    protocol_version: 1,
+    operation: 'read',
+    task_id: first.source.task_id,
+  });
+  if (!read.ok) throw new Error(read.message);
+  command({
+    operation: 'assign_task',
+    task_id: first.source.task_id,
+    expected_version: read.tasks[0].version,
+    matter_id: project,
+  });
+  const listed = ok(await s.app.execute(query)).materials;
+  const other = openTaskStore(join(s.root, 'db.sqlite'), migrations, 'other-workspace');
+  expect(other.materials.projectSources(project)).toBeUndefined();
+  other.close();
+  expect(listed.map((m) => m.id)).toEqual(s.store.materials.list('home').map((m) => m.id));
+  expect(new Set(listed.map((m) => m.name)).size).toBe(1);
+  expect(new Set(listed.map((m) => m.id)).size).toBe(2);
+  const request = { ...query, operation: 'read_project', source_id: first.source.id };
+  expect(Buffer.from(ok(await s.app.execute(request)).data!)).toEqual(readFileSync(s.fixture));
+  expect((await s.app.execute({ ...request, project_id: randomUUID() })).ok).toBe(false);
+  const originalRead = s.files.read;
+  s.files.read = async (...args) => {
+    const task = s.store.execute({
+      protocol_version: 1,
+      operation: 'read',
+      task_id: first.source.task_id,
+    });
+    if (!task.ok) throw new Error(task.message);
+    command({
+      operation: 'assign_task',
+      task_id: first.source.task_id,
+      expected_version: task.tasks[0].version,
+      matter_id: null,
+    });
+    return originalRead(...args);
+  };
+  expect((await s.app.execute(request)).ok).toBe(false);
+  expect(ok(await s.app.execute(query)).materials).toEqual([]);
+  expect(s.store.materials.list(first.source.task_id).map((m) => m.id)).toEqual(
+    listed.map((m) => m.id),
+  );
+  const taskAfter = s.store.execute({
+    protocol_version: 1,
+    operation: 'read',
+    task_id: first.source.task_id,
+  });
+  if (!taskAfter.ok) throw new Error(taskAfter.message);
+  command({
+    operation: 'assign_task',
+    task_id: first.source.task_id,
+    expected_version: taskAfter.tasks[0].version,
+    matter_id: project,
+  });
+  s.files.read = async (...args) => {
+    command({ operation: 'archive_project', id: project, expected_version: 1, archived: true });
+    return originalRead(...args);
+  };
+  expect((await s.app.execute(request)).ok).toBe(false);
+  expect((await s.app.execute(query)).ok).toBe(false);
+  s.store.close();
+  const reopened = openTaskStore(join(s.root, 'db.sqlite'), migrations);
+  expect(reopened.materials.list(first.source.task_id)[0].sha256).toBe(first.source.sha256);
+  reopened.close();
+});
 it('rejects symlinks and renamed non-PDFs without writing a ready source', async () => {
   const s = setup();
   symlinkSync(s.fixture, join(s.root, 'linked.pdf'));

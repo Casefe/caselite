@@ -29,6 +29,7 @@ export interface MaterialStorePort {
   newHome(): void;
   get(id: string): Material | undefined;
   list(scope: MaterialScope): Material[];
+  projectSources(projectId: string): Material[] | undefined;
   commit(stage: MaterialStage, taskId: string, pageCount: number): Material;
   begin(source: string, id: string, config: string, pages: TextPage[]): void;
   checkpoint(source: string, id: string, status: Material['status'], pages: TextPage[]): boolean;
@@ -189,6 +190,27 @@ export function createMaterialApplication(ports: {
       const parsed = materialRequestSchema.safeParse(input);
       if (!parsed.success) return fail('INVALID_REQUEST', '材料请求无效。');
       const r = parsed.data;
+      if (r.operation === 'list_project' || r.operation === 'read_project') {
+        try {
+          const sources = store.projectSources(r.project_id);
+          if (!sources) return fail('SCOPE', '项目不可访问。');
+          if (r.operation === 'list_project') return { ok: true, materials: sources };
+          const source = sources.find((item) => item.id === r.source_id);
+          if (!source || !ports.taskExists(source.task_id))
+            return fail('SCOPE', '材料不在当前项目范围内。');
+          const data = new Uint8Array(await files.read(source.asset_version_id, source.sha256));
+          // 原件读取跨异步边界，返回前重新核对归组；旧栏目不能继续读取已移出的任务材料。
+          const current = store.projectSources(r.project_id);
+          if (
+            !current?.some((item) => item.id === source.id && item.task_id === source.task_id) ||
+            !ports.taskExists(source.task_id)
+          )
+            return fail('SCOPE', '材料范围已变化，请重新读取项目。');
+          return { ok: true, materials: current, data };
+        } catch {
+          return fail('MATERIAL_UNAVAILABLE', '原件暂不可读取，请检查文件后重试；已登记来源保留。');
+        }
+      }
       if (r.scope !== 'home' && !ports.taskExists(r.scope)) return fail('SCOPE', '任务不存在。');
       try {
         if (r.operation === 'cancel_prepare') {
