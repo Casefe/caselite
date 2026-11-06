@@ -2,24 +2,35 @@ import { useEffect, useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 import type { AgentRun, Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
-import BrandLogo from './BrandLogo';
 import AgentPanel from './AgentPanel';
+import BrandLogo from './BrandLogo';
+import { useCatalog } from './useCatalog';
 
 const starters = [
   {
-    title: '梳理事实与缺件',
-    text: '梳理两份材料中的事实、矛盾和缺件，形成律师内部沟通初稿。',
+    title: '合同审查',
+    text: '请根据我的要求协助审查合同，梳理关注条款、风险及待核实事项。\n具体要求：',
     icon: 'list',
   },
   {
-    title: '对照材料中的矛盾',
-    text: '对照所选材料，列出不一致的陈述、待核实的问题和需要补充的材料。',
+    title: '创建任务',
+    text: '请根据我的要求拟定任务名称、工作目标和需要完成的步骤。\n具体要求：',
+    icon: 'check',
+  },
+  {
+    title: '创建项目',
+    text: '请根据我的要求拟定项目名称、目标及初步工作安排。\n具体要求：',
+    icon: 'folder',
+  },
+  {
+    title: '生成文书',
+    text: '请根据我的要求拟定法律文书草稿，并标明待核实信息。\n具体要求：',
     icon: 'file',
   },
   {
-    title: '起草内部沟通稿',
-    text: '根据已核对的事实起草内部沟通稿，明确区分事实、推断与待核实事项。',
-    icon: 'book',
+    title: '法律研究',
+    text: '请根据我的要求梳理法律问题，列出需要核验的依据和不确定事项。\n具体要求：',
+    icon: 'search',
   },
 ];
 
@@ -27,22 +38,26 @@ export default function AgentHome({
   prompt,
   onPrompt,
   onNavigate,
-  onStart,
   tasks,
   onOpen,
 }: {
   prompt: RichDraft;
   onPrompt(value: RichDraft): void;
   onNavigate(view: 'tasks' | 'projects' | 'agent-history'): void;
-  onStart?(): void;
   tasks: Task[];
   onOpen(id: string): void;
 }) {
   const draft = useRef<DraftEditorHandle>(null);
+  const [showNotice, setShowNotice] = useState(true);
+  const [selectedStarter, setSelectedStarter] = useState<string | null>(null);
+  const catalog = useCatalog();
+  const projects = catalog.data?.projects.filter((project) => !project.archived_at) ?? [];
   const [history, setHistory] = useState<AgentRun[] | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
+  const [conversation, setConversation] = useState(false);
+  const [overview, setOverview] = useState(false);
   const historyVersion = useRef(0);
   useEffect(() => {
     let stopped = false;
@@ -92,8 +107,6 @@ export default function AgentHome({
       setPinBusy(false);
     }
   };
-  const [conversation, setConversation] = useState(false);
-  const [overview, setOverview] = useState(false);
   return (
     <section
       className={`home-view agent-home${conversation && !overview ? ' home-conversation' : ''}`}
@@ -111,41 +124,54 @@ export default function AgentHome({
             </button>
           </header>
         )}
-        <div className="agent-topline">
-          <span>
-            <Icon name="home" size={15} /> 首页
-          </span>
-        </div>
         <div className="agent-start">
-          <span className="agent-wordmark">
-            <BrandLogo /> CaseLite Agent
-          </span>
-          <h1>从一个工作目标开始</h1>
-          <p>从工作目标开始，把材料、思考和成果放在同一个任务里。</p>
+          <div className="agent-welcome">
+            <BrandLogo />
+            <h1>早上好，谭律师！</h1>
+          </div>
           <AgentPanel
             scope="home"
             draft={prompt}
             onDraft={onPrompt}
             editorRef={draft}
-            onCreate={onStart}
             onConversationChange={setConversation}
           />
-          <div className="agent-starters">
+          <div className="agent-starters" style={{ justifyContent: 'center' }}>
             {starters.map((item) => (
               <button
                 key={item.title}
+                aria-pressed={selectedStarter === item.title}
+                style={{
+                  borderRadius: '999px',
+                  ...(selectedStarter === item.title
+                    ? { background: 'var(--ink)', color: 'var(--theme-panel, white)' }
+                    : {}),
+                }}
                 disabled={
                   Boolean(prompt.text.trim()) && prompt.text.length + item.text.length + 1 > 4000
                 }
                 title={prompt.text.trim() ? '追加到工作目标（最多4000字符）' : '填写工作目标'}
-                onClick={() => draft.current?.append(item.text)}
+                onClick={() => {
+                  draft.current?.append(item.text);
+                  setSelectedStarter(item.title);
+                }}
               >
                 <Icon name={item.icon} size={16} />
                 <span>{item.title}</span>
-                <Icon name="chevron" size={12} />
               </button>
             ))}
           </div>
+          {showNotice && (
+            <div className="home-notice">
+              <div>
+                <strong>CaseLite App</strong>
+                <p>在一个本地工作区中整理任务、项目与文档。</p>
+              </div>
+              <button aria-label="关闭提示" onClick={() => setShowNotice(false)}>
+                ×
+              </button>
+            </div>
+          )}
         </div>
         <section className="home-task-feed home-history" aria-label="历史对话">
           <header>
@@ -213,36 +239,71 @@ export default function AgentHome({
           本地工作区 <span>无需登录即可开始</span>
         </div>
       </div>
-      <aside className="agent-context" aria-label="Agent 工作上下文">
-        <h2>属性</h2>
-        <div className="agent-context-section">
-          <h3>当前范围</h3>
-          <p>
-            <Icon name="panel" size={14} />
-            个人本地工作区
-          </p>
-          <span>开始任务后，在右栏查看任务属性与 AI 上下文。</span>
-        </div>
-        <div className="agent-context-section">
-          <h3>本地工作区</h3>
-          <dl className="workspace-properties">
-            <dt>任务</dt>
-            <dd>{tasks.length}</dd>
-            <dt>已有正文修订</dt>
-            <dd>{tasks.filter((task) => task.body_revision > 0).length}</dd>
-            <dt>存储位置</dt>
-            <dd>仅此设备</dd>
-            <dt>模型方式</dt>
-            <dd>自带密钥 · BYOK</dd>
-          </dl>
-        </div>
-        <div className="agent-context-section">
-          <h3>已连接能力</h3>
-          <p>
-            <i className="local-dot" />
-            任务与正文保存
-          </p>
-          <p className="muted">AI 仅使用本次确认输入；材料读取尚未接入</p>
+      <aside
+        className="agent-context"
+        aria-label="Agent 工作上下文"
+        style={{
+          borderLeft: 0,
+          borderTop: 0,
+          background: 'var(--theme-panel, white)',
+          paddingTop: 18,
+        }}
+      >
+        <div className="home-context-panel">
+          <section className="home-reminder-card">
+            <h3>
+              <Icon name="clock" size={16} /> 重要日期
+            </h3>
+            <p>日期提醒尚未接入，暂不能显示未来事项。</p>
+          </section>
+          <section className="home-reminder-card home-recent-card" aria-label="最近任务">
+            <h3>
+              <Icon name="check" size={16} />
+              <button className="home-section-link" onClick={() => onNavigate('tasks')}>
+                最近任务
+              </button>
+              <span className="home-recent-count">{tasks.length}</span>
+            </h3>
+            {tasks.length ? (
+              tasks.slice(0, 5).map((task) => (
+                <button className="home-recent-row" key={task.id} onClick={() => onOpen(task.id)}>
+                  <span>{task.title}</span>
+                  <Icon name="chevron" size={13} />
+                </button>
+              ))
+            ) : (
+              <p>还没有任务，可在“任务”中创建。</p>
+            )}
+          </section>
+          <section className="home-reminder-card home-recent-card" aria-label="最近项目">
+            <h3>
+              <Icon name="folder" size={16} />
+              <button className="home-section-link" onClick={() => onNavigate('projects')}>
+                最近项目
+              </button>
+              {catalog.data && <span className="home-recent-count">{projects.length}</span>}
+            </h3>
+            {catalog.error ? (
+              <p>项目读取失败：{catalog.error}</p>
+            ) : !catalog.data ? (
+              <p>正在读取项目…</p>
+            ) : projects.length ? (
+              projects.slice(0, 5).map((project) => (
+                <div className="home-recent-row" key={project.id}>
+                  <span>{project.title}</span>
+                  <small>{project.task_count} 个任务</small>
+                </div>
+              ))
+            ) : (
+              <p>还没有项目，可在“项目”中创建。</p>
+            )}
+          </section>
+          <section className="home-reminder-card">
+            <h3>
+              <Icon name="file" size={16} /> 重要文档
+            </h3>
+            <p>重要文档尚未接入，暂不能显示。</p>
+          </section>
         </div>
       </aside>
     </section>
