@@ -66,6 +66,50 @@ function show() {
   return changed;
 }
 describe('durable project UI receipts and target identity', () => {
+  it('filters and sorts committed projects without mutations, then opens the filtered identity', async () => {
+    const a = project(undefined, '甲项目');
+    const b = {
+      ...project('22222222-2222-4222-8222-222222222222', '乙项目'),
+      status: 'active' as const,
+      updated_at: '2026-11-06',
+    };
+    const requests: CatalogRequest[] = [];
+    window.caselite = {
+      catalog: vi.fn(async (r: CatalogRequest) => {
+        requests.push(r);
+        return response([a, b]);
+      }),
+    } as unknown as Window['caselite'];
+    show();
+    const table = await screen.findByRole('table', { name: '项目列表' });
+    await within(table).findByRole('button', { name: '乙项目' });
+    expect(within(table).getAllByRole('row')[1].textContent).toContain('乙项目');
+    fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'status' } });
+    expect(within(table).getAllByRole('row')[1].textContent).toContain('甲项目');
+    fireEvent.change(screen.getByLabelText('筛选项目状态'), { target: { value: 'active' } });
+    expect(within(table).queryByRole('button', { name: '甲项目' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '  不存在  ' } });
+    await screen.findByText('没有匹配的项目。');
+    fireEvent.click(screen.getByText('清除筛选'));
+    expect(within(table).getAllByRole('button')).toHaveLength(2);
+    const display = screen.getByText('显示').closest('summary')!;
+    fireEvent.click(display);
+    expect(display.parentElement!.hasAttribute('open')).toBe(true);
+    const tasksColumn = screen.getByRole('checkbox', { name: '任务', exact: true });
+    fireEvent.click(tasksColumn);
+    expect(within(table).queryByRole('columnheader', { name: '任务' })).toBeNull();
+    fireEvent.keyDown(tasksColumn, { key: 'Escape' });
+    expect(display.parentElement!.hasAttribute('open')).toBe(false);
+    expect(document.activeElement).toBe(display);
+    fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '乙' } });
+    fireEvent.click(within(table).getByRole('button', { name: '乙项目' }));
+    await waitFor(() =>
+      expect(requests.some((r) => r.operation === 'read_project' && r.id === b.id)).toBe(true),
+    );
+    expect(requests.every((r) => r.operation === 'list' || r.operation === 'read_project')).toBe(
+      true,
+    );
+  });
   it('keeps one project across tabs, exposes unavailable sections and protects an unsaved overview', async () => {
     const p = project();
     const original = { id: crypto.randomUUID(), title: '项目原任务', matter_id: p.id } as Task;

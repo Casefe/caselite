@@ -41,6 +41,10 @@ export default function ProjectCatalog({
   const [section, setSection] = useState<keyof typeof sections>('overview');
   const [side, setSide] = useState('properties'),
     [aiTask, setAiTask] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Matter['status'] | 'all'>('all');
+  const [order, setOrder] = useState('updated');
+  const [columns, setColumns] = useState({ status: true, tasks: true, updated: true });
   const alive = useRef(true),
     readId = useRef(0);
   const [reading, setReading] = useState(false),
@@ -52,7 +56,25 @@ export default function ProjectCatalog({
       alive.current = false;
     };
   }, []);
-  const list = (c.data?.projects ?? []).filter((p) => !!p.archived_at === archived),
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const list = (c.data?.projects ?? [])
+      .filter(
+        (p) =>
+          !!p.archived_at === archived &&
+          (statusFilter === 'all' || p.status === statusFilter) &&
+          p.title.toLocaleLowerCase().includes(normalizedQuery),
+      )
+      .sort((a, b) => {
+        if (order === 'title')
+          return a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id);
+        if (order === 'status') {
+          const positions = { planned: 0, active: 1, done: 2 };
+          return (
+            positions[a.status] - positions[b.status] || a.title.localeCompare(b.title, 'zh-CN')
+          );
+        }
+        return b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id);
+      }),
     p = editor
       ? (c.data?.projects.find((x) => x.id === editor.project.id) ?? editor.project)
       : (list.find((x) => x.id === selected) ?? list[0]);
@@ -104,7 +126,7 @@ export default function ProjectCatalog({
     });
   return (
     <section
-      className="collection-workspace catalog-view"
+      className="collection-workspace catalog-view project-catalog"
       data-layout="three-column"
       data-testid="project-catalog"
     >
@@ -138,6 +160,64 @@ export default function ProjectCatalog({
             创建项目
           </button>
         </div>
+        {!editor && (
+          <div className="project-list-controls" aria-label="项目列表选项">
+            <label className="project-list-search">
+              <Icon name="search" size={15} />
+              <input
+                aria-label="搜索项目"
+                placeholder="搜索项目…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <select
+              aria-label="筛选项目状态"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            >
+              <option value="all">全部状态</option>
+              {Object.entries(names).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select aria-label="项目排序" value={order} onChange={(e) => setOrder(e.target.value)}>
+              <option value="updated">最近更新</option>
+              <option value="title">名称</option>
+              <option value="status">状态</option>
+            </select>
+            <details
+              className="project-display-menu"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector('summary')?.focus();
+                }
+              }}
+            >
+              <summary>
+                <Icon name="list" size={15} /> 显示
+              </summary>
+              <div>
+                <p>显示属性 · 本次会话</p>
+                {Object.entries({ status: '状态', tasks: '任务', updated: '更新时间' }).map(
+                  ([id, label]) => (
+                    <label key={id}>
+                      <input
+                        type="checkbox"
+                        checked={columns[id as keyof typeof columns]}
+                        onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ),
+                )}
+              </div>
+            </details>
+          </div>
+        )}
         {readError && <p role="alert">{readError}</p>}
         {createdId && readError && (
           <div className="project-open-recovery">
@@ -298,13 +378,13 @@ export default function ProjectCatalog({
             </>
           ) : (
             <>
-              <table className="catalog-table">
+              <table className="catalog-table project-list-table" aria-label="项目列表">
                 <thead>
                   <tr>
                     <th>项目名称</th>
-                    <th>状态</th>
-                    <th>任务</th>
-                    <th>更新时间</th>
+                    {columns.status && <th>状态</th>}
+                    {columns.tasks && <th>任务</th>}
+                    {columns.updated && <th>更新时间</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -322,6 +402,7 @@ export default function ProjectCatalog({
                       <td>
                         <button
                           className="project-title-link"
+                          title={m.title}
                           disabled={reading || creating || dirty || c.pending || c.unknown}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -329,19 +410,46 @@ export default function ProjectCatalog({
                             void open(m);
                           }}
                         >
-                          <Icon name="folder" size={14} /> {m.title}
+                          <Icon name="folder" size={14} /> <span>{m.title}</span>
                         </button>
                       </td>
-                      <td>{names[m.status]}</td>
-                      <td>{m.task_count}</td>
-                      <td>{new Date(m.updated_at).toLocaleDateString()}</td>
+                      {columns.status && (
+                        <td>
+                          <span className={`project-status-label is-${m.status}`}>
+                            <i />
+                            {names[m.status]}
+                          </span>
+                        </td>
+                      )}
+                      {columns.tasks && <td className="project-list-count">{m.task_count}</td>}
+                      {columns.updated && (
+                        <td>
+                          <time dateTime={m.updated_at}>
+                            {new Date(m.updated_at).toLocaleDateString()}
+                          </time>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
               {!list.length && (
                 <p className="catalog-empty">
-                  {c.data ? '暂无项目，独立任务仍可直接使用。' : '正在读取本地项目…'}
+                  {c.data
+                    ? normalizedQuery || statusFilter !== 'all'
+                      ? '没有匹配的项目。'
+                      : '暂无项目，独立任务仍可直接使用。'
+                    : '正在读取本地项目…'}
+                  {(normalizedQuery || statusFilter !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setQuery('');
+                        setStatusFilter('all');
+                      }}
+                    >
+                      清除筛选
+                    </button>
+                  )}
                 </p>
               )}
             </>

@@ -408,6 +408,32 @@ export async function runProjectDemo(
       await capture('project-created.png');
       await button('返回项目列表');
       await wait("document.querySelector('.project-title-link')");
+      const originalBounds = window.getBounds();
+      const layouts = [];
+      for (const width of [640, 1440]) {
+        window.setContentSize(width, 900);
+        await wait(`window.innerWidth===${width}`);
+        await evaluate("document.querySelector('.project-display-menu').open=true");
+        const layout = await evaluate(`(()=>{
+          const menu=document.querySelector('.project-display-menu > div').getBoundingClientRect();
+          const center=document.querySelector('.collection-main').getBoundingClientRect();
+          return {width:innerWidth,pageWidth:document.documentElement.scrollWidth,
+            menu:{left:menu.left,right:menu.right,bottom:menu.bottom},
+            center:{left:center.left,right:center.right}};
+        })()`);
+        layouts.push(layout);
+        writeFileSync(join(root, 'project-list-layout.json'), JSON.stringify(layouts, null, 2));
+        await capture(`project-list-${width}.png`);
+        if (
+          layout.pageWidth > width ||
+          layout.menu.left < layout.center.left ||
+          layout.menu.right > Math.min(width, layout.center.right) ||
+          layout.menu.bottom > 900
+        )
+          throw new Error('Project list or display menu overflows its viewport');
+        await evaluate("document.querySelector('.project-display-menu').open=false");
+      }
+      window.setBounds(originalBounds);
       await button('项目创建与重启验收');
       await wait("document.querySelector('[aria-label=编辑项目名称]')");
     } else {
