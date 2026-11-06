@@ -11,6 +11,8 @@ const initial = (): Task => ({
   title: '合成任务',
   objective: '',
   status: 'todo',
+  priority: 0,
+  due_date: null,
   version: 1,
   matter_id: null,
   document_id: crypto.randomUUID(),
@@ -183,4 +185,94 @@ it('ignores a delayed receipt after the original Task properties unmounts', asyn
   );
   expect(changed).not.toHaveBeenCalled();
   expect(api).toHaveBeenCalledTimes(1);
+});
+
+it('edits ordinary attributes together, clears the date, and prevents overlapping status drafts', async () => {
+  const task = initial();
+  let current = task;
+  const api = vi.fn(async (r: TaskRequest) => {
+    if (r.operation === 'update_attributes') {
+      current = {
+        ...current,
+        priority: r.priority,
+        due_date: r.due_date,
+        version: current.version + 1,
+      };
+      return response(current, r.idempotency_key);
+    }
+    return response(current);
+  });
+  show(task, api);
+  fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '2024-02-29' } });
+  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('保存任务属性'));
+  await screen.findByText('已保存：紧急 · 2024-02-29');
+  expect(api.mock.calls[0][0]).toMatchObject({
+    operation: 'update_attributes',
+    priority: 1,
+    due_date: '2024-02-29',
+    expected_version: 1,
+  });
+  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '' } });
+  fireEvent.click(screen.getByText('保存任务属性'));
+  await screen.findByText('已保存：紧急 · 无截止日期');
+  expect(api.mock.calls[2][0]).toMatchObject({ due_date: null, priority: 1, expected_version: 2 });
+  select();
+  expect((screen.getByLabelText('任务优先级') as HTMLSelectElement).disabled).toBe(true);
+});
+
+it('retains the exact date/priority request through unknown delivery and rejects mismatched attribute receipts', async () => {
+  const task = initial(),
+    mutations: TaskRequest[] = [];
+  let current = { ...task, priority: 2, due_date: '2026-01-01', version: 2 };
+  const api = vi.fn(async (r: TaskRequest): Promise<TaskResponse> => {
+    if (r.operation === 'update_attributes') {
+      mutations.push(r);
+      return mutations.length === 1
+        ? { ok: false, code: 'RESULT_UNKNOWN', message: '未核实' }
+        : response(current, r.idempotency_key);
+    }
+    if (r.operation === 'status')
+      return response({ ...current, due_date: '2026-01-02' }, r.idempotency_key);
+    return response(current);
+  });
+  show(task, api);
+  fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '2' } });
+  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '2026-01-01' } });
+  fireEvent.click(screen.getByText('保存任务属性'));
+  fireEvent.click(await screen.findByText('核对原属性提交'));
+  await screen.findByText('提交回执与当前任务不一致，请核对原提交。');
+  expect((screen.getByLabelText('普通截止日期') as HTMLInputElement).disabled).toBe(true);
+  current = { ...current, priority: 4, due_date: null, version: 3 };
+  // 原回执确认原属性后，读取后来版本；不能把旧快照当当前日期。
+  api.mockImplementation(async (r: TaskRequest) => {
+    if (r.operation === 'update_attributes') {
+      mutations.push(r);
+      return response(
+        { ...task, priority: 2, due_date: '2026-01-01', version: 2 },
+        r.idempotency_key,
+      );
+    }
+    return response(current);
+  });
+  fireEvent.click(screen.getByText('重试原属性请求'));
+  await screen.findByText('已保存：低 · 无截止日期');
+  expect(mutations).toHaveLength(2);
+  expect(mutations[0]).toEqual(mutations[1]);
+});
+
+it('blocks incomplete native date input instead of treating it as an explicit clear', () => {
+  const api = vi.fn();
+  show({ ...initial(), due_date: '2026-01-01' }, api);
+  const input = screen.getByLabelText('普通截止日期') as HTMLInputElement;
+  Object.defineProperty(input, 'validity', {
+    configurable: true,
+    get: () => ({ valid: false, badInput: true }),
+  });
+  fireEvent.change(input, { target: { value: '' } });
+  expect((screen.getByText('保存任务属性') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
+  expect(api).not.toHaveBeenCalled();
+  expect(screen.getByText('已保存：未设置 · 2026-01-01')).toBeTruthy();
 });

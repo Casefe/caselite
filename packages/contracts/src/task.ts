@@ -3,11 +3,15 @@ import { z } from 'zod';
 export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
+export const taskPrioritySchema = z.number().int().min(0).max(4);
+export const ordinaryDateSchema = z.iso.date().refine((value) => !value.startsWith('0000-'));
 export const taskSchema = z.object({
   id: taskIdSchema,
   title: z.string().min(1).max(160),
   objective: z.string().max(4000),
   status: taskStatusSchema.default('todo'),
+  priority: taskPrioritySchema.default(0),
+  due_date: ordinaryDateSchema.nullable().default(null),
   matter_id: taskIdSchema.nullable(),
   document_archived_at: z.string().nullable().optional(),
   matter_title: z.string().nullable().optional(),
@@ -38,6 +42,16 @@ const mutation = {
   idempotency_key: taskIdSchema,
 };
 export const taskMutationSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      ...mutation,
+      operation: z.literal('update_attributes'),
+      task_id: taskIdSchema,
+      expected_version: z.number().int().positive(),
+      priority: taskPrioritySchema,
+      due_date: ordinaryDateSchema.nullable(),
+    })
+    .strict(),
   z
     .object({
       ...mutation,

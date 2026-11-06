@@ -17,11 +17,21 @@ export const taskItems = sqliteTable(
     status: text('status', { enum: ['todo', 'in_progress', 'done', 'canceled'] })
       .notNull()
       .default('todo'),
+    priority: integer('priority').notNull().default(0),
+    dueDate: text('due_date'),
     version: integer('version').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
     check('task_status_valid', sql`${table.status} IN ('todo', 'in_progress', 'done', 'canceled')`),
+    check(
+      'task_priority_valid',
+      sql`typeof(${table.priority}) = 'integer' AND ${table.priority} BETWEEN 0 AND 4`,
+    ),
+    check(
+      'task_due_date_valid',
+      sql`${table.dueDate} IS NULL OR (length(${table.dueDate}) = 10 AND ${table.dueDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.dueDate},1,4) <> '0000' AND date(${table.dueDate}) IS NOT NULL AND date(${table.dueDate}) = ${table.dueDate})`,
+    ),
   ],
 );
 export const documents = sqliteTable('documents', {

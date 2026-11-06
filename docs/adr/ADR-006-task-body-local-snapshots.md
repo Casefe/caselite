@@ -31,3 +31,11 @@ Tiptap React/pm/StarterKit/Collaboration统一固定3.32.2；Yjs固定13.6.33。
 0006采用单条ALTER ADD COLUMN与列级CHECK，不重建Task表、不关闭外键；生成器的重建表SQL会引用旧库不存在的status，故保留生成snapshot而人工核对等价增量SQL。0000—0005及旧对象ID、正文、版本、时间、归组和回执不改。响应schema对缺status的历史回执补todo，旧请求shape/digest不加默认值；原键核对后重读当前Task，不能拿旧回执快照覆盖当前状态。
 
 UI属性草稿/未决提交与正文dirty分别跟踪，不能以属性保存清正文草稿。旧库、失败迁移、同键/异内容、版本及workspace冲突、事件/回执故障、正文保全与重启均须真实隔离验证；不在正在运行的默认用户库演练。回退代码保留新列/已提交状态，不DROP或重置迁移；需要恢复旧备份时仅在隔离副本核验，并明确备份之后的新写入不能悄悄丢弃。此演练不代表完整产品备份功能通过。
+
+## DEV-1601｜普通优先级与日期（2026-11-07）
+
+原Task增加priority（0未设置、1紧急、2高、3普通、4低）与nullable due_date。日期是0001—9999的真实YYYY-MM-DD字面值，不转换UTC时间点、不推算法定期限或自动提醒。单人负责人显示本人，不增加团队分派Owner。
+
+task:v1新增strict update_attributes，要求两个字段显式出现；沿原workspace、expected_version、原键回执、Activity同事务。旧create/update/save/change_status的请求及digest不加默认值；仅响应解码历史回执补priority=0/due_date=null，确认后仍须重读当前Task。新0007用两条ALTER ADD COLUMN及具名CHECK，保留0000—0006和旧行ID/正文/状态/版本/时间/回执。生成器重建SQL留隔离证据，snapshot按同一约束核对。
+
+UI复用原属性草稿和未知提交恢复，一次只编辑状态或普通属性，原提交未决时不切换对象。设置、清空、闰年、过去日期、时区字面值、旧请求保留、迁移和事务故障需分验。回退只撤代码，保留新列/迁移与已保存数据，不降级覆盖。系统时区、中文IME和律师体验另记人工验收。

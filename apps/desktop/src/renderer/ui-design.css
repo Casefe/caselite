@@ -4216,7 +4216,8 @@ select,
   justify-content: space-between;
   gap: 12px;
 }
-.task-properties-editor select {
+.task-properties-editor select,
+.task-properties-editor input {
   max-width: 160px;
   padding: 6px 10px;
   border: 1px solid var(--line);
@@ -4226,4 +4227,11 @@ select,
 }
 .task-properties-editor button {
   margin: 6px 6px 0 0;
+}
+
+.task-attribute-summary {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 4px;
 }

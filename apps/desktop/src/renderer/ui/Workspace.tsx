@@ -1,3 +1,4 @@
+import { taskPriorityNames } from './task-priority';
 import type { ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
@@ -281,6 +282,11 @@ export function TaskTable({
             <strong>
               {t.title}
               {documents ? ' · 初稿' : ''}
+              {!documents && (
+                <small className="task-attribute-summary">
+                  {taskPriorityNames[t.priority ?? 0]} · {t.due_date ?? '无截止日期'}
+                </small>
+              )}
             </strong>
           </span>
           <span className="row-objective">{documents ? t.title : t.objective || '尚未填写'}</span>

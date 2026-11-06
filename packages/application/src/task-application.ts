@@ -8,7 +8,11 @@ export function createTaskApplication(port: TaskPort) {
     execute(input: unknown): TaskResponse {
       const parsed = taskRequestSchema.safeParse(input);
       if (!parsed.success)
-        return { ok: false, code: 'INVALID_REQUEST', message: '输入格式无效，请检查标题及版本。' };
+        return {
+          ok: false,
+          code: 'INVALID_REQUEST',
+          message: '输入格式无效，请检查任务字段和版本。',
+        };
       try {
         return port.execute(parsed.data);
       } catch {

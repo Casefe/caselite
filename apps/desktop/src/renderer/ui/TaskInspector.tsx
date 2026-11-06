@@ -117,12 +117,15 @@ export default function TaskInspector({
           </dl>
           {!documents &&
             (onPropertiesBlocked && onTaskChanged ? (
-              <TaskProperties
-                task={task}
-                disabled={propertiesDisabled}
-                onBlocked={reportProperties}
-                onChanged={onTaskChanged}
-              />
+              <>
+                <p className="caption">负责人：本人（个人本地）</p>
+                <TaskProperties
+                  task={task}
+                  disabled={propertiesDisabled}
+                  onBlocked={reportProperties}
+                  onChanged={onTaskChanged}
+                />
+              </>
             ) : (
               <p>任务状态：{taskStatusNames[task.status ?? 'todo']}</p>
             ))}

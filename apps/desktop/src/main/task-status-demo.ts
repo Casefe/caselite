@@ -59,6 +59,9 @@ export async function runTaskStatusDemo(
     await wait("document.querySelector('[data-nav=tasks]')");
     await evaluate("document.querySelector('[data-nav=tasks]').click()");
     await wait("document.querySelector('[data-testid=new-task]')");
+    const displayTimezone: string = await evaluate(
+      'Intl.DateTimeFormat().resolvedOptions().timeZone',
+    );
     let id: string;
     let readResult: Record<string, unknown> | undefined;
     if (phase === 'task-status-write') {
@@ -153,6 +156,44 @@ export async function runTaskStatusDemo(
       await status('done');
       await click('保存任务状态');
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
+      const attributes = async (date: string, priority: number) => {
+        await evaluate(
+          `(()=>{const p=document.querySelector('[aria-label=任务优先级]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(String(priority))});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        );
+        await evaluate(
+          `(()=>{const d=document.querySelector('[aria-label=普通截止日期]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,${JSON.stringify(date)});d.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+        );
+        await click('保存任务属性');
+        await wait(
+          `document.querySelector('[data-testid=saved-task-attributes]')?.textContent.includes(${JSON.stringify(date || '无截止日期')}) && !document.body.innerText.includes('属性尚未保存')`,
+        );
+        const t = (await read(id)).tasks[0];
+        if (t.due_date !== (date || null) || t.priority !== priority || t.status !== 'done')
+          throw new Error('Task attributes literal/clear/status preservation failed');
+      };
+      await attributes('2024-02-29', 1);
+      await attributes('', 0);
+      await attributes('2026-01-01', 2);
+      await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      await wait(
+        "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='true'",
+      );
+      if (
+        !(await evaluate(
+          "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存任务属性')?.disabled",
+        )) ||
+        (await read(id)).tasks[0].due_date !== '2026-01-01'
+      )
+        throw new Error('Native incomplete date can silently clear saved date');
+      await capture('attributes-incomplete-date.png');
+      await evaluate(
+        "(()=>{const d=document.querySelector('[aria-label=普通截止日期]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,'2026-01-01');d.dispatchEvent(new Event('input',{bubbles:true}));})()",
+      );
+      await wait(
+        "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='false'",
+      );
       const final = await read(id),
         task = final.tasks[0];
       if (
@@ -164,7 +205,7 @@ export async function runTaskStatusDemo(
       writeFileSync(
         join(root, 'task-status-expected.json'),
         JSON.stringify(
-          { task, bodyHash, goalHash: digest(final.objective_state), isolation },
+          { task, bodyHash, goalHash: digest(final.objective_state), isolation, displayTimezone },
           null,
           2,
         ),
@@ -181,6 +222,8 @@ export async function runTaskStatusDemo(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
       );
       const restored = await read(id);
+      if (displayTimezone === expected.displayTimezone)
+        throw new Error('Cross-process timezone did not change');
       if (
         JSON.stringify(restored.tasks[0]) !== JSON.stringify(expected.task) ||
         digest(restored.state) !== expected.bodyHash ||
@@ -196,6 +239,8 @@ export async function runTaskStatusDemo(
         task: restored.tasks[0],
         bodyHash: expected.bodyHash,
         goalHash: expected.goalHash,
+        displayTimezone,
+        writeTimezone: expected.displayTimezone,
         realProviderDispatches: 0,
         isolation,
       };

@@ -30,6 +30,7 @@ for (const phase of ['task-status-write', 'task-status-read']) {
       HOME: process.env.HOME,
       TMPDIR: process.env.TMPDIR,
       LANG: process.env.LANG,
+      TZ: phase === 'task-status-write' ? 'Pacific/Kiritimati' : 'America/Los_Angeles',
       CASELITE_TASK_DEMO: phase,
       CASELITE_TASK_DEMO_DIR: isolated,
     },
