@@ -12,6 +12,7 @@ import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runProjectDemo } from './project-demo';
+import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
 import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
 import { createCatalogApplication } from '@caselite/application';
@@ -405,7 +406,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 6
+      result.value?.migration_count !== 7
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -505,6 +506,8 @@ if (taskDemoPhase) {
     ![
       'credential-preflight',
       'credential-preflight-ui',
+      'task-status-write',
+      'task-status-read',
       'real-agent',
       'real-agent-dry',
       'write',
@@ -844,6 +847,8 @@ app
             })
           : createPiRuntime(
               credentialUi ||
+                taskDemoPhase === 'task-status-write' ||
+                taskDemoPhase === 'task-status-read' ||
                 taskDemoPhase === 'agent-read' ||
                 taskDemoPhase === 'agent-credential-read' ||
                 taskDemoPhase === 'agent-read-synthetic' ||
@@ -893,6 +898,14 @@ app
         taskDemoRoot,
       );
       if (taskDemoPhase === 'real-agent-dry') app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'task-status-write' || taskDemoPhase === 'task-status-read')
+    ) {
+      await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
       return;
     }
     if (taskDemoPhase === 'agent-preview')

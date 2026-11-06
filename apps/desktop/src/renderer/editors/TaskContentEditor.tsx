@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Task, TaskRequest } from '../../preload/caselite-api';
@@ -9,11 +9,13 @@ export default function TaskContentEditor({
   initial,
   onDirty,
   onSaved,
+  disabled = false,
 }: {
   task: Task;
   initial: number[] | null;
   onDirty(value: boolean): void;
   onSaved(task: Task, state: number[]): void;
+  disabled?: boolean;
 }) {
   const doc = useLocalDoc({ text: task.objective, state: initial });
   const [version, setVersion] = useState(task.version);
@@ -31,6 +33,7 @@ export default function TaskContentEditor({
   const editor = useEditor(
     {
       injectCSS: false,
+      editable: !disabled,
       extensions: localExtensions(doc),
       editorProps: {
         attributes: {
@@ -54,8 +57,11 @@ export default function TaskContentEditor({
     },
     [doc],
   );
+  useEffect(() => {
+    editor?.setEditable(!disabled, false);
+  }, [editor, disabled]);
   async function save() {
-    if (!editor || busy || length > 4000) return;
+    if (!editor || busy || disabled || length > 4000) return;
     const current = pending.current ?? {
       sequence: sequence.current,
       request: {
@@ -125,7 +131,7 @@ export default function TaskContentEditor({
           type="button"
           className="primary"
           data-testid="save-task-content"
-          disabled={busy || length > 4000 || (!dirty && !hasPending)}
+          disabled={disabled || busy || length > 4000 || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对任务内容' : '保存任务内容'}

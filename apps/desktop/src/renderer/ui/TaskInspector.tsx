@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import AgentPanel from './AgentPanel';
 import TaskProjectAction from '../projects/TaskProjectAction';
 import ActivityList from '../projects/ActivityList';
+import TaskProperties from './TaskProperties';
+import { taskStatusNames } from './task-status';
 
 export default function TaskInspector({
   task,
@@ -13,6 +15,9 @@ export default function TaskInspector({
   onProjectDirty,
   projectDisabled = false,
   onActivityOpen,
+  propertiesDisabled = false,
+  onPropertiesBlocked,
+  onTaskChanged,
 }: {
   task: Task | null;
   documents?: boolean;
@@ -21,9 +26,20 @@ export default function TaskInspector({
   onProjectDirty?(dirty: boolean): void;
   projectDisabled?: boolean;
   onActivityOpen?(id: string): void;
+  propertiesDisabled?: boolean;
+  onPropertiesBlocked?(value: boolean): void;
+  onTaskChanged?(task: Task, objectiveState: number[] | null): void;
 }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
   const [activityOpen, setActivityOpen] = useState(false);
+  const [propertiesEditing, setPropertiesEditing] = useState(false);
+  const reportProperties = useCallback(
+    (value: boolean) => {
+      setPropertiesEditing(value);
+      onPropertiesBlocked?.(value);
+    },
+    [onPropertiesBlocked],
+  );
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <div className="inspector-tabs" role="tablist" aria-label="侧边栏栏目">
@@ -34,7 +50,14 @@ export default function TaskInspector({
         >
           <Icon name="panel" size={15} /> 属性
         </button>
-        <button role="tab" aria-selected={tab === 'ai'} onClick={() => setTab('ai')}>
+        <button
+          role="tab"
+          aria-selected={tab === 'ai'}
+          disabled={propertiesEditing}
+          onClick={() => {
+            if (!propertiesEditing) setTab('ai');
+          }}
+        >
           <Icon name="spark" size={15} /> AI 助手
         </button>
       </div>
@@ -92,6 +115,17 @@ export default function TaskInspector({
             <dt>最近更新</dt>
             <dd>{new Date(task.updated_at).toLocaleDateString('zh-CN')}</dd>
           </dl>
+          {!documents &&
+            (onPropertiesBlocked && onTaskChanged ? (
+              <TaskProperties
+                task={task}
+                disabled={propertiesDisabled}
+                onBlocked={reportProperties}
+                onChanged={onTaskChanged}
+              />
+            ) : (
+              <p>任务状态：{taskStatusNames[task.status ?? 'todo']}</p>
+            ))}
           {!documents && onProjectChanged && onProjectDirty && (
             <TaskProjectAction
               task={task}

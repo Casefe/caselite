@@ -10,6 +10,9 @@ export default function RecordList({
   onFilter,
   onOpen,
   onNew,
+  propertiesBlocked = false,
+  onPropertiesBlocked,
+  onTaskChanged,
 }: {
   tasks: Task[];
   documents: boolean;
@@ -17,6 +20,9 @@ export default function RecordList({
   onFilter(value: string): void;
   onOpen(id: string): void;
   onNew?(): void;
+  propertiesBlocked?: boolean;
+  onPropertiesBlocked?(value: boolean): void;
+  onTaskChanged?(task: Task, objectiveState: number[] | null): void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 筛选后只显示当前结果中的属性，避免右栏仍指向已被隐藏的对象。
@@ -51,6 +57,7 @@ export default function RecordList({
                 key={value}
                 className={filter === value ? 'current' : ''}
                 aria-pressed={filter === value}
+                disabled={propertiesBlocked}
                 onClick={() => onFilter(value)}
               >
                 {documents ? ['全部文档', '已有修订', '待起草'][i] : value}
@@ -67,7 +74,9 @@ export default function RecordList({
             tasks={tasks}
             documents={documents}
             selectedId={selected?.id}
-            onSelect={setSelectedId}
+            onSelect={(id) => {
+              if (!propertiesBlocked) setSelectedId(id);
+            }}
             onOpen={onOpen}
           />
         </div>
@@ -83,6 +92,8 @@ export default function RecordList({
         task={selected}
         documents={documents}
         onOpen={onOpen}
+        onPropertiesBlocked={onPropertiesBlocked}
+        onTaskChanged={onTaskChanged}
       />
     </section>
   );

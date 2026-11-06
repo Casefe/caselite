@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
@@ -37,11 +37,13 @@ function BodyEditor({
   initial,
   onSaved,
   onDirty,
+  disabled = false,
 }: {
   task: Task;
   initial: number[] | null;
   onSaved(task: Task, state: number[]): void;
   onDirty(dirty: boolean): void;
+  disabled?: boolean;
 }) {
   const [doc] = useState(() => {
     const d = new Y.Doc();
@@ -60,7 +62,7 @@ function BodyEditor({
   const editor = useEditor(
     {
       injectCSS: false,
-      editable: !task.document_archived_at,
+      editable: !task.document_archived_at && !disabled,
       extensions: localExtensions(doc),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
@@ -79,6 +81,10 @@ function BodyEditor({
     [doc],
   );
   useEffect(() => {
+    // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
+    editor?.setEditable(!task.document_archived_at && !disabled, false);
+  }, [editor, task.document_archived_at, disabled]);
+  useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
@@ -88,7 +94,7 @@ function BodyEditor({
     };
   }, [doc]);
   async function save() {
-    if (!editor || busy) return;
+    if (!editor || busy || disabled) return;
     setBusy(true);
     setStatus('正在保存…');
     const sequence = pending.current?.sequence ?? changes.current;
@@ -149,7 +155,7 @@ function BodyEditor({
         <button
           className="primary"
           data-testid="save-body"
-          disabled={!!task.document_archived_at || busy || (!dirty && !hasPending)}
+          disabled={disabled || !!task.document_archived_at || busy || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
@@ -176,6 +182,8 @@ function Workbench() {
   const [objective, setObjective] = useState<RichDraft>(emptyDraft);
   const [objectiveState, setObjectiveState] = useState<number[] | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [propertiesBlocked, setPropertiesBlocked] = useState(false);
+  const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -183,28 +191,29 @@ function Workbench() {
   const readSequence = useRef(0);
   const composing = useRef(false);
   const createRequest = useRef<TaskRequest | null>(null);
-  async function refresh() {
+  const listReadSequence = useRef(0);
+  const refresh = useCallback(async () => {
+    const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
-    setTasks(r.tasks);
-  }
+    if (sequence === listReadSequence.current) setTasks(r.tasks);
+  }, []);
   useEffect(() => {
-    void window.caselite
-      .task({ operation: 'list', protocol_version: 1 })
-      .then((result) => setTasks(check(result).tasks))
+    void refresh()
       .catch(() => setError('任务列表读取失败，请重试；原数据没有被修改。'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
   useEffect(() => {
     const refreshMaterials = () => {
       void refresh().catch(() => setError('材料已保存，任务列表刷新失败。'));
     };
     window.addEventListener('caselite:material-task-saved', refreshMaterials);
     return () => window.removeEventListener('caselite:material-task-saved', refreshMaterials);
-  }, []);
+  }, [refresh]);
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
+        propertiesBlocked ||
         busy ||
         uncertain ||
         agentPrompt.text.trim() ||
@@ -216,9 +225,9 @@ function Workbench() {
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty, busy, uncertain, creating, title, objective, agentPrompt]);
+  }, [dirty, propertiesBlocked, busy, uncertain, creating, title, objective, agentPrompt]);
   function canLeave() {
-    if (dirty || busy || uncertain) {
+    if (dirty || propertiesBlocked || busy || uncertain) {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
@@ -327,6 +336,18 @@ function Workbench() {
     setLoading(false);
     setActive(null);
     setError('');
+  };
+  const acceptTaskProperties = (saved: Task, description: number[] | null) => {
+    setTasks((rows) =>
+      rows.map((row) => (row.id === saved.id && row.version <= saved.version ? saved : row)),
+    );
+    if (active?.id === saved.id) {
+      setActive(saved);
+      setObjectiveState(description);
+      // 属性动作只在正文/说明干净时准入；重读说明刷新其版本，普通保存ACK不重挂载编辑器。
+      setPropertiesRead((epoch) => epoch + 1);
+    }
+    void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
   };
   return (
     <ModelSettingsNavigation.Provider
@@ -543,6 +564,7 @@ function Workbench() {
                     task={active}
                     initial={state}
                     onDirty={setDirty}
+                    disabled={propertiesBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
                       setState(savedState);
@@ -551,10 +573,11 @@ function Workbench() {
                   />
                 ) : detailTab === '任务目标' ? (
                   <TaskContentEditor
-                    key={active.id}
+                    key={active.id + ':' + propertiesRead}
                     task={active}
                     initial={objectiveState}
                     onDirty={setDirty}
+                    disabled={propertiesBlocked}
                     onSaved={(saved, bytes) => {
                       setActive(saved);
                       setObjectiveState(bytes);
@@ -572,7 +595,10 @@ function Workbench() {
               <TaskInspector
                 key={active.id}
                 task={active}
-                projectDisabled={dirty || busy || uncertain}
+                projectDisabled={dirty || propertiesBlocked || busy || uncertain}
+                propertiesDisabled={dirty || busy || uncertain}
+                onPropertiesBlocked={setPropertiesBlocked}
+                onTaskChanged={acceptTaskProperties}
                 onActivityOpen={(id) => void open(id)}
                 onProjectDirty={setDirty}
                 onProjectChanged={(task) => {
@@ -599,6 +625,9 @@ function Workbench() {
             onFilter={setTaskFilter}
             onOpen={(id) => void open(id)}
             onNew={newTask}
+            propertiesBlocked={propertiesBlocked}
+            onPropertiesBlocked={setPropertiesBlocked}
+            onTaskChanged={acceptTaskProperties}
           />
         ) : view === 'settings' ? (
           <SettingsView

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
+import { taskStatusNames } from './task-status';
 
 export type WorkspaceView =
   'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings' | 'agent-history';
@@ -270,6 +271,11 @@ export function TaskTable({
           }}
         >
           <span className="task-name">
+            {!documents && (
+              <small className="task-status-tag" data-status={t.status ?? 'todo'}>
+                {taskStatusNames[t.status ?? 'todo']}
+              </small>
+            )}
             <Icon name={documents ? 'file' : 'check'} size={16} />
             <small>{t.id.slice(0, 4).toUpperCase()}</small>
             <strong>

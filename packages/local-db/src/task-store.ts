@@ -12,7 +12,7 @@ import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
 type Row = Task;
-const select = `SELECT t.id,t.title,t.objective,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const select = `SELECT t.id,t.title,t.objective,t.status,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -127,6 +127,14 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             db.prepare(
               'UPDATE task_items SET title=?,objective=?,version=version+1,updated_at=? WHERE id=?',
             ).run(request.title, objective, new Date().toISOString(), taskId);
+          } else if (request.operation === 'change_status') {
+            if (task.version !== request.expected_version)
+              return fail('CONFLICT', '任务已更新，请重新读取后核对。');
+            if (task.status === request.status)
+              return fail('INVALID_REQUEST', '任务状态没有变化。');
+            db.prepare(
+              'UPDATE task_items SET status=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
+            ).run(request.status, new Date().toISOString(), taskId, workspace);
           } else {
             if (task.document_archived_at) return fail('CONFLICT', '正文已归档，请恢复后再保存。');
             if (task.document_id !== request.document_id || task.body_id !== request.body_id)

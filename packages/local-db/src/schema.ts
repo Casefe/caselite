@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, blob, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, blob, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 
 // Infrastructure-only fixture. Product tables are designed in later Issues.
 export const toolchainProbe = sqliteTable('toolchain_probe', {
@@ -6,14 +7,23 @@ export const toolchainProbe = sqliteTable('toolchain_probe', {
   value: text('value').notNull(),
 });
 
-export const taskItems = sqliteTable('task_items', {
-  id: text('id').primaryKey(),
-  workspaceId: text('workspace_id').notNull(),
-  title: text('title').notNull(),
-  objective: text('objective').notNull(),
-  version: integer('version').notNull(),
-  updatedAt: text('updated_at').notNull(),
-});
+export const taskItems = sqliteTable(
+  'task_items',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    title: text('title').notNull(),
+    objective: text('objective').notNull(),
+    status: text('status', { enum: ['todo', 'in_progress', 'done', 'canceled'] })
+      .notNull()
+      .default('todo'),
+    version: integer('version').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    check('task_status_valid', sql`${table.status} IN ('todo', 'in_progress', 'done', 'canceled')`),
+  ],
+);
 export const documents = sqliteTable('documents', {
   id: text('id').primaryKey(),
   taskId: text('task_id')

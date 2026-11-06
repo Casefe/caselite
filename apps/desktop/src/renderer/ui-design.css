@@ -4192,3 +4192,38 @@ select,
     padding: 16px 8px 8px;
   }
 }
+/* 任务状态是普通工作属性，不取代正文保存或正式交付。 */
+.task-name .task-status-tag {
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.task-name .task-status-tag[data-status='done'] {
+  color: #578370;
+}
+.task-properties-editor {
+  margin: 18px 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.task-properties-editor label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-properties-editor select {
+  max-width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.task-properties-editor button {
+  margin: 6px 6px 0 0;
+}
