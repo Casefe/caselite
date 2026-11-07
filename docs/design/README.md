@@ -27,3 +27,9 @@
 现有回归入口包括 [项目属性](../../apps/desktop/src/renderer/projects/ProjectFields.test.tsx)、[任务属性](../../apps/desktop/src/renderer/ui/TaskProperties.test.tsx)、[任务归组](../../apps/desktop/src/renderer/projects/TaskProjectAction.test.tsx)、[文档与知识库](../../apps/desktop/src/renderer/ui/DocumentLibrary.test.tsx) 和 [隔离 Electron 探针](../../apps/desktop/src/main/project-demo.ts)。
 
 任务字段专题中的团队权限、自定义字段等候选，以及起草专题中须由各自 Issue 接线的选材、来源和交付步骤，按对应合同和运行证据判定。属性栏的共享外观只覆盖本节所列页面。
+
+## 编辑器与 Agent 的独立配置
+
+编辑器扩展唯一入口为 `renderer/editors/editor-config.ts`，Yjs 草稿/会话初始化在 `editor-state.ts`，`RichEditor.tsx` 保留兼容导出及界面。`editorProfiles` 区分 document、description、comment、draft 的显示模式；profile 不创建新 Schema、不共享 Y.Doc，不改变保存 Owner。`compact` 旧调用保持兼容，新增消费者显式选 profile。AI 提问仍为原输入控件，不为了统一而改成正文存储。
+
+`renderer/features/agent/useAgentController.ts` 管理既有范围内的草稿、材料准备、提交、轮询、取消与回执；`agent-messages.ts` 只做 assistant-ui 消息投影。`ui/AgentPanel.tsx` 组合显示与输入，首页和 SidebarAgent 继续使用同一组件。文档审阅的 AI SDK transport 仍消费同一宿主 Run，未增加第二 Runtime 或历史存储。共享控制器变更须验证停止、未知回执、切范围、附件及输入草稿保全。

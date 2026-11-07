@@ -1,3 +1,4 @@
+import { editorProfiles } from '../../editors/editor-config';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
@@ -130,7 +131,7 @@ export default function BodyEditor({
           修订 <b data-testid="revision">{revision}</b>
         </span>
       </div>
-      <EditorSurface editor={editor} mode="simple" />
+      <EditorSurface editor={editor} mode={editorProfiles.document.mode} />
       <footer>
         <span role="status" data-testid="save-status">
           {task.document_archived_at ? '文档已归档 · 只读' : status}

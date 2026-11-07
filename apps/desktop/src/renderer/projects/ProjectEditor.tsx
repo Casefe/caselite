@@ -40,7 +40,7 @@ export default function ProjectEditor({
         }}
         label="项目概述"
         testId="project-overview-editor"
-        compact
+        profile="description"
         disabled={disabled || archived || saving}
       />
       <button

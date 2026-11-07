@@ -1,3 +1,7 @@
+import { useLocalDoc, type RichDraft } from './editor-state';
+import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
+export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
+export { localExtensions } from './editor-config';
 import {
   forwardRef,
   useEffect,
@@ -7,48 +11,8 @@ import {
   useState,
 } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Collaboration from '@tiptap/extension-collaboration';
 import { TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
-
-export type RichDraft = { text: string; state: number[] | null };
-export const emptyDraft = (): RichDraft => ({ text: '', state: null });
-export function draftDoc(value: RichDraft) {
-  const doc = new Y.Doc();
-  if (value.state) Y.applyUpdate(doc, Uint8Array.from(value.state));
-  else {
-    for (const line of value.text.split('\n')) {
-      const paragraph = new Y.XmlElement('paragraph');
-      if (line) {
-        const text = new Y.XmlText();
-        text.insert(0, line);
-        paragraph.insert(0, [text]);
-      }
-      const root = doc.getXmlFragment('default');
-      root.insert(root.length, [paragraph]);
-    }
-  }
-  return doc;
-}
-export function useLocalDoc(value: RichDraft) {
-  const [doc] = useState(() => draftDoc(value));
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      queueMicrotask(() => {
-        if (!alive.current) doc.destroy();
-      });
-    };
-  }, [doc]);
-  return doc;
-}
-export const localExtensions = (doc: Y.Doc) => [
-  StarterKit.configure({ undoRedo: false, link: false }),
-  Collaboration.configure({ document: doc }),
-];
 
 const blocks = [
   { id: 'paragraph', label: '正文', hint: '普通文本', symbol: 'T' },
@@ -621,9 +585,10 @@ export const DraftEditor = forwardRef<
     placeholder?: string;
     disabled?: boolean;
     compact?: boolean;
+    profile?: EditorProfile;
   }
 >(function DraftEditor(
-  { value, onChange, label, testId, placeholder, disabled = false, compact = false },
+  { value, onChange, label, testId, placeholder, disabled = false, compact = false, profile },
   ref,
 ) {
   const doc = useLocalDoc(value);
@@ -678,7 +643,7 @@ export const DraftEditor = forwardRef<
   return (
     <EditorSurface
       editor={editor}
-      mode={compact ? 'compact' : 'notion'}
+      mode={editorProfiles[profile ?? (compact ? 'description' : 'draft')].mode}
       placeholder={placeholder}
       disabled={disabled}
     />

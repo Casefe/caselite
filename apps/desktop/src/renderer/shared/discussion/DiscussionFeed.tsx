@@ -174,7 +174,7 @@ export function DiscussionFeed({
               onDirty(true);
             }}
             disabled={editorDisabled}
-            compact
+            profile="comment"
           />
           <button
             type="button"
@@ -244,7 +244,7 @@ export function DiscussionFeed({
             value={{ text: '', state: entry.state }}
             onChange={() => {}}
             disabled
-            compact
+            profile="comment"
           />
           {children?.(entry, reading)}
         </article>
