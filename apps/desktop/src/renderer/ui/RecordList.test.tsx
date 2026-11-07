@@ -295,3 +295,23 @@ it('drops an in-flight page response once a confirmed change invalidates that pa
   await act(async () => pending[0](result([stale])));
   expect(screen.queryByRole('row', { name: '选择任务：过期任务' })).toBeNull();
 });
+
+it('keeps a task tag draft when an earlier refresh completes during editing', async () => {
+  const t = task('保留任务草稿');
+  let finish: ((r: TaskResponse) => void) | undefined;
+  let reads = 0;
+  const { client } = show(() => {
+    if (reads++ === 0) return Promise.resolve(result([t]));
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  await screen.findByRole('row', { name: '选择任务：保留任务草稿' });
+  act(() => invalidateTaskPages(client));
+  await waitFor(() => expect(finish).toBeDefined());
+  fireEvent.click(screen.getByText('添加标签'));
+  fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '未保存草稿' } });
+  expect((screen.getByLabelText('搜索任务') as HTMLInputElement).disabled).toBe(true);
+  await act(async () => finish!(result([])));
+  expect(screen.getByDisplayValue('未保存草稿')).toBeTruthy();
+});
