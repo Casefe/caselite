@@ -1,4 +1,9 @@
-import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
+import ReadTable from '../shared/ui/ReadTable';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  invalidateProjectCatalog,
+  useOrdinaryCatalog,
+} from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
@@ -15,6 +20,7 @@ export default function DocumentLibrary({
   onOpen(id: string): void;
   onDirty(dirty: boolean): void;
 }) {
+  const client = useQueryClient();
   const read = useOrdinaryCatalog();
   const c = useCatalog(false, read);
   const [selected, setSelected] = useState<string | null>(null),
@@ -64,6 +70,7 @@ export default function DocumentLibrary({
       }),
       () => {
         // 回执确认写入；目录读失败时仅允许重读，避免用旧版本再次整理。
+        void invalidateProjectCatalog(client);
         setAcknowledged({ id: doc.id, version: doc.version + 1 });
         setEditing(false);
         if (addedTag) {
@@ -132,44 +139,39 @@ export default function DocumentLibrary({
           </button>
         )}
         <div className="collection-scroll">
-          <table className="catalog-table">
-            <thead>
-              <tr>
-                <th>文档</th>
-                <th>分类</th>
-                <th>标签</th>
-                <th>修订</th>
-                <th>收藏</th>
-              </tr>
-            </thead>
-            <tbody>
-              {docs.map((doc) => (
-                <tr
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !blocked) onOpen(doc.task_id);
-                  }}
-                  key={doc.id}
-                  data-document-id={doc.id}
-                  aria-selected={d?.id === doc.id}
-                  onClick={() => {
-                    if (!blocked) setSelected(doc.id);
-                  }}
-                  onDoubleClick={() => {
-                    if (!blocked) onOpen(doc.task_id);
-                  }}
-                >
-                  <td>
-                    <Icon name="file" size={14} /> {doc.title}
-                  </td>
-                  <td>{doc.collection || '未分类'}</td>
-                  <td>{doc.tags.join('、') || '—'}</td>
-                  <td>{doc.body_revision}</td>
-                  <td>{doc.favorite ? '★' : '☆'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ReadTable
+            data={docs}
+            getRowId={(doc) => doc.id}
+            columns={[
+              {
+                id: 'title',
+                header: '文档',
+                cell: ({ row }) => (
+                  <>
+                    <Icon name="file" size={14} /> {row.original.title}
+                  </>
+                ),
+              },
+              { id: 'collection', header: '分类', accessorFn: (doc) => doc.collection || '未分类' },
+              { id: 'tags', header: '标签', accessorFn: (doc) => doc.tags.join('、') || '—' },
+              { accessorKey: 'body_revision', header: '修订' },
+              { id: 'favorite', header: '收藏', accessorFn: (doc) => (doc.favorite ? '★' : '☆') },
+            ]}
+            rowProps={(doc) => ({
+              tabIndex: 0,
+              'data-document-id': doc.id,
+              'aria-selected': d?.id === doc.id,
+              onClick: () => {
+                if (!blocked) setSelected(doc.id);
+              },
+              onDoubleClick: () => {
+                if (!blocked) onOpen(doc.task_id);
+              },
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && !blocked) onOpen(doc.task_id);
+              },
+            })}
+          />
           {!c.data && !c.error ? (
             <p className="catalog-empty">正在读取…</p>
           ) : (
@@ -204,7 +206,10 @@ export default function DocumentLibrary({
                         expected_version: d.version,
                         archived: !d.archived_at,
                       }),
-                      () => setAcknowledged({ id: d.id, version: d.version + 1 }),
+                      () => {
+                        void invalidateProjectCatalog(client);
+                        setAcknowledged({ id: d.id, version: d.version + 1 });
+                      },
                     )
                   }
                 >

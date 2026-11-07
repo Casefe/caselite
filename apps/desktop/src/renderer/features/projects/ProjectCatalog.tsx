@@ -1,8 +1,11 @@
+import type { ColumnDef } from '@tanstack/react-table';
+import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
+import ReadTable from '../../shared/ui/ReadTable';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
-import { projectStatuses } from './project-display';
+import { projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
@@ -61,7 +64,8 @@ export default function ProjectCatalog({
   onDirty(v: boolean): void;
   onChanged(): void | Promise<boolean>;
 }) {
-  const c = useCatalog(true),
+  const readCatalog = useProjectCatalog();
+  const c = useCatalog(true, readCatalog),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
     [creating, setCreating] = useState(false),
     [editor, setEditor] = useState<{
@@ -764,81 +768,107 @@ export default function ProjectCatalog({
             </>
           ) : (
             <>
-              <table className="catalog-table project-list-table" aria-label="项目列表">
-                <thead>
-                  <tr>
-                    <th>项目名称</th>
-                    {columns.status && <th>状态</th>}
-                    {columns.tasks && <th>任务</th>}
-                    <th>待收款（元）</th>
-                    {columns.updated && <th>更新时间</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((m) => (
-                    <tr
-                      key={m.id}
-                      data-project-id={m.id}
-                      aria-selected={p?.id === m.id}
-                      onClick={() => {
-                        if (!reading && !creating && !dirty && !c.pending && !c.unknown)
-                          setSelected(m.id);
-                      }}
-                      onDoubleClick={() => void open(m)}
-                    >
-                      <td>
+              <ReadTable
+                data={list}
+                getRowId={(project) => project.id}
+                className="catalog-table project-list-table"
+                label="项目列表"
+                rowProps={(project) => ({
+                  'data-project-id': project.id,
+                  'aria-selected': p?.id === project.id,
+                  onClick: () => {
+                    if (!blocked) setSelected(project.id);
+                  },
+                  onDoubleClick: () => void open(project),
+                })}
+                columns={[
+                  {
+                    id: 'title',
+                    header: '项目名称',
+                    cell: ({ row: { original: project } }) => (
+                      <button
+                        className="project-title-link"
+                        title={project.title}
+                        disabled={blocked}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelected(project.id);
+                          void open(project);
+                        }}
+                      >
+                        <Icon name="folder" size={14} /> <span>{project.title}</span>
+                      </button>
+                    ),
+                  },
+                  { id: 'client', header: '客户', cell: () => null },
+                  {
+                    id: 'domain',
+                    header: '领域',
+                    accessorFn: (project) => {
+                      const type =
+                        project.attributes?.professional_type ?? project.attributes?.project_type;
+                      return type ? projectTypes[type] : '—';
+                    },
+                  },
+                  { id: 'next-date', header: '下一关键日期', cell: () => null },
+                  { id: 'risk', header: '风险／异常', cell: () => null },
+                  {
+                    id: 'owner',
+                    header: '负责人',
+                    accessorFn: (project) => project.attributes?.assignee ?? '—',
+                  },
+                  {
+                    id: 'balance',
+                    header: '余额（元）',
+                    cell: ({ row: { original: project } }) =>
+                      onFinance ? (
                         <button
+                          type="button"
                           className="project-title-link"
-                          title={m.title}
-                          disabled={reading || creating || dirty || c.pending || c.unknown}
+                          aria-label={`查看 ${project.title} 的待收款 ${formatCents(project.outstanding_cents)} 元`}
+                          disabled={blocked}
                           onClick={(event) => {
                             event.stopPropagation();
-                            setSelected(m.id);
-                            void open(m);
+                            onFinance(project.id);
                           }}
+                          onDoubleClick={(event) => event.stopPropagation()}
                         >
-                          <Icon name="folder" size={14} /> <span>{m.title}</span>
+                          {formatCents(project.outstanding_cents)}
                         </button>
-                      </td>
-                      {columns.status && (
-                        <td>
-                          <span className={`project-status-label is-${projectStatus(m)}`}>
-                            <i />
-                            {names[projectStatus(m)]}
-                          </span>
-                        </td>
-                      )}
-                      {columns.tasks && <td className="project-list-count">{m.task_count}</td>}
-                      <td>
-                        {onFinance ? (
-                          <button
-                            type="button"
-                            className="project-title-link"
-                            aria-label={`查看 ${m.title} 的待收款 ${formatCents(m.outstanding_cents)} 元`}
-                            disabled={reading || creating || dirty || c.pending || c.unknown}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onFinance(m.id);
-                            }}
-                            onDoubleClick={(event) => event.stopPropagation()}
-                          >
-                            {formatCents(m.outstanding_cents)}
-                          </button>
-                        ) : (
-                          formatCents(m.outstanding_cents)
-                        )}
-                      </td>
-                      {columns.updated && (
-                        <td>
-                          <time dateTime={m.updated_at}>
-                            {new Date(m.updated_at).toLocaleDateString()}
-                          </time>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      ) : (
+                        formatCents(project.outstanding_cents)
+                      ),
+                  },
+                  ...(columns.status
+                    ? ([
+                        {
+                          id: 'status',
+                          header: '状态',
+                          cell: ({ row: { original: project } }) => (
+                            <span className={`project-status-label is-${projectStatus(project)}`}>
+                              <i />
+                              {names[projectStatus(project)]}
+                            </span>
+                          ),
+                        },
+                      ] satisfies ColumnDef<Matter>[])
+                    : []),
+                  ...(columns.tasks ? [{ accessorKey: 'task_count', header: '任务' }] : []),
+                  ...(columns.updated
+                    ? ([
+                        {
+                          id: 'updated',
+                          header: '更新时间',
+                          cell: ({ row: { original: project } }) => (
+                            <time dateTime={project.updated_at}>
+                              {new Date(project.updated_at).toLocaleDateString()}
+                            </time>
+                          ),
+                        },
+                      ] satisfies ColumnDef<Matter>[])
+                    : []),
+                ]}
+              />
               {!list.length && (
                 <p className="catalog-empty">
                   {c.data

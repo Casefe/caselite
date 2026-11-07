@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
+import { QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CatalogRequest, Matter, Task } from '../../../preload/caselite-api';
 import { useState } from 'react';
 import ProjectCatalog, { type ProjectViewState } from './ProjectCatalog';
+function renderProject(ui: ReactElement) {
+  return render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>{ui}</QueryClientProvider>,
+  );
+}
 vi.mock('../../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   DraftEditor: () => <div />,
@@ -45,7 +53,7 @@ it('returns to the exact section and current project, preserving list preference
   setup();
   const onOpen = vi.fn();
   const props = { tasks: [task], onOpen, onDirty: vi.fn(), onChanged: vi.fn() };
-  const first = render(<ProjectCatalog {...props} />);
+  const first = renderProject(<ProjectCatalog {...props} />);
   await screen.findByRole('button', { name: '来源项目', exact: true });
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '来源' } });
   fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'title' } });
@@ -72,7 +80,7 @@ it('returns to the exact section and current project, preserving list preference
   first.unmount();
   const current = { ...project, title: '保存后新名称', version: 4, body_revision: 3 };
   const catalog = setup(ok([current]));
-  render(<ProjectCatalog {...props} initialView={source} />);
+  renderProject(<ProjectCatalog {...props} initialView={source} />);
   await waitFor(() =>
     expect((screen.getByLabelText('编辑项目名称') as HTMLInputElement).value).toBe('保存后新名称'),
   );
@@ -105,7 +113,7 @@ const source: ProjectViewState = {
 };
 it('does not substitute another project when the source is unavailable', async () => {
   setup(ok([]));
-  render(
+  renderProject(
     <ProjectCatalog
       tasks={[]}
       initialView={source}
@@ -123,7 +131,7 @@ it('does not substitute another project when the source is unavailable', async (
 it('falls back to the original section when the task moved and shows an archived source read-only', async () => {
   const archived = ok([{ ...project, archived_at: '2026-11-07' }]);
   setup(archived, archived);
-  render(
+  renderProject(
     <ProjectCatalog
       tasks={[]}
       initialView={source}
@@ -173,7 +181,7 @@ it('refreshes same-version task counts and compact PDF projection after assignin
       />
     );
   }
-  render(<Container />);
+  renderProject(<Container />);
   fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
   await screen.findByLabelText('编辑项目名称');
   await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
@@ -208,7 +216,7 @@ it.each([false, true])(
     setup();
     const onOpen = vi.fn();
     const props = { tasks: [task], onOpen, onDirty: vi.fn(), onChanged: vi.fn() };
-    const first = render(<ProjectCatalog {...props} />);
+    const first = renderProject(<ProjectCatalog {...props} />);
     await screen.findByRole('button', { name: '来源项目', exact: true });
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '来源' } });
     fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'title' } });
@@ -230,7 +238,9 @@ it.each([false, true])(
     });
     first.unmount();
     const catalog = setup();
-    render(<ProjectCatalog {...props} tasks={moved ? [] : [task]} initialView={listSource} />);
+    renderProject(
+      <ProjectCatalog {...props} tasks={moved ? [] : [task]} initialView={listSource} />,
+    );
     await screen.findByLabelText('编辑项目名称');
     await waitFor(() =>
       expect(document.activeElement).toBe(

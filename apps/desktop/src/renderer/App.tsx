@@ -1,7 +1,10 @@
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { invalidateTaskPages } from './ui/task-list-query';
 import { createWorkbenchQueryClient } from './shared/data/workbench-query-client';
-import { invalidateOrdinaryCatalog } from './shared/data/ordinary-catalog-query';
+import {
+  invalidateOrdinaryCatalog,
+  invalidateProjectCatalog,
+} from './shared/data/ordinary-catalog-query';
 import { Icon } from './shared/ui/Icon';
 import FinanceView from './features/finance/FinanceView';
 import TagPicker from './shared/ui/TagPicker';
@@ -90,6 +93,7 @@ function Workbench() {
   const refresh = useCallback(async () => {
     invalidateTaskPages(queryClient);
     void invalidateOrdinaryCatalog(queryClient);
+    void invalidateProjectCatalog(queryClient);
     const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
     if (sequence !== listReadSequence.current) return false;

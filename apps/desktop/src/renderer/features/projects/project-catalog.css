@@ -289,10 +289,10 @@
   height: 48px;
 }
 .project-list-table {
-  min-width: 500px;
+  min-width: 720px;
 }
 .project-list-table th:first-child {
-  width: 48%;
+  min-width: 170px;
 }
 .project-list-table th {
   white-space: nowrap;

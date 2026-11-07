@@ -2,6 +2,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, act, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../../preload/caselite-api';
+import { QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import ProjectCatalog from './ProjectCatalog';
 vi.mock('../../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
@@ -68,9 +71,16 @@ const response = (
   target_id: target,
   receipt: null,
 });
+function renderProject(ui: ReactElement) {
+  return render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>{ui}</QueryClientProvider>,
+  );
+}
 function show(tasks: Task[] = []) {
   const changed = vi.fn();
-  render(<ProjectCatalog tasks={tasks} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={changed} />);
+  renderProject(
+    <ProjectCatalog tasks={tasks} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={changed} />,
+  );
   return changed;
 }
 describe('durable project UI receipts and target identity', () => {
@@ -130,7 +140,7 @@ describe('durable project UI receipts and target identity', () => {
           : response([p], p.id),
     );
     window.caselite = { catalog } as unknown as Window['caselite'];
-    render(
+    renderProject(
       <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
@@ -425,7 +435,9 @@ it.each(['编辑项目名称', '项目概述'])(
       catalog,
       material: vi.fn(async () => ({ ok: true, materials: [] })),
     } as unknown as Window['caselite'];
-    render(<ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />);
+    renderProject(
+      <ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />,
+    );
     fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
     const summary = await screen.findByRole('region', { name: '项目工作摘要' });
     fireEvent.click(await within(summary).findByRole('button', { name: /打开当前项目/ }));

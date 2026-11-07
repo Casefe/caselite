@@ -1,9 +1,11 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   invalidateOrdinaryCatalog,
+  invalidateProjectCatalog,
   useOrdinaryCatalog,
 } from '../../shared/data/ordinary-catalog-query';
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import ReadTable from '../../shared/ui/ReadTable';
+import { useState, useRef, type FormEvent } from 'react';
 import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import { formatCents, parseCents } from './money';
 
@@ -151,10 +153,8 @@ function ProjectLedger({
   onBlocked(blocked: boolean): void;
 }) {
   const client = useQueryClient();
-  const [detail, setDetail] = useState<Detail>();
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
+  const [writeError, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Write>();
   const [canRetry, setCanRetry] = useState(false);
@@ -164,29 +164,30 @@ function ProjectLedger({
   const inFlight = useRef(false);
   const projectId = project.id;
 
-  useEffect(() => {
-    let current = true;
-    void Promise.resolve().then(async () => {
-      try {
-        const result = await window.caselite.finance({
+  const queryKey = ['finance', 'ledger', projectId] as const;
+  const read = useQuery({
+    queryKey,
+    staleTime: 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const result = await window.caselite
+        .finance({
           protocol_version: 1,
           operation: 'read',
           project_id: projectId,
+        })
+        .catch(() => {
+          throw new Error('无法读取项目账本，请重试。');
         });
-        if (!current) return;
-        if (result.ok && result.kind === 'ledger' && result.project_id === projectId) {
-          setDetail(result);
-          return;
-        }
-        setError(result.ok ? '返回的账本不属于当前项目。' : result.message);
-      } catch {
-        if (current) setError('无法读取项目账本，请重试。');
+      if (!result.ok) throw new Error(result.message);
+      if (result.kind !== 'ledger' || result.project_id !== projectId) {
+        throw new Error('返回的账本不属于当前项目。');
       }
-    });
-    return () => {
-      current = false;
-    };
-  }, [projectId, reload]);
+      return result;
+    },
+  });
+  const detail = read.data;
+  const error = writeError || read.error?.message || '';
 
   function edit() {
     setDirty(true);
@@ -203,8 +204,11 @@ function ProjectLedger({
   }
 
   function accept(result: Detail) {
-    void invalidateOrdinaryCatalog(client);
-    setDetail(result);
+    void invalidateOrdinaryCatalog(client, true, true);
+    void invalidateProjectCatalog(client);
+    // 只用已经核对项目、原提交身份及账本证据的回执更新读取缓存。
+    void client.cancelQueries({ queryKey, exact: true });
+    client.setQueryData<Detail>(queryKey, result);
     setReverse(undefined);
     setFormRevision((value) => value + 1);
     setDirty(false);
@@ -326,7 +330,7 @@ function ProjectLedger({
             type="button"
             onClick={() => {
               setError('');
-              setReload(reload + 1);
+              void read.refetch();
             }}
           >
             重新读取账本
@@ -363,26 +367,29 @@ function ProjectLedger({
                 </div>
               </dl>
               <h3>合同分期</h3>
-              <table className="catalog-table">
-                <thead>
-                  <tr>
-                    <th>期款</th>
-                    <th>到期日</th>
-                    <th>约定（元）</th>
-                    <th>未收（元）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ledger.installments.map((row, index) => (
-                    <tr key={row.id}>
-                      <td>第 {index + 1} 期</td>
-                      <td>{row.due_date}</td>
-                      <td>{formatCents(row.amount_cents)}</td>
-                      <td>{formatCents(row.outstanding_cents)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ReadTable
+                data={ledger.installments}
+                getRowId={(row) => row.id}
+                label="合同分期"
+                columns={[
+                  {
+                    id: 'installment',
+                    header: '期款',
+                    cell: ({ row }) => `第 ${row.index + 1} 期`,
+                  },
+                  { accessorKey: 'due_date', header: '到期日' },
+                  {
+                    id: 'amount',
+                    header: '约定（元）',
+                    accessorFn: (row) => formatCents(row.amount_cents),
+                  },
+                  {
+                    id: 'outstanding',
+                    header: '未收（元）',
+                    accessorFn: (row) => formatCents(row.outstanding_cents),
+                  },
+                ]}
+              />
               {!project.archived_at && ledger.outstanding_cents > 0 && (
                 <form
                   key={formRevision}
@@ -547,6 +554,39 @@ export default function FinanceView({
             ))}
           </select>
         </label>
+      )}
+      {!!projects?.length && (
+        <ReadTable
+          data={projects}
+          getRowId={(item) => item.id}
+          label="财务项目列表"
+          rowProps={(item) => ({ 'aria-selected': item.id === project?.id })}
+          columns={[
+            {
+              id: 'project',
+              header: '项目',
+              cell: ({ row: { original: item } }) => (
+                <button
+                  type="button"
+                  disabled={blocked || read.isFetching}
+                  onClick={() => setSelected(item.id)}
+                >
+                  {item.title}
+                </button>
+              ),
+            },
+            {
+              id: 'status',
+              header: '项目状态',
+              accessorFn: (item) => (item.archived_at ? '已归档' : '在用'),
+            },
+            {
+              id: 'balance',
+              header: '待收款（元）',
+              accessorFn: (item) => formatCents(item.outstanding_cents),
+            },
+          ]}
+        />
       )}
       {project && (
         <ProjectLedger

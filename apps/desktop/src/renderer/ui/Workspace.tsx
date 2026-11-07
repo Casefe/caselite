@@ -1,3 +1,4 @@
+import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
 import { taskPriorityNames } from './task-priority';
 import type { ReactNode, Ref } from 'react';
@@ -174,71 +175,107 @@ export function TaskTable({
   selectedId?: string;
   onSelect(id: string): void;
 }) {
+  const titleColumn: ColumnDef<Task> = {
+    id: 'title',
+    header: documents ? '文档名称' : '任务名称',
+    cell: ({ row: { original: task } }) => (
+      <span className="task-name">
+        <Icon name={documents ? 'file' : 'check'} size={16} />
+        <small>{task.id.slice(0, 4).toUpperCase()}</small>
+        <strong
+          className="task-row-title"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(task.id);
+          }}
+        >
+          {task.title}
+        </strong>
+      </span>
+    ),
+  };
+  const columns: ColumnDef<Task>[] = documents
+    ? [
+        titleColumn,
+        { id: 'task', header: '关联任务', accessorFn: (task) => task.title },
+        {
+          id: 'revision',
+          header: '正文',
+          accessorFn: (task) => (task.body_revision ? `修订 ${task.body_revision}` : '未写正文'),
+        },
+        { accessorKey: 'updated_at', header: '最近更新' },
+      ]
+    : [
+        titleColumn,
+        {
+          id: 'status',
+          header: '状态',
+          cell: ({ row: { original: task } }) => (
+            <small className="task-status-tag" data-status={task.status ?? 'todo'}>
+              {taskStatusNames[task.status ?? 'todo']}
+            </small>
+          ),
+        },
+        {
+          id: 'priority',
+          header: '优先级',
+          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+        },
+        {
+          id: 'owner',
+          header: '负责人',
+          accessorFn: (task) =>
+            task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
+        },
+        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
+      ];
+  const table = createTable({
+    data: tasks,
+    columns,
+    getRowId: (task) => task.id,
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    state: { columnPinning: {} },
+    onStateChange: () => {},
+    renderFallbackValue: null,
+  });
   return (
     <div
-      className="task-table"
+      className={`task-table${documents ? '' : ' task-table-structured'}`}
       role="table"
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
     >
-      <div className="table-head" role="row">
-        <span>{documents ? '文档名称' : '任务名称'}</span>
-        <span>{documents ? '关联任务' : '工作目标'}</span>
-        <span>正文</span>
-        <span>最近更新</span>
-      </div>
-      {tasks.map((t) => (
+      {table.getHeaderGroups().map((group) => (
+        <div className="table-head" role="row" key={group.id}>
+          {group.headers.map((header) => (
+            <span key={header.id} role="columnheader">
+              {flexRender(header.column.columnDef.header, header.getContext())}
+            </span>
+          ))}
+        </div>
+      ))}
+      {table.getRowModel().rows.map((row) => (
         <button
           className="task-row"
           role="row"
-          key={t.id}
-          data-row-task={t.id}
-          aria-label={`选择${documents ? '文档' : '任务'}：${t.title}`}
-          aria-current={selectedId === t.id ? 'true' : undefined}
-          onClick={() => onSelect(t.id)}
-          onDoubleClick={() => onOpen(t.id)}
+          key={row.id}
+          data-row-task={row.id}
+          aria-label={`选择${documents ? '文档' : '任务'}：${row.original.title}`}
+          aria-current={selectedId === row.id ? 'true' : undefined}
+          onClick={() => onSelect(row.id)}
+          onDoubleClick={() => onOpen(row.id)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              onOpen(t.id);
+              onOpen(row.id);
             }
           }}
         >
-          <span className="task-name">
-            {!documents && (
-              <small className="task-status-tag" data-status={t.status ?? 'todo'}>
-                {taskStatusNames[t.status ?? 'todo']}
-              </small>
-            )}
-            <Icon name={documents ? 'file' : 'check'} size={16} />
-            <small>{t.id.slice(0, 4).toUpperCase()}</small>
-            <strong
-              className={documents ? undefined : 'task-row-title'}
-              onClick={
-                documents
-                  ? undefined
-                  : (event) => {
-                      event.stopPropagation();
-                      onOpen(t.id);
-                    }
-              }
-            >
-              {t.title}
-              {documents ? ' · 初稿' : ''}
-              {!documents && (
-                <small className="task-attribute-summary">
-                  {taskPriorityNames[t.priority ?? 0]} · {t.due_date ?? '无截止日期'}
-                  {t.matter_title && ` · ${t.matter_title}`}
-                </small>
-              )}
-            </strong>
-          </span>
-          <span className="row-objective">{documents ? t.title : t.objective || '尚未填写'}</span>
-          <span className="revision-badge">
-            {t.body_revision > 0 ? `修订 ${t.body_revision}` : '未写正文'}
-          </span>
-          <time>
-            {new Date(t.updated_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
-          </time>
+          {row.getVisibleCells().map((cell) => (
+            <span role="cell" key={cell.id}>
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </span>
+          ))}
         </button>
       ))}
       {tasks.length === 0 && (

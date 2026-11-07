@@ -288,3 +288,17 @@
   margin: 0;
   color: #4e5966;
 }
+
+.collection-workspace .task-table-structured {
+  min-width: 530px;
+}
+.collection-workspace .task-table-structured .table-head,
+.collection-workspace .task-table-structured .task-row {
+  grid-template-columns: minmax(170px, 1.5fr) repeat(3, minmax(56px, 0.6fr)) minmax(100px, 1fr);
+}
+.collection-workspace .task-table-structured .table-head > span,
+.collection-workspace .task-table-structured .task-row > span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
