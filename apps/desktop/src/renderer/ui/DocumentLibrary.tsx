@@ -1,8 +1,5 @@
 import ReadTable from '../shared/ui/ReadTable';
-import {
-  invalidateProjectCatalog,
-  useOrdinaryCatalog,
-} from '../shared/data/ordinary-catalog-query';
+import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
