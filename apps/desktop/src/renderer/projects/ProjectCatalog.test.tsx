@@ -433,7 +433,7 @@ it('edits list properties without opening detail and keeps drafts during filteri
       project_type: 'general' as const,
       assignee: null as string | null,
       priority: 0,
-      start_date: null,
+      start_date: '2024-02-29',
       target_date: null,
       tags: [] as string[],
     },
@@ -480,6 +480,7 @@ it('edits list properties without opening detail and keeps drafts during filteri
     expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(false),
   );
   expect(writes).toHaveLength(1);
+  expect(writes[0].attributes?.start_date).toBe('2024-02-29');
   expect(writes[0].state).toBeUndefined();
   expect(writes[0].expected_body_revision).toBe(1);
   expect(
@@ -555,12 +556,12 @@ it('discards incomplete date validation together with its property draft', async
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   show();
   await screen.findByLabelText('侧栏项目名称');
-  const start = screen.getByLabelText('项目开始日') as HTMLInputElement;
-  fireEvent.change(start, { target: { value: '2024-02-29' } });
+  const target = screen.getByLabelText('项目目标日') as HTMLInputElement;
+  fireEvent.change(target, { target: { value: '2024-02-29' } });
   const validity = vi
-    .spyOn(start, 'validity', 'get')
+    .spyOn(target, 'validity', 'get')
     .mockReturnValue({ valid: false, badInput: true } as ValidityState);
-  fireEvent.change(start, { target: { value: '' } });
+  fireEvent.change(target, { target: { value: '' } });
   validity.mockRestore();
   expect((screen.getByText('保存项目属性') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByText('放弃属性修改'));

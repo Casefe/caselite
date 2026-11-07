@@ -323,6 +323,37 @@ export async function runProjectDemo(
         `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable: ${label}');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
       );
     };
+    const assertPropertyRows = async (scope: string) => {
+      const layout = await evaluate(
+        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.project-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:flat(panel.querySelector('.project-professional-card')),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
+      );
+      if (
+        layout.rows < 7 ||
+        layout.brokenRows.length ||
+        !layout.flatCard ||
+        !layout.noLegacyField ||
+        !layout.date
+      )
+        throw new Error('Invalid project property layout: ' + JSON.stringify(layout));
+    };
+    // 仅隔离演练：向当前 WebContents 发送固定按键，无远程调试端口或桌面焦点切换。
+    const propertyKey = async (key: string, code: string, virtualKey: number) => {
+      const debuggerSession = window.webContents.debugger;
+      debuggerSession.attach('1.3');
+      try {
+        await debuggerSession.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+        for (const type of ['keyDown', 'keyUp'])
+          await debuggerSession.sendCommand('Input.dispatchKeyEvent', {
+            type,
+            key,
+            code,
+            windowsVirtualKeyCode: virtualKey,
+            ...(key === ' ' && type === 'keyDown' ? { text: ' ' } : {}),
+          });
+      } finally {
+        debuggerSession.detach();
+      }
+    };
     if (process.env.CASELITE_PROJECT_PROPERTIES) {
       const read = async (id?: string) => {
         const r: CatalogResponse = await evaluate(
@@ -336,25 +367,22 @@ export async function runProjectDemo(
         await button('创建项目');
         await wait("document.querySelector('dialog[open] [aria-label=项目名称]')");
         await input('项目名称', '合成项目属性验收');
+        await propertyKey('Tab', 'Tab', 9);
+        await wait("document.activeElement?.getAttribute('aria-label')==='项目类型'");
         await input('项目负责人', '合成负责人');
         await input('项目优先级', '2', true);
-        await input('项目开始日', '2024-02-29');
         await input('项目目标日', '2024-03-01');
         await input('项目标签', '验收,合成');
         await input('项目类型', 'civil_litigation', true);
         if (professional) {
           await input('受理法院', '合成法院');
           const before = await read();
-          window.show();
-          window.focus();
           await evaluate("document.querySelector('.project-professional-card summary').focus()");
-          for (const type of ['keyDown', 'keyUp'] as const)
-            window.webContents.sendInputEvent({ type, keyCode: 'Space' });
+          await propertyKey(' ', 'Space', 32);
           await wait("!document.querySelector('.project-professional-card').open");
           if (JSON.stringify(await read()) !== JSON.stringify(before))
             throw new Error('Disclosure wrote project data');
-          for (const type of ['keyDown', 'keyUp'] as const)
-            window.webContents.sendInputEvent({ type, keyCode: 'Space' });
+          await propertyKey(' ', 'Space', 32);
           await wait("document.querySelector('.project-professional-card').open");
           if (
             (await evaluate("document.querySelector('[aria-label=受理法院]').value")) !== '合成法院'
@@ -383,14 +411,6 @@ export async function runProjectDemo(
           '合成负责人'
         )
           throw new Error('Type selection replaced manual values');
-        await input('项目目标日', '2024-02-28');
-        if (
-          !(await evaluate(
-            "Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='保存项目').disabled",
-          ))
-        )
-          throw new Error('Reversed dates remained savable');
-        await input('项目目标日', '2024-03-01');
         const layouts = [];
         for (const width of [1440, 640]) {
           window.setSize(width, 900);
@@ -405,6 +425,7 @@ export async function runProjectDemo(
               await evaluate(
                 "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
               );
+            await assertPropertyRows('dialog[open]');
             await capture(`properties-create-${width}-${theme}.png`);
             layouts.push({ theme, ...geometry });
           }
@@ -419,6 +440,7 @@ export async function runProjectDemo(
         if (
           current.attributes?.project_type !== 'litigation' ||
           current.attributes.priority !== 2 ||
+          current.attributes.start_date !== null ||
           current.status !== 'active'
         )
           throw new Error('Creation dropped selected attributes');
@@ -429,6 +451,21 @@ export async function runProjectDemo(
         await wait(
           "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
         );
+        // 创建界面不能填写旧日期；只在隔离库注入一个历史项目字段再从产品界面重读。
+        const fixture = openToolchainProbe(
+          join(isolation.userData, 'caselite.sqlite'),
+          join(process.resourcesPath, 'migrations'),
+        );
+        try {
+          fixture.sqlite
+            .prepare('UPDATE matters SET start_date=? WHERE id=?')
+            .run('2024-02-29', current.id);
+        } finally {
+          fixture.sqlite.close();
+        }
+        await button('返回项目列表');
+        await button('打开项目');
+        await wait("document.querySelector('[aria-label=编辑项目名称]')");
         current = (await read(current.id)).projects[0];
         const original = await read(current.id);
         if (!original.state || current.body_revision !== 1)
@@ -437,15 +474,24 @@ export async function runProjectDemo(
         await input('项目负责人', '合成右栏负责人');
         if (professional) await input('程序阶段', '合成阶段');
         await input('项目优先级', '4', true);
-        window.show();
-        window.focus();
-        await evaluate(
-          "(()=>{const e=document.querySelector('[aria-label=项目开始日]');e.scrollIntoView({block:'center'});e.addEventListener('input',()=>{if(e.validity.badInput)e.dataset.observedBadInput='true';},true);e.focus();})()",
-        );
-        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
-        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+        await input('项目目标日', '2024-02-28');
+        await wait("document.querySelector('[aria-label=项目目标日][aria-invalid=true]')");
         await wait(
-          "document.querySelector('[aria-label=项目开始日]').dataset.observedBadInput==='true'",
+          "document.querySelector('.project-property-error')?.textContent.includes('2024-02-29')",
+        );
+        if (
+          !(await evaluate(
+            "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
+          ))
+        )
+          throw new Error('Legacy date conflict remained savable');
+        await input('项目目标日', '2024-03-01');
+        await evaluate(
+          "(()=>{const e=document.querySelector('[aria-label=项目目标日]');e.scrollIntoView({block:'center'});e.addEventListener('input',()=>{if(e.validity.badInput)e.dataset.observedBadInput='true';},true);e.focus();})()",
+        );
+        await propertyKey('Backspace', 'Backspace', 8);
+        await wait(
+          "document.querySelector('[aria-label=项目目标日]').dataset.observedBadInput==='true'",
         );
         if (
           !(await evaluate(
@@ -453,7 +499,7 @@ export async function runProjectDemo(
           ))
         )
           throw new Error('Native incomplete date remained savable');
-        await input('项目开始日', '2024-02-29');
+        await input('项目目标日', '2024-03-01');
         await wait(
           "!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
         );
@@ -465,7 +511,6 @@ export async function runProjectDemo(
             sameCanonicalInputRecovered: true,
           }),
         );
-        await input('项目开始日', '');
         await input('项目目标日', '');
         const connection = openToolchainProbe(
           join(isolation.userData, 'caselite.sqlite'),
@@ -495,6 +540,7 @@ export async function runProjectDemo(
         if (
           saved.projects[0].body_revision !== 1 ||
           JSON.stringify(saved.state) !== JSON.stringify(original.state) ||
+          saved.projects[0].attributes?.start_date !== '2024-02-29' ||
           saved.projects[0].attributes?.assignee !== '合成右栏负责人' ||
           (professional &&
             (saved.projects[0].attributes?.professional_fields?.civil_litigation?.court !==
@@ -505,6 +551,7 @@ export async function runProjectDemo(
           throw new Error('Attribute save changed original body');
         await button('返回项目列表');
         await wait("document.querySelector('[aria-label=侧栏项目名称]')");
+        await assertPropertyRows('.project-properties');
         await input('项目标签', '列表侧栏,合成');
         if (!(await evaluate("document.querySelector('[aria-label=搜索项目]').disabled")))
           throw new Error('Filtering can discard property draft');
@@ -536,11 +583,7 @@ export async function runProjectDemo(
             await evaluate(
               "Array.from(document.querySelectorAll('.project-properties button')).find(e=>e.textContent.trim()==='保存项目属性').scrollIntoView({block:'center'})",
             );
-            const layout = await evaluate(
-              "(()=>{const label=document.querySelector('.project-properties .project-fields label');const style=getComputedStyle(label);return {display:style.display,columns:style.gridTemplateColumns};})()",
-            );
-            if (layout.display !== 'grid' || !layout.columns.startsWith('72px'))
-              throw new Error('Sidebar is not a compact attribute grid: ' + JSON.stringify(layout));
+            await assertPropertyRows('.project-properties');
             const reachable = await evaluate(
               `(()=>{const e=document.querySelector('[aria-label=${professional ? '程序阶段' : '项目标签'}]');const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height,viewportHeight:innerHeight};})()`,
             );
@@ -556,6 +599,8 @@ export async function runProjectDemo(
           }
         }
         const final = await read(current.id);
+        if (final.projects[0].attributes?.start_date !== '2024-02-29')
+          throw new Error('List save cleared legacy project date');
         writeFileSync(
           expectedPath,
           JSON.stringify(
@@ -601,6 +646,7 @@ export async function runProjectDemo(
           await evaluate(
             "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
           );
+        await assertPropertyRows('.project-properties');
         await capture('properties-reopened.png');
         if (process.env.CASELITE_PROJECT_PROPERTIES === 'preview') {
           window.setTitle(
@@ -1070,6 +1116,7 @@ export async function runProjectDemo(
             "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
           );
         }
+        await assertPropertyRows('dialog[open]');
         await capture('project-from-task.png');
         await button('保存项目');
         await wait("!document.querySelector('dialog[open]')");

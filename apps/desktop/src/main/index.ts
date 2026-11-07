@@ -988,7 +988,11 @@ app
         taskDemoPhase === 'project-activity-read' ||
         taskDemoPhase === 'project-promote-read')
     ) {
-      await runProjectDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      await runProjectDemo(
+        () => createWindow(process.env.CASELITE_PROJECT_DEMO_BACKGROUND !== '1'),
+        taskDemoRoot,
+        taskDemoPhase,
+      );
       app.exit(0);
       return;
     }

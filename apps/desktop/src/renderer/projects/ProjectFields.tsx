@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import { Icon } from '../ui/Workspace';
 import type { Matter } from '../../preload/caselite-api';
 type ProjectAttributes = NonNullable<Matter['attributes']>;
 type ProjectProfessionalFields = NonNullable<ProjectAttributes['professional_fields']>;
@@ -52,6 +53,69 @@ const professionalFields: {
   },
   contract_review: { contract_type: '合同类型', subject: '合同标的', review_focus: '审查重点' },
 };
+const propertyIcons: Record<string, string> = {
+  name: 'M5 6h14M5 12h14M5 18h9',
+  status: 'M12 3a9 9 0 1 0 9 9h-9Z M16 3.9a9 9 0 0 1 4.1 4.1',
+  person: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v2',
+  priority: 'M5 19v-3m5 3v-6m5 6V9m5 10V5',
+  tag: 'M3 4h8l10 10-7 7L3 10Z M7.5 8h.01',
+  number: 'M10 3 6 21M18 3l-4 18M4 9h17M2 15h17',
+  institution: 'm3 9 9-5 9 5M5 10h14M6 11v6m6-6v6m6-6v6M4 20h16',
+  target: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
+};
+const professionalIcons: Record<string, string> = {
+  case_number: 'number',
+  court: 'institution',
+  authority: 'institution',
+  institution: 'institution',
+  cause: 'file',
+  suspected_offense: 'file',
+  dispute: 'file',
+  stage: 'status',
+  service_type: 'folder',
+  topic: 'name',
+  scope: 'list',
+  deliverables: 'check',
+  contract_type: 'folder',
+  subject: 'file',
+  review_focus: 'target',
+};
+function ProjectPropertyRow({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: string;
+  children: ReactNode;
+}) {
+  const path = propertyIcons[icon];
+  return (
+    <label className="project-property-row">
+      <span className="project-property-label">
+        {path ? (
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.65"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d={path} />
+          </svg>
+        ) : (
+          <Icon name={icon} size={15} />
+        )}
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
 export const projectStatuses = { planned: '待开始', active: '进行中', done: '已完成' };
 export function projectValues(project?: Matter): ProjectValues {
   return {
@@ -105,8 +169,10 @@ export default function ProjectFields({
   onChange(value: ProjectValues): void;
   onInvalid(value: boolean): void;
 }) {
-  const dates = useRef({ start_date: false, target_date: false });
+  const invalidTarget = useRef(false);
+  const targetHintId = useId();
   const a = value.attributes;
+  const targetBeforeLegacyDate = !!(a.start_date && a.target_date && a.target_date < a.start_date);
   const type = a.professional_type ?? a.project_type;
   const professionalCard = useRef<HTMLDetailsElement>(null);
   const [allowLegacy] = useState(type === 'litigation');
@@ -132,8 +198,7 @@ export default function ProjectFields({
     <>
       <fieldset className="project-fields" disabled={disabled}>
         <legend>{creating ? '项目属性' : '编辑项目属性'}</legend>
-        <label>
-          名称
+        <ProjectPropertyRow label="名称" icon="name">
           <input
             disabled={disabled}
             autoFocus={creating}
@@ -143,9 +208,8 @@ export default function ProjectFields({
             autoComplete="off"
             onChange={(e) => onChange({ ...value, title: e.target.value })}
           />
-        </label>
-        <label>
-          项目类型
+        </ProjectPropertyRow>
+        <ProjectPropertyRow label="项目类型" icon="folder">
           <select
             disabled={disabled}
             aria-label="项目类型"
@@ -160,9 +224,8 @@ export default function ProjectFields({
                 </option>
               ))}
           </select>
-        </label>
-        <label>
-          状态
+        </ProjectPropertyRow>
+        <ProjectPropertyRow label="状态" icon="status">
           <select
             disabled={disabled}
             aria-label="项目状态"
@@ -175,9 +238,8 @@ export default function ProjectFields({
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          负责人
+        </ProjectPropertyRow>
+        <ProjectPropertyRow label="负责人" icon="person">
           <input
             disabled={disabled}
             aria-label="项目负责人"
@@ -186,10 +248,9 @@ export default function ProjectFields({
             maxLength={80}
             onChange={(e) => attribute('assignee', e.target.value || null)}
           />
-        </label>
+        </ProjectPropertyRow>
 
-        <label>
-          优先级
+        <ProjectPropertyRow label="优先级" icon="priority">
           <select
             disabled={disabled}
             aria-label="项目优先级"
@@ -202,37 +263,39 @@ export default function ProjectFields({
               </option>
             ))}
           </select>
-        </label>
-        {(['start_date', 'target_date'] as const).map((key) => (
-          <label key={key}>
-            {key === 'start_date' ? '开始日' : '目标日'}
-            <input
-              disabled={disabled}
-              type="date"
-              min="0001-01-01"
-              max="9999-12-31"
-              aria-label={key === 'start_date' ? '项目开始日' : '项目目标日'}
-              value={a[key] ?? ''}
-              onInput={(e) => {
-                if (dates.current[key] && e.currentTarget.validity.valid) {
-                  dates.current[key] = false;
-                  onInvalid(Object.values(dates.current).some(Boolean));
-                  attribute(key, e.currentTarget.value || null);
-                }
-              }}
-              onChange={(e) => {
-                // 浏览器的半输入日期也可能返回空字符串，不能把它当用户清除。
-                dates.current[key] = !e.target.validity.valid;
-                onInvalid(Object.values(dates.current).some(Boolean));
-                if (dates.current[key]) onChange({ ...value });
-                else attribute(key, e.target.value || null);
-              }}
-            />
-          </label>
-        ))}
-
-        <label>
-          标签
+        </ProjectPropertyRow>
+        <ProjectPropertyRow label="目标日" icon="calendar">
+          <input
+            disabled={disabled}
+            type="date"
+            min="0001-01-01"
+            max="9999-12-31"
+            aria-label="项目目标日"
+            aria-invalid={targetBeforeLegacyDate || undefined}
+            aria-describedby={targetBeforeLegacyDate ? targetHintId : undefined}
+            value={a.target_date ?? ''}
+            onInput={(e) => {
+              if (invalidTarget.current && e.currentTarget.validity.valid) {
+                invalidTarget.current = false;
+                onInvalid(false);
+                attribute('target_date', e.currentTarget.value || null);
+              }
+            }}
+            onChange={(e) => {
+              // 浏览器的半输入日期也可能返回空字符串，不能把它当用户清除。
+              invalidTarget.current = !e.target.validity.valid;
+              onInvalid(invalidTarget.current);
+              if (invalidTarget.current) onChange({ ...value });
+              else attribute('target_date', e.target.value || null);
+            }}
+          />
+        </ProjectPropertyRow>
+        {targetBeforeLegacyDate && (
+          <small id={targetHintId} className="project-property-error" role="status">
+            此项目的历史记录限制了目标日。请选择 {a.start_date} 或之后的日期，或清空目标日。
+          </small>
+        )}
+        <ProjectPropertyRow label="标签" icon="tag">
           <input
             disabled={disabled}
             aria-label="项目标签"
@@ -240,19 +303,23 @@ export default function ProjectFields({
             value={a.tags.join(',')}
             onChange={(e) => attribute('tags', e.target.value ? e.target.value.split(/[,，]/) : [])}
           />
-        </label>
-        <small>负责人仅作记录。日期不计算法定期限或创建提醒；标签最多20项，每项1—40字。</small>
+        </ProjectPropertyRow>
+        <small>负责人仅作记录。目标日不计算法定期限或创建提醒；标签最多20项，每项1—40字。</small>
       </fieldset>
       <details ref={professionalCard} className="project-professional-card" open>
         <summary>专业卡{group ? ` · ${projectTypes[group]}` : ''}</summary>
         <fieldset className="project-fields" disabled={disabled} aria-label="专业属性">
           {group ? (
             Object.entries(professionalFields[group]).map(([key, label]) => (
-              <label key={`${group}:${key}`}>
-                {label}
+              <ProjectPropertyRow
+                key={`${group}:${key}`}
+                label={label}
+                icon={professionalIcons[key]}
+              >
                 <input
                   aria-label={label}
                   value={fields[key] ?? ''}
+                  placeholder="未填写"
                   maxLength={professionalTextLimit}
                   autoComplete="off"
                   onChange={(event) =>
@@ -262,7 +329,7 @@ export default function ProjectFields({
                     })
                   }
                 />
-              </label>
+              </ProjectPropertyRow>
             ))
           ) : (
             <small>
