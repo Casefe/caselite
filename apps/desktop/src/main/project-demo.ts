@@ -2591,6 +2591,30 @@ export async function runProjectDemo(
       await wait(`document.querySelector('.contacts-inspector h2')?.textContent === ${JSON.stringify(syntheticContact)}
         && document.querySelector('.contacts-inspector li')?.textContent === '独立任务转项目验收'`);
       await captureRenderer('dev-1806-contacts.png');
+      if (phase === 'project-files-read') {
+        await evaluate("document.querySelector('[data-nav=reports]').click()");
+        await wait(
+          "document.querySelector('.report-project-list tbody')?.textContent.includes('独立任务转项目验收')",
+        );
+        await captureRenderer('dev-1805-report.png');
+        await evaluate("document.querySelector('[data-nav=tasks]').click()");
+        await wait(
+          "document.querySelector('.task-table-structured [role=columnheader]:nth-child(4)')?.textContent === '截止日期'",
+        );
+        await wait(
+          "document.querySelector('.task-list-summary')?.textContent.includes('今日到期')",
+        );
+        await captureRenderer('dev-1803-task-list.png');
+        await evaluate("document.querySelector('[data-nav=documents]').click()");
+        await wait(
+          "document.querySelector('.document-directory-table tbody')?.textContent.includes('独立任务转项目验收')",
+        );
+        await button('预览');
+        await wait(
+          "document.querySelector('[aria-label=文档正文预览]')?.textContent.includes('原任务正文与引用保全样本')",
+        );
+        await captureRenderer('dev-1803-document-preview.png');
+      }
       writeFileSync(
         join(root, phase + '.json'),
         JSON.stringify(

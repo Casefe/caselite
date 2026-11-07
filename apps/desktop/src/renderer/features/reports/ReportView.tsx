@@ -19,21 +19,40 @@ export default function ReportView({
 }) {
   const read = useOrdinaryCatalog();
   const [tab, setTab] = useState('overview');
+  const [projectType, setProjectType] = useState('');
   const [owner, setOwner] = useState('');
   const projects = read.data?.projects ?? [];
   const owners = [
     ...new Set(projects.flatMap((p) => (p.attributes?.assignee ? [p.attributes.assignee] : []))),
   ].sort();
-  const rows = projects.filter((p) => !owner || p.attributes?.assignee === owner);
+  const projectTypes = [
+    ['general', '通用'],
+    ['civil_litigation', '民事诉讼'],
+    ['criminal_litigation', '刑事诉讼'],
+    ['commercial_arbitration', '商事仲裁'],
+    ['non_litigation', '非诉项目'],
+    ['contract_review', '合同审查'],
+    ['litigation', '诉讼（未细分）'],
+  ];
+  const rows = projects.filter(
+    (p) =>
+      (!owner || p.attributes?.assignee === owner) &&
+      (!projectType ||
+        (p.attributes?.professional_type ?? p.attributes?.project_type) === projectType),
+  );
+  const filtered = Boolean(owner || projectType);
   const scopedProjects = new Set(rows.map((p) => p.id));
-  const scopedTasks = owner
+  const scopedTasks = filtered
     ? tasks.filter((t) => t.matter_id && scopedProjects.has(t.matter_id))
     : tasks;
   const docCount = read.data?.documents.filter(
-    (doc) => !doc.archived_at && (!owner || (doc.matter_id && scopedProjects.has(doc.matter_id))),
+    (doc) =>
+      !doc.archived_at && (!filtered || (doc.matter_id && scopedProjects.has(doc.matter_id))),
   ).length;
   const balances = rows.flatMap((p) => (p.outstanding_cents == null ? [] : [p.outstanding_cents]));
-  const balance = balances.length ? balances.reduce((sum, value) => sum + value, 0) : undefined;
+  const balance = balances.length
+    ? balances.reduce((sum, value) => sum + BigInt(value), 0n)
+    : undefined;
   return (
     <main className="workspace-placeholder report-workbench">
       <header className="report-workbench-heading">
@@ -41,6 +60,17 @@ export default function ReportView({
           <h1>报告</h1>
           <p>从本机项目、任务、文档和收费台账查看业务概况。</p>
         </div>
+        <label>
+          项目类型{' '}
+          <select value={projectType} onChange={(event) => setProjectType(event.target.value)}>
+            <option value="">所有项目类型</option>
+            {projectTypes.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           负责人{' '}
           <select value={owner} onChange={(event) => setOwner(event.target.value)}>

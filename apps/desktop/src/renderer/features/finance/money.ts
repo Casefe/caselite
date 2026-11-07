@@ -1,4 +1,4 @@
-export function formatCents(cents: number | null | undefined) {
+export function formatCents(cents: number | bigint | null | undefined) {
   if (cents == null) return '—';
   const amount = BigInt(cents);
   if (amount === 0n) return '0';
