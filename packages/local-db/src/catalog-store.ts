@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   catalogResponseSchema,
+  agentProjectFieldsSchema,
   projectAttributesSchema,
   legacyProjectType,
   type ProjectProfessionalType,
@@ -216,6 +217,30 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     return rows.map((row) => ({ ...row, actor: null, recorded_version: null }));
   };
   return {
+    agentProject: {
+      exists(id: string) {
+        return Boolean(
+          db.prepare('SELECT 1 FROM matters WHERE workspace_id=? AND id=?').get(workspace, id),
+        );
+      },
+      preview(id: string) {
+        // 仅查模型允许使用的列；项目正文与专业数据不参与预览或发送。
+        const row = db
+          .prepare(
+            `SELECT title,status,coalesce(professional_type,project_type) AS project_type,priority,target_date,version,archived_at
+           FROM matters WHERE workspace_id=? AND id=?`,
+          )
+          .get(workspace, id) as
+          ({ version: number; archived_at: string | null } & Record<string, unknown>) | undefined;
+        if (!row) return undefined;
+        const { version, archived_at, ...values } = row;
+        const fields = agentProjectFieldsSchema.parse(values);
+        const fingerprint = createHash('sha256')
+          .update(JSON.stringify([workspace, id, version, archived_at, fields]))
+          .digest('hex');
+        return { fields, fingerprint, archived: archived_at !== null };
+      },
+    },
     execute(request: CatalogRequest): CatalogResponse {
       if (request.operation === 'list_discussion') {
         const { scope } = request;

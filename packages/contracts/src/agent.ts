@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { matterSchema, projectProfessionalTypeSchema } from './catalog';
+import { ordinaryDateSchema } from './task';
 
 export const agentProviderSchema = z.enum(['openai', 'deepseek']);
 export const agentModelSchema = z.enum(['gpt-4.1-mini', 'deepseek-flash', 'deepseek-v4-pro']);
@@ -8,7 +10,25 @@ export const agentProviderFor = (model: AgentModel): AgentProvider =>
   model === 'gpt-4.1-mini' ? 'openai' : 'deepseek';
 
 export const AGENT_CHANNEL = 'caselite:agent:v1';
-const scope = z.union([z.literal('home'), z.string().uuid()]);
+const projectScope = z.templateLiteral(['project:', z.string().uuid()]);
+const scope = z.union([z.literal('home'), z.string().uuid(), projectScope]);
+const projectFingerprint = z.string().regex(/^[a-f0-9]{64}$/);
+export const agentProjectFieldsSchema = z.strictObject({
+  title: z.string().min(1).max(160),
+  status: matterSchema.shape.status,
+  project_type: z.union([
+    z.enum(['general', 'litigation', 'contract_review']),
+    projectProfessionalTypeSchema,
+  ]),
+  priority: z.number().int().min(0).max(4),
+  target_date: ordinaryDateSchema.nullable(),
+});
+const agentProjectPreviewSchema = z.strictObject({
+  fields: agentProjectFieldsSchema,
+  fingerprint: projectFingerprint,
+  archived: z.boolean(),
+});
+export type AgentProjectPreview = z.infer<typeof agentProjectPreviewSchema>;
 const base = { protocol_version: z.literal(1) };
 export const agentRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('profile') }).strict(),
@@ -34,6 +54,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
     .strict(),
   z.object({ ...base, operation: z.literal('select_model'), model: agentModelSchema }).strict(),
   z.object({ ...base, operation: z.literal('read'), scope }).strict(),
+  z.object({ ...base, operation: z.literal('preview_project'), scope: projectScope }).strict(),
   z
     .object({ ...base, operation: z.literal('copy_output'), scope, run_id: z.string().uuid() })
     .strict(),
@@ -56,6 +77,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       prompt: z.string().trim().min(1).max(4000),
       confirmed: z.literal(true),
       context_id: z.string().uuid().optional(),
+      project_fingerprint: projectFingerprint.optional(),
     })
     .strict(),
   z.object({ ...base, operation: z.literal('cancel'), scope, run_id: z.string().uuid() }).strict(),
@@ -79,6 +101,7 @@ export const agentRunSchema = z.object({
     .max(16)
     .optional(),
   context_id: z.string().uuid().optional(),
+  project_fingerprint: projectFingerprint.optional(),
   status: z.enum(['running', 'succeeded', 'cancelled', 'failed', 'interrupted']),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -101,6 +124,7 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
       .strict()
       .optional(),
     runs: z.array(agentRunSchema),
+    project_preview: agentProjectPreviewSchema.optional(),
   }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);

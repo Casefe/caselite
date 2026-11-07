@@ -24,6 +24,14 @@ vi.mock('../editors/RichEditor', () => ({
     />
   ),
 }));
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
 beforeAll(() => {
   // jsdom不实现原生模态窗口；焦点圈定和Escape另在真实Electron走查。
   HTMLDialogElement.prototype.showModal = function () {
@@ -476,7 +484,9 @@ it('edits list properties without opening detail and keeps drafts during filteri
   fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '合成负责人' } });
   for (const name of ['搜索项目', '筛选项目状态', '项目排序'])
     expect((screen.getByLabelText(name) as HTMLInputElement).disabled).toBe(true);
-  expect((screen.getByLabelText('项目 AI 任务') as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    screen.getByLabelText('项目 AI 对话').closest('.sidebar-agent')?.hasAttribute('inert'),
+  ).toBe(true);
   expect((screen.getByLabelText('项目负责人') as HTMLInputElement).value).toBe('合成负责人');
   expect(screen.queryByText('返回项目列表')).toBeNull();
   const name = screen.getByLabelText('项目负责人');
@@ -486,7 +496,9 @@ it('edits list properties without opening detail and keeps drafts during filteri
   expect(writes).toHaveLength(0);
   fireEvent.compositionEnd(name);
   await screen.findByText('核对原属性提交');
-  expect((screen.getByLabelText('项目 AI 任务') as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    screen.getByLabelText('项目 AI 对话').closest('.sidebar-agent')?.hasAttribute('inert'),
+  ).toBe(true);
   fireEvent.click(await screen.findByText('核对原属性提交'));
   await waitFor(() =>
     expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(false),
@@ -558,6 +570,13 @@ it('separates a confirmed property save from a failed list refresh and recovers 
 it('discards incomplete date validation together with its property draft', async () => {
   window.caselite = {
     catalog: vi.fn(async () => response([project()])),
+    agent: vi.fn(async () => ({
+      ok: true,
+      configured: false,
+      model: 'gpt-4.1-mini',
+      providers: { openai: false, deepseek: false },
+      runs: [],
+    })),
   } as unknown as Window['caselite'];
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   show();

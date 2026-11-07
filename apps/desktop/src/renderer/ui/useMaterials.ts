@@ -35,7 +35,7 @@ function getDraft(scope: string) {
   if (!drafts.has(scope)) drafts.set(scope, { ids: new Set(), error: '' });
   return drafts.get(scope)!;
 }
-export function useMaterials(scope: MaterialScope) {
+export function useMaterials(scope: MaterialScope, enabled = true) {
   const draft = getDraft(scope);
   const [items, setItems] = useState<Material[]>([]);
   const [, update] = useState(0);
@@ -43,7 +43,7 @@ export function useMaterials(scope: MaterialScope) {
     null,
   );
   const alive = useRef(true);
-  const available = typeof window.caselite?.material === 'function';
+  const available = enabled && typeof window.caselite?.material === 'function';
   const render = () => {
     if (alive.current) update((n) => n + 1);
   };

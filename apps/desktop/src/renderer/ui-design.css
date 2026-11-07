@@ -3525,14 +3525,19 @@ dd {
   color: #647080;
   font-size: 12px;
 }
-.project-ai-content > label {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
+.project-agent-context dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 8px 0;
+}
+.project-agent-context dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 .catalog-actions input,
-.catalog-actions select,
-.project-ai-task-select {
+.catalog-actions select {
   width: 100%;
   display: block;
   margin-top: 8px;
@@ -3763,8 +3768,7 @@ select,
 .provider-detail input,
 .provider-detail select,
 .catalog-actions input,
-.catalog-actions select,
-.project-ai-task-select {
+.catalog-actions select {
   background: var(--theme-panel);
   border-color: var(--line);
   color: var(--ink);

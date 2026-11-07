@@ -93,7 +93,11 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
-  if (process.env.CASELITE_TASK_DEMO === 'agent-preview') entry.searchParams.set('mock-agent', '1');
+  if (
+    process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-')
+  )
+    entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -524,6 +528,8 @@ if (taskDemoPhase) {
       'crash',
       'preview',
       'project-write',
+      'project-agent-write',
+      'project-agent-read',
       'project-read',
       'project-edit',
       'project-restore',
@@ -809,6 +815,7 @@ app
       credentials: agentCredentials,
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
+      project: taskStore.catalog.agentProject,
       history: {
         ...taskStore.agentHistory,
         load() {
@@ -864,7 +871,8 @@ app
           : createPiRuntime(
               credentialUi ||
                 taskDemoPhase?.startsWith('reminder') ||
-                taskDemoPhase?.startsWith('project-') ||
+                (taskDemoPhase?.startsWith('project-') &&
+                  taskDemoPhase !== 'project-agent-write') ||
                 taskDemoPhase === 'task-status-write' ||
                 taskDemoPhase === 'task-status-read' ||
                 taskDemoPhase === 'agent-read' ||
@@ -890,7 +898,7 @@ app
                       );
                       return syntheticAgentStream(model, context, options);
                     }
-                  : taskDemoPhase?.startsWith('agent')
+                  : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
                     ? syntheticAgentStream
                     : undefined,
             ),
@@ -977,7 +985,9 @@ app
     app.on('will-quit', () => taskStore.close());
     if (
       taskDemoRoot &&
-      (taskDemoPhase === 'project-write' ||
+      (taskDemoPhase === 'project-agent-write' ||
+        taskDemoPhase === 'project-agent-read' ||
+        taskDemoPhase === 'project-write' ||
         taskDemoPhase === 'project-read' ||
         taskDemoPhase === 'project-edit' ||
         taskDemoPhase === 'project-restore' ||

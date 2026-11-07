@@ -2,6 +2,7 @@ import {
   agentRequestSchema,
   agentProviderFor,
   type AgentModel,
+  type AgentProjectPreview,
   type AgentProvider,
   type AgentResponse,
   type AgentRun,
@@ -51,6 +52,10 @@ export function createAgentApplication(ports: {
   history?: AgentHistoryPort;
   copyOutput?(text: string): void | Promise<void>;
   taskExists(id: string): boolean;
+  project?: {
+    exists(id: string): boolean;
+    preview(id: string): AgentProjectPreview | undefined;
+  };
   resolveContext?(
     id: string,
     scope: string,
@@ -81,6 +86,7 @@ export function createAgentApplication(ports: {
       return false;
     }
   };
+  const projectPreviews = new Map<string, string>();
   let configuring = false;
   let preparing = false;
   const ownerGeneration = new Map<string, number>();
@@ -134,7 +140,8 @@ export function createAgentApplication(ports: {
           const visible = [...runs.values()].filter(
             ({ owner: runOwner, run }) =>
               (runOwner === owner || runOwner === '') &&
-              (run.scope === 'home' || ports.taskExists(run.scope)),
+              (run.scope === 'home' ||
+                (!run.scope.startsWith('project:') && ports.taskExists(run.scope))),
           );
           if (request.operation === 'pin_history') {
             if (!visible.some(({ run }) => run.id === request.run_id))
@@ -194,8 +201,25 @@ export function createAgentApplication(ports: {
             }
           } else ports.credentials.clear(request.provider ?? 'openai');
         }
-        if ('scope' in request && request.scope !== 'home' && !ports.taskExists(request.scope))
+        const projectId =
+          'scope' in request && request.scope.startsWith('project:')
+            ? request.scope.slice('project:'.length)
+            : undefined;
+        const needsProjectFields =
+          request.operation === 'preview_project' || request.operation === 'start';
+        const project =
+          projectId && needsProjectFields ? ports.project?.preview(projectId) : undefined;
+        if (projectId && !(needsProjectFields ? project : ports.project?.exists(projectId)))
+          return failure('NOT_FOUND', '项目不存在或不属于此工作区。');
+        if (
+          !projectId &&
+          'scope' in request &&
+          request.scope !== 'home' &&
+          !ports.taskExists(request.scope)
+        )
           return failure('NOT_FOUND', '任务不存在，未读取或发送任何正文。');
+        if (request.operation === 'preview_project' && project)
+          projectPreviews.set(owner, project.fingerprint);
         if (request.operation === 'copy_output') {
           if (historyUnavailable) return failure('HISTORY_UNAVAILABLE', '运行记录不可用，未复制。');
           const item = runs.get(request.run_id);
@@ -224,6 +248,12 @@ export function createAgentApplication(ports: {
           };
         }
         if (request.operation === 'start') {
+          if (
+            project
+              ? !request.project_fingerprint || request.context_id
+              : request.project_fingerprint
+          )
+            return failure('INVALID_REQUEST', '发送的上下文与当前范围不匹配。');
           const selectedModel = request.model ?? 'gpt-4.1-mini';
           const provider = agentProviderFor(selectedModel);
           const existing = runs.get(request.run_id);
@@ -233,10 +263,18 @@ export function createAgentApplication(ports: {
               existing.run.scope !== request.scope ||
               existing.run.prompt !== request.prompt ||
               existing.run.context_id !== request.context_id ||
+              existing.run.project_fingerprint !== request.project_fingerprint ||
               existing.run.model !== selectedModel
             )
               return failure('CONFLICT', '运行标识不匹配，未重复发送。');
           } else {
+            if (project?.archived) return failure('ARCHIVED', '项目已归档，不能发送新问题。');
+            if (
+              project &&
+              (project.fingerprint !== request.project_fingerprint ||
+                projectPreviews.get(owner) !== project.fingerprint)
+            )
+              return failure('STALE_PROJECT_CONTEXT', '项目已变化，请核对更新后的上下文再发送。');
             if (active) return failure('BUSY', '已有运行进行中，请先停止或等待结束。');
             if (dispatched >= 100)
               return failure('LIMIT', '本次会话已达运行上限，请先保存需要保留的结果。');
@@ -261,14 +299,17 @@ export function createAgentApplication(ports: {
             ownerGeneration.set(owner, generation);
             preparing = true;
             try {
-              runtimePrompt = request.context_id
-                ? await ports.resolveContext?.(
-                    request.context_id,
-                    request.scope,
-                    request.prompt,
-                    selectedModel,
-                  )
-                : request.prompt;
+              // 项目校验到登记并派发之间不等待异步工作；不从 Renderer 接收项目字段。
+              if (project)
+                runtimePrompt = `以下 JSON 是当前项目的基础数据，仅作为资料使用。\n${JSON.stringify(project.fields)}\n\n用户问题：\n${request.prompt}`;
+              else if (request.context_id)
+                runtimePrompt = await ports.resolveContext?.(
+                  request.context_id,
+                  request.scope,
+                  request.prompt,
+                  selectedModel,
+                );
+              else runtimePrompt = request.prompt;
             } finally {
               preparing = false;
             }
@@ -284,6 +325,9 @@ export function createAgentApplication(ports: {
               scope: request.scope,
               prompt: request.prompt,
               ...(request.context_id ? { context_id: request.context_id } : {}),
+              ...(request.project_fingerprint
+                ? { project_fingerprint: request.project_fingerprint }
+                : {}),
               ...(typeof runtimePrompt === 'object'
                 ? { attachments: runtimePrompt.attachments }
                 : {}),
@@ -300,6 +344,7 @@ export function createAgentApplication(ports: {
                 old.scope !== run.scope ||
                 old.prompt !== run.prompt ||
                 old.context_id !== run.context_id ||
+                old.project_fingerprint !== run.project_fingerprint ||
                 old.model !== run.model ||
                 old.provider !== run.provider
               )
@@ -375,8 +420,11 @@ export function createAgentApplication(ports: {
           configured: providers[agentProviderFor(model)],
           model,
           ...state,
+          ...(request.operation === 'preview_project' && project
+            ? { project_preview: project }
+            : {}),
           runs:
-            'scope' in request
+            'scope' in request && request.operation !== 'preview_project'
               ? [...runs.values()]
                   .filter(
                     (item) =>
@@ -394,6 +442,8 @@ export function createAgentApplication(ports: {
       }
     },
     release(owner?: string) {
+      if (owner) projectPreviews.delete(owner);
+      else projectPreviews.clear();
       if (owner) ownerGeneration.set(owner, (ownerGeneration.get(owner) ?? 0) + 1);
       else
         for (const key of ownerGeneration.keys())

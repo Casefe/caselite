@@ -13,6 +13,7 @@ import {
   useState,
   type ComponentProps,
   type RefObject,
+  type SyntheticEvent,
 } from 'react';
 import {
   AssistantRuntimeProvider,
@@ -27,6 +28,8 @@ import {
 import { Icon } from './Workspace';
 import { ModelSettingsNavigation } from './SettingsView';
 import { agentModelLabel, agentProviderFor } from './model-labels';
+import { projectStatuses, projectTypes } from '../projects/ProjectFields';
+import type { AgentResponse } from '../../preload/caselite-api';
 import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
@@ -219,6 +222,7 @@ export default function AgentPanel({
   onDraft,
   editorRef,
   onConversationChange,
+  project,
 }: {
   scope: string;
   variant?: 'default' | 'compact';
@@ -227,8 +231,20 @@ export default function AgentPanel({
   editorRef?: RefObject<DraftEditorHandle | null>;
   onCreate?(): void;
   onConversationChange?(hasRuns: boolean): void;
+  project?: { version: number; archived: boolean };
 }) {
-  const materials = useMaterials(scope);
+  const materials = useMaterials(scope, !project);
+  const [preview, setProjectPreview] = useState<{
+    version: number;
+    value: NonNullable<Extract<AgentResponse, { ok: true }>['project_preview']>;
+  }>();
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectError, setProjectError] = useState('');
+  const previewRequest = useRef(0);
+  const previewStarted = useRef(false);
+  const projectVersion = project?.version;
+  const projectPreview = preview?.version === projectVersion ? preview?.value : undefined;
+  const archived = Boolean(project?.archived || projectPreview?.archived);
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
   const [localDraft, setLocalDraft] = useState(() => drafts.get(scope) ?? emptyDraft());
   const draft = controlled ?? localDraft;
@@ -262,7 +278,10 @@ export default function AgentPanel({
   const acknowledge = (request: Extract<AgentRequest, { operation: 'start' }>) => {
     if (submissions.get(scope)?.run_id !== request.run_id) return;
     const context = confirmedMaterials.get(scope);
-    current.current.materials.acknowledge(context?.selections.map((item) => item.source_id) ?? []);
+    if (!project)
+      current.current.materials.acknowledge(
+        context?.selections.map((item) => item.source_id) ?? [],
+      );
     submissions.delete(scope);
     confirmedMaterials.delete(scope);
     // 晚到回执只清理原输入，不能擦掉用户正在写的下一轮要求。
@@ -321,9 +340,45 @@ export default function AgentPanel({
       clearTimeout(timer);
     };
   }, [scope]);
+  const loadProjectPreview = async () => {
+    if (projectVersion === undefined) return;
+    const token = ++previewRequest.current;
+    previewStarted.current = true;
+    setProjectPreview(undefined);
+    setProjectError('');
+    setProjectLoading(true);
+    try {
+      const result = await window.caselite.agent({
+        protocol_version: 1,
+        operation: 'preview_project',
+        scope: scope as `project:${string}`,
+      });
+      if (!alive.current || previewRequest.current !== token) return;
+      if (result.ok && result.project_preview)
+        setProjectPreview({ version: projectVersion, value: result.project_preview });
+      else setProjectError(result.ok ? '项目上下文不可用。' : result.message);
+    } catch {
+      if (alive.current && previewRequest.current === token)
+        setProjectError('项目上下文读取失败。');
+    } finally {
+      if (alive.current && previewRequest.current === token) setProjectLoading(false);
+    }
+  };
+  const openProjectPreview = (event: SyntheticEvent) => {
+    if (project && !previewStarted.current && event.target instanceof HTMLTextAreaElement)
+      void loadProjectPreview();
+  };
+  const reloadPreview = useRef(loadProjectPreview);
+  useLayoutEffect(() => {
+    reloadPreview.current = loadProjectPreview;
+  });
+  useEffect(() => {
+    if (previewStarted.current) void reloadPreview.current();
+  }, [projectVersion]);
   async function send() {
     if (sending.current || composing.current || active) return;
     const previous = submissions.get(scope);
+    if (project && !previous && (archived || !projectPreview || projectLoading)) return;
     const prompt = previous?.prompt ?? draft.text.trim();
     if (!prompt || prompt.length > 4000) return;
     if (!previous && !configured) {
@@ -344,7 +399,7 @@ export default function AgentPanel({
     let request = previous;
     try {
       if (!request) {
-        const context = await materials.preview(prompt, model, abort.signal);
+        const context = project ? undefined : await materials.preview(prompt, model, abort.signal);
         if (!alive.current || generation !== preparationGeneration.current) return;
         request = {
           protocol_version: 1,
@@ -355,6 +410,7 @@ export default function AgentPanel({
           prompt,
           confirmed: true,
           ...(context ? { context_id: context.id } : {}),
+          ...(projectPreview ? { project_fingerprint: projectPreview.fingerprint } : {}),
         };
         submissions.set(scope, request);
         if (revision !== undefined) submissionRevisions.set(request.run_id, revision);
@@ -366,6 +422,7 @@ export default function AgentPanel({
       if (!alive.current) return;
       if (result.ok) {
         if (result.runs.some((run) => run.id === request!.run_id)) acceptResponse.current(request);
+        else if (project && submissions.get(scope)?.run_id === request.run_id) setUnknown(true);
         if (alive.current) {
           setRuns(result.runs);
           setProviders(result.providers);
@@ -376,7 +433,11 @@ export default function AgentPanel({
           setError('');
         }
       } else {
-        const uncertain = result.code === 'RESULT_UNKNOWN' || Boolean(previous);
+        const refreshProject =
+          result.code === 'STALE_PROJECT_CONTEXT' || result.code === 'ARCHIVED';
+        const uncertain =
+          result.code === 'RESULT_UNKNOWN' || (Boolean(previous) && !refreshProject);
+        if (refreshProject) void loadProjectPreview();
         if (submissions.get(scope)?.run_id === request.run_id) {
           if (!uncertain) {
             submissions.delete(scope);
@@ -460,14 +521,105 @@ export default function AgentPanel({
   });
   const latest = runs.at(-1);
   const homeComposer = scope === 'home' || variant === 'compact';
+  const actions = (
+    <>
+      {homeComposer && (
+        <select
+          className="home-model-select"
+          aria-label="选择大模型"
+          value={active?.model ?? model}
+          disabled={Boolean(active) || pending || unknown}
+          onChange={(event) =>
+            void command({
+              protocol_version: 1,
+              operation: 'select_model',
+              model: event.target.value as AgentModel,
+            })
+          }
+        >
+          <option value="gpt-4.1-mini" disabled={!providers.openai && model !== 'gpt-4.1-mini'}>
+            gpt-4.1-mini
+          </option>
+          <option
+            value="deepseek-flash"
+            disabled={!providers.deepseek && model !== 'deepseek-flash'}
+          >
+            deepseek-flash
+          </option>
+          <option
+            value="deepseek-v4-pro"
+            disabled={!providers.deepseek && model !== 'deepseek-v4-pro'}
+          >
+            deepseek-v4-pro
+          </option>
+        </select>
+      )}
+      {pending && !submissions.has(scope) && (
+        <button
+          type="button"
+          onClick={() => {
+            preparationGeneration.current++;
+            preparingAbort.current?.abort();
+            setError('已取消发送，附件和输入保留。');
+            void materials.cancelPreparation().catch(() => {});
+          }}
+        >
+          取消发送
+        </button>
+      )}
+      {active ? (
+        <button
+          type="button"
+          className="primary assistant-stop"
+          aria-label="停止生成"
+          title="停止生成"
+          onClick={() => void runtime.thread.cancelRun()}
+        >
+          停止生成
+        </button>
+      ) : (
+        <button
+          className={`primary ${unknown ? 'assistant-reconcile' : 'assistant-submit'}`}
+          aria-busy={pending}
+          type="submit"
+          aria-label={unknown ? '核对原发送（同一标识）' : '发送'}
+          title="发送"
+          disabled={
+            pending ||
+            (!unknown &&
+              ((project && (archived || !projectPreview || projectLoading)) ||
+                !draft.text.trim() ||
+                draft.text.length > 4000))
+          }
+        >
+          {pending ? '正在准备…' : unknown ? '核对原发送（同一标识）' : '发送'}
+        </button>
+      )}
+    </>
+  );
+  const composer = (
+    <ComposerInput
+      ref={editorRef}
+      home={scope === 'home'}
+      draft={draft}
+      onDraft={setDraft}
+      disabled={archived}
+    />
+  );
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <AttachmentReader.Provider
-        value={(id, task, name) => void materials.readReference(id, task, name)}
+        value={(id, task, name) => {
+          if (!project) void materials.readReference(id, task, name);
+        }}
       >
         <section
           className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${runs.length ? ' assistant-panel--conversation' : ''}`}
-          aria-label={scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'}
+          aria-label={
+            project ? '项目 AI 对话' : scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'
+          }
+          onFocusCapture={openProjectPreview}
+          onClickCapture={openProjectPreview}
         >
           {mockPreview && (
             <p className="assistant-run-status" role="status">
@@ -495,14 +647,16 @@ export default function AgentPanel({
             </div>
           )}
 
-          <ThreadPrimitive.Root className="assistant-thread">
-            <ThreadPrimitive.Viewport className="assistant-viewport">
-              <ThreadPrimitive.Messages components={{ Message }} />
-              <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
-                回到最新回答 ↓
-              </ThreadPrimitive.ScrollToBottom>
-            </ThreadPrimitive.Viewport>
-          </ThreadPrimitive.Root>
+          {(!project || runs.length > 0) && (
+            <ThreadPrimitive.Root className="assistant-thread">
+              <ThreadPrimitive.Viewport className="assistant-viewport">
+                <ThreadPrimitive.Messages components={{ Message }} />
+                <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
+                  回到最新回答 ↓
+                </ThreadPrimitive.ScrollToBottom>
+              </ThreadPrimitive.Viewport>
+            </ThreadPrimitive.Root>
+          )}
           {latest && (
             <p className={`assistant-run-status ${latest.status}`} role="status">
               {agentModelLabel(latest.model)} ·{' '}
@@ -538,6 +692,42 @@ export default function AgentPanel({
                 重新填写上次要求 · 附件请重新添加
               </button>
             )}
+          {project && (
+            <div className="assistant-run-status project-agent-context" aria-label="项目上下文">
+              <button
+                type="button"
+                disabled={projectLoading}
+                onClick={() => void loadProjectPreview()}
+              >
+                {projectLoading ? '正在读取项目上下文…' : '读取项目上下文'}
+              </button>
+              {projectError && <p role="alert">{projectError} 请重读项目上下文。</p>}
+              {projectPreview && (
+                <dl>
+                  <dt>项目名称</dt>
+                  <dd>{projectPreview.fields.title}</dd>
+                  <dt>状态</dt>
+                  <dd>{projectStatuses[projectPreview.fields.status]}</dd>
+                  <dt>类型</dt>
+                  <dd>{projectTypes[projectPreview.fields.project_type]}</dd>
+                  <dt>优先级</dt>
+                  <dd>{['无优先级', '紧急', '高', '中', '低'][projectPreview.fields.priority]}</dd>
+                  <dt>目标日</dt>
+                  <dd>{projectPreview.fields.target_date ?? '未设置'}</dd>
+                </dl>
+              )}
+              {archived ? (
+                <p>项目已归档，可查看已有历史。</p>
+              ) : (
+                <p>点击发送后，所选模型会收到当前问题和上方项目字段。</p>
+              )}
+              {!configured && openSettings && !archived && (
+                <button type="button" className="model-settings-link" onClick={openSettings}>
+                  前往设置配置 Key
+                </button>
+              )}
+            </div>
+          )}
           <ComposerFrame
             compact={homeComposer}
             onSubmit={(event) => {
@@ -551,94 +741,21 @@ export default function AgentPanel({
               composing.current = false;
             }}
           >
-            <PdfAttachments
-              controller={materials}
-              showSavedMaterials={scope !== 'home'}
-              disabled={pending || unknown || Boolean(active)}
-              actions={
-                <>
-                  {homeComposer && (
-                    <select
-                      className="home-model-select"
-                      aria-label="选择大模型"
-                      value={active?.model ?? model}
-                      disabled={Boolean(active) || pending || unknown}
-                      onChange={(event) =>
-                        void command({
-                          protocol_version: 1,
-                          operation: 'select_model',
-                          model: event.target.value as AgentModel,
-                        })
-                      }
-                    >
-                      <option
-                        value="gpt-4.1-mini"
-                        disabled={!providers.openai && model !== 'gpt-4.1-mini'}
-                      >
-                        gpt-4.1-mini
-                      </option>
-                      <option
-                        value="deepseek-flash"
-                        disabled={!providers.deepseek && model !== 'deepseek-flash'}
-                      >
-                        deepseek-flash
-                      </option>
-                      <option
-                        value="deepseek-v4-pro"
-                        disabled={!providers.deepseek && model !== 'deepseek-v4-pro'}
-                      >
-                        deepseek-v4-pro
-                      </option>
-                    </select>
-                  )}
-                  {pending && !submissions.has(scope) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        preparationGeneration.current++;
-                        preparingAbort.current?.abort();
-                        setError('已取消发送，附件和输入保留。');
-                        void materials.cancelPreparation().catch(() => {});
-                      }}
-                    >
-                      取消发送
-                    </button>
-                  )}
-                  {active ? (
-                    <button
-                      type="button"
-                      className="primary assistant-stop"
-                      aria-label="停止生成"
-                      title="停止生成"
-                      onClick={() => void runtime.thread.cancelRun()}
-                    >
-                      停止生成
-                    </button>
-                  ) : (
-                    <button
-                      className={`primary ${unknown ? 'assistant-reconcile' : 'assistant-submit'}`}
-                      aria-busy={pending}
-                      type="submit"
-                      aria-label={unknown ? '核对原发送（同一标识）' : '发送'}
-                      title="发送"
-                      disabled={
-                        pending || (!unknown && (!draft.text.trim() || draft.text.length > 4000))
-                      }
-                    >
-                      {pending ? '正在准备…' : unknown ? '核对原发送（同一标识）' : '发送'}
-                    </button>
-                  )}
-                </>
-              }
-            >
-              <ComposerInput
-                ref={editorRef}
-                home={scope === 'home'}
-                draft={draft}
-                onDraft={setDraft}
-                disabled={false}
-              />
-            </PdfAttachments>
+            {project ? (
+              <div className="material-composer">
+                {composer}
+                <div className="assistant-actions">{actions}</div>
+              </div>
+            ) : (
+              <PdfAttachments
+                controller={materials}
+                showSavedMaterials={scope !== 'home'}
+                disabled={pending || unknown || Boolean(active)}
+                actions={actions}
+              >
+                {composer}
+              </PdfAttachments>
+            )}
           </ComposerFrame>
           {scope !== 'home' && variant !== 'compact' && (
             <p className="assistant-footnote">
