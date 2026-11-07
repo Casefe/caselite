@@ -231,7 +231,7 @@ export default function ProjectCatalog({
   );
   useLayoutEffect(() => {
     const source = restoring.current;
-    if (!source || reading || (source.projectId ? !editor : !c.data)) return;
+    if (!source || reading || navigationPending || (source.projectId ? !editor : !c.data)) return;
     // 文档入口要等目录查询完成，才能恢复到原来的按钮或栏目。
     if (source.documentId && !c.data && !c.error) return;
     const target = Array.from(
@@ -261,7 +261,7 @@ export default function ProjectCatalog({
     if (scroll.current) scroll.current.scrollTop = source.scrollTop;
     if (workspace.current) workspace.current.scrollTop = source.workspaceScrollTop;
     restoring.current = null;
-  }, [reading, editor, c.data, c.error, tasks]);
+  }, [reading, navigationPending, editor, c.data, c.error, tasks]);
   useLayoutEffect(() => {
     const id = returnProjectId.current;
     if (editor || !id) return;
@@ -684,80 +684,67 @@ export default function ProjectCatalog({
                 )}
                 {!!members.length && (
                   <div className="project-task-table-scroll">
-                    <ReadTable
-                      data={members}
-                      getRowId={(task) => task.id}
-                      label="项目任务列表"
-                      className="catalog-table project-task-table"
-                      rowProps={(task) => ({ onClick: () => openTask(task.id) })}
-                      columns={[
-                        {
-                          id: 'priority',
-                          header: '优先级',
-                          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
-                        },
-                        {
-                          id: 'status',
-                          header: '状态',
-                          cell: ({ row: { original: task } }) => (
-                            <span className="task-status-tag" data-status={task.status ?? 'todo'}>
-                              {taskStatusNames[task.status ?? 'todo']}
-                            </span>
-                          ),
-                        },
-                        {
-                          id: 'title',
-                          header: '任务名称',
-                          cell: ({ row: { original: task } }) => (
-                            <button
-                              className="project-title-link"
-                              disabled={blocked}
-                              data-project-task={task.id}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openTask(task.id);
-                              }}
-                            >
-                              {task.title}
-                            </button>
-                          ),
-                        },
-                        {
-                          id: 'owner',
-                          header: '负责人',
-                          accessorFn: (task) =>
-                            task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
-                        },
-                        {
-                          id: 'due',
-                          header: '截止日期',
-                          accessorFn: (task) => task.due_date ?? '',
-                        },
-                        {
-                          id: 'actions',
-                          header: '',
-                          cell: ({ row: { original: task } }) => (
-                            <button
-                              type="button"
-                              disabled={blocked || !!p?.archived_at}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void command(
-                                  catalogMutation({
-                                    operation: 'assign_task' as const,
-                                    task_id: task.id,
-                                    expected_version: task.version,
-                                    matter_id: null,
-                                  }),
-                                );
-                              }}
-                            >
-                              移出项目
-                            </button>
-                          ),
-                        },
-                      ]}
-                    />
+                    <table className="catalog-table project-task-table" aria-label="项目任务列表">
+                      <thead>
+                        <tr>
+                          {['优先级', '状态', '任务名称', '负责人', '截止日期', '操作'].map(
+                            (label) => (
+                              <th key={label} scope="col">
+                                {label}
+                              </th>
+                            ),
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map((task) => (
+                          <tr key={task.id} onClick={() => openTask(task.id)}>
+                            <td>{taskPriorityNames[task.priority ?? 0]}</td>
+                            <td>
+                              <span className="task-status-tag" data-status={task.status ?? 'todo'}>
+                                {taskStatusNames[task.status ?? 'todo']}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                className="project-title-link"
+                                disabled={blocked}
+                                data-project-task={task.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openTask(task.id);
+                                }}
+                              >
+                                {task.title}
+                              </button>
+                            </td>
+                            <td>
+                              {task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}
+                            </td>
+                            <td>{task.due_date}</td>
+                            <td>
+                              <button
+                                type="button"
+                                disabled={blocked || !!p?.archived_at}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void command(
+                                    catalogMutation({
+                                      operation: 'assign_task' as const,
+                                      task_id: task.id,
+                                      expected_version: task.version,
+                                      matter_id: null,
+                                    }),
+                                  );
+                                }}
+                              >
+                                移出项目
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
                 {!p?.archived_at && (
