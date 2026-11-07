@@ -675,6 +675,145 @@ export async function runProjectDemo(
       assertNoRuns();
       return;
     }
+    const discussionMode = process.env.CASELITE_PROJECT_DISCUSSION_TEST;
+    if (discussionMode) {
+      if (discussionMode !== 'write' && discussionMode !== 'read')
+        throw new Error('Invalid discussion test mode');
+      const { task } = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const projectId = task.matter_id;
+      const labels = ['项目评论', '项目更新', '更新评论'];
+      const samples = [
+        '合成项目整体意见。',
+        '合成项目更新：资料已整理。',
+        '合成回复：已检查资料。',
+      ];
+      const read = async (request: object): Promise<CatalogResponse> =>
+        evaluate(`window.caselite.catalog(${JSON.stringify({ protocol_version: 1, ...request })})`);
+      const readProject = () => read({ operation: 'read_project', id: projectId });
+      const readActivity = () =>
+        read({
+          operation: 'list_activity',
+          scope: { type: 'project', id: projectId },
+          offset: 0,
+        });
+      const before = { project: await readProject(), activity: await readActivity() };
+      if (!before.project.ok || !before.activity.ok) throw new Error('Missing discussion seed');
+
+      await button('独立任务转项目验收');
+      const published = async (index: number) => {
+        const selector = `[aria-label="已发布${labels[index]}"]`;
+        await wait(
+          `document.querySelector(${JSON.stringify(selector)})?.textContent.includes(${JSON.stringify(samples[index])})`,
+        );
+        return evaluate(
+          `document.querySelector(${JSON.stringify(selector)}).closest('article').dataset.discussionId`,
+        );
+      };
+      const fill = async (index: number) => {
+        const selector = `[aria-label="${labels[index]}"][contenteditable=true]`;
+        await wait(`document.querySelector(${JSON.stringify(selector)})`);
+        await evaluate(`(() => {
+          const editor = document.querySelector(${JSON.stringify(selector)});
+          editor.focus();
+          document.execCommand('insertText', false, ${JSON.stringify(samples[index])});
+        })()`);
+      };
+      const ids = [];
+      if (discussionMode === 'write') {
+        await fill(0);
+        const db = openToolchainProbe(
+          join(isolation.userData, 'caselite.sqlite'),
+          join(process.resourcesPath, 'migrations'),
+        ).sqlite;
+        db.exec(
+          "CREATE TRIGGER reject_discussion_receipt BEFORE INSERT ON catalog_receipts BEGIN SELECT RAISE(ABORT,'synthetic discussion receipt failure'); END",
+        );
+        try {
+          await button('发布项目评论');
+          await wait("document.querySelector('.project-discussion [role=alert]')");
+          await wait(
+            "document.querySelector('[aria-label=项目评论][role=textbox]').textContent.includes('合成项目整体意见') && document.querySelector('#project-tab-activity').disabled && !document.querySelector('[data-discussion-id]')",
+          );
+          await capture('discussion-failed-draft.png');
+        } finally {
+          db.exec('DROP TRIGGER reject_discussion_receipt');
+          db.close();
+        }
+        await button('核对原发布');
+      }
+      ids.push(await published(0));
+      await button('活动');
+      if (discussionMode === 'write') {
+        await fill(1);
+        await button('发布项目更新');
+      }
+      ids.push(await published(1));
+      await button('查看与评论更新');
+      if (discussionMode === 'write') {
+        await fill(2);
+        await button('发布更新评论');
+      }
+      ids.push(await published(2));
+      if (
+        JSON.stringify(before) !==
+        JSON.stringify({ project: await readProject(), activity: await readActivity() })
+      )
+        throw new Error('Discussion changed project or system activity');
+      if (
+        (await evaluate(
+          "document.querySelectorAll('#project-panel-activity [data-discussion-id]').length",
+        )) !== 2
+      )
+        throw new Error('Duplicate activity discussion');
+      const fixture = { ids, before };
+      const expectedPath = join(root, 'discussion-expected.json');
+      if (discussionMode === 'write') writeFileSync(expectedPath, JSON.stringify(fixture));
+      else if (readFileSync(expectedPath, 'utf8') !== JSON.stringify(fixture))
+        throw new Error('Reopen changed discussion, description, or activity');
+      for (const [width, theme] of [
+        [1440, 'light'],
+        [640, 'dark'],
+      ] as const) {
+        window.setSize(width, 900);
+        await wait(`innerWidth === ${width}`);
+        await evaluate(
+          `document.documentElement.dataset.theme = '${theme}'; document.querySelector('[aria-label=已发布更新评论]').scrollIntoView({block:'center'});`,
+        );
+        const fits =
+          await evaluate(`Array.from(document.querySelectorAll('#project-panel-activity .project-discussion button')).every(button => {
+          const rect = button.getBoundingClientRect();
+          return !rect.width || (rect.left >= 0 && rect.right <= innerWidth + 1);
+        }) && document.documentElement.scrollWidth <= innerWidth &&
+          document.querySelector('[aria-label=更新评论][role=textbox]').getBoundingClientRect().width >=
+            document.querySelector('#project-panel-activity .project-discussion').clientWidth - 100`);
+        if (!fits) throw new Error('Discussion input did not fit the viewport');
+        await capture(`discussion-${discussionMode}-${width}-${theme}.png`);
+      }
+      if (discussionMode === 'read') {
+        await select('项目状态', 'archived');
+        await wait(
+          "document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('#project-panel-activity .project-discussion [contenteditable=true]')",
+        );
+        if ((await published(2)) !== ids[2])
+          throw new Error('Archiving hid the original discussion');
+        await button('收起讨论');
+        await button('查看与评论更新');
+        if ((await published(2)) !== ids[2])
+          throw new Error('Archived update discussion did not reopen');
+        await capture('discussion-archived.png');
+      }
+      assertNoRuns();
+      writeFileSync(
+        join(root, `discussion-${discussionMode}.json`),
+        JSON.stringify({
+          status: 'PASS_REAL',
+          ids,
+          providerDispatches: 0,
+          isolation,
+        }),
+      );
+      return;
+    }
     const previewMode = process.env.CASELITE_PROJECT_SUMMARY_PREVIEW;
     if (previewMode) {
       // 人工验收复开只读取同一隔离工作区，不能重造样本或按旧快照覆写用户修改。

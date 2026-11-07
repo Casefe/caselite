@@ -529,3 +529,33 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+.project-discussion.project-record-panel:not([hidden]) {
+  display: grid;
+  align-self: stretch;
+  align-items: stretch;
+  width: min(100%, 720px);
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-discussion-compose,
+.project-discussion-entry {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-discussion-compose > button,
+.project-discussion-entry > button {
+  margin: 6px 6px 6px 0;
+}
+
+.project-discussion-entry {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-discussion-entry > article,
+.project-discussion-entry > .project-discussion-compose {
+  margin-inline-start: 12px;
+}

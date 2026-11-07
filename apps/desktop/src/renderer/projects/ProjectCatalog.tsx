@@ -10,6 +10,7 @@ import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
+import ProjectDiscussion from './ProjectDiscussion';
 const names = { ...projectStatuses, archived: '已归档' };
 const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
 type CatalogSuccess = Extract<CatalogResponse, { ok: true }>;
@@ -89,7 +90,10 @@ export default function ProjectCatalog({
     };
   }, []);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const dirty = bodyDirty || propertyDirty;
+  const [discussionDirty, setDiscussionDirty] = useState(false);
+  const dirty = bodyDirty || propertyDirty || discussionDirty;
+  const discussionDisabled =
+    navigationPending || reading || bodyDirty || propertyDirty || c.pending || c.unknown;
   const projects = Object.values({
     ...acknowledged,
     ...Object.fromEntries(
@@ -431,8 +435,17 @@ export default function ProjectCatalog({
                   key={editor.project.id + ':' + editor.epoch}
                   data={editor}
                   archived={!!p?.archived_at}
-                  pending={navigationPending || reading || c.pending || c.unknown || propertyDirty}
-                  disabled={navigationPending || reading || lifecycleDraft || bodyCommand}
+                  pending={
+                    navigationPending ||
+                    reading ||
+                    c.pending ||
+                    c.unknown ||
+                    propertyDirty ||
+                    discussionDirty
+                  }
+                  disabled={
+                    navigationPending || reading || lifecycleDraft || bodyCommand || discussionDirty
+                  }
                   unknown={c.unknown && bodyCommand}
                   error={bodyError}
                   onRetry={() => void c.retry().then(handleBodyResult)}
@@ -467,6 +480,15 @@ export default function ProjectCatalog({
                     handleBodyResult(result);
                   }}
                 />
+                {section === 'overview' && (
+                  <ProjectDiscussion
+                    key={`overview-discussion:${editor.project.id}`}
+                    projectId={editor.project.id}
+                    archived={!!p?.archived_at}
+                    disabled={discussionDisabled || lifecycleDraft}
+                    onDirty={setDiscussionDirty}
+                  />
+                )}
               </div>
               <section
                 hidden={section !== 'tasks'}
@@ -588,15 +610,26 @@ export default function ProjectCatalog({
               >
                 <h2>活动</h2>
                 {section === 'activity' && (
-                  <ActivityList
-                    key={editor.project.id}
-                    scope={{ type: 'project', id: editor.project.id }}
-                    disabled={navigationPending || reading || dirty || c.pending || c.unknown}
-                    onTask={openTask}
-                    onProject={(id) => {
-                      if (!blocked) void read(id);
-                    }}
-                  />
+                  <>
+                    <h3>系统活动</h3>
+                    <ActivityList
+                      key={editor.project.id}
+                      scope={{ type: 'project', id: editor.project.id }}
+                      disabled={navigationPending || reading || dirty || c.pending || c.unknown}
+                      onTask={openTask}
+                      onProject={(id) => {
+                        if (!blocked) void read(id);
+                      }}
+                    />
+                    <ProjectDiscussion
+                      key={`activity-discussion:${editor.project.id}`}
+                      projectId={editor.project.id}
+                      activity
+                      archived={!!p?.archived_at}
+                      disabled={discussionDisabled || lifecycleDraft}
+                      onDirty={setDiscussionDirty}
+                    />
+                  </>
                 )}
               </section>
             </>
@@ -734,6 +767,7 @@ export default function ProjectCatalog({
               reading ||
               creating ||
               bodyCommand ||
+              discussionDirty ||
               (!propertyDirty && (c.pending || c.unknown))
             }
             unknown={c.unknown && !bodyCommand}

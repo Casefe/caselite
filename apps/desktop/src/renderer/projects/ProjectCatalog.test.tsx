@@ -117,14 +117,16 @@ describe('durable project UI receipts and target identity', () => {
     const catalog = vi.fn(async (request: CatalogRequest) =>
       request.operation === 'list_activity'
         ? { ...response([p], p.id), activity: [], activity_has_more: false }
-        : response([p], p.id),
+        : request.operation === 'list_discussion'
+          ? { ...response([], null), discussion: { entries: [], next: null } }
+          : response([p], p.id),
     );
     window.caselite = { catalog } as unknown as Window['caselite'];
     render(
       <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
-    await screen.findByLabelText('编辑项目名称');
+    await screen.findByText('暂无项目评论。');
     fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
     fireEvent.click(
       within(screen.getByRole('tabpanel', { name: '任务', exact: true })).getByText('项目原任务'),
@@ -137,8 +139,10 @@ describe('durable project UI receipts and target identity', () => {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
       const panel = screen.getByRole('tabpanel', { name: label, exact: true });
       if (label === '文件') expect(within(panel).getByLabelText('搜索项目文件')).toBeTruthy();
-      else if (label === '活动') expect(within(panel).getByLabelText('真实业务活动')).toBeTruthy();
-      else expect(panel.textContent).toContain('尚未接入');
+      else if (label === '活动') {
+        expect(within(panel).getByLabelText('真实业务活动')).toBeTruthy();
+        await within(panel).findByText('暂无项目更新。');
+      } else expect(panel.textContent).toContain('尚未接入');
     }
     fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
     expect(document.querySelector('.catalog-actions')?.getAttribute('data-project-id')).toBe(p.id);
@@ -148,8 +152,16 @@ describe('durable project UI receipts and target identity', () => {
     ).toBe(true);
     fireEvent.click(screen.getByRole('tab', { name: '文件', exact: true }));
     expect(screen.getByRole('tabpanel', { name: '概述', exact: true })).toBeTruthy();
-    expect(catalog.mock.calls.filter(([r]) => r.operation !== 'list_activity')).toHaveLength(2);
-    expect(catalog.mock.calls.filter(([r]) => r.operation === 'list_activity')).toHaveLength(1);
+    await screen.findByText('暂无项目评论。');
+    const requests = catalog.mock.calls.map(([request]) => request);
+    expect(
+      requests.filter((r) => r.operation !== 'list_discussion').map((r) => r.operation),
+    ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list_activity']);
+    expect(requests.filter((r) => r.operation === 'list_discussion').map((r) => r.scope)).toEqual([
+      { kind: 'project_comment', project_id: p.id },
+      { kind: 'update', project_id: p.id },
+      { kind: 'project_comment', project_id: p.id },
+    ]);
   });
   it('opens the exact saved project, including when creating from the archive view', async () => {
     const p = project(undefined, '中文项目');

@@ -115,7 +115,33 @@ export const catalogDocumentSchema = z.object({
   in_library: z.boolean(),
   updated_at: z.string(),
 });
+const discussionState = z.array(z.number().int().min(0).max(255)).min(1).max(32768);
+const discussionScope = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('project_comment'), project_id: id }),
+  z.strictObject({ kind: z.literal('update'), project_id: id }),
+  z.strictObject({ kind: z.literal('update_comment'), project_id: id, update_id: id }),
+]);
+const discussionEntry = z.strictObject({
+  id,
+  committed_at: z.iso.datetime(),
+  state: discussionState,
+});
+const discussionCursor = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export type DiscussionScope = z.infer<typeof discussionScope>;
+export type DiscussionEntry = z.infer<typeof discussionEntry>;
 export const catalogRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({
+    ...base,
+    operation: z.literal('list_discussion'),
+    scope: discussionScope,
+    before: discussionCursor.optional(),
+  }),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('publish_discussion'),
+    scope: discussionScope,
+    state: discussionState,
+  }),
   z
     .object({
       ...base,
@@ -223,6 +249,12 @@ export const catalogResponseSchema = z.discriminatedUnion('ok', [
     state: bytes.nullable(),
     target_id: id.nullable(),
     receipt: id.nullable(),
+    discussion: z
+      .strictObject({
+        entries: z.array(discussionEntry).max(10),
+        next: discussionCursor.nullable(),
+      })
+      .optional(),
     activity: z.array(activityEventSchema).optional(),
     activity_has_more: z.boolean().optional(),
     activity_target: z

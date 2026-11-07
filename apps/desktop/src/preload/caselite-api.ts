@@ -229,7 +229,12 @@ export type {
 } from '@caselite/contracts';
 
 export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';
-export type { ActivityEvent, ActivityScope } from '@caselite/contracts';
+export type {
+  ActivityEvent,
+  ActivityScope,
+  DiscussionScope,
+  DiscussionEntry,
+} from '@caselite/contracts';
 export type { Theme, AppearanceRequest, AppearanceResponse } from '@caselite/contracts';
 
 export type {

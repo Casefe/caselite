@@ -12,8 +12,9 @@ import {
   type CatalogDocument,
   type ActivityScope,
   type ActivityEvent,
+  type DiscussionScope,
 } from '@caselite/contracts';
-import { validateBody } from './body-schema';
+import { bodyPlainText, validateBody } from './body-schema';
 
 type Success = Extract<CatalogResponse, { ok: true }>;
 const fail = (
@@ -131,6 +132,26 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     target_id: target,
     receipt,
   });
+  const narrowResult = (
+    target_id: string | null = null,
+    receipt: string | null = null,
+  ): Success => ({
+    ok: true,
+    projects: [],
+    documents: [],
+    state: null,
+    target_id,
+    receipt,
+  });
+  const discussionProject = (projectId: string) =>
+    db
+      .prepare('SELECT archived_at FROM matters WHERE id=? AND workspace_id=?')
+      .get(projectId, workspace) as { archived_at: string | null } | undefined;
+  const discussionTargetExists = (scope: DiscussionScope) =>
+    scope.kind !== 'update_comment' ||
+    !!db
+      .prepare("SELECT 1 FROM project_discussion WHERE matter_id=? AND id=? AND kind='update'")
+      .get(scope.project_id, scope.update_id);
   const getProject = (id: string, properties = false) =>
     projects(properties ? id : null).find((p) => p.id === id);
   const scopeExists = (scope: ActivityScope) =>
@@ -179,6 +200,36 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
   };
   return {
     execute(request: CatalogRequest): CatalogResponse {
+      if (request.operation === 'list_discussion') {
+        const { scope } = request;
+        if (!discussionProject(scope.project_id) || !discussionTargetExists(scope))
+          return fail('NOT_FOUND', '讨论目标在当前项目中不可访问。');
+        const rows = db
+          .prepare(
+            `
+          SELECT d.sequence AS cursor,d.id,d.committed_at,b.state FROM project_discussion d
+          JOIN body_revisions b ON b.body_id=d.body_id AND b.revision=d.body_revision
+          WHERE d.matter_id=? AND d.kind=? AND d.update_id IS ? AND d.sequence < ?
+          ORDER BY d.sequence DESC LIMIT 11
+        `,
+          )
+          .all(
+            scope.project_id,
+            scope.kind,
+            scope.kind === 'update_comment' ? scope.update_id : null,
+            request.before ?? Number.MAX_SAFE_INTEGER,
+          ) as { cursor: number; id: string; committed_at: string; state: Buffer }[];
+        return {
+          ...narrowResult(),
+          discussion: {
+            entries: rows.slice(0, 10).map(({ id, committed_at, state }) => {
+              validateBody(state);
+              return { id, committed_at, state: Array.from(state) };
+            }),
+            next: rows.length > 10 ? rows[9].cursor : null,
+          },
+        };
+      }
       if (request.operation === 'list_activity' || request.operation === 'activity_target') {
         if (!scopeExists(request.scope)) return fail('NOT_FOUND', '活动范围不可访问。');
         if (request.operation === 'list_activity') {
@@ -249,6 +300,49 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           return prior.digest === digest
             ? catalogResponseSchema.parse(JSON.parse(prior.result))
             : fail('CONFLICT', '同一提交身份已用于其他内容。');
+        const saveReceipt = (response: Success) => {
+          db.prepare(
+            'INSERT INTO catalog_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
+          ).run(workspace, request.idempotency_key, digest, JSON.stringify(response));
+          return response;
+        };
+        if (request.operation === 'publish_discussion') {
+          const { scope } = request;
+          const project = discussionProject(scope.project_id);
+          if (!project || !discussionTargetExists(scope))
+            return fail('NOT_FOUND', '讨论目标在当前项目中不可访问。');
+          if (project.archived_at) return fail('CONFLICT', '项目已归档，讨论只读。');
+          const state = Buffer.from(request.state);
+          let text: string;
+          try {
+            text = bodyPlainText(state).trim();
+          } catch {
+            return fail('INVALID_REQUEST', '讨论正文格式不支持，草稿已保留。');
+          }
+          if (!text || text.length > 8000)
+            return fail('INVALID_REQUEST', '请输入 1 至 8000 字的讨论正文。');
+          const id = randomUUID();
+          const bodyId = randomUUID();
+          // 任一步骤失败均回滚，避免回执或讨论条目指向未提交的正文。
+          db.prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,1,?)').run(
+            bodyId,
+            state,
+          );
+          db.prepare(
+            `
+            INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at)
+            VALUES(?,?,?,?,?,?)
+          `,
+          ).run(
+            id,
+            scope.project_id,
+            scope.kind,
+            scope.kind === 'update_comment' ? scope.update_id : null,
+            bodyId,
+            new Date().toISOString(),
+          );
+          return saveReceipt(narrowResult(id, request.idempotency_key));
+        }
         let target: string;
         const now = new Date().toISOString();
         if (request.operation === 'create_project') {
@@ -418,10 +512,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           null,
           projectWrite ? target : null,
         );
-        db.prepare(
-          'INSERT INTO catalog_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
-        ).run(workspace, request.idempotency_key, digest, JSON.stringify(response));
-        return response;
+        return saveReceipt(response);
       })();
     },
   };

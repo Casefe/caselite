@@ -137,7 +137,7 @@ it('upgrades populated pre-attribute WAL data and its backup, preserving status,
     expect(checked.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.pragma('foreign_key_check')).toEqual([]);
     expect(checked.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 11,
+      n: 12,
     });
     checked.close();
   }

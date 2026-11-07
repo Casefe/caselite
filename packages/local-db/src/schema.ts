@@ -1,4 +1,14 @@
-import { sqliteTable, text, integer, blob, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  blob,
+  primaryKey,
+  check,
+  foreignKey,
+  unique,
+  index,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // Infrastructure-only fixture. Product tables are designed in later Issues.
@@ -145,6 +155,38 @@ export const matters = sqliteTable(
       'project_tags_valid',
       sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags}) = 'array' AND json_array_length(${table.tags}) <= 20 ELSE 0 END`,
     ),
+  ],
+);
+export const projectDiscussion = sqliteTable(
+  'project_discussion',
+  {
+    sequence: integer('sequence').primaryKey(),
+    id: text('id').notNull().unique(),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+    kind: text('kind').notNull(),
+    updateId: text('update_id'),
+    bodyId: text('body_id').notNull().unique(),
+    bodyRevision: integer('body_revision').notNull().default(1),
+    committedAt: text('committed_at').notNull(),
+  },
+  (table) => [
+    unique().on(table.matterId, table.id),
+    index('project_discussion_scope').on(table.matterId, table.kind, table.updateId),
+    foreignKey({
+      columns: [table.matterId, table.updateId],
+      foreignColumns: [table.matterId, table.id],
+    }),
+    foreignKey({
+      columns: [table.bodyId, table.bodyRevision],
+      foreignColumns: [bodyRevisions.bodyId, bodyRevisions.revision],
+    }),
+    check(
+      'discussion_target',
+      sql`(${table.kind} IN ('project_comment','update') AND ${table.updateId} IS NULL) OR (${table.kind} = 'update_comment' AND ${table.updateId} IS NOT NULL)`,
+    ),
+    check('discussion_fixed_revision', sql`${table.bodyRevision} = 1`),
   ],
 );
 export const taskProjects = sqliteTable('task_projects', {
