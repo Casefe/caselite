@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ordinaryDateSchema } from './task';
+import { ordinaryDateSchema, tagListSchema } from './task';
 export const projectProfessionalTypeSchema = z.enum([
   'civil_litigation',
   'criminal_litigation',
@@ -61,7 +61,7 @@ export const projectAttributesSchema = z
     priority: z.number().int().min(0).max(4),
     start_date: ordinaryDateSchema.nullable(),
     target_date: ordinaryDateSchema.nullable(),
-    tags: z.array(z.string().trim().min(1).max(40)).max(20),
+    tags: tagListSchema,
     professional_type: projectProfessionalTypeSchema.nullable().optional(),
     professional_fields: projectProfessionalFieldsSchema.optional(),
   })
@@ -235,7 +235,7 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       id,
       expected_version: version,
       collection: z.string().trim().max(80),
-      tags: z.array(z.string().trim().min(1).max(40)).max(20),
+      tags: tagListSchema,
       favorite: z.boolean(),
       in_library: z.boolean(),
     })

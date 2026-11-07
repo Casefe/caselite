@@ -159,7 +159,8 @@ export default function RecordList({
     });
     onOpen(id);
   };
-  const selected = rows.find((t) => t.id === viewState.selected) ?? rows[0] ?? null;
+  const listed = rows.find((t) => t.id === viewState.selected) ?? rows[0] ?? null;
+  const selected = tasks.find((t) => t.id === listed?.id && t.version > listed.version) ?? listed;
   const unavailable =
     q.scope.type === 'project' &&
     !projects.some((p) => p.id === (q.scope.type === 'project' ? q.scope.id : ''));
@@ -401,9 +402,8 @@ export default function RecordList({
       </div>
       <TaskInspector
         key={selected?.id ?? 'empty'}
-        task={loading || error ? null : selected}
-        onOpen={openTask}
-        onActivityOpen={openTask}
+        task={error || result?.query !== q ? null : selected}
+        suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
         onPropertiesBlocked={onPropertiesBlocked}
         onTaskChanged={onTaskChanged}
       />

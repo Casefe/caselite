@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { openTaskStore, openToolchainProbe } from '../../packages/local-db/src';
 import { createReminderApplication, createTaskApplication } from '../../packages/application/src';
 import type { ReminderResponse } from '../../packages/contracts/src';
@@ -264,63 +264,121 @@ it('upgrades an exact eight-migration populated database preserving all existing
     }
     writeFileSync(join(target, 'meta/_journal.json'), JSON.stringify(journal));
   }
-  const file = join(dir, 'db.sqlite'),
-    store = openTaskStore(file, old),
-    tasks = createTaskApplication(store);
+  const file = join(dir, 'db.sqlite');
+  const db = openToolchainProbe(file, old).sqlite;
 
   const doc = new Y.Doc(),
     paragraph = new Y.XmlElement('paragraph'),
     text = new Y.XmlText();
-  text.insert(0, '合成旧库富文本说明与正文，迁移不得覆盖。');
+  const objective = '合成旧库富文本说明与正文，迁移不得覆盖。';
+  text.insert(0, objective);
   paragraph.insert(0, [text]);
   doc.getXmlFragment('default').insert(0, [paragraph]);
   const bytes = Array.from(Y.encodeStateAsUpdate(doc));
   doc.destroy();
-  const created = tasks.execute({
+  // 用旧表形状构造基线；当前 Task Store 要求数据库已完成全部迁移。
+  const create = {
     ...identity(),
     operation: 'create',
     title: '合成旧库任务',
     objective: '',
     objective_state: bytes,
-  });
-  if (!created.ok) throw new Error('Old Task fixture create failed');
-  const task = created.tasks[0],
-    saved = tasks.execute({
-      ...identity(),
-      operation: 'save',
-      task_id: task.id,
-      document_id: task.document_id,
-      body_id: task.body_id,
-      expected_revision: 0,
-      editor_schema: 1,
-      state: bytes,
-    });
-  expect(saved.ok).toBe(true);
-  store.close();
-  const db = openToolchainProbe(file, old).sqlite,
-    tables = (
-      db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'__drizzle_migrations' ORDER BY name",
-        )
-        .all() as { name: string }[]
-    ).map((r) => r.name);
+  };
+  const task = {
+    id: randomUUID(),
+    title: create.title,
+    objective,
+    status: 'todo',
+    priority: 0,
+    due_date: null,
+    matter_id: null,
+    document_id: randomUUID(),
+    body_id: randomUUID(),
+    body_revision: 1,
+    editor_schema: 1,
+    version: 1,
+    updated_at: '2026-11-07T00:00:00.000Z',
+  };
+  const save = {
+    ...identity(),
+    operation: 'save',
+    task_id: task.id,
+    document_id: task.document_id,
+    body_id: task.body_id,
+    expected_revision: 0,
+    editor_schema: 1,
+    state: bytes,
+  };
+  db.prepare(
+    'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,1,?)',
+  ).run(task.id, 'local', task.title, objective, task.updated_at);
+  db.prepare(
+    'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,1,1)',
+  ).run(task.document_id, task.id, task.body_id);
+  db.prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,1,?)').run(
+    task.body_id,
+    Buffer.from(bytes),
+  );
+  db.prepare('INSERT INTO task_objective_revisions(task_id,task_version,state) VALUES(?,1,?)').run(
+    task.id,
+    Buffer.from(bytes),
+  );
+  for (const command of [create, save]) {
+    const { request_id: diagnostic, ...content } = command;
+    void diagnostic;
+    const hash = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    const result = {
+      ok: true,
+      tasks: [{ ...task, body_revision: command.operation === 'create' ? 0 : 1 }],
+      state: null,
+      receipt: command.idempotency_key,
+    };
+    db.prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)').run(
+      'local',
+      command.idempotency_key,
+      hash,
+      JSON.stringify(result),
+    );
+    db.prepare('INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)').run(
+      randomUUID(),
+      task.id,
+      command.operation,
+      task.updated_at,
+    );
+  }
+  const tables = (
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'__drizzle_migrations' ORDER BY name",
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  const snapshotOf = (connection: typeof db) =>
+    JSON.stringify(
+      tables.map((name) => {
+        const rows = connection.prepare(`SELECT * FROM ${name}`).all();
+        return name === 'task_items'
+          ? rows.map(({ tags, ...task }) => {
+              expect(tags ?? '[]').toBe('[]');
+              return task;
+            })
+          : rows;
+      }),
+    );
   expect(db.prepare('SELECT state FROM body_revisions').get()).toEqual({
     state: Buffer.from(bytes),
   });
   expect(db.prepare('SELECT state FROM task_objective_revisions').get()).toEqual({
     state: Buffer.from(bytes),
   });
-  const snapshot = JSON.stringify(tables.map((name) => db.prepare(`SELECT * FROM ${name}`).all()));
+  const snapshot = snapshotOf(db);
   db.close();
   expect(() => openTaskStore(file, bad)).toThrow();
   const rollback = openToolchainProbe(file, old).sqlite;
   expect(
     rollback.prepare("SELECT name FROM sqlite_master WHERE name='reminders'").get(),
   ).toBeUndefined();
-  expect(
-    JSON.stringify(tables.map((name) => rollback.prepare(`SELECT * FROM ${name}`).all())),
-  ).toBe(snapshot);
+  expect(snapshotOf(rollback)).toBe(snapshot);
   expect(rollback.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
     n: 8,
   });
@@ -330,11 +388,9 @@ it('upgrades an exact eight-migration populated database preserving all existing
     ).toBeUndefined();
   rollback.close();
   const upgraded = openToolchainProbe(file, migrations).sqlite;
-  expect(
-    JSON.stringify(tables.map((name) => upgraded.prepare(`SELECT * FROM ${name}`).all())),
-  ).toBe(snapshot);
+  expect(snapshotOf(upgraded)).toBe(snapshot);
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 12,
+    n: 13,
   });
   expect(upgraded.pragma('foreign_key_check')).toEqual([]);
   upgraded.close();

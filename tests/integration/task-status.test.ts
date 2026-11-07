@@ -180,7 +180,7 @@ it('upgrades a WAL backup of a populated pre-status database without rewriting i
     expect(checked.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(checked.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 12,
+      n: 13,
     });
     checked.sqlite.close();
   }
@@ -471,4 +471,102 @@ it('shares version conflicts with grouping, preserves rich body/Run data and kee
   expect(store.agentHistory.load()).toEqual(runs);
   db.close();
   store.close();
+});
+
+it('rolls back 0012 on failure, retains old receipts and preserves labels for old attribute callers', () => {
+  const directory = root();
+  const file = join(directory, 'pre-tags.sqlite');
+  const oldMigrations = migrationCopy(directory, 12);
+  const badMigrations = migrationCopy(directory, 13, true);
+  const before = openToolchainProbe(file, oldMigrations);
+  const db = before.sqlite;
+  const request = {
+    ...identity(),
+    operation: 'create' as const,
+    title: '旧库合成任务',
+    objective: '',
+  };
+  const task = {
+    id: randomUUID(),
+    title: request.title,
+    objective: '',
+    status: 'todo',
+    priority: 0,
+    due_date: null,
+    matter_id: null,
+    version: 1,
+    document_id: randomUUID(),
+    body_id: randomUUID(),
+    body_revision: 0,
+    editor_schema: 1,
+    updated_at: '2026-11-07T00:00:00.000Z',
+  };
+  const receipt = { ok: true, tasks: [task], state: null, receipt: request.idempotency_key };
+  const { request_id: diagnostic, ...content } = request;
+  void diagnostic;
+  const hash = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+  db.prepare(
+    'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,?,?)',
+  ).run(task.id, 'local', task.title, task.objective, task.version, task.updated_at);
+  db.prepare(
+    'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
+  ).run(task.document_id, task.id, task.body_id);
+  db.prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)').run(
+    'local',
+    request.idempotency_key,
+    hash,
+    JSON.stringify(receipt),
+  );
+  db.close();
+  expect(() => openToolchainProbe(file, badMigrations)).toThrow('synthetic_missing_status_table');
+  const rolledBack = openToolchainProbe(file, oldMigrations);
+  try {
+    expect(rolledBack.sqlite.pragma('table_info(task_items)')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'tags' })]),
+    );
+    expect(rolledBack.sqlite.prepare('SELECT result FROM task_receipts').pluck().get()).toBe(
+      JSON.stringify(receipt),
+    );
+  } finally {
+    rolledBack.sqlite.close();
+  }
+  const store = openTaskStore(file, migrations);
+  try {
+    const app = createTaskApplication(store);
+    const read = { operation: 'read', protocol_version: 1, task_id: task.id };
+    const update = {
+      ...identity(),
+      operation: 'update_attributes',
+      task_id: task.id,
+      expected_version: 1,
+      priority: 2,
+      due_date: null,
+    };
+    expect(ok(app.execute(read)).tasks[0]).toMatchObject({ ...task, tags: [] });
+    expect(app.execute(request)).toEqual(receipt);
+    expect(ok(app.execute({ ...update, tags: [' 证据 '] })).tasks[0].tags).toEqual(['证据']);
+    const oldUpdate = { ...update, ...identity(), expected_version: 2, priority: 4 };
+    expect(ok(app.execute(oldUpdate)).tasks[0].tags).toEqual(['证据']);
+    expect(
+      app.execute({ ...update, ...identity(), expected_version: 3, tags: ['x'.repeat(41)] }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    expect(
+      app.execute({ ...update, ...identity(), expected_version: 3, tags: Array(21).fill('x') }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    expect(
+      ok(app.execute({ ...update, ...identity(), expected_version: 3, priority: 4, tags: [] }))
+        .tasks[0].tags,
+    ).toEqual([]);
+    expect(ok(app.execute(oldUpdate)).tasks[0].tags).toEqual(['证据']);
+  } finally {
+    store.close();
+  }
+  const reopened = openTaskStore(file, migrations);
+  try {
+    expect(
+      ok(reopened.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0],
+    ).toMatchObject({ id: task.id, tags: [], priority: 4, version: 4 });
+  } finally {
+    reopened.close();
+  }
 });

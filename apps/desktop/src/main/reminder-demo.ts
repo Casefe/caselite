@@ -144,6 +144,7 @@ export async function runReminderDemo(
     const taskId = await evaluate(
       "document.querySelector('[data-active-task]').dataset.activeTask",
     );
+    await click('本机提醒');
     const schedule = async (instant: string) => {
       await click((await list()).length ? '改期 / 重新设定' : '设置提醒');
       await input('提醒日期', instant.slice(0, 10));

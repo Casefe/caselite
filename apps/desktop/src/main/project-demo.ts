@@ -258,6 +258,8 @@ export async function runProjectDemo(
           !result.ok ||
           result.tasks.length !== 4 ||
           result.tasks.find((task) => task.id === ids.global)?.matter_id !== projectId ||
+          result.tasks.find((task) => task.id === ids.global)?.tags?.[0] !== '合成项目标签' ||
+          result.tasks.find((task) => task.id === ids.project)?.tags?.[0] !== '合成项目标签' ||
           result.tasks.find((task) => task.id === ids.independent)?.matter_id !== null
         )
           throw new Error('Task identities or grouping changed after restart');
@@ -284,6 +286,8 @@ export async function runProjectDemo(
       await select('任务优先级', '2');
       await setInput('[aria-label=普通截止日期]', '2027-02-03');
       await setInput('[data-testid=task-title]', '合成任务 · 项目内新建');
+      await setInput('[aria-label=新标签]', '合成项目标签');
+      await button('添加');
       await capture('task-create-project.png');
       await click('[data-testid=create-task]');
       await wait("document.querySelector('.task-detail')?.dataset.activeTask");
@@ -292,40 +296,59 @@ export async function runProjectDemo(
       );
       await checkFields('in_progress', 2, '2027-02-03');
       await wait(
-        `document.querySelector('.task-inspector dd:last-child')?.textContent===${JSON.stringify(projectTitle)}`,
+        `Array.from(document.querySelectorAll('.task-work-area .page-topline span')).some(e=>e.textContent===${JSON.stringify(projectTitle)})`,
       );
-      await wait(`Array.from(document.querySelectorAll('.task-inspector details')).some((section) =>
-        section.querySelector('summary')?.textContent.trim()==='领域' &&
-        section.querySelector('p')?.textContent.trim()==='通用')`);
+      await wait(
+        "document.querySelector('.task-inspector [aria-label=\"移除标签 合成项目标签\"]') && !document.querySelector('.task-inspector .inspector-open')",
+      );
       await capture('task-properties-detail.png');
       await select('任务优先级', '4');
-      const summary = '.task-inspector details > summary';
-      await evaluate(`document.querySelector('${summary}').focus()`);
-      await propertyKey(' ', 'Space', 32);
-      await wait(`!document.querySelector('${summary}').parentElement.open`);
-      await click('[data-testid=back-to-tasks]');
-      await wait("document.querySelector('[role=alert]')?.textContent.includes('请先保存')");
-      await click(summary);
+      await wait("!document.querySelector('.task-properties-editor [role=status]')");
       await checkFields('in_progress', 4, '2027-02-03');
-      await button('保存任务属性');
-      await wait(
-        "document.querySelector('[data-testid=saved-task-attributes]')?.textContent.includes('低')",
-      );
+      await button('本机提醒');
       await button('设置提醒');
-      await click(summary);
       await click('[data-testid=back-to-tasks]');
       await wait(
         "document.querySelector('.task-detail') && document.querySelector('[role=alert]')?.textContent.includes('请先保存')",
       );
-      await click(summary);
       await button('取消编辑');
+      await button('本机提醒');
+      await click('[aria-label=关闭提示]');
       const composer = '.task-inspector [data-testid=assistant-input]';
       await wait(`document.querySelector('${composer}')`);
       await evaluate(
         `(()=>{const e=document.querySelector('${composer}');e.focus();document.execCommand('insertText',false,'合成草稿，不发送');})()`,
       );
       await wait(`document.querySelector('${composer}').value.includes('合成草稿')`);
-      await capture('task-compact-ai-light.png');
+      const inspectComposer = async (owner: string) => {
+        const selector = `${owner} .agent-prompt`;
+        await wait(
+          `document.querySelector('${selector}') && !document.querySelector('.settings-center')`,
+        );
+        await evaluate(`document.querySelector('${selector}').scrollIntoView({block:'center'})`);
+        await wait(`(()=>{const e=document.querySelector('${selector}');if(!e) return false;
+          const controls=['[data-testid=assistant-input]','[aria-label="添加文件与材料"]','[aria-label="选择大模型"]','[aria-label=发送]'];
+          return controls.every(selector=>{const control=e.querySelector(selector),r=control?.getBoundingClientRect();
+            return r&&r.width>0&&r.height>0&&r.left>=0&&r.right<=innerWidth+1&&
+              control.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));});})()`);
+      };
+      const captureComposer = async (name: string) => {
+        // 隐藏窗口缩放或关闭设置后等待合成器绘制，再从 Chromium surface 取图。
+        await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+        const debuggerSession = window.webContents.debugger;
+        debuggerSession.attach('1.3');
+        try {
+          const { data } = await debuggerSession.sendCommand('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          });
+          writeFileSync(join(root, name), Buffer.from(data, 'base64'));
+        } finally {
+          debuggerSession.detach();
+        }
+      };
+      await inspectComposer('.task-inspector');
+      await captureComposer('task-compact-ai-light.png');
       await click('[data-nav=settings]');
       await button('外观');
       await click('.theme-option:has(.theme-swatch--dark)');
@@ -338,18 +361,41 @@ export async function runProjectDemo(
       await wait(
         `(()=>{const r=document.querySelector('${composer}').getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth;})()`,
       );
-      await capture('task-compact-ai-dark-640.png');
+      await inspectComposer('.task-inspector');
+      await captureComposer('task-compact-ai-dark-640.png');
       await click('[data-testid=back-to-tasks]');
       await wait(`document.querySelector('#project-tab-tasks[aria-selected=true]') &&
         document.activeElement?.dataset.projectTask===${JSON.stringify(projectTask)}`);
       await capture('task-project-return.png');
+      await wait(
+        "document.querySelector('.project-ai-content > select')?.value==='' && !document.querySelector('.project-ai-content .agent-prompt')",
+      );
+      await select('项目 AI 任务', projectTask);
+      await inspectComposer('.project-ai-content');
+      await wait(
+        "document.querySelector('.project-ai-content [data-testid=assistant-input]')?.value.includes('合成草稿')",
+      );
+      await captureComposer('project-compact-ai-dark-640.png');
+      window.setContentSize(1440, 900);
+      await click('[data-nav=settings]');
+      await button('外观');
+      await click('.theme-option:has(.theme-swatch--light)');
+      await wait("document.documentElement.dataset.theme==='light'");
+      await button('返回工作区');
+      await wait("document.querySelector('.project-ai-content > select')");
+      await select('项目 AI 任务', projectTask);
+      await inspectComposer('.project-ai-content');
+      await captureComposer('project-compact-ai-light-1440.png');
 
       const globalCreate = async (title: string, group: boolean) => {
         await click('[data-nav=tasks]');
         await click('[data-testid=new-task]');
         await checkFields('todo', 0, '');
         await wait("document.querySelector('[aria-label=所属项目]:not(:disabled)')?.value===''");
-        if (group) await select('所属项目', projectId);
+        if (group) {
+          await select('所属项目', projectId);
+          await select('选择已使用的任务标签', '合成项目标签');
+        }
         await setInput('[data-testid=task-title]', title);
         await click('[data-testid=create-task]');
         await wait(
@@ -1811,9 +1857,17 @@ export async function runProjectDemo(
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
       );
-      await evaluate(`Array.from(document.querySelectorAll('.task-inspector details > summary'))
-        .find((summary) => summary.textContent.trim() === '活动').click()`);
-      await wait("document.querySelector('.task-inspector [data-activity-id]')");
+      const taskActivityRequest = {
+        protocol_version: 1,
+        operation: 'list_activity',
+        scope: { type: 'task', id: expected.task.id },
+        offset: 0,
+      };
+      const taskActivity = await evaluate(
+        `window.caselite.catalog(${JSON.stringify(taskActivityRequest)})`,
+      );
+      if (!taskActivity.ok || !taskActivity.activity?.length)
+        throw new Error('Original Task activity is no longer readable');
       await capture('project-activity-original-task.png');
     } else if (phase === 'project-files' || phase === 'project-files-read') {
       const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
@@ -1983,7 +2037,7 @@ export async function runProjectDemo(
           "!Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='从任务创建项目')",
         );
         await wait(
-          "Array.from(document.querySelectorAll('.task-inspector dd')).some(e=>e.textContent==='独立任务转项目验收')",
+          "document.querySelector('[data-testid=task-project-context]')?.textContent==='独立任务转项目验收'",
         );
         const after: TaskResponse = await evaluate(
           `window.caselite.task({operation:'read',protocol_version:1,task_id:${JSON.stringify(original.tasks[0].id)}})`,

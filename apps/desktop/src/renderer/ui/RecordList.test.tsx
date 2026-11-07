@@ -127,8 +127,8 @@ it('waits for Chinese composition end before querying and retains task property 
   await screen.findByRole('row', { name: '选择任务：中文任务' });
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   expect((screen.getByLabelText('搜索任务') as HTMLInputElement).disabled).toBe(true);
-  expect(screen.getByText('状态尚未保存')).toBeTruthy();
-  expect(api).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('正在保存任务属性…')).toBeTruthy();
+  expect(api.mock.calls[2][0].operation).toBe('change_status');
 });
 
 it('requeries after a confirmed property change and moves the inspector when the Task leaves the current filter', async () => {
@@ -149,10 +149,9 @@ it('requeries after a confirmed property change and moves the inspector when the
   });
   await screen.findByRole('row', { name: '选择任务：待办甲' });
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
-  fireEvent.click(screen.getByText('保存任务状态'));
   await waitFor(() => expect(screen.queryByRole('row', { name: '选择任务：待办甲' })).toBeNull());
   expect(await screen.findByRole('row', { name: '选择任务：待办乙' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: '待办乙' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: '待办乙' })).toBeNull();
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
 });
 it('remembers the keyboard-opened target, filter, page and scroll when returning from detail', async () => {

@@ -59,13 +59,12 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   };
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   collapseAndReopen();
-  fireEvent.click(screen.getByText('保存任务状态'));
   await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
   collapseAndReopen();
   await act(async () => finish({ ok: false, code: 'RESULT_UNKNOWN', message: '合成未知回执' }));
   collapseAndReopen();
-  fireEvent.click(screen.getByText('核对原状态提交'));
-  await screen.findByText('当前已保存：已完成');
+  fireEvent.click(screen.getByText('核对并重试原提交'));
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   expect(api.mock.calls.find(([r]) => r.operation === 'status')?.[0]).toMatchObject({
     idempotency_key: key,
   });
