@@ -30,6 +30,7 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
   const [pending, setPending] = useState<Save>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [conflict, setConflict] = useState(false);
   const inFlight = useRef(false);
   const dirty = Boolean(form || busy);
   useEffect(() => {
@@ -67,6 +68,7 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
       const response = await window.caselite.contacts(request);
       if (!response.ok) {
         setError(response.message);
+        if (response.code === 'CONFLICT') setConflict(true);
         if (response.code !== 'RESULT_UNKNOWN' && response.code !== 'UNAVAILABLE')
           setPending(undefined);
         return;
@@ -236,10 +238,19 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
       </div>
       <aside className="contacts-inspector" aria-label="联系人详情">
         {error && <p role="alert">{error}</p>}
+        {conflict && (
+          <p>
+            草稿已保留。重读后请取消旧草稿，再从最新版本编辑。
+            <button type="button" disabled={read.isFetching} onClick={() => void read.refetch()}>
+              重新读取最新联系人
+            </button>
+          </p>
+        )}
         {form ? (
           <form
             onSubmit={(event) => {
               event.preventDefault();
+              if (conflict) return;
               if (pending) {
                 void save(pending);
                 return;
@@ -337,7 +348,7 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
               </label>
             </fieldset>
             <div className="contacts-actions">
-              <button type="submit" className="primary" disabled={busy}>
+              <button type="submit" className="primary" disabled={busy || conflict}>
                 {pending ? '核对原提交' : '保存联系人'}
               </button>
               <button
@@ -346,6 +357,7 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
                 onClick={() => {
                   setForm(undefined);
                   setError('');
+                  setConflict(false);
                 }}
               >
                 取消
@@ -360,6 +372,7 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
               type="button"
               onClick={() => {
                 setError('');
+                setConflict(false);
                 setForm({
                   id: contact.id,
                   version: contact.version,
