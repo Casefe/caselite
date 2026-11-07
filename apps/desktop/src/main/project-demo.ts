@@ -60,6 +60,11 @@ export async function runProjectDemo(
     }
     throw new Error('Project probe timed out: ' + predicate);
   };
+  const showTaskResult = async () => {
+    await wait("document.querySelector('[data-testid=task-result-tab]')");
+    await evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
+  };
+
   const capture = async (name: string) => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     writeFileSync(join(root, name), (await window.webContents.capturePage()).toPNG());
@@ -529,6 +534,7 @@ export async function runProjectDemo(
       await evaluate(
         `Array.from(document.querySelectorAll('${activity} li button')).find(e=>e.textContent.includes('任务')).click()`,
       );
+      await showTaskResult();
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
       );
@@ -712,6 +718,7 @@ export async function runProjectDemo(
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
       await wait(`document.querySelector('[data-active-task="${taskId}"]')`);
       await wait("document.querySelector('[aria-label=返回来源项目]')");
+      await showTaskResult();
       await evaluate(
         "(()=>{const body=document.querySelector('[data-testid=body-editor]');body.focus();document.execCommand('insertText',false,' 本次导航保存内容。');})()",
       );
@@ -1854,6 +1861,7 @@ export async function runProjectDemo(
       await wait(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
       );
+      await showTaskResult();
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
       );
@@ -1996,6 +2004,7 @@ export async function runProjectDemo(
           input.dispatchEvent(new Event('input',{bubbles:true}));
         })()`);
         await evaluate("document.querySelector('[data-testid=create-task]').click()");
+        await showTaskResult();
         await wait("document.querySelector('[data-testid=body-editor]')");
         await evaluate(
           "(()=>{const body=document.querySelector('[data-testid=body-editor]');body.focus();document.execCommand('insertText',false,'原任务正文与引用保全样本。');})()",
@@ -2109,6 +2118,7 @@ export async function runProjectDemo(
         await wait(
           `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
         );
+        await showTaskResult();
         await wait(
           "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
         );

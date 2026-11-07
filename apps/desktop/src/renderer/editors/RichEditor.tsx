@@ -299,11 +299,13 @@ export function EditorSurface({
   mode,
   placeholder = '开始输入…',
   disabled = false,
+  blockActions = false,
 }: {
   editor: Editor | null;
   mode: 'notion' | 'simple' | 'compact';
   placeholder?: string;
   disabled?: boolean;
+  blockActions?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const dragging = useRef<(ReturnType<typeof currentBlock> & { doc: object }) | null>(null);
@@ -369,7 +371,8 @@ export function EditorSurface({
       .toLowerCase()
       .includes(ui?.slash?.query.toLowerCase() ?? ''),
   );
-  const showSlash = mode === 'notion' && Boolean(ui?.slash) && dismissed !== slashKey && editable;
+  const showBlockActions = mode === 'notion' || (compact && blockActions && showFormats);
+  const showSlash = showBlockActions && Boolean(ui?.slash) && dismissed !== slashKey && editable;
   const choose = (id: string) => {
     if (ui?.slash) setBlock(editor, id, ui.slash);
     setIndex(0);
@@ -481,7 +484,7 @@ export function EditorSurface({
           )}
         </>
       )}
-      {mode === 'notion' && editable && ui && (
+      {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>
           <button
             type="button"
@@ -570,7 +573,7 @@ export function EditorSurface({
           {choices.length === 0 && <p>没有匹配的内容块</p>}
         </div>
       )}
-      {blockMenu && mode === 'notion' && editable && (
+      {blockMenu && showBlockActions && editable && (
         <div
           className="block-menu"
           role="menu"

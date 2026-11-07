@@ -390,7 +390,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
   const upgraded = openToolchainProbe(file, migrations).sqlite;
   expect(snapshotOf(upgraded)).toBe(snapshot);
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 13,
+    n: 14,
   });
   expect(upgraded.pragma('foreign_key_check')).toEqual([]);
   upgraded.close();

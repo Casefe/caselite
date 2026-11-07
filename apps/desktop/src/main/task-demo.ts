@@ -204,7 +204,7 @@ export async function runTaskDemo(
       evaluate(`document.execCommand('insertText',false,${JSON.stringify(text)})`);
     const taskGoalTab = async () =>
       evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='任务目标').click()",
+        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='内容').click()",
       );
     const bodyTab = async () =>
       evaluate(
@@ -272,6 +272,8 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-testid=task-objective] h2 strong')");
       await input('[data-testid=task-title]', '服务合同事实梳理');
       await click('[data-testid=create-task]');
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await bodyTab();
       await wait("document.querySelector('[data-testid=body-editor]')");
       const body =
         '合同记载服务费120,000元；补充记录称100,000元，差异待核验。现有材料未提供金额变更文件、发票及收悉凭证。请补充文件并解释金额差异。';
@@ -315,6 +317,7 @@ export async function runTaskDemo(
       await taskGoalTab();
       await wait("document.querySelector('[data-testid=task-content-editor] h2 strong')");
       await evaluate("document.querySelector('[data-testid=task-content-editor]').focus()");
+      await click('.task-content-panel .compact-format-toggle');
       await click('.task-content-panel [aria-label=插入内容块]');
       await wait("document.querySelector('.task-content-panel [data-block-command=heading3]')");
       await click('.task-content-panel [data-block-command=heading3]');
@@ -365,15 +368,19 @@ export async function runTaskDemo(
       await input('[data-testid=task-objective]', '独立任务B，不应显示A的正文');
       await click('[data-testid=create-task]');
       await wait(
-        "document.querySelector('[data-testid=body-editor]') && document.body.textContent.includes('采购任务隔离样本B')",
+        "document.querySelector('[data-testid=task-content-editor]') && document.body.textContent.includes('采购任务隔离样本B')",
       );
       await click(`[data-task-id="${id}"]`);
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await bodyTab();
       await wait(
         `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(body)})`,
       );
     } else {
       const expected = JSON.parse(readFileSync(join(root, 'expected.json'), 'utf8'));
       await openTask(expected.id);
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await bodyTab();
       await wait("document.querySelector('[data-testid=body-editor]')");
       await wait(
         `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(expected.body)})`,
@@ -403,7 +410,7 @@ export async function runTaskDemo(
       }
       await wait("document.querySelector('[data-testid=revision]')?.textContent==='2'");
       await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='任务目标').click()",
+        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='内容').click()",
       );
       await wait("document.querySelector('.goal-panel')");
       await evaluate(
@@ -469,6 +476,8 @@ export async function runTaskDemo(
       );
       writeFileSync(join(root, 'expected.json'), JSON.stringify(expected));
       await openTask(expected.id);
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await bodyTab();
       await wait("document.querySelector('[data-testid=body-editor]')");
     }
     await wait(`(()=>{

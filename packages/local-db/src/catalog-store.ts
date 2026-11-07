@@ -143,15 +143,32 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     target_id,
     receipt,
   });
-  const discussionProject = (projectId: string) =>
-    db
-      .prepare('SELECT archived_at FROM matters WHERE id=? AND workspace_id=?')
-      .get(projectId, workspace) as { archived_at: string | null } | undefined;
-  const discussionTargetExists = (scope: DiscussionScope) =>
-    scope.kind !== 'update_comment' ||
-    !!db
-      .prepare("SELECT 1 FROM project_discussion WHERE matter_id=? AND id=? AND kind='update'")
-      .get(scope.project_id, scope.update_id);
+  const discussionTarget = (scope: DiscussionScope): { archived_at: string | null } | undefined => {
+    if (scope.kind === 'task_comment') {
+      // 归属始终按 Task 判定；当前项目的归档只约束发布，不参与定位历史。
+      return db
+        .prepare(
+          `SELECT m.archived_at FROM task_items t
+         LEFT JOIN task_projects p ON p.task_id=t.id
+         LEFT JOIN matters m ON m.id=p.matter_id AND m.workspace_id=t.workspace_id
+         WHERE t.id=? AND t.workspace_id=?`,
+        )
+        .get(scope.task_id, workspace) as { archived_at: string | null } | undefined;
+    }
+    return db
+      .prepare(
+        `SELECT m.archived_at FROM matters m WHERE m.id=? AND m.workspace_id=?
+       AND (? IS NULL OR EXISTS (
+         SELECT 1 FROM project_discussion d WHERE d.matter_id=m.id AND d.id=? AND d.kind='update'
+       ))`,
+      )
+      .get(
+        scope.project_id,
+        workspace,
+        scope.kind === 'update_comment' ? scope.update_id : null,
+        scope.kind === 'update_comment' ? scope.update_id : null,
+      ) as { archived_at: string | null } | undefined;
+  };
   const getProject = (id: string, properties = false) =>
     projects(properties ? id : null).find((p) => p.id === id);
   const scopeExists = (scope: ActivityScope) =>
@@ -202,22 +219,28 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     execute(request: CatalogRequest): CatalogResponse {
       if (request.operation === 'list_discussion') {
         const { scope } = request;
-        if (!discussionProject(scope.project_id) || !discussionTargetExists(scope))
-          return fail('NOT_FOUND', '讨论目标在当前项目中不可访问。');
+        const target = discussionTarget(scope);
+        if (!target) return fail('NOT_FOUND', '讨论目标在当前工作区不可访问。');
+        const taskScope = scope.kind === 'task_comment';
+        const before = request.before ?? Number.MAX_SAFE_INTEGER;
         const rows = db
           .prepare(
-            `
-          SELECT d.sequence AS cursor,d.id,d.committed_at,b.state FROM project_discussion d
-          JOIN body_revisions b ON b.body_id=d.body_id AND b.revision=d.body_revision
-          WHERE d.matter_id=? AND d.kind=? AND d.update_id IS ? AND d.sequence < ?
-          ORDER BY d.sequence DESC LIMIT 11
-        `,
+            `SELECT d.sequence AS cursor,d.id,d.committed_at,b.state
+           FROM ${taskScope ? 'task_comment' : 'project_discussion'} d
+           JOIN body_revisions b ON b.body_id=d.body_id AND b.revision=d.body_revision
+           WHERE ${taskScope ? 'd.task_id=?' : 'd.matter_id=? AND d.kind=? AND d.update_id IS ?'}
+             AND d.sequence < ?
+           ORDER BY d.sequence DESC LIMIT 11`,
           )
           .all(
-            scope.project_id,
-            scope.kind,
-            scope.kind === 'update_comment' ? scope.update_id : null,
-            request.before ?? Number.MAX_SAFE_INTEGER,
+            ...(taskScope
+              ? [scope.task_id, before]
+              : [
+                  scope.project_id,
+                  scope.kind,
+                  scope.kind === 'update_comment' ? scope.update_id : null,
+                  before,
+                ]),
           ) as { cursor: number; id: string; committed_at: string; state: Buffer }[];
         return {
           ...narrowResult(),
@@ -227,6 +250,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
               return { id, committed_at, state: Array.from(state) };
             }),
             next: rows.length > 10 ? rows[9].cursor : null,
+            ...(taskScope ? { read_only: !!target.archived_at } : {}),
           },
         };
       }
@@ -308,10 +332,9 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         };
         if (request.operation === 'publish_discussion') {
           const { scope } = request;
-          const project = discussionProject(scope.project_id);
-          if (!project || !discussionTargetExists(scope))
-            return fail('NOT_FOUND', '讨论目标在当前项目中不可访问。');
-          if (project.archived_at) return fail('CONFLICT', '项目已归档，讨论只读。');
+          const target = discussionTarget(scope);
+          if (!target) return fail('NOT_FOUND', '讨论目标在当前工作区不可访问。');
+          if (target.archived_at) return fail('CONFLICT', '项目已归档，讨论只读。');
           const state = Buffer.from(request.state);
           let text: string;
           try {
@@ -328,19 +351,23 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             bodyId,
             state,
           );
-          db.prepare(
-            `
-            INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at)
-            VALUES(?,?,?,?,?,?)
-          `,
-          ).run(
-            id,
-            scope.project_id,
-            scope.kind,
-            scope.kind === 'update_comment' ? scope.update_id : null,
-            bodyId,
-            new Date().toISOString(),
-          );
+          const now = new Date().toISOString();
+          if (scope.kind === 'task_comment')
+            db.prepare(
+              'INSERT INTO task_comment(id,task_id,body_id,committed_at) VALUES(?,?,?,?)',
+            ).run(id, scope.task_id, bodyId, now);
+          else
+            db.prepare(
+              `INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at)
+               VALUES(?,?,?,?,?,?)`,
+            ).run(
+              id,
+              scope.project_id,
+              scope.kind,
+              scope.kind === 'update_comment' ? scope.update_id : null,
+              bodyId,
+              now,
+            );
           return saveReceipt(narrowResult(id, request.idempotency_key));
         }
         let target: string;

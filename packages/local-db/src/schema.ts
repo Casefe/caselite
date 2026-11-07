@@ -197,6 +197,27 @@ export const projectDiscussion = sqliteTable(
     check('discussion_fixed_revision', sql`${table.bodyRevision} = 1`),
   ],
 );
+export const taskComment = sqliteTable(
+  'task_comment',
+  {
+    sequence: integer('sequence').primaryKey(),
+    id: text('id').notNull().unique(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    bodyId: text('body_id').notNull().unique(),
+    bodyRevision: integer('body_revision').notNull().default(1),
+    committedAt: text('committed_at').notNull(),
+  },
+  (table) => [
+    index('task_comment_scope').on(table.taskId),
+    foreignKey({
+      columns: [table.bodyId, table.bodyRevision],
+      foreignColumns: [bodyRevisions.bodyId, bodyRevisions.revision],
+    }),
+    check('task_comment_fixed_revision', sql`${table.bodyRevision} = 1`),
+  ],
+);
 export const taskProjects = sqliteTable('task_projects', {
   taskId: text('task_id')
     .primaryKey()

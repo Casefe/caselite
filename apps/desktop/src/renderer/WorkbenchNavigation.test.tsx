@@ -10,6 +10,7 @@ vi.mock('./ui/Appearance', () => ({
 vi.mock('./editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   localExtensions: () => [],
+  useLocalDoc: () => null,
   EditorSurface: () => <div />,
   DraftEditor: () => <div />,
 }));
@@ -75,7 +76,14 @@ vi.mock('./ui/RecordList', () => ({
 }));
 vi.mock('./EngineeringApp', () => ({ default: () => null }));
 const task = (id: string) =>
-  ({ id, title: id, body_revision: 1, document_id: 'doc' + id, body_id: 'body' + id }) as Task;
+  ({
+    id,
+    title: id,
+    objective: '',
+    body_revision: 1,
+    document_id: 'doc' + id,
+    body_id: 'body' + id,
+  }) as Task;
 const result = (id: string) => ({ ok: true, tasks: [task(id)], state: null });
 function setup(read?: (id: string) => Promise<unknown>) {
   window.caselite = {
@@ -114,6 +122,7 @@ it.each(['draft', 'unknown'])(
   async (mode) => {
     setup();
     await projectTask();
+    fireEvent.click(screen.getByTestId('task-result-tab'));
     if (mode === 'draft')
       fireEvent.change(screen.getByLabelText('未保存草稿'), { target: { value: '不得丢失' } });
     else fireEvent.click(screen.getByText('未知提交'));

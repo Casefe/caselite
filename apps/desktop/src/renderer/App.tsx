@@ -25,6 +25,8 @@ import {
   localExtensions,
   type RichDraft,
 } from './editors/RichEditor';
+import ActivityList from './projects/ActivityList';
+import { DiscussionFeed } from './projects/ProjectDiscussion';
 import TaskContentEditor from './editors/TaskContentEditor';
 
 const mutation = () => ({
@@ -191,7 +193,7 @@ function Workbench() {
     null,
   );
   const [taskListState, setTaskListState] = useState(initialTaskListState);
-  const [detailTab, setDetailTab] = useState('成果正文');
+  const [detailTab, setDetailTab] = useState('内容');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
   const [state, setState] = useState<number[] | null>(null);
@@ -211,6 +213,8 @@ function Workbench() {
   const [propertiesBlocked, setPropertiesBlocked] = useState(false);
   const [reminderBlocked, setReminderBlocked] = useState(false);
   const [reminderTask, setReminderTask] = useState<string | null>(null);
+  const [commentDirty, setCommentDirty] = useState(false);
+  const [projectDirty, setProjectDirty] = useState(false);
   const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -274,6 +278,8 @@ function Workbench() {
     const guard = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
+        commentDirty ||
+        projectDirty ||
         propertiesBlocked ||
         reminderBlocked ||
         busy ||
@@ -287,9 +293,27 @@ function Workbench() {
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty, propertiesBlocked, reminderBlocked, busy, uncertain, createDirty, agentPrompt]);
+  }, [
+    dirty,
+    commentDirty,
+    projectDirty,
+    propertiesBlocked,
+    reminderBlocked,
+    busy,
+    uncertain,
+    createDirty,
+    agentPrompt,
+  ]);
   function canLeave() {
-    if (dirty || propertiesBlocked || reminderBlocked || busy || uncertain) {
+    if (
+      dirty ||
+      commentDirty ||
+      projectDirty ||
+      propertiesBlocked ||
+      reminderBlocked ||
+      busy ||
+      uncertain
+    ) {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
@@ -326,7 +350,7 @@ function Workbench() {
     setTaskReturn(null);
     setError('');
   }
-  async function open(id: string, source: ProjectViewState | null = null) {
+  async function open(id: string, source: ProjectViewState | null = null, document = false) {
     if (!canLeave()) return;
     if (dirty) {
       setError('请先保存当前正文，再切换任务。');
@@ -356,7 +380,7 @@ function Workbench() {
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');
-        setDetailTab('成果正文');
+        setDetailTab(source?.documentId || document ? '成果正文' : '内容');
         setCreateTagDraft(false);
         setCreating(false);
       }
@@ -444,7 +468,7 @@ function Workbench() {
       setState(null);
       setObjectiveState(command.objective_state ?? null);
       setView('tasks');
-      setDetailTab('成果正文');
+      setDetailTab('内容');
       setCreateTagDraft(false);
       setCreating(false);
       setTitle('');
@@ -742,7 +766,12 @@ function Workbench() {
             onOpen={(id) => void open(id)}
           />
         ) : view === 'tasks' && active ? (
-          <section className="task-detail" data-layout="three-column" data-active-task={active.id}>
+          <section
+            className="task-detail"
+            data-layout="three-column"
+            data-active-task={active.id}
+            data-task-tab={detailTab === '内容' ? 'content' : undefined}
+          >
             <div className="task-layout">
               <div className="task-work-area" aria-label="阅读与编辑工作区">
                 <div className="page-topline">
@@ -771,30 +800,6 @@ function Workbench() {
                   </div>
                 </div>
 
-                <div className="task-title">
-                  <span className="task-symbol">
-                    <Icon name="check" size={23} />
-                  </span>
-                  <div>
-                    <small>任务 {active.id.slice(0, 4).toUpperCase()}</small>
-                    <h1>{active.title}</h1>
-                  </div>
-                  <button
-                    className="favorite-toggle"
-                    data-testid="toggle-favorite"
-                    aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
-                    aria-pressed={favorites.includes(active.id)}
-                    onClick={() =>
-                      setFavorites((ids) =>
-                        ids.includes(active.id)
-                          ? ids.filter((id) => id !== active.id)
-                          : [...ids, active.id],
-                      )
-                    }
-                  >
-                    <Icon name="star" size={15} />
-                  </button>
-                </div>
                 <div className="task-reminder-entry">
                   <button
                     type="button"
@@ -807,17 +812,25 @@ function Workbench() {
                   {reminderTask === active.id && (
                     <ReminderEditor
                       taskId={active.id}
-                      disabled={dirty || busy || uncertain || propertiesBlocked}
+                      disabled={
+                        dirty ||
+                        commentDirty ||
+                        projectDirty ||
+                        busy ||
+                        uncertain ||
+                        propertiesBlocked
+                      }
                       onBlocked={setReminderBlocked}
                     />
                   )}
                 </div>
                 <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
-                  {['成果正文', '任务目标', '材料'].map((t) => (
+                  {['内容', '成果正文', '材料'].map((t) => (
                     <button
                       key={t}
                       role="tab"
                       aria-selected={detailTab === t}
+                      data-testid={t === '成果正文' ? 'task-result-tab' : undefined}
                       onClick={() => {
                         if (detailTab !== t && canLeave()) setDetailTab(t);
                       }}
@@ -828,32 +841,88 @@ function Workbench() {
                   ))}
                 </div>
 
+                <div className="task-title">
+                  <span className="task-symbol">
+                    <Icon name="check" size={23} />
+                  </span>
+                  <div>
+                    <h1>{active.title}</h1>
+                    <button
+                      type="button"
+                      className="favorite-toggle"
+                      data-testid="toggle-favorite"
+                      aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
+                      aria-pressed={favorites.includes(active.id)}
+                      onClick={() =>
+                        setFavorites((ids) =>
+                          ids.includes(active.id)
+                            ? ids.filter((id) => id !== active.id)
+                            : [...ids, active.id],
+                        )
+                      }
+                    >
+                      <Icon name="star" size={15} />
+                    </button>
+                  </div>
+                </div>
                 {detailTab === '成果正文' ? (
                   <BodyEditor
                     key={active.body_id}
                     task={active}
                     initial={state}
                     onDirty={setDirty}
-                    disabled={propertiesBlocked || reminderBlocked}
+                    disabled={projectDirty || propertiesBlocked || reminderBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
                       setState(savedState);
                       void refresh().catch(() => setError('正文已保存，列表刷新失败。'));
                     }}
                   />
-                ) : detailTab === '任务目标' ? (
-                  <TaskContentEditor
-                    key={active.id + ':' + propertiesRead}
-                    task={active}
-                    initial={objectiveState}
-                    onDirty={setDirty}
-                    disabled={propertiesBlocked || reminderBlocked}
-                    onSaved={(saved, bytes) => {
-                      setActive(saved);
-                      setObjectiveState(bytes);
-                      void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
-                    }}
-                  />
+                ) : detailTab === '内容' ? (
+                  <div className="task-content-overview" key={active.id}>
+                    <TaskContentEditor
+                      key={active.id + ':' + propertiesRead}
+                      task={active}
+                      initial={objectiveState}
+                      onDirty={setDirty}
+                      disabled={
+                        commentDirty || projectDirty || propertiesBlocked || reminderBlocked
+                      }
+                      onSaved={(saved, bytes) => {
+                        setActive(saved);
+                        setObjectiveState(bytes);
+                        void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
+                      }}
+                    />
+                    <section className="task-detail-section">
+                      <h2>活动</h2>
+                      <ActivityList
+                        scope={{ type: 'task', id: active.id }}
+                        refresh={String(active.version) + ':' + active.body_revision}
+                        disabled={
+                          dirty ||
+                          commentDirty ||
+                          projectDirty ||
+                          propertiesBlocked ||
+                          reminderBlocked
+                        }
+                        onTask={(id) => void open(id, taskReturn?.source)}
+                        compact
+                        readOnly
+                      />
+                    </section>
+                    <section className="task-detail-section project-discussion" aria-label="评论">
+                      <h2>评论</h2>
+                      <DiscussionFeed
+                        scope={{ kind: 'task_comment', task_id: active.id }}
+                        refresh={active.matter_id}
+                        archived={false}
+                        disabled={dirty || projectDirty || propertiesBlocked || reminderBlocked}
+                        onDirty={setCommentDirty}
+                        compose
+                      />
+                    </section>
+                  </div>
                 ) : (
                   <section className="project-tab-empty">
                     <Icon name="folder" size={30} />
@@ -865,17 +934,18 @@ function Workbench() {
               <TaskInspector
                 key={active.id}
                 task={active}
-                projectDisabled={dirty || propertiesBlocked || reminderBlocked || busy || uncertain}
-                propertiesDisabled={dirty || reminderBlocked || busy || uncertain}
-                reminderEditing={reminderBlocked}
+                projectDisabled={
+                  dirty || commentDirty || propertiesBlocked || reminderBlocked || busy || uncertain
+                }
+                propertiesDisabled={
+                  dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+                }
+                reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
                 onPropertiesBlocked={setPropertiesBlocked}
                 onTaskChanged={acceptTaskProperties}
                 suggestions={tagSuggestions}
-                onProjectDirty={setDirty}
-                onProjectChanged={(task) => {
-                  setActive(task);
-                  void refresh().catch(() => setError('项目已保存，任务列表刷新失败。'));
-                }}
+                onProjectDirty={setProjectDirty}
+                onProjectChanged={acceptTaskProperties}
               />
             </div>
           </section>
@@ -886,7 +956,7 @@ function Workbench() {
             key={view}
             tasks={tasks}
             library={view === 'knowledge'}
-            onOpen={(id) => void open(id)}
+            onOpen={(id) => void open(id, null, true)}
             onDirty={setDirty}
           />
         ) : view === 'tasks' ? (

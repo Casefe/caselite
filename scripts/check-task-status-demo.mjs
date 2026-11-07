@@ -23,7 +23,7 @@ for (const phase of ['task-status-write', 'task-status-read']) {
   const result = spawnSync(join(contents, 'MacOS/CaseLite'), [], {
     cwd: root,
     encoding: 'utf8',
-    timeout: 60_000,
+    timeout: 90_000,
     killSignal: 'SIGKILL',
     env: {
       PATH: process.env.PATH,
@@ -90,6 +90,13 @@ for (const name of [
   'status-write-failed.png',
   'status-list-saved.png',
   'status-reopened.png',
+  'comment-failed.png',
+  'task-detail-1440-light.png',
+  'task-detail-640-light.png',
+  'task-detail-640-comment.png',
+  'task-detail-1440-dark.png',
+  'task-detail-640-dark.png',
+  'task-detail-reopened.png',
 ])
   copyFileSync(join(isolated, name), join(output, name));
 process.stdout.write(`Task status save/SIGKILL/reopen passed; evidence ${output}\n`);

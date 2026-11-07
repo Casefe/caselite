@@ -1880,9 +1880,6 @@ dd {
 .create-objective .tiptap {
   min-height: 150px;
 }
-.task-content-panel.goal-panel {
-  padding: 0;
-}
 .task-content-panel > header {
   display: flex;
   align-items: center;
@@ -4566,7 +4563,7 @@ select,
   grid-column: 1 / -1;
 }
 .create-form .task-create-properties :is(select, input),
-.task-inspector-content .task-properties-editor :is(select, input) {
+.task-inspector-content :is(.task-properties-editor, .task-label-section) :is(select, input) {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -4627,7 +4624,7 @@ select,
   gap: 8px;
   margin: 4px 0;
 }
-.task-inspector-content .task-properties-editor :is(select, input) {
+.task-inspector-content :is(.task-properties-editor, .task-label-section) :is(select, input) {
   max-width: none;
 }
 .task-inspector-content .project-inspector-section {
@@ -4718,4 +4715,110 @@ select,
 .assistant-panel--compact .home-model-select {
   flex: 1;
   max-width: 100%;
+}
+
+.task-detail .task-title > div {
+  flex-wrap: wrap;
+}
+.task-detail .task-title h1 {
+  overflow-wrap: anywhere;
+}
+.task-detail .task-title .favorite-toggle {
+  flex-shrink: 0;
+  margin-inline-start: 0;
+}
+.task-detail .task-work-area {
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.task-detail .task-reminder-entry {
+  margin: 0;
+}
+.task-content-overview {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 4px 22px 24px;
+}
+.task-content-overview > * {
+  min-width: 0;
+}
+.task-content-overview .task-content-panel > header,
+.task-content-overview .task-content-panel > footer {
+  border: 0;
+  padding: 6px 0;
+  gap: 8px;
+}
+.task-content-overview .rich-editor--compact .tiptap {
+  min-height: 48px;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}
+.task-content-overview .rich-editor--compact {
+  min-height: 0;
+}
+.task-detail-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.task-detail-section > h2 {
+  font-size: 14px;
+  margin: 0;
+}
+.task-detail-section .activity-list ol {
+  max-height: 108px;
+  overflow: auto;
+  margin: 4px 0 0;
+}
+.task-detail-section .activity-list li {
+  padding: 5px 0;
+}
+.task-detail-section .activity-list :is(.caption, li p, .project-query-toolbar > span) {
+  display: none;
+}
+.task-detail-section .project-query-toolbar button {
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.task-inspector-content .task-label-section {
+  margin-top: 2px;
+}
+.task-label-section .task-tags > span {
+  display: none;
+}
+.task-inspector-content .task-project-section,
+.task-inspector-content [aria-label='AI 对话'].project-inspector-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.task-project-selector {
+  display: grid;
+  gap: 4px;
+}
+.task-project-selector select {
+  min-width: 0;
+  width: 100%;
+  background: var(--theme-panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+}
+
+.task-content-panel .rich-editor--compact .block-controls {
+  inset-inline-start: 2px;
+}
+.task-content-overview .task-content-panel .rich-editor--compact:has(.block-controls) .tiptap {
+  padding-inline-start: 58px;
+}
+@media (max-width: 780px) {
+  .task-detail[data-task-tab='content'] .task-layout {
+    grid-template-rows: max-content max-content;
+    align-content: start;
+  }
+  .task-detail[data-task-tab='content'] .task-work-area {
+    overflow: visible;
+  }
 }

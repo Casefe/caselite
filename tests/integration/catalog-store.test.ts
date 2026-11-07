@@ -1227,14 +1227,14 @@ it('publishes scoped fixed discussion entries atomically and reopens them withou
   }
 });
 
-it('rolls back interrupted 0011 migration and preserves populated 0010 project bytes, activity, and old receipts', async () => {
+async function verifyDiscussionMigrationRollback(index: 11 | 13) {
   const root = mkdtempSync(join(tmpdir(), 'caselite-discussion-ddl-'));
   roots.push(root);
   const oldFolder = join(root, 'old');
   const badFolder = join(root, 'bad');
   const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
   for (const [folder, entries] of [
-    [oldFolder, journal.entries.slice(0, 11)],
+    [oldFolder, journal.entries.slice(0, index)],
     [badFolder, journal.entries],
   ]) {
     mkdirSync(join(folder, 'meta'), { recursive: true });
@@ -1242,14 +1242,14 @@ it('rolls back interrupted 0011 migration and preserves populated 0010 project b
     for (const entry of entries)
       copyFileSync(join(migrations, entry.tag + '.sql'), join(folder, entry.tag + '.sql'));
   }
-  const migration = join(badFolder, journal.entries[11].tag + '.sql');
+  const migration = join(badFolder, journal.entries[index].tag + '.sql');
   writeFileSync(
     migration,
     readFileSync(migration, 'utf8') +
       '\n--> statement-breakpoint\nSELECT * FROM synthetic_missing_table;',
   );
   const file = join(root, 'data.sqlite');
-  const backup = join(root, 'pre-0011.sqlite');
+  const backup = join(root, 'before-upgrade.sqlite');
   const old = openTaskStore(file, oldFolder);
   const app = createCatalogApplication(old.catalog);
   const project = ok(app.execute({ ...ids(), operation: 'create_project', title: '旧库项目' }))
@@ -1273,6 +1273,17 @@ it('rolls back interrupted 0011 migration and preserves populated 0010 project b
     scope: { type: 'project', id: project.id },
     offset: 0,
   };
+  const scope = { kind: 'project_comment', project_id: project.id };
+  const query = { protocol_version: 1, operation: 'list_discussion', scope };
+  const publish = {
+    ...ids(),
+    operation: 'publish_discussion',
+    scope,
+    state: binary('旧库项目评论'),
+  };
+  const oldDiscussion = index === 13 ? ok(app.execute(publish)) : null;
+  const priorDiscussion =
+    index === 13 ? ok(app.execute(query)).discussion : { entries: [], next: null };
   const prior = [app.execute(read), app.execute(activity)];
   const connection = openToolchainProbe(file, oldFolder);
   try {
@@ -1287,10 +1298,12 @@ it('rolls back interrupted 0011 migration and preserves populated 0010 project b
     const pre = openToolchainProbe(path, oldFolder);
     try {
       expect(pre.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-        n: 11,
+        n: index,
       });
       expect(
-        pre.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='project_discussion'").get(),
+        pre.sqlite
+          .prepare('SELECT name FROM sqlite_master WHERE name=?')
+          .get(index === 11 ? 'project_discussion' : 'task_comment'),
       ).toBeUndefined();
       expect(pre.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
     } finally {
@@ -1302,17 +1315,139 @@ it('rolls back interrupted 0011 migration and preserves populated 0010 project b
       const migrated = createCatalogApplication(next.catalog);
       expect([migrated.execute(read), migrated.execute(activity)]).toEqual(prior);
       expect(migrated.execute({ ...save, request_id: randomUUID() })).toEqual(receipt);
-      expect(
-        ok(
-          migrated.execute({
-            protocol_version: 1,
-            operation: 'list_discussion',
-            scope: { kind: 'project_comment', project_id: project.id },
-          }),
-        ).discussion,
-      ).toEqual({ entries: [], next: null });
+      expect(ok(migrated.execute(query)).discussion).toEqual(priorDiscussion);
+      if (oldDiscussion)
+        expect(migrated.execute({ ...publish, request_id: randomUUID() })).toEqual(oldDiscussion);
     } finally {
       next.close();
     }
+  }
+}
+
+it('rolls back interrupted 0011 migration and preserves populated 0010 project bytes, activity, and old receipts', () =>
+  verifyDiscussionMigrationRollback(11));
+it('rolls back interrupted 0013 migration and preserves populated 0012 project discussion and receipts', () =>
+  verifyDiscussionMigrationRollback(13));
+
+it('keeps task comments scoped to the original task across grouping, rollback and reopen', () => {
+  const { app, file, store } = setup();
+  const task = ok(
+    store.execute({ ...ids(), operation: 'create', title: '任务评论样本', objective: '原说明' }),
+  ).tasks[0];
+  const second = ok(
+    store.execute({ ...ids(), operation: 'create', title: '隔离任务', objective: '' }),
+  ).tasks[0];
+  const project = ok(app.execute({ ...ids(), operation: 'create_project', title: '归组样本' }))
+    .projects[0];
+  const scope = { kind: 'task_comment', task_id: task.id } as const;
+  const state = binary('任务评论合成正文');
+  const request = { ...ids(), operation: 'publish_discussion', scope, state };
+  const query = { operation: 'list_discussion', protocol_version: 1, scope };
+  const status = {
+    operation: 'status',
+    protocol_version: 1,
+    idempotency_key: request.idempotency_key,
+  };
+  const activity = {
+    operation: 'list_activity',
+    protocol_version: 1,
+    scope: { type: 'task', id: task.id },
+    offset: 0,
+  };
+  const before = ok(app.execute(activity)).activity!;
+  for (const id of [project.id, before[0].id]) {
+    const invalid = { ...scope, task_id: id };
+    expect(app.execute({ ...query, scope: invalid })).toMatchObject({ code: 'NOT_FOUND' });
+    expect(app.execute({ ...request, scope: invalid })).toMatchObject({ code: 'NOT_FOUND' });
+  }
+  expect(app.execute({ ...request, scope: { ...scope, project_id: project.id } })).toMatchObject({
+    code: 'INVALID_REQUEST',
+  });
+  const db = openToolchainProbe(file, migrations);
+  try {
+    const counts = () =>
+      db.sqlite
+        .prepare(
+          'SELECT (SELECT count(*) FROM task_comment) AS comments,(SELECT count(*) FROM body_revisions) AS bodies',
+        )
+        .get();
+    const prior = counts();
+    db.sqlite.exec(
+      "CREATE TRIGGER reject_task_comment_receipt BEFORE INSERT ON catalog_receipts BEGIN SELECT RAISE(ABORT,'synthetic task comment failure'); END",
+    );
+    expect(app.execute(request)).toMatchObject({ code: 'UNAVAILABLE' });
+    expect(app.execute(status)).toMatchObject({ code: 'NOT_FOUND' });
+    expect(counts()).toEqual(prior);
+    db.sqlite.exec('DROP TRIGGER reject_task_comment_receipt');
+  } finally {
+    db.sqlite.close();
+  }
+  const receipt = ok(app.execute(request));
+  expect(app.execute(status)).toEqual(receipt);
+  expect(app.execute({ ...request, request_id: randomUUID() })).toEqual(receipt);
+  expect(app.execute({ ...request, state: binary('不可覆盖') })).toMatchObject({
+    code: 'CONFLICT',
+  });
+  expect(ok(app.execute(activity)).activity).toEqual(before);
+  const first = ok(app.execute(query)).discussion!.entries;
+  expect(first).toMatchObject([{ id: receipt.target_id, state }]);
+  const assign = (matter_id: string | null, expected_version: number) =>
+    ok(
+      app.execute({
+        ...ids(),
+        operation: 'assign_task',
+        task_id: task.id,
+        matter_id,
+        expected_version,
+      }),
+    );
+  assign(project.id, task.version);
+  expect(ok(app.execute(query)).discussion?.entries).toEqual(first);
+  const grouped = ok(app.execute({ ...request, ...ids(), state: binary('归组后发布') }));
+  expect(
+    ok(app.execute({ ...query, scope: { ...scope, task_id: second.id } })).discussion?.entries,
+  ).toEqual([]);
+  ok(
+    app.execute({
+      ...ids(),
+      operation: 'archive_project',
+      id: project.id,
+      expected_version: project.version,
+      archived: true,
+    }),
+  );
+  expect(app.execute({ ...request, ...ids() })).toMatchObject({ code: 'CONFLICT' });
+  expect(ok(app.execute(query)).discussion).toMatchObject({ read_only: true });
+  expect(app.execute(request)).toEqual(receipt);
+  assign(null, task.version + 1);
+  expect(ok(app.execute(query)).discussion).toMatchObject({
+    read_only: false,
+    entries: [{ id: grouped.target_id }, { id: receipt.target_id }],
+  });
+  const other = openTaskStore(file, migrations, 'other-workspace');
+  try {
+    const foreign = createCatalogApplication(other.catalog);
+    for (const operation of [query, request, status]) {
+      expect(foreign.execute(operation)).toMatchObject({ code: 'NOT_FOUND' });
+    }
+  } finally {
+    other.close();
+  }
+  const persisted = ok(app.execute(query)).discussion;
+  store.close();
+  const reopened = openTaskStore(file, migrations);
+  try {
+    const reopenedApp = createCatalogApplication(reopened.catalog);
+    expect(ok(reopenedApp.execute(query)).discussion).toEqual(persisted);
+    expect(reopenedApp.execute(status)).toEqual(receipt);
+    expect(
+      ok(reopened.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0],
+    ).toMatchObject({
+      document_id: task.document_id,
+      body_id: task.body_id,
+      objective: task.objective,
+    });
+  } finally {
+    reopened.close();
   }
 });

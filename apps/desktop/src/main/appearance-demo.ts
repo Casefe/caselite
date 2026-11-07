@@ -98,6 +98,8 @@ export async function runAppearanceDemo(
         "(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'外观合成测试');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
       );
       await click('[data-testid=create-task]');
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await click('[data-testid=task-result-tab]');
       await wait("document.querySelector('.task-inspector .assistant-panel--compact')");
       await evaluate(
         "document.querySelector('.assistant-panel--compact').scrollIntoView({block:'nearest'})",

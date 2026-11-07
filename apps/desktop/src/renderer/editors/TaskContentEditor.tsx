@@ -113,15 +113,16 @@ export default function TaskContentEditor({
     }
   }
   return (
-    <section className="task-content-panel goal-panel">
+    <section className="task-content-panel">
       <header>
-        <h2>任务内容</h2>
-        <span className="draft-badge">Notion-like</span>
+        <h2>内容</h2>
       </header>
       <EditorSurface
         editor={editor}
-        mode="notion"
-        placeholder="描述目标、事实与待处理问题，输入 / 插入内容块…"
+        mode="compact"
+        blockActions
+        disabled={disabled}
+        placeholder="描述目标、事实与待处理问题…"
       />
       <footer>
         <span role="status" data-testid="task-content-status">
@@ -137,7 +138,6 @@ export default function TaskContentEditor({
           {busy ? '保存中…' : hasPending ? '核对任务内容' : '保存任务内容'}
         </button>
       </footer>
-      <p className="caption">任务内容与成果正文分别保存，格式与块结构保留在此设备。</p>
     </section>
   );
 }

@@ -17,6 +17,7 @@ vi.mock('./ui/Appearance', () => ({
 vi.mock('./editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   localExtensions: () => [],
+  useLocalDoc: () => null,
   EditorSurface: () => <div />,
   DraftEditor: ({ onChange }: { onChange?(value: { text: string; state: number[] }): void }) => (
     <textarea

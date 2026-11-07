@@ -5,6 +5,7 @@ import { catalogMutation } from '../ui/useCatalog';
 
 type Publication = Extract<CatalogRequest, { operation: 'publish_discussion' }>;
 const labels = {
+  task_comment: '任务评论',
   project_comment: '项目评论',
   update: '项目更新',
   update_comment: '更新评论',
@@ -62,26 +63,30 @@ export default function ProjectDiscussion({
   );
 }
 
-function DiscussionFeed({
+export function DiscussionFeed({
   scope,
   archived,
   disabled,
   compose,
   onDirty,
   children,
+  refresh,
 }: {
   scope: DiscussionScope;
   archived: boolean;
   disabled: boolean;
   compose: boolean;
   onDirty(value: boolean): void;
+  refresh?: string | null;
   children?: (entry: DiscussionEntry, reading: boolean) => React.ReactNode;
 }) {
   const [draft, setDraft] = useState(emptyDraft);
   const [epoch, setEpoch] = useState(0);
-  const [page, setPage] = useState<{ entries: DiscussionEntry[]; next: number | null } | null>(
-    null,
-  );
+  const [page, setPage] = useState<{
+    entries: DiscussionEntry[];
+    next: number | null;
+    read_only?: boolean;
+  } | null>(null);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<{ message: string; before?: number } | null>(null);
   const [writeError, setWriteError] = useState('');
@@ -114,7 +119,7 @@ function DiscussionFeed({
       setPage((prior) =>
         before === undefined
           ? discussion
-          : { entries: [...(prior?.entries ?? []), ...discussion.entries], next: discussion.next },
+          : { ...discussion, entries: [...(prior?.entries ?? []), ...discussion.entries] },
       );
     } catch {
       if (current === generation.current)
@@ -136,7 +141,7 @@ function DiscussionFeed({
       active = false;
       invalidateRead();
     };
-  }, []);
+  }, [refresh]);
 
   function resetDraft() {
     setDraft(emptyDraft());
@@ -165,6 +170,7 @@ function DiscussionFeed({
         setUnknown(uncertain);
         if (!uncertain) original.current = null;
         setWriteError(result.message);
+        if (scope.kind === 'task_comment' && result.code === 'CONFLICT') void load();
         return;
       }
       if (result.receipt !== request.idempotency_key || !result.target_id)
@@ -182,10 +188,17 @@ function DiscussionFeed({
       setPending(false);
     }
   }
+  const readOnly = archived || page?.read_only === true;
+  const editorDisabled =
+    disabled ||
+    pending ||
+    unknown ||
+    readOnly ||
+    (scope.kind === 'task_comment' && (!page || reading));
   const tooLong = draft.text.trim().length > 8000 || (draft.state?.length ?? 0) > 32768;
   return (
     <>
-      {compose && !archived && (
+      {compose && (!readOnly || draft.state) && (
         <div
           className="project-discussion-compose"
           onCompositionStartCapture={() => {
@@ -208,15 +221,13 @@ function DiscussionFeed({
               setSaved(false);
               onDirty(true);
             }}
-            disabled={disabled || pending || unknown}
+            disabled={editorDisabled}
             compact
           />
           <button
             type="button"
             className="primary"
-            disabled={
-              disabled || pending || unknown || !draft.text.trim() || !draft.state || tooLong
-            }
+            disabled={editorDisabled || !draft.text.trim() || !draft.state || tooLong}
             onClick={() => {
               if (!composing.current && draft.state)
                 void publish(
@@ -243,7 +254,7 @@ function DiscussionFeed({
           {tooLong && <p role="alert">正文超出发布大小限制。请缩短内容后再发布。</p>}
         </div>
       )}
-      {archived && <p>项目已归档，讨论只读。</p>}
+      {readOnly && <p>项目已归档，讨论只读。</p>}
       {writeError && <p role="alert">{writeError}</p>}
       {unknown && (
         <button

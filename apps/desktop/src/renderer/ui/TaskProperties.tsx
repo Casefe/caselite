@@ -22,12 +22,14 @@ export default function TaskProperties({
   task,
   disabled,
   suggestions = [],
+  groupTags = false,
   onBlocked,
   onChanged,
 }: {
   task: Task;
   disabled: boolean;
   suggestions?: string[];
+  groupTags?: boolean;
   onBlocked(value: boolean): void;
   onChanged(task: Task, objectiveState: number[] | null): void;
 }) {
@@ -210,7 +212,19 @@ export default function TaskProperties({
     enqueue({ due_date: input.value });
   };
 
-  return (
+  const tags = (
+    <TaskTags
+      onDraft={(value) => {
+        setTagDraft(value);
+        if (value) onBlocked(true);
+      }}
+      tags={shown.tags}
+      suggestions={suggestions}
+      disabled={locked}
+      onChange={(tags) => enqueue({ tags })}
+    />
+  );
+  const properties = (
     <section className="task-properties-editor" aria-label="任务属性设置">
       <label>
         <span>状态</span>
@@ -293,16 +307,7 @@ export default function TaskProperties({
           请输入完整有效的日期（YYYY-MM-DD），或选择清空截止日期。按 Esc 可取消编辑。
         </p>
       )}
-      <TaskTags
-        onDraft={(value) => {
-          setTagDraft(value);
-          if (value) onBlocked(true);
-        }}
-        tags={shown.tags}
-        suggestions={suggestions}
-        disabled={locked}
-        onChange={(tags) => enqueue({ tags })}
-      />
+      {!groupTags && tags}
       {pending && <p role="status">正在保存任务属性…</p>}
       {failure && (
         <div className="task-property-recovery">
@@ -335,5 +340,18 @@ export default function TaskProperties({
         </div>
       )}
     </section>
+  );
+  if (!groupTags) return properties;
+  return (
+    <>
+      <details className="inspector-disclosure" open>
+        <summary>属性</summary>
+        {properties}
+      </details>
+      <section className="project-inspector-section task-label-section" aria-label="标签">
+        <h3>标签</h3>
+        {tags}
+      </section>
+    </>
   );
 }

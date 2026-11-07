@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { openToolchainProbe } from '@caselite/local-db';
-import type { TaskResponse } from '@caselite/contracts';
+import type { CatalogResponse, TaskResponse } from '@caselite/contracts';
 
 export async function runTaskStatusDemo(
   create: () => Promise<BrowserWindow>,
@@ -55,6 +55,52 @@ export async function runTaskStatusDemo(
     createHash('sha256')
       .update(Uint8Array.from(value ?? []))
       .digest('hex');
+  const select = async (label: string, value: string) =>
+    evaluate(
+      `(()=>{const e=document.querySelector('[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+  const open = async (id: string) => {
+    await wait(`document.querySelector('[data-row-task="${id}"]')`);
+    await evaluate(
+      `document.querySelector('[data-row-task="${id}"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
+    );
+    await wait(
+      `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
+    );
+    await wait("document.querySelector('[data-testid=task-content-editor]')");
+  };
+  const comment = '[aria-label="任务评论"]';
+  const insert = async (selector: string, value: string) =>
+    evaluate(
+      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();document.execCommand('insertText',false,${JSON.stringify(value)});})()`,
+    );
+  const comments = async (id: string) => {
+    const r: CatalogResponse = await evaluate(
+      `window.caselite.catalog({operation:'list_discussion',protocol_version:1,scope:{kind:'task_comment',task_id:${JSON.stringify(id)}}})`,
+    );
+    if (!r.ok || !r.discussion) throw new Error('Task discussion read failed');
+    return r.discussion.entries;
+  };
+  const publish = async (message: string) => {
+    await wait(`document.querySelector(${JSON.stringify(comment)})?.contentEditable==='true'`);
+    await insert(comment, message);
+    await click('发布任务评论');
+    await wait(
+      `Array.from(document.querySelectorAll('[data-discussion-id]')).some(e=>e.textContent.includes(${JSON.stringify(message)}))`,
+    );
+  };
+  const createTask = async (title: string) => {
+    await evaluate("document.querySelector('[data-testid=new-task]').click()");
+    await wait("document.querySelector('[data-testid=task-title]')");
+    await evaluate(
+      `(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(title)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await evaluate("document.querySelector('[data-testid=create-task]').click()");
+    await wait("document.querySelector('[data-testid=task-content-editor]')");
+    return (await evaluate(
+      "document.querySelector('[data-active-task]').dataset.activeTask",
+    )) as string;
+  };
   try {
     await wait("document.querySelector('[data-nav=tasks]')");
     await evaluate("document.querySelector('[data-nav=tasks]').click()");
@@ -65,16 +111,9 @@ export async function runTaskStatusDemo(
     let id: string;
     let readResult: Record<string, unknown> | undefined;
     if (phase === 'task-status-write') {
-      await evaluate("document.querySelector('[data-testid=new-task]').click()");
-      await wait("document.querySelector('[data-testid=task-title]')");
-      await evaluate(
-        "(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'状态与重启验收');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
-      );
-      await evaluate("document.querySelector('[data-testid=create-task]').click()");
-      await wait(
-        "document.querySelector('[data-active-task]') && document.querySelector('[data-testid=body-editor]')",
-      );
-      id = await evaluate("document.querySelector('[data-active-task]').dataset.activeTask");
+      id = await createTask('状态与重启验收');
+      await evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
+      await wait("document.querySelector('[data-testid=body-editor]')");
       await evaluate(
         "document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,'状态修改不得清空本段正文。')",
       );
@@ -125,7 +164,7 @@ export async function runTaskStatusDemo(
       await settled('done');
       if (digest((await read(id)).state) !== bodyHash)
         throw new Error('Status changed the saved body bytes');
-      await click('任务目标');
+      await click('内容');
       await wait("document.querySelector('[data-testid=task-content-editor]')");
       await evaluate(
         "document.querySelector('[data-testid=task-content-editor]').focus();document.execCommand('insertText',false,'人工确认的说明。')",
@@ -167,6 +206,10 @@ export async function runTaskStatusDemo(
       await attributes('2024-02-29', 1);
       await attributes('', 0);
       await attributes('2026-01-01', 2);
+      app.focus({ steal: true });
+      window.focus();
+      window.webContents.focus();
+      await wait('document.hasFocus()');
       await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
@@ -243,15 +286,149 @@ export async function runTaskStatusDemo(
         digest(final.state) !== bodyHash
       )
         throw new Error('Description edit after status change lost data or used a stale version');
+      await capture('status-list-saved.png');
+      await open(id);
+      await wait("document.querySelector('.activity-list [data-activity-id]')");
+      app.focus({ steal: true });
+      window.focus();
+      window.webContents.focus();
+      await wait('document.hasFocus()');
+      await evaluate("document.querySelector('[data-testid=toggle-favorite]').focus()");
+      await wait(
+        "document.hasFocus() && document.activeElement?.matches('[data-testid=toggle-favorite]') && document.querySelector('.task-title h1').nextElementSibling===document.activeElement",
+      );
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+      window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+      await wait(
+        `document.querySelector('[data-testid=toggle-favorite][aria-pressed=true]') && document.querySelector('[data-task-id="${id}"]')`,
+      );
+      await wait(`document.querySelector(${JSON.stringify(comment)})?.contentEditable==='true'`);
+      await insert(comment, '独立任务评论，故障后原键恢复。');
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait(
+        "document.querySelector('[data-testid=task-content-editor]') && document.body.innerText.includes('请先保存')",
+      );
+      const commentConnection = openToolchainProbe(
+        join(isolation.userData, 'caselite.sqlite'),
+        join(process.resourcesPath, 'migrations'),
+      );
+      try {
+        commentConnection.sqlite.exec(
+          "CREATE TRIGGER demo_comment_failure BEFORE INSERT ON task_comment BEGIN SELECT RAISE(ABORT,'synthetic comment failure'); END",
+        );
+        await click('发布任务评论');
+        await wait(
+          "document.querySelector('.project-discussion button') && document.body.innerText.includes('核对原发布')",
+        );
+        if ((await comments(id)).length) throw new Error('Failed publish left a visible comment');
+        await wait(
+          `document.querySelector(${JSON.stringify(comment)})?.textContent==='独立任务评论，故障后原键恢复。'`,
+        );
+        await capture('comment-failed.png');
+      } finally {
+        commentConnection.sqlite.exec('DROP TRIGGER IF EXISTS demo_comment_failure');
+        commentConnection.sqlite.close();
+      }
+      await click('核对原发布');
+      await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('原键恢复')",
+      );
+      const independent = await comments(id);
+      if (independent.length !== 1) throw new Error('Recovered comment duplicated');
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await open(id);
+      await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('原键恢复') && !document.querySelector('.task-detail [role=alert]')",
+      );
+      await evaluate("document.querySelector('.task-work-area').scrollTop=0");
+      await capture('task-detail-1440-light.png');
+
+      const project: CatalogResponse = await evaluate(
+        "window.caselite.catalog({operation:'create_project',protocol_version:1,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),title:'隔离项目·评论验收'})",
+      );
+      if (!project.ok || !project.target_id) throw new Error('Could not seed project');
+      const projectId = project.target_id;
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      const groupedId = await createTask('归组任务·评论验收');
+      await insert('[data-testid=task-content-editor]', '归组任务的富文本内容。');
+      await click('格式工具');
+      await select('段落样式', 'heading2');
+      await wait("document.querySelector('[data-testid=task-content-editor] h2')");
+      await click('保存任务内容');
+      await wait(
+        "document.querySelector('[data-testid=task-content-status]').textContent==='任务内容已保存'",
+      );
+      const beforeGrouping = await read(groupedId);
+      await wait("document.querySelector('[aria-label=所属项目]:not(:disabled)')");
+      await select('所属项目', projectId);
+      await wait(
+        "document.querySelector('[data-testid=task-project-context]')?.textContent==='隔离项目·评论验收'",
+      );
+      await wait(
+        "document.querySelector('[data-testid=task-content-editor] h2')?.textContent==='归组任务的富文本内容。'",
+      );
+      const grouped = await read(groupedId);
+      if (
+        grouped.tasks[0].matter_id !== projectId ||
+        grouped.tasks[0].document_id !== beforeGrouping.tasks[0].document_id ||
+        digest(grouped.objective_state) !== digest(beforeGrouping.objective_state)
+      )
+        throw new Error('Grouping changed the original description or Document');
+      await publish('归组任务单独发表的评论。');
+      await evaluate("document.querySelector('[data-nav=settings]').click()");
+      await wait("document.querySelector('.theme-option:nth-child(2):not(:disabled)')");
+      await evaluate("document.querySelector('.theme-option:nth-child(2)').click()");
+      await wait("document.documentElement.dataset.theme==='dark'");
+      await evaluate("document.querySelector('.settings-back').click()");
+      await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('归组任务单独')",
+      );
+      for (const width of [1440, 640]) {
+        window.setSize(width, 900);
+        await wait(`innerWidth<=${width} && document.documentElement.scrollWidth<=innerWidth`);
+        await wait(
+          "getComputedStyle(document.querySelector('.task-work-area')).backgroundColor===getComputedStyle(document.querySelector('.task-title')).backgroundColor",
+        );
+        await capture(`task-detail-${width}-dark.png`);
+      }
+      await evaluate("document.querySelector('[data-nav=settings]').click()");
+      await wait("document.querySelector('.theme-option:first-child:not(:disabled)')");
+      await evaluate("document.querySelector('.theme-option:first-child').click()");
+      await wait("document.documentElement.dataset.theme==='light'");
+      await evaluate("document.querySelector('.settings-back').click()");
+      await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('归组任务单独')",
+      );
+      await wait(
+        "document.querySelector('[aria-label=评论]').getBoundingClientRect().bottom <= document.querySelector('.task-inspector').getBoundingClientRect().top",
+      );
+      await capture('task-detail-640-light.png');
+      await evaluate(
+        "document.querySelector('[aria-label=评论]').scrollIntoView({block:'center'})",
+      );
+      await capture('task-detail-640-comment.png');
+      const discussion = {
+        independent,
+        groupedId,
+        grouped: await comments(groupedId),
+        groupedGoalHash: digest(grouped.objective_state),
+      };
       writeFileSync(
         join(root, 'task-status-expected.json'),
         JSON.stringify(
-          { task, bodyHash, goalHash: digest(final.objective_state), isolation, displayTimezone },
+          {
+            task,
+            bodyHash,
+            goalHash: digest(final.objective_state),
+            isolation,
+            displayTimezone,
+            discussion,
+          },
           null,
           2,
         ),
       );
-      await capture('status-list-saved.png');
     } else {
       const expected = JSON.parse(readFileSync(join(root, 'task-status-expected.json'), 'utf8'));
       id = expected.task.id;
@@ -272,9 +449,28 @@ export async function runTaskStatusDemo(
       )
         throw new Error('Restart changed committed Task status, identity or body');
       await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('原键恢复')",
+      );
+      if (JSON.stringify(await comments(id)) !== JSON.stringify(expected.discussion.independent))
+        throw new Error('Reopen changed independent task comments');
+      await evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
+      await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('未保存尾段。')",
       );
       await capture('status-reopened.png');
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await open(expected.discussion.groupedId);
+      await wait(
+        "document.querySelector('[data-discussion-id]')?.textContent.includes('归组任务单独') && document.querySelector('[data-testid=task-content-editor] h2')",
+      );
+      if (
+        JSON.stringify(await comments(expected.discussion.groupedId)) !==
+          JSON.stringify(expected.discussion.grouped) ||
+        digest((await read(expected.discussion.groupedId)).objective_state) !==
+          expected.discussion.groupedGoalHash
+      )
+        throw new Error('Reopen changed grouped discussion or rich description');
+      await capture('task-detail-reopened.png');
       readResult = {
         status: 'PASS_REAL',
         task: restored.tasks[0],
@@ -283,6 +479,7 @@ export async function runTaskStatusDemo(
         displayTimezone,
         writeTimezone: expected.displayTimezone,
         realProviderDispatches: 0,
+        discussion: expected.discussion,
         isolation,
       };
     }

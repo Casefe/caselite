@@ -117,6 +117,7 @@ export const catalogDocumentSchema = z.object({
 });
 const discussionState = z.array(z.number().int().min(0).max(255)).min(1).max(32768);
 const discussionScope = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('task_comment'), task_id: id }),
   z.strictObject({ kind: z.literal('project_comment'), project_id: id }),
   z.strictObject({ kind: z.literal('update'), project_id: id }),
   z.strictObject({ kind: z.literal('update_comment'), project_id: id, update_id: id }),
@@ -253,6 +254,7 @@ export const catalogResponseSchema = z.discriminatedUnion('ok', [
       .strictObject({
         entries: z.array(discussionEntry).max(10),
         next: discussionCursor.nullable(),
+        read_only: z.boolean().optional(),
       })
       .optional(),
     activity: z.array(activityEventSchema).optional(),

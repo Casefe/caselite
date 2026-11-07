@@ -440,6 +440,8 @@ export async function runAgentHistoryProbe(
         `(()=>{const e=document.querySelector('[data-testid=task-title]');const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(e,'系统凭据等待时的人工任务');e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
       );
       await evaluate("document.querySelector('[data-testid=create-task]').click()");
+      await wait("document.querySelector('[data-testid=task-result-tab]')");
+      await evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
       await wait("document.querySelector('[data-testid=body-editor]')");
       await evaluate(
         "document.querySelector('[data-testid=body-editor]').focus();document.execCommand('insertText',false,'合成人工正文，安全存储失败不阻止保存。')",

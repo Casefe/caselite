@@ -22,7 +22,7 @@ export default function TaskInspector({
   task: Task | null;
   documents?: boolean;
   onOpen?(id: string): void;
-  onProjectChanged?(task: Task): void;
+  onProjectChanged?(task: Task, objectiveState: number[] | null): void;
   onProjectDirty?(dirty: boolean): void;
   projectDisabled?: boolean;
   suggestions?: string[];
@@ -57,17 +57,18 @@ export default function TaskInspector({
     return (
       <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
         <div className="inspector-content task-inspector-content" aria-label="任务属性">
-          <details className="inspector-disclosure" open>
-            <summary>属性</summary>
-            {onPropertiesBlocked && onTaskChanged ? (
-              <TaskProperties
-                task={task}
-                disabled={propertiesDisabled}
-                suggestions={suggestions}
-                onBlocked={reportBlocked}
-                onChanged={onTaskChanged}
-              />
-            ) : (
+          {onPropertiesBlocked && onTaskChanged ? (
+            <TaskProperties
+              task={task}
+              disabled={propertiesDisabled}
+              suggestions={suggestions}
+              groupTags
+              onBlocked={reportBlocked}
+              onChanged={onTaskChanged}
+            />
+          ) : (
+            <details className="inspector-disclosure" open>
+              <summary>属性</summary>
               <dl>
                 <dt>状态</dt>
                 <dd>{taskStatusNames[task.status ?? 'todo']}</dd>
@@ -76,16 +77,19 @@ export default function TaskInspector({
                 <dt>普通截止日期</dt>
                 <dd>{task.due_date ?? '未设置'}</dd>
               </dl>
-            )}
-            {onProjectChanged && onProjectDirty && (
+            </details>
+          )}
+          {onProjectChanged && onProjectDirty && (
+            <section aria-label="项目" className="project-inspector-section task-project-section">
+              <h3>项目</h3>
               <TaskProjectAction
                 task={task}
                 disabled={projectDisabled}
                 onChanged={onProjectChanged}
                 onDirty={onProjectDirty}
               />
-            )}
-          </details>
+            </section>
+          )}
           <section aria-label="AI 对话" className="project-inspector-section">
             <h3>AI 对话</h3>
             <div inert={reminderEditing || editing}>

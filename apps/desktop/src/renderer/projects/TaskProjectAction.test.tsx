@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { CatalogRequest, CatalogResponse, Task } from '../../preload/caselite-api';
+import type {
+  CatalogRequest,
+  CatalogResponse,
+  Task,
+  TaskResponse,
+} from '../../preload/caselite-api';
 import TaskProjectAction from './TaskProjectAction';
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -57,7 +62,7 @@ describe('task promotion UI', () => {
     expect((screen.getByLabelText('项目名称') as HTMLInputElement).value).toBe(task.title);
     fireEvent.click(screen.getByText('保存项目'));
     fireEvent.click(await screen.findByText('核对原提交'));
-    await waitFor(() => expect(changed).toHaveBeenCalledWith(actual));
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(actual, null));
     expect(sent).toHaveLength(2);
     expect(sent[0]).toEqual(sent[1]);
     expect(sent[0]).toMatchObject({ task_id: task.id, expected_version: 3 });
@@ -67,21 +72,50 @@ describe('task promotion UI', () => {
   });
   it('never creates again when re-reading an already committed Task link fails', async () => {
     const sent: CatalogRequest[] = [];
+    const dirty = vi.fn(),
+      changed = vi.fn();
+    let confirmRead!: (result: TaskResponse) => void;
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, code: 'READ_FAILED', message: '暂不可用' })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            confirmRead = resolve;
+          }),
+      );
     window.caselite = {
       catalog: vi.fn(async (r: CatalogRequest) => {
         if (r.operation === 'promote_task') sent.push(r);
         return success;
       }),
-      task: vi.fn(async () => ({ ok: false, code: 'READ_FAILED', message: '暂不可用' })),
+      task: read,
     } as unknown as Window['caselite'];
-    render(
-      <TaskProjectAction task={task} disabled={false} onDirty={vi.fn()} onChanged={vi.fn()} />,
-    );
+    render(<TaskProjectAction task={task} disabled={false} onDirty={dirty} onChanged={changed} />);
     fireEvent.click(screen.getByText('从任务创建项目'));
     fireEvent.click(screen.getByText('保存项目'));
-    fireEvent.click(await screen.findByText('重新读取任务关联'));
     await screen.findByRole('alert');
-    expect(sent).toHaveLength(1);
     expect(screen.queryByText('从任务创建项目')).toBeNull();
+    const retry = screen.getByRole('button', { name: '重新读取任务关联' });
+    act(() => {
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    const actual = { ...task, version: 4, matter_id: projectId };
+    const objective_state = [23, 45, 67];
+    await act(async () =>
+      confirmRead({
+        ok: true,
+        tasks: [actual],
+        receipt: null,
+        state: null,
+        objective_state,
+      }),
+    );
+    expect(changed).toHaveBeenCalledExactlyOnceWith(actual, objective_state);
+    expect(dirty).toHaveBeenLastCalledWith(false);
+    expect(sent).toHaveLength(1);
   });
 });

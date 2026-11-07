@@ -22,11 +22,13 @@ export default function ActivityList({
   onProject,
   compact = false,
   refresh,
+  readOnly = false,
 }: {
   scope: ActivityScope;
   disabled?: boolean;
   compact?: boolean;
   refresh?: string;
+  readOnly?: boolean;
   onTask(id: string): void;
   onProject?(id: string): void;
 }) {
@@ -134,7 +136,7 @@ export default function ActivityList({
       {error && rows && <p role="status">以下为上次读取的活动，请重新读取核对当前范围。</p>}
       {!error && rows?.length === 0 && <p>还没有可显示的成功活动。</p>}
       <ol>
-        {(compact ? rows?.slice(0, 3) : rows)?.map((event) => (
+        {(compact && !readOnly ? rows?.slice(0, 3) : rows)?.map((event) => (
           <li key={event.origin + event.id} data-activity-id={event.id}>
             <div>
               <strong>{actions[event.operation] ?? event.operation}</strong>
@@ -144,22 +146,24 @@ export default function ActivityList({
               {new Date(event.committed_at).toLocaleString()}
             </time>
             <p>操作者未记录 · 历史修订未记录 · {event.origin === 'task' ? '任务' : '目录'}记录</p>
-            <button
-              disabled={busy || disabled || (event.target_type === 'project' && !onProject)}
-              onClick={() => void open(event)}
-            >
-              打开当前
-              {event.target_type === 'project'
-                ? '项目'
-                : event.target_type === 'task'
-                  ? '任务'
-                  : '文档'}{' '}
-              · {event.target_id.slice(0, 8)}
-            </button>
+            {!readOnly && (
+              <button
+                disabled={busy || disabled || (event.target_type === 'project' && !onProject)}
+                onClick={() => void open(event)}
+              >
+                打开当前
+                {event.target_type === 'project'
+                  ? '项目'
+                  : event.target_type === 'task'
+                    ? '任务'
+                    : '文档'}{' '}
+                · {event.target_id.slice(0, 8)}
+              </button>
+            )}
           </li>
         ))}
       </ol>
-      {rows && !compact && (
+      {rows && (!compact || (readOnly && (more || offset > 0))) && (
         <div className="project-query-toolbar">
           <button
             disabled={busy || disabled || !offset}
