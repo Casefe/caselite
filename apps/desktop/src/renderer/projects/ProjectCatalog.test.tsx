@@ -188,6 +188,8 @@ describe('durable project UI receipts and target identity', () => {
     const sent: CatalogRequest[] = [];
     window.caselite = {
       catalog: vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+        if (r.operation === 'status')
+          return { ok: false, code: 'NOT_FOUND', message: '原键未落盘' };
         if (r.operation === 'create_project') {
           sent.push(r);
           return { ok: false, code: 'INVALID_REQUEST', message: '未保存，请修改后重试。' };
@@ -255,6 +257,7 @@ describe('durable project UI receipts and target identity', () => {
     let rows: Matter[] = [];
     const sent: CatalogRequest[] = [];
     const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+      if (r.operation === 'status') return { ok: false, code: 'NOT_FOUND', message: '原键未落盘' };
       if (r.operation === 'create_project') {
         sent.push(r);
         rows = [p];
@@ -283,6 +286,7 @@ describe('durable project UI receipts and target identity', () => {
     let updates = 0;
     const versions: number[] = [];
     const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+      if (r.operation === 'status') return { ok: false, code: 'NOT_FOUND', message: '原键未落盘' };
       if (r.operation === 'update_project') {
         versions.push(r.expected_version);
         updates++;
@@ -420,3 +424,179 @@ it.each(['编辑项目名称', '项目概述'])(
     expect(screen.getByText('有未保存修改，请保存后切换。')).toBeTruthy();
   },
 );
+
+it('edits list properties without opening detail and keeps drafts during filtering, composition and unknown reconciliation', async () => {
+  let p = {
+    ...project(),
+    body_revision: 1,
+    attributes: {
+      project_type: 'general' as const,
+      assignee: null as string | null,
+      priority: 0,
+      start_date: null,
+      target_date: null,
+      tags: [] as string[],
+    },
+  };
+  const writes: Extract<CatalogRequest, { operation: 'update_project' }>[] = [];
+  const calls: CatalogRequest[] = [];
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest) => {
+      calls.push(r);
+      if (r.operation === 'update_project') {
+        writes.push(r);
+        p = {
+          ...p,
+          title: r.title,
+          version: p.version + 1,
+          attributes: r.attributes! as typeof p.attributes,
+        };
+        return { ok: false, code: 'RESULT_UNKNOWN', message: '结果未知' };
+      }
+      return { ...response([p], p.id), receipt: writes[0]?.idempotency_key ?? null };
+    }),
+  } as unknown as Window['caselite'];
+  show();
+  await screen.findByLabelText('侧栏项目名称');
+  fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '合成负责人' } });
+  for (const name of ['搜索项目', '筛选项目状态', '项目排序'])
+    expect((screen.getByLabelText(name) as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('tab', { name: 'AI 助手' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('tab', { name: 'AI 助手' }));
+  expect((screen.getByLabelText('项目负责人') as HTMLInputElement).value).toBe('合成负责人');
+  expect(screen.queryByText('返回项目列表')).toBeNull();
+  const name = screen.getByLabelText('项目负责人');
+  fireEvent.compositionStart(name);
+  fireEvent.keyDown(name, { key: 'Enter', isComposing: true });
+  fireEvent.submit(name.closest('form')!);
+  expect(writes).toHaveLength(0);
+  fireEvent.compositionEnd(name);
+  fireEvent.click(screen.getByText('保存项目属性'));
+  await screen.findByText('核对原提交');
+  expect((screen.getByRole('tab', { name: 'AI 助手' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('tab', { name: 'AI 助手' }));
+  fireEvent.click(await screen.findByText('核对原提交'));
+  await waitFor(() =>
+    expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(false),
+  );
+  expect(writes).toHaveLength(1);
+  expect(writes[0].state).toBeUndefined();
+  expect(writes[0].expected_body_revision).toBe(1);
+  expect(
+    calls.some((r) => r.operation === 'status' && r.idempotency_key === writes[0].idempotency_key),
+  ).toBe(true);
+  expect(screen.queryByText('返回项目列表')).toBeNull();
+  expect((screen.getByLabelText('项目负责人') as HTMLInputElement).value).toBe('合成负责人');
+});
+
+it('keeps one property draft across tabs and omits untouched saved Yjs from a detail property update', async () => {
+  let p = { ...project(), body_revision: 1 };
+  const writes: CatalogRequest[] = [];
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest) => {
+      if (r.operation === 'update_project') {
+        writes.push(r);
+        p = { ...p, version: 2 };
+      }
+      return { ...response([p], p.id), state: [1, 2] };
+    }),
+  } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByText('打开项目'));
+  await screen.findByLabelText('编辑项目名称');
+  for (const tab of ['任务', '文件', '活动']) {
+    fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
+    expect((screen.getByLabelText('项目负责人') as HTMLInputElement).disabled).toBe(false);
+  }
+  fireEvent.change(screen.getByLabelText('项目优先级'), { target: { value: '3' } });
+  fireEvent.click(screen.getByText('保存项目属性'));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).not.toHaveProperty('state');
+  expect(writes[0]).toMatchObject({ expected_body_revision: 1, attributes: { priority: 3 } });
+});
+
+it('separates a confirmed property save from a failed list refresh and recovers by reading only', async () => {
+  let p = project(),
+    fail = false;
+  let writes = 0;
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest) => {
+      if (r.operation === 'update_project') {
+        writes++;
+        p = { ...p, title: r.title, version: 2 };
+        fail = true;
+        return response([p], p.id);
+      }
+      if (r.operation === 'list' && fail) throw new Error('synthetic read failure');
+      return response([p], p.id);
+    }),
+  } as unknown as Window['caselite'];
+  show();
+  await screen.findByLabelText('侧栏项目名称');
+  fireEvent.change(screen.getByLabelText('侧栏项目名称'), { target: { value: '保存后的名称' } });
+  fireEvent.click(screen.getByText('保存项目属性'));
+  await screen.findByText('重新读取已保存属性');
+  expect(screen.queryByText('核对原提交')).toBeNull();
+  expect((screen.getByText('打开项目') as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(true);
+  fail = false;
+  fireEvent.click(screen.getByText('重新读取已保存属性'));
+  await waitFor(() =>
+    expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(false),
+  );
+  expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).value).toBe('保存后的名称');
+  expect(writes).toBe(1);
+});
+
+it('discards incomplete date validation together with its property draft', async () => {
+  window.caselite = {
+    catalog: vi.fn(async () => response([project()])),
+  } as unknown as Window['caselite'];
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  show();
+  await screen.findByLabelText('侧栏项目名称');
+  const start = screen.getByLabelText('项目开始日') as HTMLInputElement;
+  fireEvent.change(start, { target: { value: '2024-02-29' } });
+  const validity = vi
+    .spyOn(start, 'validity', 'get')
+    .mockReturnValue({ valid: false, badInput: true } as ValidityState);
+  fireEvent.change(start, { target: { value: '' } });
+  validity.mockRestore();
+  expect((screen.getByText('保存项目属性') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('放弃属性修改'));
+  fireEvent.change(screen.getByLabelText('项目目标日'), { target: { value: '2024-03-01' } });
+  expect((screen.getByText('保存项目属性') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('keeps detail properties read-only after confirmed update when read_project fails, then only re-reads', async () => {
+  let p = project(),
+    failed = false,
+    writes = 0;
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest) => {
+      if (r.operation === 'update_project') {
+        writes++;
+        p = { ...p, title: r.title, version: 2 };
+        failed = true;
+        return response([p], p.id);
+      }
+      if (r.operation === 'read_project' && failed) throw new Error('synthetic read failure');
+      return response([p], p.id);
+    }),
+  } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByText('打开项目'));
+  await screen.findByLabelText('编辑项目名称');
+  fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '合成负责人' } });
+  fireEvent.click(screen.getByText('保存项目属性'));
+  await screen.findByText('重新读取已保存项目');
+  expect((screen.getByLabelText('项目负责人') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByText('保存项目概述') as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText('核对原提交')).toBeNull();
+  failed = false;
+  fireEvent.click(screen.getByText('重新读取已保存项目'));
+  await waitFor(() =>
+    expect((screen.getByLabelText('项目负责人') as HTMLInputElement).disabled).toBe(false),
+  );
+  expect(writes).toBe(1);
+});

@@ -41,6 +41,7 @@ export function useCatalog() {
   const execute = async (
     request: CatalogRequest,
     onSuccess?: (result: Success) => void | Promise<void>,
+    queryFirst = false,
   ): Promise<CatalogResponse | null> => {
     if (locked.current) return null;
     locked.current = true;
@@ -50,7 +51,13 @@ export function useCatalog() {
     setPending(true);
     setError('');
     try {
-      const r = await window.caselite.catalog(request);
+      let r = await window.caselite.catalog(
+        queryFirst && 'idempotency_key' in request
+          ? { operation: 'status', protocol_version: 1, idempotency_key: request.idempotency_key }
+          : request,
+      );
+      // 结果未知先查原键；仅明确未落盘时重试原请求，不生成新身份。
+      if (queryFirst && !r.ok && r.code === 'NOT_FOUND') r = await window.caselite.catalog(request);
       if (!alive.current) return null;
       if (r.ok) {
         setUnknown(false);
@@ -82,6 +89,8 @@ export function useCatalog() {
     load,
     execute,
     retry: () =>
-      submission.current ? execute(submission.current, completion.current) : Promise.resolve(null),
+      submission.current
+        ? execute(submission.current, completion.current, true)
+        : Promise.resolve(null),
   };
 }

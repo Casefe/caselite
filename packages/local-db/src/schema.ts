@@ -90,18 +90,53 @@ export const taskObjectiveRevisions = sqliteTable(
   (table) => [primaryKey({ columns: [table.taskId, table.taskVersion] })],
 );
 
-export const matters = sqliteTable('matters', {
-  id: text('id').primaryKey(),
-  workspaceId: text('workspace_id').notNull(),
-  title: text('title').notNull(),
-  status: text('status').notNull().default('planned'),
-  version: integer('version').notNull(),
-  archivedAt: text('archived_at'),
-  bodyId: text('body_id').notNull().unique(),
-  bodyRevision: integer('body_revision').notNull().default(0),
-  editorSchema: integer('editor_schema').notNull().default(1),
-  updatedAt: text('updated_at').notNull(),
-});
+export const matters = sqliteTable(
+  'matters',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    title: text('title').notNull(),
+    status: text('status').notNull().default('planned'),
+    projectType: text('project_type').notNull().default('general'),
+    assignee: text('assignee'),
+    priority: integer('priority').notNull().default(0),
+    startDate: text('start_date'),
+    targetDate: text('target_date'),
+    tags: text('tags').notNull().default('[]'),
+    version: integer('version').notNull(),
+    archivedAt: text('archived_at'),
+    bodyId: text('body_id').notNull().unique(),
+    bodyRevision: integer('body_revision').notNull().default(0),
+    editorSchema: integer('editor_schema').notNull().default(1),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    check(
+      'project_type_valid',
+      sql`${table.projectType} IN ('general','litigation','contract_review')`,
+    ),
+    check(
+      'project_assignee_valid',
+      sql`${table.assignee} IS NULL OR (length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
+    ),
+    check(
+      'project_priority_valid',
+      sql`typeof(${table.priority}) = 'integer' AND ${table.priority} BETWEEN 0 AND 4`,
+    ),
+    check(
+      'project_start_valid',
+      sql`${table.startDate} IS NULL OR (length(${table.startDate}) = 10 AND ${table.startDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.startDate},1,4) <> '0000' AND date(${table.startDate}) IS NOT NULL AND date(${table.startDate}) = ${table.startDate})`,
+    ),
+    check(
+      'project_target_valid',
+      sql`(${table.targetDate} IS NULL OR (length(${table.targetDate}) = 10 AND ${table.targetDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.targetDate},1,4) <> '0000' AND date(${table.targetDate}) IS NOT NULL AND date(${table.targetDate}) = ${table.targetDate})) AND (${table.startDate} IS NULL OR ${table.targetDate} IS NULL OR ${table.startDate} <= ${table.targetDate})`,
+    ),
+    check(
+      'project_tags_valid',
+      sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags}) = 'array' AND json_array_length(${table.tags}) <= 20 ELSE 0 END`,
+    ),
+  ],
+);
 export const taskProjects = sqliteTable('task_projects', {
   taskId: text('task_id')
     .primaryKey()

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   catalogResponseSchema,
+  projectAttributesSchema,
   type CatalogRequest,
   type CatalogResponse,
   type Matter,
@@ -19,11 +20,60 @@ const fail = (
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
   const projects = () =>
-    db
-      .prepare(
-        `SELECT m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
-      )
-      .all(workspace) as Matter[];
+    (
+      db
+        .prepare(
+          `SELECT m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
+        )
+        .all(workspace) as (Omit<Matter, 'attributes'> & {
+        project_type: string;
+        assignee: string | null;
+        priority: number;
+        start_date: string | null;
+        target_date: string | null;
+        tags: string;
+      })[]
+    ).map(({ project_type, assignee, priority, start_date, target_date, tags, ...project }) => ({
+      ...project,
+      attributes: projectAttributesSchema.parse({
+        project_type,
+        assignee,
+        priority,
+        start_date,
+        target_date,
+        tags: JSON.parse(tags),
+      }),
+    }));
+  const insertProject = (
+    target: string,
+    request: Extract<CatalogRequest, { operation: 'create_project' | 'promote_task' }>,
+    now: string,
+  ) => {
+    const a = request.attributes ?? {
+      project_type: 'general',
+      assignee: null,
+      priority: 0,
+      start_date: null,
+      target_date: null,
+      tags: [],
+    };
+    db.prepare(
+      'INSERT INTO matters(id,workspace_id,title,status,version,body_id,updated_at,project_type,assignee,priority,start_date,target_date,tags) VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?)',
+    ).run(
+      target,
+      workspace,
+      request.title,
+      request.status ?? 'planned',
+      randomUUID(),
+      now,
+      a.project_type,
+      a.assignee,
+      a.priority,
+      a.start_date,
+      a.target_date,
+      JSON.stringify([...new Set(a.tags)]),
+    );
+  };
   const documents = (): CatalogDocument[] =>
     (
       db
@@ -173,9 +223,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         const now = new Date().toISOString();
         if (request.operation === 'create_project') {
           target = randomUUID();
-          db.prepare(
-            'INSERT INTO matters(id,workspace_id,title,version,body_id,updated_at) VALUES(?,?,?,1,?,?)',
-          ).run(target, workspace, request.title, randomUUID(), now);
+          insertProject(target, request, now);
         } else if (request.operation === 'promote_task') {
           const task = db
             .prepare('SELECT version FROM task_items WHERE id=? AND workspace_id=?')
@@ -189,9 +237,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             return fail('CONFLICT', '任务已经归入项目，请在原项目中继续。');
           // 创建、原任务关联和回执共用事务；中断时不留下空项目或复制任务。
           target = randomUUID();
-          db.prepare(
-            'INSERT INTO matters(id,workspace_id,title,version,body_id,updated_at) VALUES(?,?,?,1,?,?)',
-          ).run(target, workspace, request.title, randomUUID(), now);
+          insertProject(target, request, now);
           db.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(
             request.task_id,
             target,
@@ -274,6 +320,21 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
                 p.body_id,
                 p.body_revision + 1,
                 Buffer.from(request.state),
+              );
+            }
+            // 旧请求没有属性字段时必须保留新版属性，不能按默认值回填。
+            if (request.attributes) {
+              const a = request.attributes;
+              db.prepare(
+                'UPDATE matters SET project_type=?,assignee=?,priority=?,start_date=?,target_date=?,tags=? WHERE id=?',
+              ).run(
+                a.project_type,
+                a.assignee,
+                a.priority,
+                a.start_date,
+                a.target_date,
+                JSON.stringify([...new Set(a.tags)]),
+                target,
               );
             }
             db.prepare(

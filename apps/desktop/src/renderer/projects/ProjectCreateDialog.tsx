@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import ProjectFields, { projectValues, validProject, type ProjectValues } from './ProjectFields';
 import { Icon } from '../ui/Workspace';
 
 export default function ProjectCreateDialog({
@@ -13,28 +14,37 @@ export default function ProjectCreateDialog({
   pending: boolean;
   unknown: boolean;
   error: string;
-  onCreate(title: string): void;
+  onCreate(values: ProjectValues): void;
   onCancel(): void;
   onRetry(): void;
   sourceTaskTitle?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    name = useRef<HTMLInputElement>(null),
     composing = useRef(false);
-  const [title, setTitle] = useState(sourceTaskTitle ?? '');
+  const [values, setValues] = useState<ProjectValues>(() => ({
+    ...projectValues(),
+    title: sourceTaskTitle ?? '',
+  }));
+  const [dateInvalid, setDateInvalid] = useState(false);
+  const title = values.title;
   const locked = pending || unknown;
   useEffect(() => {
     const modal = dialog.current;
     const previous = document.activeElement;
     modal?.showModal();
-    name.current?.focus();
+    modal?.querySelector('input')?.focus();
     return () => {
       modal?.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
   const cancel = () => {
-    if (!locked && (!title.trim() || window.confirm('放弃尚未创建的项目？'))) onCancel();
+    if (
+      !locked &&
+      ((!title.trim() && JSON.stringify(values) === JSON.stringify(projectValues())) ||
+        window.confirm('放弃尚未创建的项目？'))
+    )
+      onCancel();
   };
   return (
     <dialog
@@ -50,7 +60,14 @@ export default function ProjectCreateDialog({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!locked && !composing.current && title.trim()) onCreate(title.trim());
+          if (
+            !locked &&
+            !composing.current &&
+            !dateInvalid &&
+            validProject(values) &&
+            event.currentTarget.checkValidity()
+          )
+            onCreate({ ...values, title: title.trim() });
         }}
       >
         <header>
@@ -69,19 +86,9 @@ export default function ProjectCreateDialog({
           <p id="project-create-description">
             {sourceTaskTitle
               ? `将“${sourceTaskTitle}”作为项目中的首个任务。原任务、材料与正文保持原样。`
-              : '用项目组织相关任务。先起一个名称，创建后完善概述。'}
+              : '用项目组织相关任务。选择项目属性，创建后完善概述。'}
           </p>
-          <label htmlFor="project-create-name">项目名称</label>
-          <input
-            ref={name}
-            id="project-create-name"
-            aria-label="项目名称"
-            value={title}
-            maxLength={160}
-            placeholder="例如：示例合同审查"
-            autoComplete="off"
-            disabled={locked}
-            onChange={(event) => setTitle(event.target.value)}
+          <div
             onCompositionStart={() => {
               composing.current = true;
             }}
@@ -92,7 +99,18 @@ export default function ProjectCreateDialog({
               if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing))
                 event.preventDefault();
             }}
-          />
+          >
+            <ProjectFields
+              value={values}
+              disabled={locked}
+              creating
+              onChange={setValues}
+              onInvalid={setDateInvalid}
+            />
+          </div>
+          {(dateInvalid || (title.trim() && !validProject(values))) && (
+            <p role="alert">请核对日期、负责人和标签格式，输入已保留。</p>
+          )}
           <span className="project-create-hint">仅保存在此设备 · 无需账号</span>
           {error && (
             <p role="alert" className="project-create-error">
@@ -118,7 +136,11 @@ export default function ProjectCreateDialog({
           <button type="button" disabled={locked} onClick={cancel}>
             取消
           </button>
-          <button className="primary" type="submit" disabled={!title.trim() || locked}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={!validProject(values) || dateInvalid || locked}
+          >
             保存项目
           </button>
         </footer>

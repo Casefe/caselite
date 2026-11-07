@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const isolated = mkdtempSync(join(tmpdir(), 'caselite-task-demo-project-'));
+const properties = process.argv.includes('--properties');
 const lifecycle = process.argv.includes('--lifecycle');
 const promotion = process.argv.includes('--promote');
 const activity = process.argv.includes('--activity');
@@ -14,19 +15,23 @@ copyFileSync(
   join(root, 'tests/fixtures/case-materials/development/contract-v1-text.pdf'),
   join(isolated, 'fixture.pdf'),
 );
-const output = join(
-  root,
-  'artifacts/evidence',
-  activity
-    ? 'project-activity-demo'
-    : files
-      ? 'project-files-demo'
-      : promotion
-        ? 'project-promotion-demo'
-        : lifecycle
-          ? 'project-lifecycle-demo'
-          : 'project-demo',
-);
+const output =
+  process.env.CASELITE_PROJECT_DEMO_OUTPUT ??
+  join(
+    root,
+    'artifacts/evidence',
+    properties
+      ? 'project-properties-demo'
+      : activity
+        ? 'project-activity-demo'
+        : files
+          ? 'project-files-demo'
+          : promotion
+            ? 'project-promotion-demo'
+            : lifecycle
+              ? 'project-lifecycle-demo'
+              : 'project-demo',
+  );
 mkdirSync(output, { recursive: true });
 const phases = [];
 const requestedPhases = activity
@@ -46,13 +51,19 @@ const requestedPhases = activity
         : ['project-write', 'project-read'];
 for (const phase of requestedPhases) {
   const result = spawnSync(
-    join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite'),
+    process.env.CASELITE_PROJECT_DEMO_APP ??
+      join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/MacOS/CaseLite'),
     [],
     {
       cwd: root,
-      env: { ...process.env, CASELITE_TASK_DEMO: phase, CASELITE_TASK_DEMO_DIR: isolated },
+      env: {
+        ...process.env,
+        ...(properties ? { CASELITE_PROJECT_PROPERTIES: 'test' } : {}),
+        CASELITE_TASK_DEMO: phase,
+        CASELITE_TASK_DEMO_DIR: isolated,
+      },
       encoding: 'utf8',
-      timeout: 45_000,
+      timeout: properties ? 90_000 : 45_000,
       killSignal: 'SIGKILL',
     },
   );
@@ -69,8 +80,12 @@ for (const phase of requestedPhases) {
           .update(
             readFileSync(
               join(
-                root,
-                'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/Resources/app.asar',
+                process.env.CASELITE_PROJECT_DEMO_APP
+                  ? resolve(process.env.CASELITE_PROJECT_DEMO_APP, '../../Resources/app.asar')
+                  : resolve(
+                      root,
+                      'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app/Contents/Resources/app.asar',
+                    ),
               ),
             ),
           )
@@ -95,46 +110,60 @@ for (const phase of requestedPhases) {
   );
   if (result.status !== 0) throw new Error(`Project ${phase} failed; inspect ${isolated}`);
 }
-for (const name of activity
+for (const name of properties
   ? [
-      'project-files-list.png',
-      'project-files-missing.png',
-      'project-files-recovered.png',
-      'project-files-reopened.png',
-      'files-expected.json',
-      'project-activity-save-failed.png',
-      'project-activity-saved.png',
-      'project-activity-reopened.png',
-      'project-activity-original-task.png',
-      'activity-expected.json',
+      'properties-expected.json',
+      'properties-write.json',
+      'properties-read.json',
+      'properties-native-date.json',
+      'properties-reopened.png',
+      ...['create', 'sidebar', 'save'].flatMap((view) =>
+        [1440, 640].flatMap((width) =>
+          ['light', 'dark'].map((theme) => `properties-${view}-${width}-${theme}.png`),
+        ),
+      ),
+      'properties-save-failed.png',
     ]
-  : files
+  : activity
     ? [
         'project-files-list.png',
         'project-files-missing.png',
         'project-files-recovered.png',
         'project-files-reopened.png',
         'files-expected.json',
-        'project-files.json',
-        'project-files-read.json',
+        'project-activity-save-failed.png',
+        'project-activity-saved.png',
+        'project-activity-reopened.png',
+        'project-activity-original-task.png',
+        'activity-expected.json',
       ]
-    : promotion
+    : files
       ? [
-          'project-from-task.png',
-          'project-task-linked.png',
-          'project-original-task-reopened.png',
-          'project-overview-summary.png',
-          'project-sections.png',
-          'promotion-expected.json',
+          'project-files-list.png',
+          'project-files-missing.png',
+          'project-files-recovered.png',
+          'project-files-reopened.png',
+          'files-expected.json',
+          'project-files.json',
+          'project-files-read.json',
         ]
-      : [
-          'project-create.png',
-          'project-created.png',
-          'project-reopened.png',
-          'project-expected.json',
-          ...(lifecycle
-            ? ['project-edited.png', 'project-archived.png', 'project-restored.png']
-            : []),
-        ])
+      : promotion
+        ? [
+            'project-from-task.png',
+            'project-task-linked.png',
+            'project-original-task-reopened.png',
+            'project-overview-summary.png',
+            'project-sections.png',
+            'promotion-expected.json',
+          ]
+        : [
+            'project-create.png',
+            'project-created.png',
+            'project-reopened.png',
+            'project-expected.json',
+            ...(lifecycle
+              ? ['project-edited.png', 'project-archived.png', 'project-restored.png']
+              : []),
+          ])
   copyFileSync(join(isolated, name), join(output, name));
 process.stdout.write(`Project create/reopen passed; evidence ${output}\n`);

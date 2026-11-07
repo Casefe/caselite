@@ -317,6 +317,245 @@ export async function runProjectDemo(
       );
       return;
     }
+    if (process.env.CASELITE_PROJECT_PROPERTIES) {
+      const read = async (id?: string) => {
+        const r: CatalogResponse = await evaluate(
+          `window.caselite.catalog(${JSON.stringify(id ? { operation: 'read_project', protocol_version: 1, id } : { operation: 'list', protocol_version: 1 })})`,
+        );
+        if (!r.ok) throw new Error('Cannot read project properties');
+        return r;
+      };
+      const input = async (label: string, value: string, select = false) => {
+        await evaluate(
+          `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
+        );
+      };
+      const expectedPath = join(root, 'properties-expected.json');
+      if (phase === 'project-write' && process.env.CASELITE_PROJECT_PROPERTIES !== 'preview') {
+        await button('创建项目');
+        await wait("document.querySelector('dialog[open] [aria-label=项目名称]')");
+        await input('项目名称', '合成项目属性验收');
+        await input('项目负责人', '合成负责人');
+        await input('项目优先级', '2', true);
+        await input('项目开始日', '2024-02-29');
+        await input('项目目标日', '2024-03-01');
+        await input('项目标签', '验收,合成');
+        await input('项目类型', 'litigation', true);
+        await input('项目状态', 'active', true);
+        if (
+          (await evaluate("document.querySelector('[aria-label=项目负责人]').value")) !==
+          '合成负责人'
+        )
+          throw new Error('Type selection replaced manual values');
+        await input('项目目标日', '2024-02-28');
+        if (
+          !(await evaluate(
+            "Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='保存项目').disabled",
+          ))
+        )
+          throw new Error('Reversed dates remained savable');
+        await input('项目目标日', '2024-03-01');
+        const layouts = [];
+        for (const width of [1440, 640]) {
+          window.setSize(width, 900);
+          await wait(`innerWidth===${width}`);
+          for (const theme of ['light', 'dark']) {
+            await evaluate(`document.documentElement.dataset.theme='${theme}'`);
+            const geometry = await evaluate(
+              '({width:innerWidth,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth})',
+            );
+            if (geometry.scroll > geometry.client + 1) throw new Error('Creation overflow');
+            await capture(`properties-create-${width}-${theme}.png`);
+            layouts.push({ theme, ...geometry });
+          }
+        }
+        window.setSize(1440, 1000);
+        await evaluate("document.documentElement.dataset.theme='light'");
+        await button('保存项目');
+        await wait(
+          "document.querySelector('[aria-label=编辑项目名称]') && !document.querySelector('dialog[open]')",
+        );
+        let current = (await read()).projects[0];
+        if (
+          current.attributes?.project_type !== 'litigation' ||
+          current.attributes.priority !== 2 ||
+          current.status !== 'active'
+        )
+          throw new Error('Creation dropped selected attributes');
+        await evaluate(
+          "(()=>{const e=document.querySelector('[data-testid=project-overview-editor]');e.focus();document.execCommand('insertText',false,'合成项目说明，属性编辑后必须保持原修订。');})()",
+        );
+        await button('保存项目概述');
+        await wait(
+          "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
+        );
+        current = (await read(current.id)).projects[0];
+        const original = await read(current.id);
+        if (!original.state || current.body_revision !== 1)
+          throw new Error('Description not saved');
+        await button('任务');
+        await input('项目负责人', '合成右栏负责人');
+        await input('项目优先级', '4', true);
+        window.show();
+        window.focus();
+        await evaluate(
+          "(()=>{const e=document.querySelector('[aria-label=项目开始日]');e.scrollIntoView({block:'center'});e.addEventListener('input',()=>{if(e.validity.badInput)e.dataset.observedBadInput='true';},true);e.focus();})()",
+        );
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+        await wait(
+          "document.querySelector('[aria-label=项目开始日]').dataset.observedBadInput==='true'",
+        );
+        if (
+          !(await evaluate(
+            "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
+          ))
+        )
+          throw new Error('Native incomplete date remained savable');
+        await input('项目开始日', '2024-02-29');
+        await wait(
+          "!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
+        );
+        writeFileSync(
+          join(root, 'properties-native-date.json'),
+          JSON.stringify({
+            status: 'PASS_REAL',
+            badInputBlocked: true,
+            sameCanonicalInputRecovered: true,
+          }),
+        );
+        await input('项目开始日', '');
+        await input('项目目标日', '');
+        const connection = openToolchainProbe(
+          join(isolation.userData, 'caselite.sqlite'),
+          join(process.resourcesPath, 'migrations'),
+        );
+        connection.sqlite.exec(
+          "CREATE TRIGGER reject_properties BEFORE INSERT ON catalog_activity BEGIN SELECT RAISE(ABORT,'synthetic properties failure'); END",
+        );
+        try {
+          await button('保存项目属性');
+          await wait(
+            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交')",
+          );
+          const failed = await read(current.id);
+          if (JSON.stringify(failed.projects[0]) !== JSON.stringify(current))
+            throw new Error('Failed attribute save partially committed');
+          await capture('properties-save-failed.png');
+        } finally {
+          connection.sqlite.exec('DROP TRIGGER reject_properties');
+          connection.sqlite.close();
+        }
+        await button('核对原提交');
+        await wait(
+          "!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交') && !document.querySelector('[aria-label=项目负责人]').disabled",
+        );
+        const saved = await read(current.id);
+        if (
+          saved.projects[0].body_revision !== 1 ||
+          JSON.stringify(saved.state) !== JSON.stringify(original.state) ||
+          saved.projects[0].attributes?.assignee !== '合成右栏负责人'
+        )
+          throw new Error('Attribute save changed original body');
+        await button('返回项目列表');
+        await wait("document.querySelector('[aria-label=侧栏项目名称]')");
+        await input('项目标签', '列表侧栏,合成');
+        if (!(await evaluate("document.querySelector('[aria-label=搜索项目]').disabled")))
+          throw new Error('Filtering can discard property draft');
+        await button('保存项目属性');
+        await wait("!document.querySelector('[aria-label=搜索项目]').disabled");
+        if (await evaluate("Boolean(document.querySelector('.project-detail-heading'))"))
+          throw new Error('List property save opened detail');
+        await button('打开项目');
+        await wait("document.querySelector('[aria-label=编辑项目名称]')");
+        for (const width of [1440, 640]) {
+          window.setSize(width, 1000);
+          await wait(`innerWidth===${width}`);
+          for (const theme of ['light', 'dark']) {
+            await evaluate(`document.documentElement.dataset.theme='${theme}'`);
+            if (
+              await evaluate(
+                'document.documentElement.scrollWidth>document.documentElement.clientWidth+1',
+              )
+            )
+              throw new Error('Properties overflow');
+            await evaluate(
+              "(()=>{const panel=document.querySelector('.project-properties');panel.scrollIntoView({block:'start'});panel.scrollTop=0;})()",
+            );
+            await capture(`properties-sidebar-${width}-${theme}.png`);
+            await evaluate(
+              "Array.from(document.querySelectorAll('.project-properties button')).find(e=>e.textContent.trim()==='保存项目属性').scrollIntoView({block:'center'})",
+            );
+            const layout = await evaluate(
+              "(()=>{const label=document.querySelector('.project-properties .project-fields label');const style=getComputedStyle(label);return {display:style.display,columns:style.gridTemplateColumns};})()",
+            );
+            if (layout.display !== 'grid' || !layout.columns.startsWith('72px'))
+              throw new Error('Sidebar is not a compact attribute grid: ' + JSON.stringify(layout));
+            const reachable = await evaluate(
+              "(()=>{const e=document.querySelector('[aria-label=项目标签]');const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height,viewportHeight:innerHeight};})()",
+            );
+            if (
+              reachable.height <= 0 ||
+              reachable.top < 0 ||
+              reachable.bottom > reachable.viewportHeight ||
+              reachable.left < 0 ||
+              reachable.right > width + 1
+            )
+              throw new Error('Sidebar field cannot be reached: ' + JSON.stringify(reachable));
+            await capture(`properties-save-${width}-${theme}.png`);
+          }
+        }
+        const final = await read(current.id);
+        writeFileSync(
+          expectedPath,
+          JSON.stringify(
+            {
+              project: final.projects[0],
+              state: final.state,
+              layouts,
+              isolation,
+              providerDispatches: 0,
+            },
+            null,
+            2,
+          ),
+        );
+        writeFileSync(
+          join(root, 'properties-write.json'),
+          JSON.stringify({ status: 'PASS_REAL', providerDispatches: 0, isolation }),
+        );
+      } else {
+        const expected = JSON.parse(readFileSync(expectedPath, 'utf8'));
+        const current = await read(expected.project.id);
+        const project = current.projects.find((p) => p.id === expected.project.id);
+        if (!project) throw new Error('Saved project missing');
+        if (
+          process.env.CASELITE_PROJECT_PROPERTIES !== 'preview' &&
+          (JSON.stringify(project) !== JSON.stringify(expected.project) ||
+            JSON.stringify(current.state) !== JSON.stringify(expected.state))
+        )
+          throw new Error('Restart lost attributes or body');
+        if (project.archived_at) await button('已归档');
+        await button(project.title);
+        await wait("document.querySelector('[aria-label=编辑项目名称]')");
+        await capture('properties-reopened.png');
+        if (process.env.CASELITE_PROJECT_PROPERTIES === 'preview') {
+          window.setTitle('CaseLite · 项目属性 · 同一合成工作区');
+          await new Promise<void>((resolve) => window.once('closed', () => resolve()));
+        } else
+          writeFileSync(
+            join(root, 'properties-read.json'),
+            JSON.stringify({
+              status: 'PASS_REAL',
+              projectId: project.id,
+              providerDispatches: 0,
+              isolation,
+            }),
+          );
+      }
+      assertNoRuns();
+      return;
+    }
     const previewMode = process.env.CASELITE_PROJECT_SUMMARY_PREVIEW;
     if (previewMode) {
       // 人工验收复开只读取同一隔离工作区，不能重造样本或按旧快照覆写用户修改。

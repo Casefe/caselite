@@ -1,4 +1,19 @@
 import { z } from 'zod';
+import { ordinaryDateSchema } from './task';
+export const projectAttributesSchema = z
+  .object({
+    project_type: z.enum(['general', 'litigation', 'contract_review']),
+    assignee: z.string().trim().min(1).max(80).nullable(),
+    priority: z.number().int().min(0).max(4),
+    start_date: ordinaryDateSchema.nullable(),
+    target_date: ordinaryDateSchema.nullable(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20),
+  })
+  .strict()
+  .refine((a) => !a.start_date || !a.target_date || a.start_date <= a.target_date, {
+    message: '目标日不能早于开始日',
+  });
+export type ProjectAttributes = z.infer<typeof projectAttributesSchema>;
 const id = z.string().uuid();
 const version = z.number().int().positive();
 const bytes = z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000);
@@ -26,6 +41,7 @@ export const matterSchema = z.object({
   editor_schema: z.literal(1),
   updated_at: z.string(),
   task_count: z.number().int().nonnegative(),
+  attributes: projectAttributesSchema.optional(),
 });
 export const catalogDocumentSchema = z.object({
   id,
@@ -68,6 +84,8 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       ...mutation,
       operation: z.literal('create_project'),
       title: z.string().trim().min(1).max(160),
+      status: z.enum(['planned', 'active', 'done']).optional(),
+      attributes: projectAttributesSchema.optional(),
     })
     .strict(),
   z
@@ -77,6 +95,8 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       task_id: id,
       expected_version: version,
       title: z.string().trim().min(1).max(160),
+      status: z.enum(['planned', 'active', 'done']).optional(),
+      attributes: projectAttributesSchema.optional(),
     })
     .strict(),
   z
@@ -89,6 +109,7 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       status: z.enum(['planned', 'active', 'done']),
       expected_body_revision: z.number().int().nonnegative(),
       state: bytes.optional(),
+      attributes: projectAttributesSchema.optional(),
     })
     .strict(),
   z

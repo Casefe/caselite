@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom';
+import ProjectFields, { projectValues, validProject, type ProjectValues } from './ProjectFields';
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest } from '../../preload/caselite-api';
 import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
@@ -56,6 +58,7 @@ export default function ProjectCatalog({
     [dirty, setDirty] = useState(false),
     [assigning, setAssigning] = useState('');
   const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
+  const [propertyHost, setPropertyHost] = useState<HTMLDivElement | null>(null);
   const [side, setSide] = useState('properties'),
     [aiTask, setAiTask] = useState('');
   const [query, setQuery] = useState(initialView?.query ?? '');
@@ -262,6 +265,7 @@ export default function ProjectCatalog({
             <label className="project-list-search">
               <Icon name="search" size={15} />
               <input
+                disabled={dirty || creating || reading || c.pending || c.unknown}
                 aria-label="搜索项目"
                 placeholder="搜索项目…"
                 value={query}
@@ -269,6 +273,7 @@ export default function ProjectCatalog({
               />
             </label>
             <select
+              disabled={dirty || creating || reading || c.pending || c.unknown}
               aria-label="筛选项目状态"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
@@ -280,7 +285,12 @@ export default function ProjectCatalog({
                 </option>
               ))}
             </select>
-            <select aria-label="项目排序" value={order} onChange={(e) => setOrder(e.target.value)}>
+            <select
+              disabled={dirty || creating || reading || c.pending || c.unknown}
+              aria-label="项目排序"
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+            >
               <option value="updated">最近更新</option>
               <option value="title">名称</option>
               <option value="status">状态</option>
@@ -406,13 +416,14 @@ export default function ProjectCatalog({
                 <ProjectEditor
                   key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
                   data={editor}
+                  propertyHost={propertyHost}
                   pending={reading || c.pending || c.unknown}
                   onDirty={setDirty}
                   onReload={() => {
                     setDirty(false);
                     void read(editor.project.id);
                   }}
-                  onSave={async (values) => {
+                  onSave={async (values, onCommitted) => {
                     await command(
                       catalogMutation({
                         operation: 'update_project' as const,
@@ -422,6 +433,7 @@ export default function ProjectCatalog({
                         ...values,
                       }),
                       async () => {
+                        onCommitted();
                         setDirty(false);
                         await read(editor.project.id);
                       },
@@ -568,6 +580,7 @@ export default function ProjectCatalog({
                     : '正在读取本地项目…'}
                   {(normalizedQuery || statusFilter !== 'all') && (
                     <button
+                      disabled={dirty || creating || reading || c.pending || c.unknown}
                       onClick={() => {
                         setQuery('');
                         setStatusFilter('all');
@@ -587,15 +600,31 @@ export default function ProjectCatalog({
         <div className="inspector-tabs" role="tablist" aria-label="项目辅助栏">
           <button
             role="tab"
+            disabled={dirty || reading || creating || c.pending || c.unknown}
             aria-selected={side === 'properties'}
             onClick={() => setSide('properties')}
           >
             属性
           </button>
-          <button role="tab" aria-selected={side === 'ai'} onClick={() => setSide('ai')}>
+          <button
+            disabled={dirty || reading || creating || c.pending || c.unknown}
+            role="tab"
+            aria-selected={side === 'ai'}
+            onClick={() => setSide('ai')}
+          >
             AI 助手
           </button>
         </div>
+        {side === 'properties' && p && !sourceUnavailable && (
+          <div className="project-property-heading">
+            <h3>{p.title}</h3>
+            <p>
+              {names[p.status]} · {p.task_count} 个任务 · 版本 {p.version}
+              {p.archived_at ? ' · 已归档' : ''}
+            </p>
+          </div>
+        )}
+        <div ref={setPropertyHost} hidden={side !== 'properties' || !editor} />
         {side === 'ai' ? (
           <div className="project-ai-content">
             <h3>项目任务 AI</h3>
@@ -620,13 +649,30 @@ export default function ProjectCatalog({
           </div>
         ) : p && !sourceUnavailable ? (
           <>
-            <h3>{p.title}</h3>
-            <p>
-              {names[p.status]} · {p.task_count} 个任务
-            </p>
-            <p>
-              {p.archived_at ? '已归档' : '本地项目'} · 版本 {p.version}
-            </p>
+            {!editor && (
+              <ProjectPropertyEditor
+                key={p.id + ':' + p.version}
+                project={p}
+                pending={reading || creating || c.pending || c.unknown}
+                onDirty={setDirty}
+                onReload={() => void c.load()}
+                onSave={async (values, onCommitted) => {
+                  await command(
+                    catalogMutation({
+                      operation: 'update_project',
+                      id: p.id,
+                      expected_version: p.version,
+                      expected_body_revision: p.body_revision,
+                      ...values,
+                    }),
+                    () => {
+                      setDirty(false);
+                      onCommitted();
+                    },
+                  );
+                }}
+              />
+            )}
             <div className="catalog-buttons">
               <button
                 disabled={reading || creating || dirty || c.pending || c.unknown}
@@ -732,9 +778,9 @@ export default function ProjectCatalog({
           error={c.error}
           onCancel={() => setCreating(false)}
           onRetry={() => void c.retry()}
-          onCreate={(title) => {
+          onCreate={(values) => {
             void command(
-              catalogMutation({ operation: 'create_project' as const, title }),
+              catalogMutation({ operation: 'create_project' as const, ...values }),
               async (r) => {
                 setCreating(false);
                 setArchived(false);
@@ -754,21 +800,25 @@ export default function ProjectCatalog({
 }
 function ProjectEditor({
   data,
+  propertyHost,
   pending,
   onDirty,
   onSave,
   onReload,
 }: {
   data: { project: Matter; state: number[] | null };
+  propertyHost: HTMLDivElement | null;
   pending: boolean;
   onDirty(v: boolean): void;
-  onSave(v: { title: string; status: Matter['status']; state?: number[] }): Promise<void>;
+  onSave(v: ProjectValues & { state?: number[] }, onCommitted: () => void): Promise<void>;
   onReload(): void;
 }) {
-  const [title, setTitle] = useState(data.project.title),
-    [status, setStatus] = useState(data.project.status),
+  const [values, setValues] = useState(() => projectValues(data.project)),
+    [dateInvalid, setDateInvalid] = useState(false),
     [draft, setDraft] = useState<RichDraft>(() => ({ text: '', state: data.state })),
-    [dirty, setDirty] = useState(false);
+    [dirty, setDirty] = useState(false),
+    [descriptionDirty, setDescriptionDirty] = useState(false),
+    [committed, setCommitted] = useState(false);
   const change = () => {
     setDirty(true);
     onDirty(true);
@@ -776,52 +826,92 @@ function ProjectEditor({
   return (
     <div className="catalog-actions" data-project-id={data.project.id}>
       <h2>项目概述</h2>
-      <label>
-        名称
-        <input
-          aria-label="编辑项目名称"
-          value={title}
-          maxLength={160}
-          disabled={pending || !!data.project.archived_at}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            change();
-          }}
-        />
-      </label>
-      <label>
-        状态
-        <select
-          aria-label="项目状态"
-          value={status}
-          disabled={pending || !!data.project.archived_at}
-          onChange={(e) => {
-            setStatus(e.target.value as Matter['status']);
-            change();
-          }}
-        >
-          {Object.entries(names).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
+      {propertyHost &&
+        createPortal(
+          <>
+            <ProjectFields
+              value={values}
+              disabled={committed || pending || !!data.project.archived_at}
+              onChange={(v) => {
+                setValues(v);
+                change();
+              }}
+              onInvalid={(v) => {
+                setDateInvalid(v);
+                change();
+              }}
+            />
+            {(dateInvalid || !validProject(values)) && (
+              <p role="alert">请核对名称、日期、负责人和标签格式，输入已保留。</p>
+            )}
+            <button
+              className="primary"
+              disabled={
+                !dirty ||
+                committed ||
+                pending ||
+                dateInvalid ||
+                !validProject(values) ||
+                !!data.project.archived_at
+              }
+              onClick={() => {
+                if (!propertyHost.querySelector('input:invalid'))
+                  void onSave(
+                    {
+                      ...values,
+                      ...(descriptionDirty && draft.state ? { state: draft.state } : {}),
+                    },
+                    () => setCommitted(true),
+                  );
+              }}
+            >
+              保存项目属性
+            </button>
+            <p role="status">
+              {committed
+                ? '项目已保存，当前内容需要刷新。'
+                : dirty
+                  ? '项目属性尚未保存。'
+                  : '项目属性已保存'}
+            </p>
+            {committed && (
+              <button disabled={pending} onClick={onReload}>
+                重新读取已保存项目
+              </button>
+            )}
+          </>,
+          propertyHost,
+        )}
       <DraftEditor
         value={draft ?? emptyDraft()}
         onChange={(v) => {
           setDraft(v);
+          setDescriptionDirty(true);
           change();
         }}
         label="项目概述"
         testId="project-overview-editor"
-        disabled={pending || !!data.project.archived_at}
+        disabled={committed || pending || !!data.project.archived_at}
       />
       <button
         className="primary"
-        disabled={!dirty || pending || !title.trim() || !!data.project.archived_at}
+        disabled={
+          !dirty ||
+          committed ||
+          pending ||
+          dateInvalid ||
+          !validProject(values) ||
+          !!data.project.archived_at
+        }
         onClick={() =>
-          void onSave({ title, status, ...(draft.state ? { state: draft.state } : {}) })
+          !propertyHost?.querySelector('input:invalid') &&
+          void onSave(
+            {
+              ...values,
+              ...(descriptionDirty && draft.state ? { state: draft.state } : {}),
+            },
+            () => setCommitted(true),
+          )
         }
       >
         保存项目概述
@@ -829,14 +919,130 @@ function ProjectEditor({
       <button
         disabled={pending}
         onClick={() => {
-          if (!dirty || window.confirm('放弃当前未保存修改并重新读取项目？')) onReload();
+          if (committed || !dirty || window.confirm('放弃当前未保存修改并重新读取项目？'))
+            onReload();
         }}
       >
-        放弃修改并重读
+        {committed ? '重新读取已保存概述' : '放弃修改并重读'}
       </button>
       <p role="status">
-        {dirty ? '有未保存修改，请保存后切换。' : `已保存 · 说明修订 ${data.project.body_revision}`}
+        {committed
+          ? '已保存，当前内容需要刷新。'
+          : dirty
+            ? '有未保存修改，请保存后切换。'
+            : `已保存 · 说明修订 ${data.project.body_revision}`}
       </p>
     </div>
+  );
+}
+
+function ProjectPropertyEditor({
+  project,
+  pending,
+  onDirty,
+  onSave,
+  onReload,
+}: {
+  project: Matter;
+  pending: boolean;
+  onDirty(value: boolean): void;
+  onSave(value: ProjectValues, onCommitted: () => void): Promise<void>;
+  onReload(): void;
+}) {
+  const [values, setValues] = useState(() => projectValues(project));
+  const [dirty, setDirty] = useState(false);
+  const [invalid, setInvalid] = useState(false);
+  const [committed, setCommitted] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+  const form = useRef<HTMLFormElement>(null);
+  const composing = useRef(false);
+  const change = () => {
+    setDirty(true);
+    onDirty(true);
+  };
+  return (
+    <form
+      ref={form}
+      onCompositionStart={() => {
+        composing.current = true;
+      }}
+      onCompositionEnd={() => {
+        composing.current = false;
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing))
+          event.preventDefault();
+      }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (
+          !composing.current &&
+          dirty &&
+          !pending &&
+          !invalid &&
+          !project.archived_at &&
+          validProject(values) &&
+          form.current?.checkValidity()
+        )
+          void onSave(values, () => {
+            setCommitted(true);
+            setDirty(false);
+          });
+      }}
+    >
+      <ProjectFields
+        key={epoch}
+        sidebar
+        value={values}
+        disabled={committed || pending || !!project.archived_at}
+        onChange={(value) => {
+          setValues(value);
+          change();
+        }}
+        onInvalid={(value) => {
+          setInvalid(value);
+          change();
+        }}
+      />
+      {(invalid || !validProject(values)) && <p role="alert">请核对属性格式，输入已保留。</p>}
+      <button
+        type="submit"
+        disabled={
+          committed ||
+          !dirty ||
+          pending ||
+          invalid ||
+          !validProject(values) ||
+          !!project.archived_at
+        }
+      >
+        保存项目属性
+      </button>
+      {committed && (
+        <p role="status">
+          项目已保存，当前属性需要刷新。
+          <button type="button" onClick={onReload}>
+            重新读取已保存属性
+          </button>
+        </p>
+      )}
+      {dirty && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            if (window.confirm('放弃未保存的项目属性？')) {
+              setValues(projectValues(project));
+              setInvalid(false);
+              setDirty(false);
+              onDirty(false);
+              setEpoch((v) => v + 1);
+            }
+          }}
+        >
+          放弃属性修改
+        </button>
+      )}
+    </form>
   );
 }

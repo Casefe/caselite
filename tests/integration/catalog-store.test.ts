@@ -458,3 +458,360 @@ describe('Five-page catalog persistence', () => {
     next.close();
   });
 });
+
+it('migrates populated 0008 project, keeps original receipts/digests/Yjs, and preserves new attributes on legacy updates', () => {
+  const root = mkdtempSync(join(tmpdir(), 'caselite-project-properties-'));
+  roots.push(root);
+  const oldFolder = join(root, 'old');
+  mkdirSync(join(oldFolder, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+  journal.entries = journal.entries.slice(0, 9);
+  writeFileSync(join(oldFolder, 'meta/_journal.json'), JSON.stringify(journal));
+  for (const e of journal.entries)
+    copyFileSync(join(migrations, e.tag + '.sql'), join(oldFolder, e.tag + '.sql'));
+  const file = join(root, 'old.sqlite'),
+    old = openToolchainProbe(file, oldFolder),
+    id = randomUUID(),
+    body = randomUUID(),
+    state = binary('旧说明原字节');
+  old.sqlite
+    .prepare(
+      'INSERT INTO matters(id,workspace_id,title,status,version,body_id,body_revision,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+    )
+    .run(id, 'local', '旧项目', 'active', 2, body, 1, '2026-11-06');
+  old.sqlite.prepare('INSERT INTO body_revisions VALUES(?,?,?)').run(body, 1, Buffer.from(state));
+  const legacy = {
+    protocol_version: 1 as const,
+    request_id: randomUUID(),
+    idempotency_key: randomUUID(),
+    operation: 'update_project' as const,
+    id,
+    expected_version: 1,
+    title: '旧项目',
+    status: 'active' as const,
+    expected_body_revision: 0,
+    state,
+  };
+  const receipt = {
+    ok: true,
+    projects: [
+      {
+        id,
+        title: '旧项目',
+        status: 'active',
+        version: 2,
+        archived_at: null,
+        body_id: body,
+        body_revision: 1,
+        editor_schema: 1,
+        updated_at: '2026-11-06',
+        task_count: 0,
+      },
+    ],
+    documents: [],
+    state: null,
+    target_id: id,
+    receipt: legacy.idempotency_key,
+  };
+  const { request_id: ignored, ...content } = legacy;
+  void ignored;
+  const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+  old.sqlite
+    .prepare('INSERT INTO catalog_receipts VALUES(?,?,?,?)')
+    .run('local', legacy.idempotency_key, digest, JSON.stringify(receipt));
+  old.sqlite.close();
+  const store = openTaskStore(file, migrations),
+    app = createCatalogApplication(store.catalog);
+  expect(app.execute(legacy)).toEqual(receipt);
+  expect(app.execute({ ...legacy, operation: 'status' })).toMatchObject({
+    ok: false,
+    code: 'INVALID_REQUEST',
+  });
+  expect(
+    app.execute({
+      operation: 'status',
+      protocol_version: 1,
+      idempotency_key: legacy.idempotency_key,
+    }),
+  ).toEqual(receipt);
+  const attributes = {
+    project_type: 'contract_review' as const,
+    assignee: '合成负责人',
+    priority: 3,
+    start_date: '2024-02-29',
+    target_date: '2024-03-01',
+    tags: ['合成', '合成'],
+  };
+  const update = {
+    ...ids(),
+    operation: 'update_project' as const,
+    id,
+    expected_version: 2,
+    title: '新项目',
+    status: 'done' as const,
+    expected_body_revision: 1,
+    attributes,
+  };
+  let p = ok(app.execute(update)).projects[0];
+  expect(p).toMatchObject({
+    version: 3,
+    body_revision: 1,
+    attributes: { ...attributes, tags: ['合成'] },
+  });
+  expect(ok(app.execute({ ...update, request_id: randomUUID() })).projects[0]).toEqual(p);
+  expect(app.execute({ ...update, attributes: { ...attributes, priority: 1 } })).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+  expect(
+    ok(
+      app.execute({
+        ...ids(),
+        operation: 'update_project',
+        id,
+        expected_version: 3,
+        title: '旧客户端改名',
+        status: 'active',
+        expected_body_revision: 1,
+      }),
+    ).projects[0],
+  ).toMatchObject({ body_revision: 1, attributes: p.attributes });
+  const combined = {
+    ...ids(),
+    operation: 'update_project' as const,
+    id,
+    expected_version: 4,
+    title: '同存',
+    status: 'active' as const,
+    expected_body_revision: 1,
+    state: binary('新说明'),
+    attributes: { ...attributes, start_date: null, target_date: null, tags: [] },
+  };
+  p = ok(app.execute(combined)).projects[0];
+  expect(p).toMatchObject({ version: 5, body_revision: 2, attributes: combined.attributes });
+  const connection = openToolchainProbe(file, migrations);
+  expect(
+    Array.from(
+      (
+        connection.sqlite
+          .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=1')
+          .get(body) as { state: Buffer }
+      ).state,
+    ),
+  ).toEqual(state);
+  expect(
+    connection.sqlite
+      .prepare('SELECT digest,result FROM catalog_receipts WHERE key=?')
+      .get(legacy.idempotency_key),
+  ).toEqual({ digest, result: JSON.stringify(receipt) });
+  const before = connection.sqlite.prepare('SELECT * FROM matters WHERE id=?').get(id);
+  connection.sqlite.exec(
+    "CREATE TRIGGER fail_attributes BEFORE INSERT ON catalog_activity BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
+  );
+  const failure = { ...combined, ...ids(), expected_version: 5, expected_body_revision: 2 };
+  expect(app.execute(failure)).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+  expect(connection.sqlite.prepare('SELECT * FROM matters WHERE id=?').get(id)).toEqual(before);
+  expect(
+    connection.sqlite.prepare('SELECT count(*) AS n FROM body_revisions WHERE body_id=?').get(body),
+  ).toEqual({ n: 2 });
+  expect(
+    app.execute({
+      operation: 'status',
+      protocol_version: 1,
+      idempotency_key: failure.idempotency_key,
+    }),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  connection.sqlite.exec('DROP TRIGGER fail_attributes');
+  connection.sqlite.close();
+  expect(app.execute({ ...failure, expected_version: 4 })).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+  const other = openTaskStore(file, migrations, 'other');
+  expect(other.catalog.execute(failure)).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  other.close();
+  ok(
+    app.execute({
+      ...ids(),
+      operation: 'archive_project',
+      id,
+      expected_version: 5,
+      archived: true,
+    }),
+  );
+  expect(app.execute({ ...failure, expected_version: 6 })).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+  store.close();
+  const next = openTaskStore(file, migrations);
+  expect(
+    ok(next.catalog.execute({ operation: 'read_project', protocol_version: 1, id })),
+  ).toMatchObject({
+    projects: [
+      {
+        id: p.id,
+        version: 6,
+        body_revision: 2,
+        attributes: combined.attributes,
+        archived_at: expect.any(String),
+      },
+    ],
+    state: combined.state,
+  });
+  next.close();
+});
+
+it('rejects invalid direct SQL attributes before they can poison catalog reads', () => {
+  const { file, store, app } = setup();
+  const p = ok(app.execute({ ...ids(), operation: 'create_project', title: '合成' })).projects[0];
+  const connection = openToolchainProbe(file, migrations);
+  for (const [field, value] of [
+    ['project_type', 'unknown'],
+    ['priority', 5],
+    ['priority', 1.5],
+    ['assignee', ' '],
+    ['assignee', 'x'.repeat(81)],
+    ['start_date', '0000-01-01'],
+    ['start_date', '2023-02-29'],
+    ['target_date', '2024-02-30'],
+    ['tags', 'not-json'],
+    ['tags', '{}'],
+    ['tags', JSON.stringify(Array(21).fill('x'))],
+  ] as const)
+    expect(() =>
+      connection.sqlite.prepare(`UPDATE matters SET ${field}=? WHERE id=?`).run(value, p.id),
+    ).toThrow();
+  connection.sqlite
+    .prepare('UPDATE matters SET start_date=?,target_date=? WHERE id=?')
+    .run('2024-03-01', '2024-03-02', p.id);
+  expect(() =>
+    connection.sqlite.prepare('UPDATE matters SET start_date=? WHERE id=?').run('2024-03-03', p.id),
+  ).toThrow();
+  expect(
+    ok(app.execute({ operation: 'list', protocol_version: 1 })).projects[0].attributes?.target_date,
+  ).toBe('2024-03-02');
+  connection.sqlite.close();
+  store.close();
+});
+
+it('rolls failed 0009 DDL back completely with a populated project and unchanged old receipts, then upgrades', () => {
+  const root = mkdtempSync(join(tmpdir(), 'caselite-project-ddl-'));
+  roots.push(root);
+  const oldFolder = join(root, 'old'),
+    badFolder = join(root, 'bad');
+  for (const folder of [oldFolder, badFolder]) mkdirSync(join(folder, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+  for (const folder of [oldFolder, badFolder]) {
+    const entries = folder === oldFolder ? journal.entries.slice(0, 9) : journal.entries;
+    writeFileSync(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
+    for (const e of entries)
+      copyFileSync(join(migrations, e.tag + '.sql'), join(folder, e.tag + '.sql'));
+  }
+  const last = join(badFolder, journal.entries[9].tag + '.sql');
+  writeFileSync(
+    last,
+    readFileSync(last, 'utf8') +
+      '\n--> statement-breakpoint\nSELECT * FROM synthetic_missing_table;',
+  );
+  const file = join(root, 'data.sqlite'),
+    old = openToolchainProbe(file, oldFolder),
+    id = randomUUID(),
+    body = randomUUID(),
+    state = Buffer.from(binary('DDL失败也保全')),
+    key = randomUUID();
+  old.sqlite
+    .prepare(
+      'INSERT INTO matters(id,workspace_id,title,version,body_id,body_revision,updated_at) VALUES(?,?,?,?,?,?,?)',
+    )
+    .run(id, 'local', '合成旧项目', 2, body, 1, '2026-11-06');
+  old.sqlite.prepare('INSERT INTO body_revisions VALUES(?,?,?)').run(body, 1, state);
+  old.sqlite
+    .prepare('INSERT INTO catalog_receipts VALUES(?,?,?,?)')
+    .run('local', key, 'old-digest', '{"legacy":"unchanged"}');
+  const snapshot = () =>
+    ['matters', 'body_revisions', 'catalog_receipts'].map((table) =>
+      old.sqlite.prepare(`SELECT * FROM ${table}`).all(),
+    );
+  const before = snapshot();
+  old.sqlite.close();
+  expect(() => openToolchainProbe(file, badFolder)).toThrow();
+  const verify = openToolchainProbe(file, oldFolder);
+  expect(verify.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: 9,
+  });
+  const columns = (verify.sqlite.pragma('table_info(matters)') as { name: string }[]).map(
+    (c) => c.name,
+  );
+  for (const col of ['project_type', 'assignee', 'priority', 'start_date', 'target_date', 'tags'])
+    expect(columns).not.toContain(col);
+  expect(
+    ['matters', 'body_revisions', 'catalog_receipts'].map((table) =>
+      verify.sqlite.prepare(`SELECT * FROM ${table}`).all(),
+    ),
+  ).toEqual(before);
+  verify.sqlite.close();
+  const next = openTaskStore(file, migrations);
+  expect(
+    ok(next.catalog.execute({ operation: 'read_project', protocol_version: 1, id })),
+  ).toMatchObject({
+    projects: [{ id, body_revision: 1, attributes: { project_type: 'general', priority: 0 } }],
+    state: Array.from(state),
+  });
+  next.close();
+});
+
+it.each(['catalog_activity', 'catalog_receipts'])(
+  'rolls back changed properties, new Yjs, activity and receipt when %s insert fails',
+  (table) => {
+    const { file, store, app } = setup(),
+      p = ok(app.execute({ ...ids(), operation: 'create_project', title: '回滚合成项目' }))
+        .projects[0];
+    const db = openToolchainProbe(file, migrations);
+    const before = ['matters', 'body_revisions', 'catalog_activity', 'catalog_receipts'].map((t) =>
+      db.sqlite.prepare(`SELECT * FROM ${t}`).all(),
+    );
+    db.sqlite.exec(
+      `CREATE TRIGGER reject_property_commit BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic property rollback'); END`,
+    );
+    const request = {
+      ...ids(),
+      operation: 'update_project' as const,
+      id: p.id,
+      expected_version: 1,
+      expected_body_revision: 0,
+      title: '失败的新名称',
+      status: 'done' as const,
+      state: binary('失败的新说明'),
+      attributes: {
+        project_type: 'litigation' as const,
+        assignee: '失败的新负责人',
+        priority: 4,
+        start_date: '2024-02-29',
+        target_date: '2024-03-01',
+        tags: ['失败的新标签'],
+      },
+    };
+    expect(app.execute(request)).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+    expect(
+      ['matters', 'body_revisions', 'catalog_activity', 'catalog_receipts'].map((t) =>
+        db.sqlite.prepare(`SELECT * FROM ${t}`).all(),
+      ),
+    ).toEqual(before);
+    expect(
+      app.execute({
+        operation: 'status',
+        protocol_version: 1,
+        idempotency_key: request.idempotency_key,
+      }),
+    ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    db.sqlite.exec('DROP TRIGGER reject_property_commit');
+    expect(ok(app.execute(request)).projects[0]).toMatchObject({
+      version: 2,
+      body_revision: 1,
+      attributes: request.attributes,
+    });
+    db.sqlite.close();
+    store.close();
+  },
+);

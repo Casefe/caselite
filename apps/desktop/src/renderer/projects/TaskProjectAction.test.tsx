@@ -41,6 +41,8 @@ describe('task promotion UI', () => {
     const actual = { ...task, version: 4, matter_id: projectId, matter_title: task.title };
     window.caselite = {
       catalog: vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+        if (r.operation === 'status')
+          return { ok: false, code: 'NOT_FOUND', message: '原键未落盘' };
         if (r.operation === 'promote_task') {
           sent.push(r);
           if (sent.length === 1)

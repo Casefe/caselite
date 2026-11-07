@@ -70,11 +70,11 @@ export default function TaskProjectAction({
           error={c.error}
           onCancel={() => setCreating(false)}
           onRetry={() => void c.retry()}
-          onCreate={(title) =>
+          onCreate={(values) =>
             void c.execute(
               catalogMutation({
                 operation: 'promote_task',
-                title,
+                ...values,
                 task_id: task.id,
                 expected_version: task.version,
               }),
