@@ -385,3 +385,16 @@
 .project-summary .material-reader header > div {
   flex-wrap: wrap;
 }
+
+.project-catalog .view-toolbar {
+  background: var(--theme-panel);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.project-catalog .view-tabs button {
+  color: var(--muted);
+}
+.project-catalog .view-tabs button.current {
+  color: var(--ink);
+  border-color: var(--accent);
+}

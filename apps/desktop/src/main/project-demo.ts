@@ -78,6 +78,207 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
+    const navigationMode = process.env.CASELITE_PROJECT_NAVIGATION;
+    if (navigationMode) {
+      if (!['write', 'read', 'preview'].includes(navigationMode))
+        throw new Error('Invalid navigation mode');
+      const original = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const taskId = original.task.id;
+      const projectId = original.task.matter_id;
+      const readTask = async (): Promise<Extract<TaskResponse, { ok: true }>> => {
+        const r: TaskResponse = await evaluate(
+          `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(taskId)}})`,
+        );
+        if (!r.ok || r.tasks[0]?.id !== taskId || !r.state)
+          throw new Error('Navigation task missing');
+        return r;
+      };
+      const before = await readTask();
+      if (
+        before.tasks[0].document_id !== original.task.document_id ||
+        before.tasks[0].body_id !== original.task.body_id ||
+        before.tasks[0].matter_id !== projectId
+      )
+        throw new Error('Navigation changed object identity');
+      const projectRead: CatalogResponse = await evaluate(
+        `window.caselite.catalog({protocol_version:1,operation:'read_project',id:${JSON.stringify(projectId)}})`,
+      );
+      if (!projectRead.ok) throw new Error('Navigation project missing');
+      const project = projectRead.projects.find((p) => p.id === projectId);
+      if (!project) throw new Error('Navigation project substituted');
+      if (project.archived_at) await button('已归档');
+      await wait("document.querySelector('[aria-label=搜索项目]')");
+      if (navigationMode === 'write') {
+        await evaluate(
+          `(()=>{const input=document.querySelector('[aria-label=搜索项目]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(project.title)});input.dispatchEvent(new Event('input',{bubbles:true}));const order=document.querySelector('[aria-label=项目排序]');order.value='title';order.dispatchEvent(new Event('change',{bubbles:true}));const box=Array.from(document.querySelectorAll('.project-display-menu label')).find(e=>e.textContent==='更新时间').querySelector('input');box.click();})()`,
+        );
+      }
+      await button(project.title);
+      await wait("document.querySelector('[aria-label=编辑项目名称]')");
+      if (navigationMode === 'write' && project.archived_at)
+        throw new Error('Cannot edit archived navigation fixture');
+      await evaluate("document.querySelector('#project-tab-tasks').click()");
+      await wait("document.querySelector('#project-tab-tasks[aria-selected=true]')");
+      if (navigationMode === 'preview') {
+        assertNoRuns();
+        window.setTitle('CaseLite · DEV-1712 项目往返 · 同一合成工作区');
+        await new Promise<void>((resolve) => window.once('closed', () => resolve()));
+        assertNoRuns();
+        return;
+      }
+      if (navigationMode === 'read') {
+        const saved = JSON.parse(readFileSync(join(root, 'navigation-expected.json'), 'utf8'));
+        if (
+          JSON.stringify(before.tasks[0]) !== JSON.stringify(saved.task) ||
+          createHash('sha256').update(JSON.stringify(before.state)).digest('hex') !==
+            saved.bodySha256 ||
+          project.id !== saved.project.id ||
+          project.body_id !== saved.project.body_id ||
+          project.body_revision !== saved.project.body_revision ||
+          project.title !== saved.project.title
+        )
+          throw new Error('Navigation restart lost identity or saved revision');
+        await capture('navigation-restarted.png');
+        writeFileSync(
+          join(root, 'navigation-read.json'),
+          JSON.stringify({
+            status: 'PASS_REAL',
+            task: before.tasks[0],
+            project,
+            isolation,
+            providerDispatches: 0,
+          }),
+        );
+        assertNoRuns();
+        return;
+      }
+      const layouts = [];
+      for (const width of [1440, 640]) {
+        window.setSize(width, 900);
+        await wait(`innerWidth===${width}`);
+        for (const theme of ['light', 'dark']) {
+          await evaluate(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const style = await evaluate(
+            `(()=>{const toolbar=document.querySelector('.project-catalog .view-toolbar');const tabs=Array.from(toolbar.querySelectorAll('.view-tabs button'));return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,background:getComputedStyle(toolbar).backgroundColor,tabs:tabs.map(b=>({label:b.textContent,current:b.classList.contains('current'),color:getComputedStyle(b).color,background:getComputedStyle(b).backgroundColor}))};})()`,
+          );
+          if (style.scrollWidth > style.clientWidth + 1)
+            throw new Error('Navigation viewport overflow');
+          if (theme === 'dark' && style.background === 'rgb(255, 255, 255)')
+            throw new Error('Project toolbar white in dark mode');
+          layouts.push({ theme, ...style });
+          await capture(`navigation-${width}-${theme}.png`);
+        }
+      }
+      window.setSize(1440, 900);
+      await evaluate("document.documentElement.dataset.theme='light'");
+      await evaluate(
+        `document.querySelector('#project-panel-tasks [data-project-task="${taskId}"]').focus()`,
+      );
+      window.focus();
+      window.webContents.focus();
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+      window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+      await wait(`document.querySelector('[data-active-task="${taskId}"]')`);
+      await wait("document.querySelector('[aria-label=返回来源项目]')");
+      await evaluate(
+        "(()=>{const body=document.querySelector('[data-testid=body-editor]');body.focus();document.execCommand('insertText',false,' 本次导航保存内容。');})()",
+      );
+      await wait("!document.querySelector('[data-testid=save-body]').disabled");
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait("document.querySelector('[role=alert]')?.textContent.includes('请先保存')");
+      if (!(await evaluate(`Boolean(document.querySelector('[data-active-task="${taskId}"]'))`)))
+        throw new Error('Dirty return unmounted task');
+      await capture('navigation-dirty-blocked.png');
+      await evaluate("document.querySelector('[data-testid=save-body]').click()");
+      await wait(
+        "document.querySelector('[data-testid=save-status]')?.textContent.includes('已保存到此设备')",
+      );
+      const saved = await readTask();
+      if (saved.tasks[0].body_revision <= before.tasks[0].body_revision)
+        throw new Error('Navigation body did not save');
+      // 用同一受控入口模拟另一个消费者更新项目，返回必须读回当前版本而不是旧会话副本。
+      const updated: CatalogResponse = await evaluate(
+        `window.caselite.catalog({protocol_version:1,operation:'update_project',request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),id:${JSON.stringify(project.id)},expected_version:${project.version},expected_body_revision:${project.body_revision},title:${JSON.stringify(project.title + ' · 导航已保存')},status:${JSON.stringify(project.status)}})`,
+      );
+      if (!updated.ok) throw new Error('Navigation project update failed');
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait(
+        "document.querySelector('#project-tab-tasks[aria-selected=true]') && document.querySelector('[aria-label=编辑项目名称]')?.value.endsWith('导航已保存')",
+      );
+      await wait(`document.activeElement?.dataset.projectTask===${JSON.stringify(taskId)}`);
+      await capture('navigation-returned-current.png');
+      await button('返回项目列表');
+      const preferences = await evaluate(
+        "({query:document.querySelector('[aria-label=搜索项目]').value,order:document.querySelector('[aria-label=项目排序]').value,updated:Array.from(document.querySelectorAll('.project-display-menu label')).find(e=>e.textContent==='更新时间').querySelector('input').checked})",
+      );
+      if (
+        preferences.query !== project.title ||
+        preferences.order !== 'title' ||
+        preferences.updated
+      )
+        throw new Error('Navigation lost list preferences');
+      await evaluate(
+        `document.querySelector('.project-properties [data-project-task="${taskId}"]').click()`,
+      );
+      await wait("document.querySelector('[aria-label=返回来源项目]')");
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait(
+        "document.querySelector('[aria-label=项目列表]') && !document.querySelector('[aria-label=编辑项目名称]')",
+      );
+      await wait(`document.activeElement?.dataset.projectTask===${JSON.stringify(taskId)}`);
+      await capture('navigation-returned-list.png');
+      // 改名后旧筛选可能隐藏原项目，清除筛选后再打开同一对象。
+      await evaluate(
+        "(()=>{const input=document.querySelector('[aria-label=搜索项目]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'');input.dispatchEvent(new Event('input',{bubbles:true}));})()",
+      );
+      const current: CatalogResponse = await evaluate(
+        `window.caselite.catalog({protocol_version:1,operation:'read_project',id:${JSON.stringify(projectId)}})`,
+      );
+      if (!current.ok) throw new Error('Current project unavailable');
+      const currentProject = current.projects.find((p) => p.id === projectId)!;
+      await button(currentProject.title);
+      await wait("document.querySelector('.project-summary')");
+      await evaluate(
+        `document.querySelector('.project-properties [data-project-task="${taskId}"]').click()`,
+      );
+      await wait("document.querySelector('[aria-label=返回来源项目]')");
+      await evaluate("document.querySelector('[data-nav=settings]').click()");
+      await button('返回工作区');
+      await wait("document.querySelector('[aria-label=返回来源项目]')");
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait("document.querySelector('#project-tab-overview[aria-selected=true]')");
+      await evaluate("document.querySelector('[data-nav=tasks]').click()");
+      await wait("document.querySelector('[data-row-task]')");
+      await evaluate(
+        "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))",
+      );
+      await wait("document.querySelector('[aria-label=返回任务列表]')");
+      await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
+      await wait("document.querySelector('[data-row-task]')");
+      writeFileSync(
+        join(root, 'navigation-expected.json'),
+        JSON.stringify(
+          {
+            task: (await readTask()).tasks[0],
+            project: currentProject,
+            bodySha256: createHash('sha256').update(JSON.stringify(saved.state)).digest('hex'),
+            preferences,
+            layouts,
+            isolation,
+          },
+          null,
+          2,
+        ),
+      );
+      assertNoRuns();
+      writeFileSync(
+        join(root, 'navigation-write.json'),
+        JSON.stringify({ status: 'PASS_REAL', providerDispatches: 0, isolation }),
+      );
+      return;
+    }
     const previewMode = process.env.CASELITE_PROJECT_SUMMARY_PREVIEW;
     if (previewMode) {
       // 人工验收复开只读取同一隔离工作区，不能重造样本或按旧快照覆写用户修改。

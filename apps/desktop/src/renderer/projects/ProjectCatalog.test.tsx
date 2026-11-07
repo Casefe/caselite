@@ -129,7 +129,10 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.click(
       within(screen.getByRole('tabpanel', { name: '任务', exact: true })).getByText('项目原任务'),
     );
-    expect(open).toHaveBeenCalledWith(original.id);
+    expect(open).toHaveBeenCalledWith(
+      original.id,
+      expect.objectContaining({ projectId: p.id, section: 'tasks', returnTaskId: original.id }),
+    );
     for (const label of ['文件', '交付物', '活动']) {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
       const panel = screen.getByRole('tabpanel', { name: label, exact: true });

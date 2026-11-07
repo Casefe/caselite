@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest } from '../../preload/caselite-api';
 import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
 import { Icon } from '../ui/Workspace';
@@ -16,20 +16,37 @@ const sections = {
   deliverables: '交付物',
   activity: '活动',
 };
+export type ProjectViewState = {
+  selected: string | null;
+  projectId: string | null;
+  section: keyof typeof sections;
+  archived: boolean;
+  query: string;
+  statusFilter: Matter['status'] | 'all';
+  order: string;
+  columns: { status: boolean; tasks: boolean; updated: boolean };
+  scrollTop: number;
+  workspaceScrollTop: number;
+  returnTaskId: string;
+};
 export default function ProjectCatalog({
   tasks,
   onOpen,
   onDirty,
   onChanged,
+  initialView,
+  navigationPending = false,
 }: {
   tasks: Task[];
-  onOpen(id: string): void;
+  onOpen(id: string, source: ProjectViewState): void;
+  initialView?: ProjectViewState | null;
+  navigationPending?: boolean;
   onDirty(v: boolean): void;
   onChanged(): void;
 }) {
   const c = useCatalog(),
-    [selected, setSelected] = useState<string | null>(null),
-    [archived, setArchived] = useState(false),
+    [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
+    [archived, setArchived] = useState(initialView?.archived ?? false),
     [creating, setCreating] = useState(false),
     [editor, setEditor] = useState<{
       project: Matter;
@@ -38,16 +55,24 @@ export default function ProjectCatalog({
     } | null>(null),
     [dirty, setDirty] = useState(false),
     [assigning, setAssigning] = useState('');
-  const [section, setSection] = useState<keyof typeof sections>('overview');
+  const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
   const [side, setSide] = useState('properties'),
     [aiTask, setAiTask] = useState('');
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<Matter['status'] | 'all'>('all');
-  const [order, setOrder] = useState('updated');
-  const [columns, setColumns] = useState({ status: true, tasks: true, updated: true });
+  const [query, setQuery] = useState(initialView?.query ?? '');
+  const [statusFilter, setStatusFilter] = useState<Matter['status'] | 'all'>(
+    initialView?.statusFilter ?? 'all',
+  );
+  const [order, setOrder] = useState(initialView?.order ?? 'updated');
+  const [columns, setColumns] = useState(
+    initialView?.columns ?? { status: true, tasks: true, updated: true },
+  );
+  const workspace = useRef<HTMLElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const restoring = useRef(initialView ?? null);
+  const [sourceUnavailable, setSourceUnavailable] = useState(false);
   const alive = useRef(true),
     readId = useRef(0);
-  const [reading, setReading] = useState(false),
+  const [reading, setReading] = useState(Boolean(initialView?.projectId)),
     [readError, setReadError] = useState(''),
     [createdId, setCreatedId] = useState<string | null>(null);
   useEffect(() => {
@@ -76,13 +101,17 @@ export default function ProjectCatalog({
         return b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id);
       }),
     p = editor
-      ? (c.data?.projects.find((x) => x.id === editor.project.id) ?? editor.project)
-      : (list.find((x) => x.id === selected) ?? list[0]);
+      ? (c.data?.projects.find(
+          (x) => x.id === editor.project.id && x.version >= editor.project.version,
+        ) ?? editor.project)
+      : initialView?.projectId && (reading || sourceUnavailable)
+        ? undefined
+        : (list.find((x) => x.id === selected) ?? (selected ? undefined : list[0]));
   useEffect(() => {
     onDirty(dirty || creating || reading || c.pending || c.unknown);
     return () => onDirty(false);
   }, [dirty, creating, reading, c.pending, c.unknown, onDirty]);
-  const read = async (id: string) => {
+  const read = useCallback(async (id: string, restore = false) => {
     const sequence = ++readId.current;
     setReading(true);
     setReadError('');
@@ -98,14 +127,79 @@ export default function ProjectCatalog({
         if (actual) {
           setEditor({ project: actual, state: r.state, epoch: sequence });
           setCreatedId(null);
-          setSection('overview');
-        } else setReadError('未能读取该项目，请重试打开。');
-      } else setReadError(r.message);
+          if (!restore) setSection('overview');
+          setSourceUnavailable(false);
+        } else {
+          setReadError('来源项目已失效，未能读取该项目。');
+          if (restore) setSourceUnavailable(true);
+        }
+      } else {
+        setReadError(r.message);
+        if (restore) setSourceUnavailable(true);
+      }
     } catch {
-      if (alive.current && sequence === readId.current) setReadError('无法读取项目说明，请重试。');
+      if (alive.current && sequence === readId.current) {
+        setReadError('无法读取来源项目说明，请重试。');
+        if (restore) setSourceUnavailable(true);
+      }
     } finally {
       if (alive.current && sequence === readId.current) setReading(false);
     }
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && initialView?.projectId) void read(initialView.projectId, true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialView, read]);
+  useLayoutEffect(() => {
+    const source = restoring.current;
+    if (!source || reading || (source.projectId ? !editor : !c.data)) return;
+    const target = Array.from(
+      workspace.current?.querySelectorAll<HTMLButtonElement>(
+        source.projectId
+          ? `#project-panel-${source.section} [data-project-task]`
+          : '.project-properties [data-project-task]',
+      ) ?? [],
+    ).find(
+      (button) => button.dataset.projectTask === source.returnTaskId && !button.closest('[hidden]'),
+    );
+    (
+      target ??
+      (source.projectId
+        ? workspace.current?.querySelector<HTMLButtonElement>(`#project-tab-${source.section}`)
+        : (Array.from(
+            workspace.current?.querySelectorAll<HTMLButtonElement>(
+              '[data-project-id] .project-title-link',
+            ) ?? [],
+          ).find(
+            (button) =>
+              button.closest<HTMLElement>('[data-project-id]')?.dataset.projectId ===
+              source.selected,
+          ) ?? workspace.current?.querySelector<HTMLInputElement>('[aria-label=搜索项目]')))
+    )?.focus({ preventScroll: true });
+    if (scroll.current) scroll.current.scrollTop = source.scrollTop;
+    if (workspace.current) workspace.current.scrollTop = source.workspaceScrollTop;
+    restoring.current = null;
+  }, [reading, editor, c.data]);
+  const openTask = (id: string) => {
+    if (navigationPending || dirty || creating || reading || c.pending || c.unknown) return;
+    onOpen(id, {
+      selected: p?.id ?? selected,
+      projectId: editor?.project.id ?? null,
+      section,
+      archived,
+      query,
+      statusFilter,
+      order,
+      columns,
+      scrollTop: scroll.current?.scrollTop ?? 0,
+      workspaceScrollTop: workspace.current?.scrollTop ?? 0,
+      returnTaskId: id,
+    });
   };
   const open = async (project: Matter) => {
     if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
@@ -126,6 +220,9 @@ export default function ProjectCatalog({
     });
   return (
     <section
+      ref={workspace}
+      inert={navigationPending}
+      aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
       data-layout="three-column"
       data-testid="project-catalog"
@@ -219,6 +316,29 @@ export default function ProjectCatalog({
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}
+        {sourceUnavailable && (
+          <div role="alert">
+            来源项目暂不可用；未选择其他项目。
+            <button
+              disabled={reading}
+              onClick={() => {
+                if (initialView?.projectId) void read(initialView.projectId, true);
+              }}
+            >
+              重试来源项目
+            </button>
+            <button
+              onClick={() => {
+                restoring.current = null;
+                setSourceUnavailable(false);
+                setReadError('');
+                setSelected(null);
+              }}
+            >
+              返回项目列表
+            </button>
+          </div>
+        )}
         {createdId && readError && (
           <div className="project-open-recovery">
             <p>项目已保存，暂时无法打开。请重试打开这个项目。</p>
@@ -237,8 +357,10 @@ export default function ProjectCatalog({
             核对原提交
           </button>
         )}
-        <div className="collection-scroll">
-          {editor ? (
+        <div className="collection-scroll" ref={scroll}>
+          {sourceUnavailable || (reading && !editor) ? (
+            <p role="status">正在核对来源项目；请稍候或返回列表。</p>
+          ) : editor ? (
             <>
               <div className="project-detail-heading">
                 <button
@@ -276,8 +398,8 @@ export default function ProjectCatalog({
                     tasks={tasks}
                     documents={c.data?.documents ?? []}
                     unavailable={!!c.error || !c.data}
-                    disabled={reading || dirty || c.pending || c.unknown}
-                    onOpen={onOpen}
+                    disabled={navigationPending || reading || dirty || c.pending || c.unknown}
+                    onOpen={openTask}
                     onProject={(id) => void read(id)}
                   />
                 )}
@@ -321,7 +443,8 @@ export default function ProjectCatalog({
                     <button
                       key={task.id}
                       disabled={reading || c.pending || c.unknown}
-                      onClick={() => onOpen(task.id)}
+                      data-project-task={task.id}
+                      onClick={() => openTask(task.id)}
                     >
                       {task.title}
                     </button>
@@ -372,8 +495,8 @@ export default function ProjectCatalog({
                   <ActivityList
                     key={editor.project.id}
                     scope={{ type: 'project', id: editor.project.id }}
-                    disabled={reading || dirty || c.pending || c.unknown}
-                    onTask={onOpen}
+                    disabled={navigationPending || reading || dirty || c.pending || c.unknown}
+                    onTask={openTask}
                     onProject={(id) => void read(id)}
                   />
                 )}
@@ -495,7 +618,7 @@ export default function ProjectCatalog({
               <AgentPanel key={aiTask} scope={aiTask} />
             )}
           </div>
-        ) : p ? (
+        ) : p && !sourceUnavailable ? (
           <>
             <h3>{p.title}</h3>
             <p>
@@ -534,7 +657,8 @@ export default function ProjectCatalog({
                 <div key={t.id}>
                   <button
                     disabled={reading || dirty || creating || c.pending || c.unknown}
-                    onClick={() => onOpen(t.id)}
+                    data-project-task={t.id}
+                    onClick={() => openTask(t.id)}
                   >
                     {t.title}
                   </button>

@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
-import ProjectCatalog from './projects/ProjectCatalog';
+import ProjectCatalog, { type ProjectViewState } from './projects/ProjectCatalog';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
 
@@ -173,6 +173,10 @@ function Workbench() {
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
+  const [projectView, setProjectView] = useState<ProjectViewState | null>(null);
+  const [taskReturn, setTaskReturn] = useState<{ taskId: string; source: ProjectViewState } | null>(
+    null,
+  );
   const [taskListState, setTaskListState] = useState(initialTaskListState);
   const [detailTab, setDetailTab] = useState('成果正文');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -244,6 +248,7 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setView(next);
+    if (next !== 'settings') setTaskReturn(null);
     if (next === 'tasks') setActive(null);
     setCreating(false);
     setError('');
@@ -254,9 +259,10 @@ function Workbench() {
     setLoading(false);
     setView('tasks');
     setCreating(true);
+    setTaskReturn(null);
     setError('');
   }
-  async function open(id: string) {
+  async function open(id: string, source: ProjectViewState | null = null) {
     if (!canLeave()) return;
     if (dirty) {
       setError('请先保存当前正文，再切换任务。');
@@ -270,6 +276,10 @@ function Workbench() {
         await window.caselite.task({ operation: 'read', protocol_version: 1, task_id: id }),
       );
       if (seq === readSequence.current) {
+        if (r.tasks[0]?.id !== id) throw new Error('读取结果与目标任务不符，请重试。');
+        // 只有当前读取成功才提交返回来源；迟到/失败读取不能污染下一次导航。
+        setTaskReturn(source ? { taskId: id, source } : null);
+        if (source) setProjectView(source);
         setActive(r.tasks[0]);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
@@ -278,7 +288,7 @@ function Workbench() {
         setCreating(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '读取失败');
+      if (seq === readSequence.current) setError(e instanceof Error ? e.message : '读取失败');
     } finally {
       if (seq === readSequence.current) setLoading(false);
     }
@@ -331,6 +341,11 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setActive(null);
+    if (taskReturn && taskReturn.taskId === active?.id) {
+      setProjectView(taskReturn.source);
+      setView('projects');
+    }
+    setTaskReturn(null);
     setError('');
   };
   const acceptTaskProperties = (saved: Task, description: number[] | null) => {
@@ -465,14 +480,16 @@ function Workbench() {
               </button>
             </footer>
           </form>
-        ) : loading ? (
+        ) : loading && view !== 'projects' ? (
           <div className="loading-state" role="status">
             正在读取本地任务…
           </div>
         ) : view === 'projects' ? (
           <ProjectCatalog
             tasks={tasks}
-            onOpen={(id) => void open(id)}
+            initialView={projectView}
+            navigationPending={loading}
+            onOpen={(id, source) => void open(id, source)}
             onDirty={setDirty}
             onChanged={() =>
               void refresh().catch(() => setError('数据已保存，任务列表刷新失败，请重新读取。'))
@@ -500,14 +517,16 @@ function Workbench() {
                   <div>
                     <button
                       className="icon-button"
-                      aria-label="返回任务列表"
+                      aria-label={
+                        taskReturn?.taskId === active.id ? '返回来源项目' : '返回任务列表'
+                      }
                       data-testid="back-to-tasks"
                       onClick={resetTask}
                     >
                       <Icon name="back" size={16} />
                     </button>
                     <button className="breadcrumb-button" onClick={resetTask}>
-                      任务
+                      {taskReturn?.taskId === active.id ? '来源项目' : '任务'}
                     </button>
                     <Icon name="chevron" size={13} />
                     <span>{active.title}</span>
@@ -631,7 +650,8 @@ function Workbench() {
             section={settingsSection}
             onSection={setSettingsSection}
             onBack={() => {
-              if (settingsReturn === 'tasks' && active) void open(active.id);
+              if (settingsReturn === 'tasks' && active)
+                void open(active.id, taskReturn?.taskId === active.id ? taskReturn.source : null);
               else navigate(settingsReturn);
             }}
           />
