@@ -41,8 +41,12 @@ function api(fn: (r: ReminderRequest) => Promise<ReminderResponse>) {
   return window.caselite.reminder;
 }
 async function draft() {
-  await screen.findByText('设置提醒');
-  fireEvent.click(screen.getByText('设置提醒'));
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '设置提醒' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '设置提醒' }));
   fireEvent.change(screen.getByLabelText('提醒日期'), { target: { value: '2026-01-01' } });
   fireEvent.change(screen.getByLabelText('提醒时区'), { target: { value: 'Asia/Shanghai' } });
   fireEvent.click(screen.getByText('验证日期与时区'));
@@ -135,8 +139,12 @@ it('does not overwrite changed form choices with a late resolution after unmount
       : success(),
   );
   const view = render(<ReminderEditor taskId={task} onBlocked={blocked} onChanged={changed} />);
-  await screen.findByText('设置提醒');
-  fireEvent.click(screen.getByText('设置提醒'));
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '设置提醒' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '设置提醒' }));
   fireEvent.change(screen.getByLabelText('提醒日期'), { target: { value: '2026-01-01' } });
   fireEvent.click(screen.getByText('验证日期与时区'));
   view.unmount();
