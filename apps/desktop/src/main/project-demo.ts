@@ -2507,6 +2507,32 @@ export async function runProjectDemo(
         await wait("!document.querySelector('.project-file-preview')");
         await button('返回项目文件');
         await wait("document.querySelectorAll('[data-source-id]').length===2");
+        await button('可视化');
+        await wait(`(() => {
+          const graph = document.querySelector('.project-relationship-graph');
+          const nodes = [...(graph?.querySelectorAll('.react-flow__node') ?? [])];
+          return nodes.length === 3
+            && nodes.every(node => node.getBoundingClientRect().width > 0 && getComputedStyle(node).visibility === 'visible')
+            && graph.querySelectorAll('.react-flow__edge').length === 2
+            && !graph.querySelector('.react-flow__node.draggable');
+        })()`);
+        await captureRenderer('dev-1802-project-graph.png');
+        await evaluate("document.querySelector('.project-graph-document').click()");
+        await wait("document.querySelector('[data-testid=task-result-tab]')");
+        await wait("document.querySelector('.workspace-project-back-button:enabled')");
+        await evaluate("document.querySelector('.workspace-project-back-button').click()");
+        await wait("document.querySelector('#project-tab-visualization[aria-selected=true]')");
+        await button('交付物');
+        await wait(`(() => {
+          const table = document.querySelector('.project-deliverables-table');
+          const cells = [...(table?.querySelectorAll('tbody tr:first-child td') ?? [])];
+          return cells.length === 8 && cells[1].textContent === '任务成果草稿'
+            && cells[3].textContent === '正文修订 1'
+            && cells.slice(4).every(cell => !cell.textContent.trim());
+        })()`);
+        await captureRenderer('dev-1804-project-deliverables.png');
+        await button('文件');
+        await wait("document.querySelectorAll('[data-source-id]').length===2");
       }
 
       const file = files[1];
