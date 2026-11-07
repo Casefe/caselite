@@ -76,9 +76,7 @@ it('returns to the exact section and current project, preserving list preference
   await waitFor(() =>
     expect((screen.getByLabelText('编辑项目名称') as HTMLInputElement).value).toBe('保存后新名称'),
   );
-  expect(document.querySelector('.project-detail-heading strong')?.textContent).toBe(
-    '保存后新名称',
-  );
+  expect(document.querySelector('.project-catalog-heading h1')?.textContent).toBe('保存后新名称');
   await waitFor(() =>
     expect(document.activeElement?.getAttribute('data-project-task')).toBe(task.id),
   );

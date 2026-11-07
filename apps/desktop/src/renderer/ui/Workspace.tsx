@@ -1,5 +1,5 @@
 import { taskPriorityNames } from './task-priority';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
 import { taskStatusNames } from './task-status';
@@ -9,6 +9,9 @@ export type WorkspaceView =
   | 'reminders'
   | 'tasks'
   | 'projects'
+  | 'finance'
+  | 'tools'
+  | 'whiteboard'
   | 'documents'
   | 'knowledge'
   | 'settings'
@@ -17,9 +20,14 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
   { id: 'home', label: '首页', icon: 'home' },
   { id: 'reminders', label: '提醒', icon: 'bell' },
   { id: 'tasks', label: '任务', icon: 'check' },
-  { id: 'projects', label: '项目', icon: 'folder' },
-  { id: 'documents', label: '文档', icon: 'file' },
   { id: 'knowledge', label: '知识库', icon: 'book' },
+];
+const workspaceNavigation: typeof navigation = [
+  { id: 'projects', label: '项目', icon: 'folder' },
+  { id: 'finance', label: '财务', icon: 'wallet' },
+  { id: 'tools', label: '工具', icon: 'tool' },
+  { id: 'whiteboard', label: '白板', icon: 'board' },
+  { id: 'documents', label: '文档', icon: 'file' },
 ];
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -52,6 +60,15 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
       <>
         <path d="M12 5C8 2 3 4 3 4v16s5-2 9 1c4-3 9-1 9-1V4s-5-2-9 1Z" />
         <path d="M12 5v16" />
+      </>
+    ),
+    wallet: <path d="M20 8V5H5a2 2 0 0 0 0 4h16v11H5a2 2 0 0 1-2-2V7m18 6h-5v3h5" />,
+    tool: <path d="M14 6l4-3a5 5 0 0 1-6 8l-7 9-3-3 8-8a5 5 0 0 1 7-7" />,
+    board: <path d="M3 4h18v13H3Zm9 13v4m-4 0h8M7 12l3-4 4 5 3-3" />,
+    person: (
+      <>
+        <circle cx="12" cy="8" r="3" />
+        <path d="M5 19a7 6 0 0 1 14 0" />
       </>
     ),
     search: (
@@ -122,6 +139,7 @@ export function WorkspaceShell({
   view,
   collapsed,
   onCollapse,
+  projectBackSlot,
   onNavigate,
   tasks,
   favorites = [],
@@ -132,6 +150,7 @@ export function WorkspaceShell({
   view: WorkspaceView;
   collapsed: boolean;
   onCollapse(): void;
+  projectBackSlot?: Ref<HTMLDivElement>;
   onNavigate(view: WorkspaceView): void;
   tasks: Task[];
   favorites?: string[];
@@ -161,42 +180,58 @@ export function WorkspaceShell({
             <Icon name="panel" size={18} />
           </button>
         </div>
+        <div className="workspace-project-back" ref={projectBackSlot} />
       </header>
       <aside className="primary-sidebar" aria-label="一级导航">
-        <nav className="primary-navigation" id="primary-navigation">
-          {navigation.map((item) => (
-            <button
-              key={item.id}
-              data-nav={item.id}
-              aria-label={item.label}
-              aria-current={view === item.id ? 'page' : undefined}
-              title={collapsed ? item.label : undefined}
-              onClick={() => onNavigate(item.id)}
-            >
-              <Icon name={item.icon} />
-              {!collapsed && <span>{item.label}</span>}
-              {!collapsed && item.id === 'tasks' && <small>{tasks.length}</small>}
-            </button>
-          ))}
-        </nav>
-        {!collapsed && (
-          <section className="shortcuts">
-            <p className="sidebar-caption">
-              收藏 <span title="当前为界面原型，收藏在本次会话内有效">本次会话</span>
-            </p>
-            {tasks
-              .filter((t) => favorites.includes(t.id))
-              .map((t) => (
-                <button key={t.id} data-task-id={t.id} onClick={() => onOpen(t.id)} title={t.title}>
-                  <Icon name="star" size={14} />
-                  <span>{t.title}</span>
-                </button>
-              ))}
-            {!tasks.some((task) => favorites.includes(task.id)) && (
-              <p className="sidebar-empty">在任务标题旁点 ☆ 添加收藏</p>
-            )}
-          </section>
-        )}
+        <div className="sidebar-scroll">
+          <nav className="primary-navigation" id="primary-navigation">
+            {[
+              { label: '常用', items: navigation },
+              { label: '工作区', items: workspaceNavigation },
+            ].map(({ label, items }) => (
+              <div key={label} className="sidebar-nav-group" role="group" aria-label={label}>
+                {!collapsed && label === '工作区' && <p className="sidebar-caption">{label}</p>}
+                {items.map((item) => (
+                  <button
+                    key={item.id}
+                    data-nav={item.id}
+                    aria-label={item.label}
+                    aria-current={view === item.id ? 'page' : undefined}
+                    title={collapsed ? item.label : undefined}
+                    onClick={() => onNavigate(item.id)}
+                  >
+                    <Icon name={item.icon} />
+                    {!collapsed && <span>{item.label}</span>}
+                    {!collapsed && item.id === 'tasks' && <small>{tasks.length}</small>}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          {!collapsed && (
+            <section className="shortcuts" aria-label="收藏">
+              <p className="sidebar-caption">
+                收藏 <span title="当前为界面原型，收藏在本次会话内有效">本次会话</span>
+              </p>
+              {tasks
+                .filter((t) => favorites.includes(t.id))
+                .map((t) => (
+                  <button
+                    key={t.id}
+                    data-task-id={t.id}
+                    onClick={() => onOpen(t.id)}
+                    title={t.title}
+                  >
+                    <Icon name="star" size={14} />
+                    <span>{t.title}</span>
+                  </button>
+                ))}
+              {!tasks.some((task) => favorites.includes(task.id)) && (
+                <p className="sidebar-empty">在任务标题旁点 ☆ 添加收藏</p>
+              )}
+            </section>
+          )}
+        </div>
         <div className="sidebar-bottom">
           {agentDraft && view !== 'home' && (
             <button
@@ -211,24 +246,18 @@ export function WorkspaceShell({
           <button
             className="profile-settings"
             data-nav="settings"
-            aria-label="设置"
-            title="本地用户 · 设置"
+            aria-label="谭律师 · 设置"
+            title="谭律师 · 设置"
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => onNavigate('settings')}
           >
-            <span className="profile-avatar">我</span>
+            <span className="profile-avatar">
+              <Icon name="person" />
+            </span>
             {!collapsed && (
-              <>
-                <span className="profile-name">
-                  <strong>本地用户</strong>
-                  <small>
-                    {new URLSearchParams(window.location.search).has('preview')
-                      ? '设置 · 演示工作区'
-                      : '设置'}
-                  </small>
-                </span>
-                <Icon name="settings" size={16} />
-              </>
+              <span className="profile-name">
+                <strong>谭律师</strong>
+              </span>
             )}
           </button>
         </div>

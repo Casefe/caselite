@@ -192,7 +192,7 @@ describe('durable project UI receipts and target identity', () => {
     });
     expect(requests.find((r) => r.operation === 'read_project')).toMatchObject({ id: p.id });
     fireEvent.click(screen.getByText('返回项目列表'));
-    expect(screen.getByRole('button', { name: '中文项目' })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '中文项目' }));
     fireEvent.click(screen.getByRole('button', { name: '中文项目' }));
     await screen.findByLabelText('编辑项目名称');
   });
@@ -380,7 +380,9 @@ describe('durable project UI receipts and target identity', () => {
     await waitFor(() =>
       expect((screen.getByLabelText('编辑项目名称') as HTMLInputElement).value).toBe('A'),
     );
-    expect((screen.getByText('返回项目列表') as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (screen.getByRole('button', { name: '返回项目列表' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     vi.restoreAllMocks();
   });
 });
@@ -688,9 +690,7 @@ it('keeps detail properties read-only after confirmed update when read_project f
   fireEvent.change(name, { target: { value: '已确认名称' } });
   fireEvent.blur(name);
   await waitFor(() =>
-    expect(document.querySelector('.project-detail-heading strong')?.textContent).toBe(
-      '已确认名称',
-    ),
+    expect(document.querySelector('.project-catalog-heading h1')?.textContent).toBe('已确认名称'),
   );
   rejectRead = true;
   fireEvent.click(screen.getByText('放弃修改并重读'));

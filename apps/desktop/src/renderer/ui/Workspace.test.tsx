@@ -20,11 +20,16 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         <p>内容区域</p>
       </WorkspaceShell>,
     );
+    expect(
+      Array.from(screen.getByRole('navigation').querySelectorAll('button'), (b) => b.ariaLabel),
+    ).toEqual(['首页', '提醒', '任务', '知识库', '项目', '财务', '工具', '白板', '文档']);
+    expect(screen.getByRole('group', { name: '工作区' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: '收藏' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '项目', exact: true }));
     expect(navigate).toHaveBeenCalledWith('projects');
     fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
     expect(collapse).toHaveBeenCalledOnce();
-    expect(screen.getByText('本地用户')).toBeTruthy();
+    expect(screen.getByText('谭律师')).toBeTruthy();
     expect(
       screen
         .getByRole('banner', { name: '工作台顶部栏' })
@@ -47,7 +52,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: '展开导航' }));
     expect(collapse).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole('button', { name: '设置', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '谭律师 · 设置', exact: true }));
     expect(navigate).toHaveBeenCalledWith('settings');
     expect(document.querySelector('.global-bar')).toBeNull();
     expect(screen.queryByText('个人法律工作台')).toBeNull();

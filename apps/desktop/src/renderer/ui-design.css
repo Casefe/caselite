@@ -126,6 +126,20 @@ h3 {
   line-height: 32px;
 }
 
+.sidebar-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+.sidebar-nav-group {
+  display: grid;
+  gap: 4px;
+}
+.sidebar-nav-group + .sidebar-nav-group {
+  margin-top: 10px;
+}
+.sidebar-nav-group .sidebar-caption {
+  margin: 4px 0;
+}
 .primary-navigation {
   flex-shrink: 0;
   display: grid;
@@ -3291,12 +3305,6 @@ dd {
   font-size: 12px;
   font-weight: 500;
 }
-.profile-name small {
-  display: block;
-  font-size: 10px;
-  color: #94aaae;
-  margin-top: 5px;
-}
 .profile-settings[aria-current='page'] .profile-avatar {
   border-color: #c4d4d8;
 }
@@ -3335,7 +3343,28 @@ dd {
 .workbench.is-collapsed {
   grid-template-columns: var(--workspace-navigation-collapsed-width) minmax(0, 1fr);
 }
+.workspace-placeholder {
+  padding: 24px;
+  color: var(--ink);
+}
+.workspace-project-back {
+  display: flex;
+  align-items: center;
+  padding-inline: 4px;
+}
+.workspace-project-back-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.workspace-project-back-button:hover:not(:disabled) {
+  background: var(--theme-hover);
+}
 .workspace-topbar {
+  display: flex;
   grid-column: 1 / -1;
   background: #f5f6f7;
   border-bottom: 1px solid #e2e6e8;
@@ -3628,7 +3657,6 @@ h3 {
   border-color: var(--line);
 }
 .profile-name,
-.profile-name small,
 .sidebar-empty,
 .shortcuts button,
 .sidebar-caption {

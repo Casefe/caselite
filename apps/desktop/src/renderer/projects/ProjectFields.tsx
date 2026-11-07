@@ -207,39 +207,57 @@ export default function ProjectFields({
     next: ProjectAttributes[K],
     immediate = false,
   ) => onChange({ ...value, attributes: { ...a, [key]: next } }, immediate);
+  const nameRow = (
+    <ProjectPropertyRow label="名称" icon="name">
+      <input
+        disabled={disabled}
+        autoFocus={creating}
+        aria-label={creating ? '项目名称' : sidebar ? '侧栏项目名称' : '编辑项目名称'}
+        value={value.title}
+        maxLength={160}
+        autoComplete="off"
+        onChange={(e) => onChange({ ...value, title: e.target.value })}
+      />
+    </ProjectPropertyRow>
+  );
+  const typeRow = (
+    <ProjectPropertyRow label="项目类型" icon="folder">
+      <select
+        disabled={disabled}
+        aria-label="项目类型"
+        value={type}
+        onChange={(e) => changeType(e.target.value as ProjectType)}
+      >
+        {Object.entries(projectTypes)
+          .filter(([key]) => key !== 'litigation' || allowLegacy)
+          .map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+      </select>
+    </ProjectPropertyRow>
+  );
+  const assigneeRow = (
+    <ProjectPropertyRow label="负责人" icon="person">
+      <input
+        disabled={disabled}
+        aria-label="项目负责人"
+        placeholder="未分配"
+        value={a.assignee ?? ''}
+        maxLength={80}
+        onChange={(e) => attribute('assignee', e.target.value || null)}
+      />
+    </ProjectPropertyRow>
+  );
   return (
     <>
       <fieldset className="project-fields">
         <legend className={creating ? undefined : 'sr-only'}>
           {creating ? '项目属性' : '编辑项目属性'}
         </legend>
-        <ProjectPropertyRow label="名称" icon="name">
-          <input
-            disabled={disabled}
-            autoFocus={creating}
-            aria-label={creating ? '项目名称' : sidebar ? '侧栏项目名称' : '编辑项目名称'}
-            value={value.title}
-            maxLength={160}
-            autoComplete="off"
-            onChange={(e) => onChange({ ...value, title: e.target.value })}
-          />
-        </ProjectPropertyRow>
-        <ProjectPropertyRow label="项目类型" icon="folder">
-          <select
-            disabled={disabled}
-            aria-label="项目类型"
-            value={type}
-            onChange={(e) => changeType(e.target.value as ProjectType)}
-          >
-            {Object.entries(projectTypes)
-              .filter(([key]) => key !== 'litigation' || allowLegacy)
-              .map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-          </select>
-        </ProjectPropertyRow>
+        {creating && nameRow}
+        {creating && typeRow}
         <ProjectPropertyRow label="状态" icon="status">
           <select
             disabled={archive ? archive.disabled : disabled}
@@ -265,17 +283,7 @@ export default function ProjectFields({
             {archive?.archived && <option value="restore">恢复项目</option>}
           </select>
         </ProjectPropertyRow>
-        <ProjectPropertyRow label="负责人" icon="person">
-          <input
-            disabled={disabled}
-            aria-label="项目负责人"
-            placeholder="未分配"
-            value={a.assignee ?? ''}
-            maxLength={80}
-            onChange={(e) => attribute('assignee', e.target.value || null)}
-          />
-        </ProjectPropertyRow>
-
+        {creating && assigneeRow}
         <ProjectPropertyRow label="优先级" icon="priority">
           <select
             disabled={disabled}
@@ -290,7 +298,8 @@ export default function ProjectFields({
             ))}
           </select>
         </ProjectPropertyRow>
-        <ProjectPropertyRow label="目标日" icon="calendar">
+        {!creating && assigneeRow}
+        <ProjectPropertyRow label="日期" icon="calendar">
           <input
             disabled={disabled}
             type="date"
@@ -330,6 +339,8 @@ export default function ProjectFields({
             onChange={(e) => attribute('tags', e.target.value ? e.target.value.split(/[,，]/) : [])}
           />
         </ProjectPropertyRow>
+        {!creating && nameRow}
+        {!creating && typeRow}
         <small>负责人仅作记录。目标日不计算法定期限或创建提醒；标签最多20项，每项1—40字。</small>
       </fieldset>
       <details ref={professionalCard} className="project-professional-card" open>

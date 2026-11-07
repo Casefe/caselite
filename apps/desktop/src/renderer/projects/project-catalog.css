@@ -138,7 +138,19 @@
 .project-summary-boundary {
   margin: 20px 0 0;
 }
-.project-detail-heading,
+.project-catalog-heading h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-catalog-heading > .primary {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-height: 28px;
+  padding-block: 4px;
+}
 .project-section-tabs {
   display: flex;
   align-items: center;

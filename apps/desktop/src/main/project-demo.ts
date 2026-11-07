@@ -93,6 +93,115 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
+    if (process.env.CASELITE_WORKSPACE_NAVIGATION_TEST === '1') {
+      const click = async (selector: string) => {
+        const target = `document.querySelector(${JSON.stringify(selector)})`;
+        await wait(`${target} && !${target}.disabled`);
+        await evaluate(`${target}.click()`);
+      };
+      const title = '合成工作区导航项目';
+      for (const [id, label] of [
+        ['finance', '财务'],
+        ['tools', '工具'],
+        ['whiteboard', '白板'],
+      ]) {
+        await click(`[data-nav=${id}]`);
+        await wait(
+          `document.querySelector('.workspace-placeholder h1')?.textContent===${JSON.stringify(label)}`,
+        );
+        await capture(`workspace-${id}.png`);
+      }
+      await click('[data-nav=projects]');
+      await button('创建项目');
+      await wait("document.querySelector('dialog[open] input')===document.activeElement");
+      await evaluate(`(()=>{
+        const input=document.activeElement;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(title)});
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      })()`);
+      await click('dialog[open] button[type=submit]');
+      await wait(
+        `document.querySelector('.project-catalog-heading h1')?.textContent===${JSON.stringify(title)}`,
+      );
+      await select('项目优先级', '2');
+      await wait(
+        `document.querySelector('[aria-label=项目优先级]')?.value==='2' && !document.querySelector('.workspace-project-back-button')?.disabled`,
+      );
+      const list: CatalogResponse = await evaluate(
+        "window.caselite.catalog({protocol_version:1,operation:'list',project_properties:true})",
+      );
+      if (!list.ok || !list.projects.some((p) => p.title === title && p.attributes?.priority === 2))
+        throw new Error('Project property receipt missing');
+      await evaluate(
+        "(()=>{const editor=document.querySelector('[data-testid=project-overview-editor]');editor.focus();document.execCommand('insertText',false,'合成项目草稿，切换前须保存。');})()",
+      );
+      await wait(
+        "document.querySelector('.workspace-project-back-button').disabled && document.querySelector('#project-tab-visualization').disabled && document.querySelector('.project-catalog-heading .primary').disabled",
+      );
+      await click('[data-nav=home]');
+      await wait(
+        "document.querySelector('.workspace-main > [role=alert]') && document.querySelector('[data-testid=project-overview-editor]').textContent.includes('合成项目草稿')",
+      );
+      await button('保存项目概述');
+      await wait(
+        "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
+      );
+      await click('button[aria-label=关闭提示]');
+      await click('#project-tab-visualization');
+      await wait("document.querySelector('#project-panel-visualization:not([hidden])')");
+      const bounds = window.getBounds();
+      for (const [theme, width] of [
+        ['light', 1440],
+        ['dark', 1440],
+        ['dark', 640],
+        ['light', 640],
+      ] as const) {
+        window.setContentSize(width, 900);
+        await wait(`innerWidth===${width}`);
+        await click('[data-nav=settings]');
+        await button('外观');
+        await click(`.theme-option:has(.theme-swatch--${theme})`);
+        await wait(`document.documentElement.dataset.theme==='${theme}'`);
+        await button('返回工作区');
+        await button(title);
+        await click('#project-tab-visualization');
+        await wait(`(() => {
+          const labels=(selector)=>[...document.querySelectorAll(selector)].map(e=>e.textContent.trim()).join(',');
+          const rect=(selector)=>document.querySelector(selector).getBoundingClientRect();
+          const fold=rect('.workspace-navigation-toggle'), back=rect('.workspace-project-back-button');
+          const title=rect('.project-catalog-heading h1'), create=rect('.project-catalog-heading > .primary');
+          return [...document.querySelectorAll('#primary-navigation button')].map(b=>b.ariaLabel).join(',')==='首页,提醒,任务,知识库,项目,财务,工具,白板,文档'
+            && labels('.project-section-tabs button')==='概述,任务,文件,可视化,交付物,活动'
+            && labels('.project-properties .project-fields > label > .project-property-label').startsWith('状态,优先级,负责人,日期,标签,名称,项目类型')
+            && document.querySelector('[data-nav=settings]').textContent==='谭律师'
+            && document.querySelector('[data-nav=settings] .profile-avatar svg')
+            && Math.abs((fold.top+fold.bottom)-(back.top+back.bottom))<=2 && back.left>=fold.right && back.left-fold.right<=32
+            && title.right<=create.left && create.right<=innerWidth;
+        })()`);
+        await capture(`workspace-${theme}-${width}.png`);
+        await click('.workspace-navigation-toggle');
+        await wait(
+          "document.querySelector('.workspace-navigation-toggle[aria-expanded=false]') && document.querySelector('.workspace-project-back-button')",
+        );
+        await capture(`workspace-${theme}-${width}-collapsed.png`);
+        await click('.workspace-navigation-toggle');
+        await click('.workspace-project-back-button');
+        await wait(
+          `document.activeElement?.matches('.project-title-link') && document.activeElement.textContent.trim()===${JSON.stringify(title)}`,
+        );
+      }
+      window.setBounds(bounds);
+      assertNoRuns();
+      writeFileSync(
+        join(root, 'workspace-navigation-result.json'),
+        JSON.stringify(
+          { status: 'PASS_REAL', isolation, projectTitle: title, providerDispatches: 0 },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     const navigationMode = process.env.CASELITE_PROJECT_NAVIGATION;
     if (navigationMode) {
       if (!['write', 'read', 'preview'].includes(navigationMode))
@@ -563,7 +672,7 @@ export async function runProjectDemo(
           throw new Error('Filtering can discard property draft');
         await assertRemovedControls();
         await wait("!document.querySelector('[aria-label=搜索项目]').disabled");
-        if (await evaluate("Boolean(document.querySelector('.project-detail-heading'))"))
+        if (await evaluate("Boolean(document.querySelector('.workspace-project-back-button'))"))
           throw new Error('List property save opened detail');
         await button(current.title);
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
@@ -1101,7 +1210,7 @@ export async function runProjectDemo(
           `(()=>{const input=document.querySelector('[aria-label=编辑项目名称]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(title)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
         );
         await wait(
-          `document.querySelector('.project-detail-heading strong')?.textContent===${JSON.stringify(title)}`,
+          `document.querySelector('.project-catalog-heading h1')?.textContent===${JSON.stringify(title)}`,
         );
         writeFileSync(
           join(root, 'summary-preview-saved.json'),
@@ -1722,7 +1831,7 @@ export async function runProjectDemo(
           body.focus(); document.execCommand('insertText',false,'项目概述：保存与归档恢复验收。');
         })()`);
         await wait(
-          "document.querySelector('.project-detail-heading strong')?.textContent==='验收项目（已编辑）'",
+          "document.querySelector('.project-catalog-heading h1')?.textContent==='验收项目（已编辑）'",
         );
         await wait(`document.querySelector('[data-editor-mode=compact] [aria-expanded=false]')
           && !document.querySelector('[data-editor-mode=compact] [role=toolbar]')

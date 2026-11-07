@@ -169,6 +169,7 @@ function BodyEditor({
 function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('系统设置');
+  const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -381,6 +382,7 @@ function Workbench() {
         collapsed={collapsed}
         onCollapse={() => setCollapsed(!collapsed)}
         onNavigate={navigate}
+        projectBackSlot={setProjectBackSlot}
         tasks={tasks}
         favorites={favorites}
         agentDraft={Boolean(agentPrompt.text.trim())}
@@ -496,6 +498,7 @@ function Workbench() {
           <ProjectCatalog
             tasks={tasks}
             initialView={projectView}
+            backSlot={projectBackSlot}
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
             onDirty={setDirty}
@@ -653,6 +656,19 @@ function Workbench() {
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
           />
+        ) : view === 'finance' || view === 'tools' || view === 'whiteboard' ? (
+          <section className="workspace-placeholder">
+            <h1>{{ finance: '财务', tools: '工具', whiteboard: '白板' }[view]}</h1>
+            <div className="table-empty">
+              {
+                {
+                  finance: '这里还没有财务记录。',
+                  tools: '这里还没有可用工具。',
+                  whiteboard: '这里还没有白板。',
+                }[view]
+              }
+            </div>
+          </section>
         ) : view === 'settings' ? (
           <SettingsView
             section={settingsSection}

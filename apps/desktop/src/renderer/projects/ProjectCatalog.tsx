@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { projectStatuses } from './ProjectFields';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
@@ -18,6 +19,7 @@ const sections = {
   overview: '概述',
   tasks: '任务',
   files: '文件',
+  visualization: '可视化',
   deliverables: '交付物',
   activity: '活动',
 };
@@ -40,11 +42,13 @@ export default function ProjectCatalog({
   onDirty,
   onChanged,
   initialView,
+  backSlot,
   navigationPending = false,
 }: {
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
   initialView?: ProjectViewState | null;
+  backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
   onDirty(v: boolean): void;
   onChanged(): void;
@@ -77,6 +81,7 @@ export default function ProjectCatalog({
   );
   const workspace = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  const returnProjectId = useRef<string | null>(null);
   const restoring = useRef(initialView ?? null);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
   const alive = useRef(true),
@@ -226,6 +231,17 @@ export default function ProjectCatalog({
     if (workspace.current) workspace.current.scrollTop = source.workspaceScrollTop;
     restoring.current = null;
   }, [reading, editor, c.data, c.error, tasks]);
+  useLayoutEffect(() => {
+    const id = returnProjectId.current;
+    if (editor || !id) return;
+    returnProjectId.current = null;
+    const title = Array.from(
+      workspace.current?.querySelectorAll<HTMLButtonElement>(
+        '[data-project-id] .project-title-link',
+      ) ?? [],
+    ).find((button) => button.closest<HTMLElement>('[data-project-id]')?.dataset.projectId === id);
+    (title ?? workspace.current?.querySelector<HTMLInputElement>('[aria-label=搜索项目]'))?.focus();
+  }, [editor]);
   const openTask = (id: string, documentId?: string) => {
     if (navigationPending || dirty || creating || reading || c.pending || c.unknown) return;
     onOpen(id, {
@@ -288,6 +304,21 @@ export default function ProjectCatalog({
     setAcknowledged((previous) => ({ ...previous, [base.id]: project }));
     return project;
   };
+  const backButton = editor && (
+    <button
+      type="button"
+      className="workspace-project-back-button"
+      disabled={blocked}
+      title="返回项目列表"
+      onClick={() => {
+        returnProjectId.current = editor.project.id;
+        setEditor(null);
+      }}
+    >
+      <Icon name="back" />
+      <span className="sr-only">返回项目列表</span>
+    </button>
+  );
   return (
     <section
       ref={workspace}
@@ -298,16 +329,13 @@ export default function ProjectCatalog({
       data-testid="project-catalog"
     >
       <div className="collection-main">
-        <div className="collection-heading">
-          <Icon name="folder" size={18} />
-          <h1>项目</h1>
-          <span>{list.length}</span>
-        </div>
-        <div className="view-toolbar">
-          <button
-            disabled={reading || dirty || creating || c.pending || c.unknown}
-            onClick={() => setCreating(true)}
-          >
+        {backSlot && createPortal(backButton, backSlot)}
+        <div className="collection-heading project-catalog-heading">
+          {!backSlot && backButton}
+          {!editor && <Icon name="folder" size={18} />}
+          <h1>{editor ? (p ?? editor.project).title : '项目'}</h1>
+          {!editor && <span>{list.length}</span>}
+          <button className="primary" disabled={blocked} onClick={() => setCreating(true)}>
             创建项目
           </button>
         </div>
@@ -431,15 +459,6 @@ export default function ProjectCatalog({
             <p role="status">正在核对来源项目；请稍候或返回列表。</p>
           ) : editor ? (
             <>
-              <div className="project-detail-heading">
-                <button
-                  disabled={reading || dirty || c.pending || c.unknown}
-                  onClick={() => setEditor(null)}
-                >
-                  返回项目列表
-                </button>
-                <strong>{(p ?? editor.project).title}</strong>
-              </div>
               <div className="project-section-tabs" role="tablist" aria-label="项目栏目">
                 {Object.entries(sections).map(([id, label]) => (
                   <button
@@ -642,6 +661,16 @@ export default function ProjectCatalog({
                     </section>
                   </>
                 )}
+              </section>
+              <section
+                hidden={section !== 'visualization'}
+                role="tabpanel"
+                id="project-panel-visualization"
+                aria-labelledby="project-tab-visualization"
+                className="project-record-panel"
+              >
+                <h2>项目可视化</h2>
+                <p>这里还没有可视化内容。</p>
               </section>
               <section
                 hidden={section !== 'deliverables'}
