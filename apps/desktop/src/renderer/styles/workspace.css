@@ -403,3 +403,60 @@
 .document-directory-table {
   min-width: 560px;
 }
+
+.report-workbench {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  overflow: auto;
+}
+.report-workbench-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.report-workbench h1,
+.report-workbench h2 {
+  margin: 0 0 8px;
+}
+.report-workbench h2 {
+  font-size: 15px;
+}
+.report-workbench p {
+  margin: 5px 0;
+  color: var(--muted);
+}
+.report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.report-metrics div,
+.report-stages,
+.report-project-list {
+  padding: 14px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.report-metrics dd {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+.report-stages div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 12px;
+  margin: 7px 0;
+}
+.report-stages meter {
+  width: 100%;
+}
+.report-project-list {
+  overflow-x: auto;
+}

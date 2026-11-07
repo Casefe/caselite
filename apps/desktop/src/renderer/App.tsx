@@ -1,3 +1,4 @@
+import ReportView from './features/reports/ReportView';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { invalidateTaskPages } from './ui/task-list-query';
 import { createWorkbenchQueryClient } from './shared/data/workbench-query-client';
@@ -884,6 +885,14 @@ function Workbench() {
             onProjectDirty={setProjectDirty}
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
+          />
+        ) : view === 'reports' ? (
+          <ReportView
+            tasks={tasks}
+            onFinance={(id) => {
+              navigate('finance');
+              setFinanceProject(id);
+            }}
           />
         ) : view === 'finance' ? (
           <FinanceView initialProject={financeProject} onDirty={setDirty} />

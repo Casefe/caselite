@@ -14,6 +14,7 @@ export type WorkspaceView =
   | 'tasks'
   | 'projects'
   | 'finance'
+  | 'reports'
   | 'tools'
   | 'whiteboard'
   | 'documents'
@@ -29,6 +30,7 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
 const workspaceNavigation: typeof navigation = [
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'finance', label: '财务', icon: 'wallet' },
+  { id: 'reports', label: '报告', icon: 'board' },
   { id: 'tools', label: '工具', icon: 'tool' },
   { id: 'whiteboard', label: '白板', icon: 'board' },
   { id: 'documents', label: '文档', icon: 'file' },
