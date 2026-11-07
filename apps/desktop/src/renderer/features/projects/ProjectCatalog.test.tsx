@@ -143,8 +143,13 @@ describe('durable project UI receipts and target identity', () => {
     renderProject(
       <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+    const projectTitle = await screen.findByRole('button', { name: 'A', exact: true });
+    fireEvent.click(projectTitle.closest('tr')!);
     await screen.findByText('暂无项目评论。');
+    fireEvent.click(screen.getByRole('button', { name: '撰写项目更新' }));
+    const activity = screen.getByRole('tabpanel', { name: '活动', exact: true });
+    expect(within(activity).getByLabelText('真实业务活动')).toBeTruthy();
+    await within(activity).findByText('暂无项目更新。');
     fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
     fireEvent.click(
       within(screen.getByRole('tabpanel', { name: '任务', exact: true })).getByText('项目原任务'),
@@ -155,14 +160,11 @@ describe('durable project UI receipts and target identity', () => {
     );
     const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
     expect(within(sidebar).queryByLabelText('真实业务活动')).toBeNull();
-    for (const label of ['文件', '交付物', '活动']) {
+    for (const label of ['文件', '交付物']) {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
       const panel = screen.getByRole('tabpanel', { name: label, exact: true });
       if (label === '文件') expect(within(panel).getByLabelText('搜索项目文件')).toBeTruthy();
-      else if (label === '活动') {
-        expect(within(panel).getByLabelText('真实业务活动')).toBeTruthy();
-        await within(panel).findByText('暂无项目更新。');
-      } else expect(panel.textContent).toContain('尚未接入');
+      else expect(panel.textContent).toContain('尚未接入');
     }
     fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
     expect(document.querySelector('.catalog-actions')?.getAttribute('data-project-id')).toBe(p.id);

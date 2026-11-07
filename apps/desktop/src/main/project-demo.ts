@@ -1951,7 +1951,9 @@ export async function runProjectDemo(
         await wait(
           `document.activeElement?.dataset.projectTask===${JSON.stringify(standalone.id)}`,
         );
-        await click(`#project-panel-tasks [data-project-task="${standalone.id}"] + button`);
+        await click(
+          `#project-panel-tasks tr:has([data-project-task="${standalone.id}"]) td:last-child button`,
+        );
         await wait(
           `!document.querySelector('#project-panel-tasks [data-project-task="${standalone.id}"]')`,
         );

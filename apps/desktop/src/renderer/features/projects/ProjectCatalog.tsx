@@ -3,6 +3,8 @@ import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
+import { taskStatusNames } from '../../ui/task-status';
+import { taskPriorityNames } from '../../ui/task-priority';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses, projectTypes } from './project-display';
@@ -25,11 +27,11 @@ const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : p
 type CatalogSuccess = Extract<CatalogResponse, { ok: true }>;
 const sections = {
   overview: '概述',
+  activity: '活动',
   tasks: '任务',
   files: '文件',
   visualization: '可视化',
   deliverables: '交付物',
-  activity: '活动',
 };
 export type ProjectViewState = {
   selected: string | null;
@@ -372,9 +374,6 @@ export default function ProjectCatalog({
           </button>
         </div>
         {!editor && (
-          <p className="workbench-list-caption">集中管理项目，追踪负责人、项目阶段与待收余额。</p>
-        )}
-        {!editor && (
           <div className="project-list-controls" aria-label="项目列表选项">
             <label className="project-list-search">
               <Icon name="search" size={15} />
@@ -586,6 +585,15 @@ export default function ProjectCatalog({
                 aria-labelledby="project-tab-overview"
               >
                 {section === 'overview' && (
+                  <div className="project-overview-intro">
+                    <Icon name="folder" size={24} />
+                    <h2>{(p ?? editor.project).title}</h2>
+                    <button type="button" disabled={blocked} onClick={() => setSection('activity')}>
+                      {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
+                    </button>
+                  </div>
+                )}
+                {section === 'overview' && (
                   <ProjectSummary
                     project={p ?? editor.project}
                     tasks={tasks}
@@ -674,34 +682,84 @@ export default function ProjectCatalog({
                     新建任务
                   </button>
                 )}
-                {tasks
-                  .filter((t) => t.matter_id === editor.project.id)
-                  .map((t) => (
-                    <div key={t.id}>
-                      <button
-                        disabled={blocked}
-                        data-project-task={t.id}
-                        onClick={() => openTask(t.id)}
-                      >
-                        {t.title}
-                      </button>
-                      <button
-                        disabled={blocked || !!p?.archived_at}
-                        onClick={() =>
-                          void command(
-                            catalogMutation({
-                              operation: 'assign_task' as const,
-                              task_id: t.id,
-                              expected_version: t.version,
-                              matter_id: null,
-                            }),
-                          )
-                        }
-                      >
-                        移出项目
-                      </button>
-                    </div>
-                  ))}
+                {!!members.length && (
+                  <div className="project-task-table-scroll">
+                    <ReadTable
+                      data={members}
+                      getRowId={(task) => task.id}
+                      label="项目任务列表"
+                      className="catalog-table project-task-table"
+                      rowProps={(task) => ({ onClick: () => openTask(task.id) })}
+                      columns={[
+                        {
+                          id: 'priority',
+                          header: '优先级',
+                          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+                        },
+                        {
+                          id: 'status',
+                          header: '状态',
+                          cell: ({ row: { original: task } }) => (
+                            <span className="task-status-tag" data-status={task.status ?? 'todo'}>
+                              {taskStatusNames[task.status ?? 'todo']}
+                            </span>
+                          ),
+                        },
+                        {
+                          id: 'title',
+                          header: '任务名称',
+                          cell: ({ row: { original: task } }) => (
+                            <button
+                              className="project-title-link"
+                              disabled={blocked}
+                              data-project-task={task.id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openTask(task.id);
+                              }}
+                            >
+                              {task.title}
+                            </button>
+                          ),
+                        },
+                        {
+                          id: 'owner',
+                          header: '负责人',
+                          accessorFn: (task) =>
+                            task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
+                        },
+                        {
+                          id: 'due',
+                          header: '截止日期',
+                          accessorFn: (task) => task.due_date ?? '',
+                        },
+                        {
+                          id: 'actions',
+                          header: '',
+                          cell: ({ row: { original: task } }) => (
+                            <button
+                              type="button"
+                              disabled={blocked || !!p?.archived_at}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void command(
+                                  catalogMutation({
+                                    operation: 'assign_task' as const,
+                                    task_id: task.id,
+                                    expected_version: task.version,
+                                    matter_id: null,
+                                  }),
+                                );
+                              }}
+                            >
+                              移出项目
+                            </button>
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                )}
                 {!p?.archived_at && (
                   <>
                     <label>
@@ -743,7 +801,7 @@ export default function ProjectCatalog({
                   </>
                 )}
                 <p className="caption">归组保留任务、正文和历史身份。</p>
-                {!tasks.some((task) => task.matter_id === editor.project.id) && (
+                {!members.length && (
                   <p>
                     {p?.task_count
                       ? '任务列表正在更新，请稍后重读。'
@@ -832,6 +890,14 @@ export default function ProjectCatalog({
                 <h2>活动</h2>
                 {section === 'activity' && (
                   <>
+                    <ProjectDiscussion
+                      key={`activity-discussion:${editor.project.id}`}
+                      projectId={editor.project.id}
+                      activity
+                      archived={!!p?.archived_at}
+                      disabled={discussionDisabled || lifecycleDraft}
+                      onDirty={setDiscussionDirty}
+                    />
                     <h3>系统活动</h3>
                     <ActivityList
                       key={editor.project.id}
@@ -840,14 +906,6 @@ export default function ProjectCatalog({
                       disabled={blocked}
                       onTask={openTask}
                       onProject={openActivityProject}
-                    />
-                    <ProjectDiscussion
-                      key={`activity-discussion:${editor.project.id}`}
-                      projectId={editor.project.id}
-                      activity
-                      archived={!!p?.archived_at}
-                      disabled={discussionDisabled || lifecycleDraft}
-                      onDirty={setDiscussionDirty}
                     />
                   </>
                 )}
@@ -864,9 +922,10 @@ export default function ProjectCatalog({
                   'data-project-id': project.id,
                   'aria-selected': p?.id === project.id,
                   onClick: () => {
-                    if (!blocked) setSelected(project.id);
+                    if (blocked) return;
+                    setSelected(project.id);
+                    void open(project);
                   },
-                  onDoubleClick: () => void open(project),
                 })}
                 columns={[
                   {
@@ -886,6 +945,11 @@ export default function ProjectCatalog({
                         <Icon name="folder" size={14} /> <span>{project.title}</span>
                       </button>
                     ),
+                  },
+                  {
+                    id: 'priority',
+                    header: '优先级',
+                    accessorFn: (project) => taskPriorityNames[project.attributes?.priority ?? 0],
                   },
                   { id: 'client', header: '客户', cell: () => null },
                   {
