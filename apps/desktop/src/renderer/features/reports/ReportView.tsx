@@ -54,7 +54,7 @@ export default function ReportView({
     ? balances.reduce((sum, value) => sum + BigInt(value), 0n)
     : undefined;
   return (
-    <main className="workspace-placeholder report-workbench">
+    <section className="workspace-placeholder report-workbench" aria-label="报告工作区">
       <header className="report-workbench-heading">
         <div>
           <h1>报告</h1>
@@ -193,6 +193,6 @@ export default function ReportView({
           </section>
         </>
       )}
-    </main>
+    </section>
   );
 }

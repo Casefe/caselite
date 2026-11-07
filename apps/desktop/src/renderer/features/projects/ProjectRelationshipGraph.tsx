@@ -15,7 +15,7 @@ export function projectRelationships(
     {
       id: root,
       position: { x: 0, y: 0 },
-      data: { label: project.title },
+      data: { label: `项目 · ${project.title}` },
       type: 'input',
       sourcePosition: Position.Right,
     },
@@ -32,7 +32,7 @@ export function projectRelationships(
     nodes.push({
       id,
       position: { x: 235, y: row * 76 },
-      data: { label: task.title },
+      data: { label: `任务 · ${task.title}` },
       className: 'project-graph-task',
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
@@ -46,7 +46,7 @@ export function projectRelationships(
         type: 'output',
         targetPosition: Position.Left,
         position: { x: 470, y: (row + index) * 76 },
-        data: { label: document.title },
+        data: { label: `文档 · ${document.title}` },
         className: 'project-graph-document',
       });
       edges.push({ id: `${id}:${target}`, source: id, target });
@@ -113,7 +113,7 @@ export default function ProjectRelationshipGraph({
                       data-project-document={destination.documentId}
                       onClick={() => onOpen(destination.taskId, destination.documentId)}
                     >
-                      {destination.documentId ? '文档' : '任务'} · {String(node.data.label)}
+                      {String(node.data.label)}
                     </button>
                   </li>
                 );
