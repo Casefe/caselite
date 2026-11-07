@@ -1,3 +1,4 @@
+import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
@@ -14,7 +15,8 @@ export default function DocumentLibrary({
   onOpen(id: string): void;
   onDirty(dirty: boolean): void;
 }) {
-  const c = useCatalog();
+  const read = useOrdinaryCatalog();
+  const c = useCatalog(false, read);
   const [selected, setSelected] = useState<string | null>(null),
     [filter, setFilter] = useState('active');
   const [editing, setEditing] = useState(false),
@@ -28,7 +30,8 @@ export default function DocumentLibrary({
       (doc) => doc.id === acknowledged.id && doc.version >= acknowledged.version,
     ),
   );
-  const blocked = editing || tagDraft || c.pending || c.unknown || awaitingRead;
+  const dirty = editing || tagDraft || c.pending || c.unknown || awaitingRead;
+  const blocked = dirty || read.isFetching;
   const docs = (c.data?.documents ?? []).filter(
     (d) =>
       (!library || d.in_library) &&
@@ -40,9 +43,9 @@ export default function DocumentLibrary({
     (blocked ? c.data?.documents.find((x) => x.id === selected) : undefined) ??
     docs[0];
   useEffect(() => {
-    onDirty(blocked);
+    onDirty(dirty);
     return () => onDirty(false);
-  }, [blocked, onDirty]);
+  }, [dirty, onDirty]);
   const organize = async (
     doc: CatalogDocument,
     change: Partial<Pick<CatalogDocument, 'collection' | 'tags' | 'favorite' | 'in_library'>>,
@@ -112,7 +115,7 @@ export default function DocumentLibrary({
             ))}
           </div>
           <button
-            disabled={c.pending || c.unknown || (blocked && !c.error)}
+            disabled={read.isFetching || c.pending || c.unknown || (blocked && !c.error)}
             onClick={() => void c.load()}
           >
             刷新
@@ -276,7 +279,9 @@ export default function DocumentLibrary({
         project={c.data?.projects.find((project) => project.id === d?.matter_id)}
         blocked={blocked}
         tagDraft={tagDraft}
-        tagsDisabled={editing || c.pending || c.unknown || awaitingRead || !!d?.archived_at}
+        tagsDisabled={
+          read.isFetching || editing || c.pending || c.unknown || awaitingRead || !!d?.archived_at
+        }
         tagsLocked={c.pending || c.unknown}
         tagEditor={tagEditor}
         suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}

@@ -17,6 +17,7 @@ import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runProjectDemo } from './project-demo';
+import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
@@ -700,7 +701,14 @@ app
     );
     registerReminderIpc(reminders, reminderScheduler.tick);
     app.on('will-quit', reminderScheduler.stop);
-    registerCatalogIpc(createCatalogApplication(taskStore.catalog));
+    const catalog = createCatalogApplication(taskStore.catalog);
+    const catalogQueryProbe =
+      taskDemoRoot &&
+      taskDemoPhase === 'task-status-write' &&
+      process.env.CASELITE_CATALOG_QUERY_PROBE === '1'
+        ? createCatalogQueryProbe(catalog)
+        : undefined;
+    registerCatalogIpc(catalogQueryProbe?.application ?? catalog);
     registerFinanceIpc(createFinanceApplication(taskStore.finance));
     const materials = createMaterialApplication({
       store: taskStore.materials,
@@ -988,7 +996,15 @@ app
       taskDemoRoot &&
       (taskDemoPhase === 'task-status-write' || taskDemoPhase === 'task-status-read')
     ) {
-      if (taskQueryProbe) {
+      if (catalogQueryProbe) {
+        await runCatalogQueryProbe(
+          () => createWindow(),
+          taskDemoRoot,
+          tasks,
+          catalog,
+          catalogQueryProbe.counts,
+        );
+      } else if (taskQueryProbe) {
         await runTaskQueryProbe(() => createWindow(), taskDemoRoot, tasks, taskQueryProbe.counts);
       } else await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);

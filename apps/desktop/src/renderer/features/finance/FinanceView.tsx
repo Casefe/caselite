@@ -1,3 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  invalidateOrdinaryCatalog,
+  useOrdinaryCatalog,
+} from '../../shared/data/ordinary-catalog-query';
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import { formatCents, parseCents } from './money';
@@ -145,6 +150,7 @@ function ProjectLedger({
   project: Matter;
   onBlocked(blocked: boolean): void;
 }) {
+  const client = useQueryClient();
   const [detail, setDetail] = useState<Detail>();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -197,6 +203,7 @@ function ProjectLedger({
   }
 
   function accept(result: Detail) {
+    void invalidateOrdinaryCatalog(client);
     setDetail(result);
     setReverse(undefined);
     setFormRevision((value) => value + 1);
@@ -504,27 +511,11 @@ export default function FinanceView({
   initialProject: string;
   onDirty(blocked: boolean): void;
 }) {
-  const [projects, setProjects] = useState<Matter[]>();
+  const read = useOrdinaryCatalog();
+  const projects = read.data?.projects;
+  const error = read.error;
   const [selected, setSelected] = useState(initialProject);
-  const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
   const [blocked, setBlocked] = useState(false);
-  useEffect(() => {
-    let current = true;
-    void Promise.resolve().then(async () => {
-      try {
-        const result = await window.caselite.catalog({ protocol_version: 1, operation: 'list' });
-        if (!current) return;
-        if (result.ok) setProjects(result.projects);
-        else setError(result.message);
-      } catch {
-        if (current) setError('无法读取项目，请重试。');
-      }
-    });
-    return () => {
-      current = false;
-    };
-  }, [reload]);
   const project = projects?.find((item) => item.id === selected);
   return (
     <section className="workspace-placeholder finance-view">
@@ -532,12 +523,7 @@ export default function FinanceView({
       {error && (
         <p role="alert">
           {error}{' '}
-          <button
-            onClick={() => {
-              setError('');
-              setReload(reload + 1);
-            }}
-          >
+          <button disabled={read.isFetching} onClick={() => void read.load().catch(() => {})}>
             重新读取项目
           </button>
         </p>
@@ -549,7 +535,7 @@ export default function FinanceView({
           选择项目
           <select
             value={project?.id ?? ''}
-            disabled={blocked}
+            disabled={blocked || read.isFetching}
             onChange={(event) => setSelected(event.target.value)}
           >
             <option value="">请选择</option>

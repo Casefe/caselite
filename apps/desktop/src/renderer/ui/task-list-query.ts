@@ -1,22 +1,8 @@
-import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { TaskListQuery } from '../../preload/caselite-api';
 
 const taskPages = ['task-list', 'pages'] as const;
-
-export function createTaskListQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        networkMode: 'always',
-        staleTime: 60_000,
-        gcTime: 5 * 60_000,
-        retry: false,
-        refetchOnWindowFocus: false,
-      },
-    },
-  });
-}
 
 export function invalidateTaskPages(client: QueryClient) {
   // IPC 本身不可中止。先取消缓存里的旧读取，避免它在提交之后写回过期结果。

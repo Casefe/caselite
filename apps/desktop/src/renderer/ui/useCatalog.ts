@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 type Success = Extract<CatalogResponse, { ok: true }>;
-export function useCatalog(projectProperties = false) {
+type SharedRead = {
+  data: Success | null;
+  error: string;
+  load(): Promise<Success>;
+};
+
+export function useCatalog(projectProperties = false, shared?: SharedRead) {
   const [data, setData] = useState<Success | null>(null),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false),
@@ -11,7 +17,7 @@ export function useCatalog(projectProperties = false) {
     submission = useRef<CatalogRequest | null>(null);
   const completion = useRef<((result: Success) => void | Promise<void>) | undefined>(undefined),
     generation = useRef(0);
-  const load = useCallback(async () => {
+  const loadLocal = useCallback(async () => {
     const current = ++generation.current;
     try {
       const r = await window.caselite.catalog({
@@ -31,13 +37,27 @@ export function useCatalog(projectProperties = false) {
     }
     return null;
   }, [projectProperties]);
+  const sharesRead = Boolean(shared);
   useEffect(() => {
     alive.current = true;
-    queueMicrotask(() => void load());
+    if (!sharesRead) queueMicrotask(() => void loadLocal());
     return () => {
       alive.current = false;
     };
-  }, [load]);
+  }, [loadLocal, sharesRead]);
+  const load = shared
+    ? async () => {
+        try {
+          const result = await shared.load();
+          if (alive.current) setError('');
+          return result;
+        } catch (failure) {
+          if (alive.current)
+            setError(failure instanceof Error ? failure.message : '无法读取本地目录，请重试。');
+          return null;
+        }
+      }
+    : loadLocal;
   const execute = async (
     request: CatalogRequest,
     onSuccess?: (result: Success) => void | Promise<void>,
@@ -58,7 +78,11 @@ export function useCatalog(projectProperties = false) {
       );
       // 结果未知先查原键；仅明确未落盘时重试原请求，不生成新身份。
       if (queryFirst && !r.ok && r.code === 'NOT_FOUND') r = await window.caselite.catalog(request);
-      if (!alive.current) return null;
+      if (!alive.current) {
+        // 页面离开不等于提交取消。其他目录消费者仍需看到已经落盘的版本。
+        if (shared && r.ok) await load();
+        return null;
+      }
       if (r.ok) {
         setUnknown(false);
         submission.current = null;
@@ -82,8 +106,8 @@ export function useCatalog(projectProperties = false) {
     }
   };
   return {
-    data,
-    error,
+    data: shared ? shared.data : data,
+    error: error || shared?.error || '',
     pending,
     unknown,
     load,

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
-import { createTaskListQueryClient, invalidateTaskPages } from './task-list-query';
+import { invalidateTaskPages } from './task-list-query';
+import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -52,7 +53,7 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
     }),
   } as unknown as Window['caselite'];
   const changed = vi.fn();
-  const client = createTaskListQueryClient();
+  const client = createWorkbenchQueryClient();
   function Host() {
     const [state, setState] = useState<TaskListState>(initial),
       [blocked, setBlocked] = useState(false),
@@ -202,7 +203,7 @@ it('keeps the project assignment guard until a confirmed write can be read back'
   let readFailed = true;
   let writes = 0;
   const changed = vi.fn();
-  const client = createTaskListQueryClient();
+  const client = createWorkbenchQueryClient();
   window.caselite = {
     task: async (request: TaskRequest) => {
       if (request.operation === 'read' && readFailed) throw new Error('read failure');
