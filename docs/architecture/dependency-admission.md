@@ -19,3 +19,5 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 尚未安装的独立准入：DEV-1703 DOCX转换须核对转换依赖、许可、图片与列表样本及退出；DEV-1649 Swift Vision helper 须锁定源码/版本、平台、签名、离线与恢复，不预装MinerU/PaddleOCR/Python；MCP、同步、向量库与第二Runtime不随当前Pi接入安装。DOCX写出、OCR和固定来源功能不因本表存在视为可用。
 
 升级时先在隔离副本验证开发态和实际打包产物、模块入口、正文与Run旧数据；失败保留证据，恢复已验证锁版后复检。同样的模型或UI供应商名称不保证跨版本兼容。不得复制AGPL/EE源代码来绕过许可审查。
+
+DEV-1802 项目只读关系图在 Renderer 按需加载 `@xyflow/react@12.12.1`。使用 MIT 发布包及本地样式，详见 [ADR-018](../adr/ADR-018-read-only-project-graph.md)。

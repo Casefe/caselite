@@ -763,3 +763,26 @@
   width: 100%;
   min-width: 0;
 }
+
+.project-relationship-graph {
+  height: clamp(320px, 56vh, 680px);
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--canvas);
+  --xy-node-background-color: var(--canvas);
+  --xy-node-color: var(--ink);
+  --xy-node-border: 1px solid var(--line);
+  --xy-edge-stroke: var(--muted);
+}
+.project-relationship-graph .react-flow__node {
+  overflow-wrap: anywhere;
+}
+.project-relationship-graph .project-graph-task,
+.project-relationship-graph .project-graph-document {
+  cursor: pointer;
+}
+.project-relationship-graph .project-graph-document {
+  background: var(--active);
+}

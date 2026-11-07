@@ -38,3 +38,5 @@
 | [ADR-017](./ADR-017-task-list-query-cache.md) | 任务读取试点 | TanStack Query 与原业务 IPC | DEV-1800 |
 
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。
+
+- [ADR-018](./ADR-018-read-only-project-graph.md) 项目关系图只读投影，DEV-1802。

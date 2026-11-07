@@ -19,6 +19,16 @@ const reviewed = new Set([
   'protobufjs@7.6.6:BSD-3-Clause',
   'secure-json-parse@4.1.1:BSD-3-Clause',
   'tslib@2.8.1:0BSD',
+  // ADR-018：React Flow 锁定的传递依赖，许可与版权全文随包。
+  'd3-color@3.1.1:ISC',
+  'd3-dispatch@3.0.2:ISC',
+  'd3-drag@3.0.1:ISC',
+  'd3-ease@3.0.2:BSD-3-Clause',
+  'd3-interpolate@3.0.2:ISC',
+  'd3-selection@3.0.1:ISC',
+  'd3-timer@3.0.2:ISC',
+  'd3-transition@3.0.2:ISC',
+  'd3-zoom@3.0.1:ISC',
 ]);
 
 export function licenseViolations(packages) {

@@ -24,6 +24,7 @@ class PdfSpikeAssetsPlugin {
             [join(reactPdfRoot, 'dist/Page/TextLayer.css'), 'pdf-resources/TextLayer.css'],
             [localPath('./src/renderer/pdf-spike.css'), 'pdf-resources/spike.css'],
             [localPath('./src/renderer/ui-design.css'), 'ui-design.css'],
+            [require.resolve('@xyflow/react/dist/style.css'), 'project-graph.css'],
             [localPath('./src/renderer/materials.css'), 'materials.css'],
             [
               localPath('./src/renderer/features/projects/project-catalog.css'),

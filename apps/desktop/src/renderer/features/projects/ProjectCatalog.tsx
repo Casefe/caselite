@@ -4,7 +4,7 @@ import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
-import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
 
@@ -15,6 +15,7 @@ import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
 import ProjectDiscussion from './ProjectDiscussion';
+const ProjectRelationshipGraph = lazy(() => import('./ProjectRelationshipGraph'));
 const names = { ...projectStatuses, archived: '已归档' };
 const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
 type CatalogSuccess = Extract<CatalogResponse, { ok: true }>;
@@ -697,7 +698,22 @@ export default function ProjectCatalog({
                 className="project-record-panel"
               >
                 <h2>项目可视化</h2>
-                <p>这里还没有可视化内容。</p>
+                {section === 'visualization' &&
+                  (c.error ? (
+                    <p role="status">暂时无法读取项目关系。</p>
+                  ) : !documents ? (
+                    <p role="status">正在读取项目关系…</p>
+                  ) : (
+                    <Suspense fallback={<p role="status">正在加载关系图…</p>}>
+                      <ProjectRelationshipGraph
+                        key={editor.project.id}
+                        project={p ?? editor.project}
+                        tasks={tasks}
+                        documents={documents}
+                        onOpen={openTask}
+                      />
+                    </Suspense>
+                  ))}
               </section>
               <section
                 hidden={section !== 'deliverables'}

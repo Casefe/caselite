@@ -15,6 +15,7 @@ const desktop = {
   '@tiptap/pm': '3.32.3',
   '@tiptap/react': '3.32.3',
   '@tiptap/starter-kit': '3.32.3',
+  '@xyflow/react': '12.12.1', // DEV-1802：仅项目只读关系图
   'pdfjs-dist': '6.3.289',
   react: '19.3.1',
   'react-dom': '19.3.1',
