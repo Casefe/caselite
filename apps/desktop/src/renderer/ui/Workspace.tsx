@@ -5,9 +5,17 @@ import BrandLogo from './BrandLogo';
 import { taskStatusNames } from './task-status';
 
 export type WorkspaceView =
-  'home' | 'tasks' | 'projects' | 'documents' | 'knowledge' | 'settings' | 'agent-history';
+  | 'home'
+  | 'reminders'
+  | 'tasks'
+  | 'projects'
+  | 'documents'
+  | 'knowledge'
+  | 'settings'
+  | 'agent-history';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
   { id: 'home', label: '首页', icon: 'home' },
+  { id: 'reminders', label: '提醒', icon: 'bell' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'documents', label: '文档', icon: 'file' },

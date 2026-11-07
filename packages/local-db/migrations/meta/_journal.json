@@ -57,6 +57,13 @@
       "when": 1794007444784,
       "tag": "0007_brainy_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794008945029,
+      "tag": "0008_open_marauders",
+      "breakpoints": true
     }
   ]
 }

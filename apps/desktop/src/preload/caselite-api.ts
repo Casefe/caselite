@@ -1,4 +1,10 @@
 import {
+  REMINDER_CHANNEL,
+  reminderResponseSchema,
+  type ReminderRequest,
+  type ReminderResponse,
+} from '@caselite/contracts';
+import {
   MATERIAL_CHANNEL,
   MATERIAL_PICK_CHANNEL,
   MATERIAL_DROP_CHANNEL,
@@ -79,7 +85,8 @@ async function invokeBusinessCommand(
     | AgentRequest
     | CatalogRequest
     | AppearanceRequest
-    | MaterialRequest,
+    | MaterialRequest
+    | ReminderRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -97,6 +104,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  reminder(request: ReminderRequest): Promise<ReminderResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
   dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
@@ -127,6 +135,18 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    async reminder(request) {
+      const result = reminderResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, REMINDER_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认提醒结果，请保留原提交身份并核对。',
+          };
+    },
     // 本地准备可能包含 OCR，使用受控 Worker 的处理预算；15秒业务回执只用于短操作和付费Run。
     // cancel_prepare 可中止本地准备，准备本身永不调用外部模型。
     material: (request) =>
@@ -220,3 +240,5 @@ export type {
   MaterialPreview,
   TextPage,
 } from '@caselite/contracts';
+
+export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/contracts';

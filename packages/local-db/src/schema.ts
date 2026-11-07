@@ -178,3 +178,43 @@ export const materialPreviews = sqliteTable('material_previews', {
   scope: text('scope').notNull(),
   payload: text('payload').notNull(),
 });
+
+export const reminders = sqliteTable('reminders', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  taskId: text('task_id')
+    .notNull()
+    .unique()
+    .references(() => taskItems.id),
+  date: text('date').notNull(),
+  time: text('time').notNull(),
+  timezone: text('timezone').notNull(),
+  instant: text('instant').notNull(),
+  version: integer('version').notNull(),
+  planRevision: integer('plan_revision').notNull(),
+  status: text('status', { enum: ['scheduled', 'canceled'] }).notNull(),
+  readAt: text('read_at'),
+  updatedAt: text('updated_at').notNull(),
+});
+export const reminderAttempts = sqliteTable(
+  'reminder_attempts',
+  {
+    reminderId: text('reminder_id')
+      .notNull()
+      .references(() => reminders.id),
+    planRevision: integer('plan_revision').notNull(),
+    status: text('status', { enum: ['unknown', 'shown', 'failed', 'unsupported'] }).notNull(),
+    attemptedAt: text('attempted_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.reminderId, t.planRevision] })],
+);
+export const reminderReceipts = sqliteTable(
+  'reminder_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
+);

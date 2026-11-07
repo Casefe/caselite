@@ -1,3 +1,4 @@
+import { createReminderStore } from './reminder-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateBody, bodyPlainText } from './body-schema';
@@ -43,6 +44,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
     materials: createMaterialStore(db, workspace),
+    reminders: createReminderStore(db, workspace),
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {

@@ -1,3 +1,7 @@
+import { runReminderDemo } from './reminder-demo';
+import { startReminderScheduler } from './adapters/reminder-scheduler';
+import { createReminderApplication } from '@caselite/application';
+import { registerReminderIpc } from './ipc/register-task-ipc';
 import { createRealDemoRuntime, runRealAgentDemo } from './agent-real-demo';
 import {
   realDemoId,
@@ -406,7 +410,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 8
+      result.value?.migration_count !== 9
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -508,6 +512,9 @@ if (taskDemoPhase) {
       'credential-preflight-ui',
       'task-status-write',
       'task-status-read',
+      'reminder-write',
+      'reminder-read',
+      'reminder-preview',
       'real-agent',
       'real-agent-dry',
       'write',
@@ -657,6 +664,13 @@ app
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
     registerTaskIpc(tasks);
+    const reminders = createReminderApplication(taskStore.reminders);
+    const reminderScheduler = startReminderScheduler(
+      reminders,
+      createHash('sha256').update(taskRoot).digest('hex').slice(0, 24),
+    );
+    registerReminderIpc(reminders, reminderScheduler.tick);
+    app.on('will-quit', reminderScheduler.stop);
     registerCatalogIpc(createCatalogApplication(taskStore.catalog));
     const materials = createMaterialApplication({
       store: taskStore.materials,
@@ -720,6 +734,7 @@ app
           }
         : undefined;
     const baseAgentCredentials =
+      taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('materials') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
@@ -847,6 +862,7 @@ app
             })
           : createPiRuntime(
               credentialUi ||
+                taskDemoPhase?.startsWith('reminder') ||
                 taskDemoPhase === 'task-status-write' ||
                 taskDemoPhase === 'task-status-read' ||
                 taskDemoPhase === 'agent-read' ||
@@ -884,6 +900,11 @@ app
       recordCredentialUi();
       const window = await createWindow();
       window.setTitle('CaseLite · 系统凭据重读验收');
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase?.startsWith('reminder')) {
+      await runReminderDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      if (taskDemoPhase !== 'reminder-preview') app.exit(0);
       return;
     }
     if (taskDemoRoot && taskDemoPhase?.startsWith('real-agent')) {

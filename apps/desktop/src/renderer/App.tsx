@@ -1,3 +1,4 @@
+import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
@@ -603,6 +604,8 @@ function Workbench() {
               />
             </div>
           </section>
+        ) : view === 'reminders' ? (
+          <ReminderInbox onOpen={(id) => void open(id)} onBlocked={setPropertiesBlocked} />
         ) : view === 'documents' || view === 'knowledge' ? (
           <DocumentLibrary
             key={view}

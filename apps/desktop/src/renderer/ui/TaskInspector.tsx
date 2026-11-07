@@ -1,3 +1,4 @@
+import ReminderEditor from './ReminderEditor';
 import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
@@ -33,6 +34,7 @@ export default function TaskInspector({
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
   const [activityOpen, setActivityOpen] = useState(false);
   const [propertiesEditing, setPropertiesEditing] = useState(false);
+  const [reminderEditing, setReminderEditing] = useState(false);
   const reportProperties = useCallback(
     (value: boolean) => {
       setPropertiesEditing(value);
@@ -53,9 +55,9 @@ export default function TaskInspector({
         <button
           role="tab"
           aria-selected={tab === 'ai'}
-          disabled={propertiesEditing}
+          disabled={propertiesEditing || reminderEditing}
           onClick={() => {
-            if (!propertiesEditing) setTab('ai');
+            if (!propertiesEditing && !reminderEditing) setTab('ai');
           }}
         >
           <Icon name="spark" size={15} /> AI 助手
@@ -121,7 +123,7 @@ export default function TaskInspector({
                 <p className="caption">负责人：本人（个人本地）</p>
                 <TaskProperties
                   task={task}
-                  disabled={propertiesDisabled}
+                  disabled={propertiesDisabled || reminderEditing}
                   onBlocked={reportProperties}
                   onChanged={onTaskChanged}
                 />
@@ -129,6 +131,16 @@ export default function TaskInspector({
             ) : (
               <p>任务状态：{taskStatusNames[task.status ?? 'todo']}</p>
             ))}
+          {!documents && onPropertiesBlocked && (
+            <ReminderEditor
+              taskId={task.id}
+              disabled={propertiesDisabled || propertiesEditing}
+              onBlocked={(value) => {
+                setReminderEditing(value);
+                onPropertiesBlocked(value);
+              }}
+            />
+          )}
           {!documents && onProjectChanged && onProjectDirty && (
             <TaskProjectAction
               task={task}
