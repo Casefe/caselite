@@ -2511,8 +2511,14 @@ export async function runProjectDemo(
         await wait(`(() => {
           const graph = document.querySelector('.project-relationship-graph');
           const nodes = [...(graph?.querySelectorAll('.react-flow__node') ?? [])];
-          return nodes.length === 3
-            && nodes.every(node => node.getBoundingClientRect().width > 0 && getComputedStyle(node).visibility === 'visible')
+          const bounds = graph?.getBoundingClientRect();
+          return bounds?.width >= 250 && nodes.length === 3
+            && nodes.every(node => {
+              const rect = node.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility === 'visible'
+                && rect.left >= bounds.left && rect.right <= bounds.right
+                && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
+            })
             && graph.querySelectorAll('.react-flow__edge').length === 2
             && !graph.querySelector('.react-flow__node.draggable');
         })()`);
