@@ -69,6 +69,21 @@ export async function runProjectDemo(
     await new Promise((resolve) => setTimeout(resolve, 200));
     writeFileSync(join(root, name), (await window.webContents.capturePage()).toPNG());
   };
+  const captureRenderer = async (name: string) => {
+    // 隐藏窗口缩放或关闭设置后等待合成器绘制，再从 Chromium surface 取图。
+    await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+    const debuggerSession = window.webContents.debugger;
+    debuggerSession.attach('1.3');
+    try {
+      const { data } = await debuggerSession.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: false,
+      });
+      writeFileSync(join(root, name), Buffer.from(data, 'base64'));
+    } finally {
+      debuggerSession.detach();
+    }
+  };
   const button = async (text: string) => {
     await wait(
       `Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()===${JSON.stringify(text)}&&!e.disabled)`,
@@ -89,6 +104,11 @@ export async function runProjectDemo(
     evaluate(
       `(()=>{const e=document.querySelector(${JSON.stringify('[aria-label="' + label + '"]')});if(!e||e.disabled)throw new Error('Project select unavailable');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
     );
+  const input = async (label: string, value: string, select = false) => {
+    await evaluate(
+      `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable: ${label}');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
+    );
+  };
   const assertRemovedControls = () =>
     wait(`(()=>{const aside=document.querySelector('.project-properties');return aside.querySelector('form') &&
       !aside.querySelector('[data-project-task],[aria-label="归入已有任务"]') &&
@@ -337,23 +357,8 @@ export async function runProjectDemo(
             return r&&r.width>0&&r.height>0&&r.left>=0&&r.right<=innerWidth+1&&
               control.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));});})()`);
       };
-      const captureComposer = async (name: string) => {
-        // 隐藏窗口缩放或关闭设置后等待合成器绘制，再从 Chromium surface 取图。
-        await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
-        const debuggerSession = window.webContents.debugger;
-        debuggerSession.attach('1.3');
-        try {
-          const { data } = await debuggerSession.sendCommand('Page.captureScreenshot', {
-            format: 'png',
-            captureBeyondViewport: false,
-          });
-          writeFileSync(join(root, name), Buffer.from(data, 'base64'));
-        } finally {
-          debuggerSession.detach();
-        }
-      };
       await inspectComposer('.task-inspector');
-      await captureComposer('task-compact-ai-light.png');
+      await captureRenderer('task-compact-ai-light.png');
       await click('[data-nav=settings]');
       await button('外观');
       await click('.theme-option:has(.theme-swatch--dark)');
@@ -367,7 +372,7 @@ export async function runProjectDemo(
         `(()=>{const r=document.querySelector('${composer}').getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth;})()`,
       );
       await inspectComposer('.task-inspector');
-      await captureComposer('task-compact-ai-dark-640.png');
+      await captureRenderer('task-compact-ai-dark-640.png');
       await click('[data-testid=back-to-tasks]');
       await wait(`document.querySelector('#project-tab-tasks[aria-selected=true]') &&
         document.activeElement?.dataset.projectTask===${JSON.stringify(projectTask)}`);
@@ -380,7 +385,7 @@ export async function runProjectDemo(
       await wait(
         "document.querySelector('.project-ai-content [data-testid=assistant-input]')?.value.includes('合成草稿')",
       );
-      await captureComposer('project-compact-ai-dark-640.png');
+      await captureRenderer('project-compact-ai-dark-640.png');
       window.setContentSize(1440, 900);
       await click('[data-nav=settings]');
       await button('外观');
@@ -390,7 +395,7 @@ export async function runProjectDemo(
       await wait("document.querySelector('.project-ai-content > select')");
       await select('项目 AI 任务', projectTask);
       await inspectComposer('.project-ai-content');
-      await captureComposer('project-compact-ai-light-1440.png');
+      await captureRenderer('project-compact-ai-light-1440.png');
 
       const globalCreate = async (title: string, group: boolean) => {
         await click('[data-nav=tasks]');
@@ -430,8 +435,8 @@ export async function runProjectDemo(
         await wait(`${el} && !${el}.disabled`);
         await evaluate(`${el}.click()`);
       };
-      const openFixture = () =>
-        click(`tr[data-project-id="${seed.task.matter_id}"] .project-title-link`);
+      const projectLink = `tr[data-project-id="${seed.task.matter_id}"] .project-title-link`;
+      const openFixture = () => click(projectLink);
       const sidebar = '.project-properties';
       const activity = '#project-panel-activity .activity-list';
       const composer = '[data-testid=assistant-input]';
@@ -480,6 +485,27 @@ export async function runProjectDemo(
             e.querySelectorAll('dd')[2].textContent===${JSON.stringify(seed.task.title)} &&
             e.querySelectorAll('dd')[3].textContent===${JSON.stringify(documentId)} &&
             getComputedStyle(e.querySelector('dd')).borderTopWidth==='0px';})()`);
+      const checkPropertyGrid = (scope: string, count: number) =>
+        wait(`(() => {
+          const section = document.querySelector(${JSON.stringify(scope)});
+          const rows = Array.from(section?.querySelectorAll('.inspector-property-row') ?? []);
+          return rows.length >= ${count} && rows.every(row => {
+            const value = row.lastElementChild;
+            const style = getComputedStyle(value);
+            const bounds = value.getBoundingClientRect();
+            return Math.abs(bounds.left - row.getBoundingClientRect().left - 102) < 1 &&
+              bounds.width > 0 && bounds.right <= innerWidth + 1 &&
+              style.borderTopWidth === '0px';
+          });
+        })()`);
+      const projectProperties = '.project-properties .inspector-disclosure';
+      const taskProperties = '.task-inspector-content .inspector-disclosure';
+      const projectAssignee = '合成项目负责人';
+      const taskAssignee = '合成本地负责人';
+      const taskTag = '合成任务标签';
+      const checkTaskTag = () =>
+        wait(`document.querySelector('[aria-label="移除标签 ${taskTag}"]') &&
+          !document.querySelector('[aria-label="移除标签 合成文档标签"]')`);
       const propertyLabels = ['项目状态', '项目优先级', '项目类型'];
       const checkProperties = async () => {
         await wait(`(()=>{const aside=document.querySelector('${sidebar}');return aside &&
@@ -520,18 +546,19 @@ export async function runProjectDemo(
         await wait(`document.querySelector('#project-panel-activity .project-discussion') &&
           Object.entries(${JSON.stringify(saved.properties)}).every(([label,value])=>
             document.querySelector('[aria-label="'+label+'"]')?.value===value)`);
-        await capture('inspector-activity-reopened.png');
+        await captureRenderer('inspector-activity-reopened.png');
         await click('[data-nav=knowledge]');
         await click(documentRow);
         await readDocumentProperties();
         await wait(`document.querySelector('${tag}')`);
-        await capture('document-knowledge-reopened.png');
+        await captureRenderer('document-knowledge-reopened.png');
         await click('[data-nav=tasks]');
         await click(taskRow);
         await wait(`${projectField}?.value===${JSON.stringify(projectId)}`);
-        await checkAssignee(null);
+        await checkAssignee(taskAssignee);
+        await checkTaskTag();
         await scrollAndCheck(assigneeButton);
-        await capture('task-assignee-reopened.png');
+        await captureRenderer('task-assignee-reopened.png');
 
         assertNoRuns();
         return;
@@ -556,7 +583,7 @@ export async function runProjectDemo(
       await wait(`document.activeElement===document.querySelector('${priority}') &&
         document.activeElement.matches(':focus-visible') &&
         getComputedStyle(document.activeElement).outlineWidth==='2px'`);
-      await capture('inspector-property-keyboard-focus.png');
+      await captureRenderer('inspector-property-keyboard-focus.png');
       await propertyKey('低', 'Unidentified', 0);
       await wait(`document.querySelector('${priority}')?.value===${JSON.stringify(properties.项目优先级)} &&
         !document.querySelector('.workspace-project-back-button')?.disabled`);
@@ -571,6 +598,9 @@ export async function runProjectDemo(
       await wait("document.querySelector('[aria-label=案号]')");
       await wait(`document.querySelector('${activity} [data-activity-id]')?.dataset.activityId!==${JSON.stringify(oldEvent)} &&
         document.querySelector('${activity} [data-activity-id] strong')?.textContent==='更新项目'`);
+      await input('项目负责人', projectAssignee);
+      await input('项目目标日', '2027-02-03');
+      await wait("!document.querySelector('.workspace-project-back-button')?.disabled");
       for (const [theme, width, height] of [
         ['light', 1440, 900],
         ['dark', 1440, 900],
@@ -592,19 +622,34 @@ export async function runProjectDemo(
           document.querySelector('.primary-navigation button').getBoundingClientRect().height===30`);
         await checkProperties();
         await scrollAndCheck('[aria-label=项目状态]');
-        await capture(`inspector-properties-${theme}-${width}.png`);
+        await captureRenderer(`inspector-properties-${theme}-${width}.png`);
         await select('项目 AI 任务', taskId);
         await inspectComposer('.project-ai-content .sidebar-agent .assistant-panel--compact');
         await scrollAndCheck(composer);
-        await capture(`inspector-ai-${theme}-${width}.png`);
+        await captureRenderer(`inspector-ai-${theme}-${width}.png`);
         await click('.workspace-navigation-toggle');
         await wait(
           "document.querySelector('.workspace-navigation-toggle[aria-expanded=false]') && !document.querySelector('.profile-pro')",
         );
         await scrollAndCheck(composer);
-        await capture(`inspector-collapsed-${theme}-${width}.png`);
+        await captureRenderer(`inspector-collapsed-${theme}-${width}.png`);
         await click('.workspace-navigation-toggle');
+        await checkPropertyGrid(projectProperties, 7);
+        await click('[data-nav=tasks]');
+        await click(taskRow);
+        await checkPropertyGrid(taskProperties, 5);
+        await scrollAndCheck(`${taskProperties} [aria-label=普通截止日期]`);
+        await captureRenderer(`task-properties-${theme}-${width}.png`);
+        await click('[data-nav=documents]');
+        await click(documentRow);
+        await scrollAndCheck('.document-property-values');
+        await checkPropertyGrid(taskProperties, 4);
+        await captureRenderer(`document-properties-${theme}-${width}.png`);
+        await click('[data-nav=projects]');
+        await openFixture();
       }
+      await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
+      await select('项目 AI 任务', taskId);
       const editComposer = async () => {
         await scrollAndCheck(composer);
         await evaluate(
@@ -641,7 +686,7 @@ export async function runProjectDemo(
       const taskFields = ['任务状态', '任务优先级', '普通截止日期', '所属项目'];
       await wait(`(()=> {
         const e=document.querySelector('.task-inspector-content .inspector-disclosure[open]');
-        const rows=Array.from(e?.querySelectorAll('.task-properties-editor > label, .task-property-value')??[]);
+        const rows=Array.from(e?.querySelectorAll('.task-properties-editor > .inspector-property-row')??[]);
         return rows.map(row=>row.firstElementChild.textContent).join('/')==='状态/优先级/日期/负责人/项目' &&
           rows[3].lastElementChild.textContent==='本人' &&
           ${JSON.stringify(taskFields)}.every(label=>{
@@ -654,7 +699,7 @@ export async function runProjectDemo(
       await propertyKey('Tab', 'Tab', 9);
       await wait(`document.activeElement?.matches('[aria-label=任务优先级]:focus-visible') &&
         getComputedStyle(document.activeElement).outlineWidth==='2px'`);
-      await capture('task-attribute-keyboard-focus.png');
+      await captureRenderer('task-attribute-keyboard-focus.png');
       await evaluate('document.activeElement.blur()');
       for (const control of taskFields)
         await scrollAndCheck(`.task-inspector [aria-label="${control}"]`);
@@ -667,7 +712,7 @@ export async function runProjectDemo(
       await wait(
         `document.querySelector('.task-inspector ${composer}')?.value.includes('合成草稿，不发送')`,
       );
-      await capture('inspector-return-original-task.png');
+      await captureRenderer('inspector-return-original-task.png');
       await click('button[aria-label=返回来源项目]');
       await wait("document.querySelector('#project-panel-activity:not([hidden])')");
       await click('.workspace-project-back-button');
@@ -677,14 +722,14 @@ export async function runProjectDemo(
       await wait(
         `document.querySelector('[data-collection=documents] ${composer}')?.value.includes('合成草稿，不发送')`,
       );
-      await capture('inspector-document-ai.png');
+      await captureRenderer('inspector-document-ai.png');
       await click('[data-nav=home]');
       await inspectComposer(
         '.agent-home .assistant-panel:not(.assistant-panel--compact)',
         '[data-testid=agent-input]',
       );
       await wait("!document.querySelector('.agent-home .sidebar-agent')");
-      await capture('inspector-home-ai.png');
+      await captureRenderer('inspector-home-ai.png');
       await click('[data-nav=projects]');
       await button('创建项目');
       await wait("document.querySelector('dialog[open] input')===document.activeElement");
@@ -697,7 +742,7 @@ export async function runProjectDemo(
       await wait(`document.querySelector('.project-catalog-heading h1')?.textContent==='合成无任务项目' &&
         document.querySelector('.project-ai-content')?.textContent.includes('暂无') && (${disabledComposer}) && !document.querySelector('${composer}')`);
       await scrollAndCheck('.project-ai-content textarea');
-      await capture('project-ai-without-task.png');
+      await captureRenderer('project-ai-without-task.png');
       await click('.workspace-project-back-button');
       await openFixture();
       await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
@@ -720,16 +765,38 @@ export async function runProjectDemo(
       const lastActivityId = await evaluate(
         `document.querySelector('${activity} [data-activity-id]').dataset.activityId`,
       );
+      await click('[data-nav=tasks]');
+      await click(taskRow);
+      await input('普通截止日期', '2027-02-04');
+      await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
+      await propertyKey('Enter', 'Enter', 13);
+      await wait(
+        "document.querySelector('[aria-label=普通截止日期]')?.value==='2027-02-04' && !document.querySelector('.task-properties-editor [role=status]')",
+      );
+      await button('清空截止日期');
+      await wait(
+        "document.querySelector('[aria-label=普通截止日期]')?.value==='' && !document.querySelector('.task-properties-editor [role=status]')",
+      );
+      await button('添加标签');
+      await input('新标签', taskTag);
+      await button('添加');
+      await checkTaskTag();
       await click('[data-nav=documents]');
       await click(documentRow);
       await readDocumentProperties();
+      const documentSummary = `${taskProperties} > summary`;
+      await evaluate(`document.querySelector('${documentSummary}').focus()`);
+      await propertyKey(' ', 'Space', 32);
+      await wait(`document.activeElement.matches('${documentSummary}:focus-visible') &&
+        !document.querySelector('${taskProperties}[open]')`);
+      await captureRenderer('document-property-keyboard-focus.png');
+      await propertyKey(' ', 'Space', 32);
+      await wait(`document.querySelector('${taskProperties}[open]')`);
       await wait("!document.querySelector('[aria-label=新标签]')");
       await button('添加标签');
-      await evaluate(`(()=>{
-        const field=document.querySelector('[aria-label=新标签]');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'合成文档标签');
-        field.dispatchEvent(new Event('input',{bubbles:true}));
-      })()`);
+      await input('新标签', '合成文档标签');
+      await wait(`document.querySelector('[aria-label=新标签]')?.value==='合成文档标签' &&
+        document.querySelector('[data-collection=documents] .view-toolbar > button:disabled')`);
       await click('[data-nav=knowledge]');
       await wait(
         "document.querySelector('[data-collection=documents]') && document.querySelector('[aria-label=新标签]')?.value==='合成文档标签'",
@@ -744,7 +811,7 @@ export async function runProjectDemo(
       await wait(
         "Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='移出知识库' && !e.disabled)",
       );
-      await capture('document-properties.png');
+      await captureRenderer('document-properties.png');
       await button('归档文档');
       await button('已归档');
       await click(documentRow);
@@ -762,7 +829,7 @@ export async function runProjectDemo(
       window.setContentSize(640, 480);
       await wait('innerWidth===640 && innerHeight===480');
       await scrollAndCheck('.document-property-values');
-      await capture('document-knowledge-narrow.png');
+      await captureRenderer('document-knowledge-narrow.png');
 
       await click('[data-nav=tasks]');
       await wait("document.querySelector('[aria-label=任务项目范围]')?.options.length>=2");
@@ -783,7 +850,7 @@ export async function runProjectDemo(
       window.setContentSize(1440, 900);
       await wait('innerWidth===1440 && innerHeight===900');
       await click(assigneeButton);
-      await enterAssignee('  合成本地负责人  ');
+      await enterAssignee(`  ${taskAssignee}  `);
       const checkAssigneeGuard = async () => {
         await click('[data-nav=projects]');
         await wait(`document.querySelector('[data-nav=tasks][aria-current=page]') &&
@@ -791,7 +858,7 @@ export async function runProjectDemo(
       };
       await checkAssigneeGuard();
       await scrollAndCheck(assigneeInput);
-      await capture('task-assignee-list-draft.png');
+      await captureRenderer('task-assignee-list-draft.png');
       const fault = openToolchainProbe(
         join(isolation.userData, 'caselite.sqlite'),
         join(process.resourcesPath, 'migrations'),
@@ -807,14 +874,14 @@ export async function runProjectDemo(
         if (JSON.stringify(stored) !== JSON.stringify({ assignee: '本人' }))
           throw new Error('Unconfirmed assignee escaped transaction rollback');
         await scrollAndCheck('.task-property-recovery button');
-        await capture('task-assignee-write-failed.png');
+        await captureRenderer('task-assignee-write-failed.png');
       } finally {
         fault.exec('DROP TRIGGER IF EXISTS fail_demo_assignee');
         fault.close();
       }
       await button('重试保存');
-      await checkAssignee('合成本地负责人');
-      await capture('task-list-project-reassigned.png');
+      await checkAssignee(taskAssignee);
+      await captureRenderer('task-list-project-reassigned.png');
       await click(`${taskRow} .task-row-title`);
       await wait(
         `document.querySelector('.task-detail') && ${projectField}?.value===${JSON.stringify(projectId)}`,
@@ -827,8 +894,8 @@ export async function runProjectDemo(
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
       );
-      await capture('task-detail-project-reassigned.png');
-      await checkAssignee('合成本地负责人');
+      await captureRenderer('task-detail-project-reassigned.png');
+      await checkAssignee(taskAssignee);
       window.setContentSize(640, 480);
       await wait('innerWidth===640 && innerHeight===480');
       await scrollAndCheck(assigneeButton);
@@ -843,7 +910,19 @@ export async function runProjectDemo(
       await checkAssignee(null);
       await evaluate('document.activeElement.blur()');
       await scrollAndCheck(assigneeButton);
-      await capture('task-assignee-detail-cleared.png');
+      await captureRenderer('task-assignee-detail-cleared.png');
+      await click(assigneeButton);
+      await enterAssignee(taskAssignee);
+      await button('保存称呼');
+      await checkAssignee(taskAssignee);
+      await checkTaskTag();
+      await click('[data-nav=projects]');
+      const projectHeading = `document.querySelector('.project-catalog-heading h1')?.textContent===${JSON.stringify(seed.task.matter_title)}`;
+      const projectListed = `document.querySelector(${JSON.stringify(projectLink)})`;
+      await wait(`${projectHeading} || ${projectListed}`);
+      if (!(await evaluate(projectHeading))) await openFixture();
+      await wait(`document.querySelector('[aria-label=项目负责人]')?.value===${JSON.stringify(projectAssignee)} &&
+        document.querySelector('[aria-label=项目目标日]')?.value==='2027-02-03'`);
       assertNoRuns();
       writeFileSync(
         join(root, 'inspector-density-result.json'),
@@ -853,9 +932,11 @@ export async function runProjectDemo(
             isolation,
             taskId,
             lastActivityId,
-            properties,
+            properties: { ...properties, 项目负责人: projectAssignee, 项目目标日: '2027-02-03' },
             providerDispatches: 0,
             checks: [
+              'shared-grid-three-inspectors-four-viewports',
+              'independent-project-assignee-and-document-task-tags',
               'borderless-keyboard-focus-and-typeahead',
               'commit-refresh-and-restart',
               'shared-project-task-document-composer-and-home',
@@ -1116,14 +1197,9 @@ export async function runProjectDemo(
       return;
     }
     const professional = process.env.CASELITE_PROJECT_PROFESSIONAL === '1';
-    const input = async (label: string, value: string, select = false) => {
-      await evaluate(
-        `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable: ${label}');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
-      );
-    };
     const assertPropertyRows = async (scope: string) => {
       const layout = await evaluate(
-        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.project-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:flat(panel.querySelector('.project-professional-card')),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
+        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:flat(panel.querySelector('.project-professional-card')),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
       );
       if (
         layout.rows < 7 ||

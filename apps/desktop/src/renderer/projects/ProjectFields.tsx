@@ -91,8 +91,8 @@ function ProjectPropertyRow({
 }) {
   const path = propertyIcons[icon];
   return (
-    <label className="project-property-row">
-      <span className="project-property-label">
+    <label className="inspector-property-row">
+      <span className="inspector-property-label project-property-label">
         {path ? (
           <svg
             width="15"

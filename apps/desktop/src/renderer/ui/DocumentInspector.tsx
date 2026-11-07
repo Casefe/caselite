@@ -32,15 +32,23 @@ export default function DocumentInspector({
         <div className="inspector-content task-inspector-content" aria-label="文档属性">
           <details className="inspector-disclosure" open>
             <summary>属性</summary>
-            <dl className="document-property-values">
-              <dt>文档版本</dt>
-              <dd>{document.body_revision}</dd>
-              <dt>关联项目</dt>
-              <dd>{project?.title ?? (document.matter_id ? '已归组' : '未归组')}</dd>
-              <dt>关联任务</dt>
-              <dd>{document.title}</dd>
-              <dt>文档 ID</dt>
-              <dd className="record-id">{document.id}</dd>
+            <dl className="inspector-property-list document-property-values">
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">文档版本</dt>
+                <dd>{document.body_revision}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">关联项目</dt>
+                <dd>{project?.title ?? (document.matter_id ? '已归组' : '未归组')}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">关联任务</dt>
+                <dd>{document.title}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">文档 ID</dt>
+                <dd className="record-id">{document.id}</dd>
+              </div>
             </dl>
           </details>
           <section className="project-inspector-section task-label-section" aria-label="文档标签">

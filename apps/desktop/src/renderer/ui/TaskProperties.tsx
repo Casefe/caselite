@@ -271,8 +271,8 @@ export default function TaskProperties({
   );
   const properties = (
     <section className="task-properties-editor" aria-label="任务属性设置">
-      <label>
-        <span>状态</span>
+      <label className={groupTags ? 'inspector-property-row' : undefined}>
+        <span className="inspector-property-label">状态</span>
         <select
           aria-label="任务状态"
           value={shown.status}
@@ -286,8 +286,8 @@ export default function TaskProperties({
           ))}
         </select>
       </label>
-      <label>
-        <span>优先级</span>
+      <label className={groupTags ? 'inspector-property-row' : undefined}>
+        <span className="inspector-property-label">优先级</span>
         <select
           aria-label="任务优先级"
           value={shown.priority}
@@ -301,8 +301,8 @@ export default function TaskProperties({
           ))}
         </select>
       </label>
-      <label>
-        <span>{groupTags ? '日期' : '普通截止日期'}</span>
+      <label className={groupTags ? 'inspector-property-row' : undefined}>
+        <span className="inspector-property-label">{groupTags ? '日期' : '普通截止日期'}</span>
         <input
           aria-label="普通截止日期"
           type="date"
@@ -354,8 +354,8 @@ export default function TaskProperties({
       )}
       {groupTags ? (
         <>
-          <div className="task-property-value">
-            <span>负责人</span>
+          <div className="inspector-property-row">
+            <span className="inspector-property-label">负责人</span>
             <button
               ref={assigneeButton}
               className="task-assignee-value"
@@ -462,9 +462,11 @@ export default function TaskProperties({
             </div>
           )}
           {project ?? (
-            <div className="task-property-value">
-              <span>项目</span>
-              <span>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</span>
+            <div className="inspector-property-row">
+              <span className="inspector-property-label">项目</span>
+              <span className="inspector-property-text">
+                {task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}
+              </span>
             </div>
           )}
         </>

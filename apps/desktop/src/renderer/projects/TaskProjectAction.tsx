@@ -59,8 +59,8 @@ export default function TaskProjectAction({
   };
   return (
     <>
-      <label className="task-project-selector">
-        <span>项目</span>
+      <label className="inspector-property-row">
+        <span className="inspector-property-label">项目</span>
         <select
           aria-label="所属项目"
           value={task.matter_id ?? ''}
