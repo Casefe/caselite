@@ -2227,6 +2227,45 @@ export async function runProjectDemo(
       )
         throw new Error('Restart changed fixed material identity');
       await capture('project-files-list.png');
+      if (phase === 'project-files-read') {
+        window.setSize(1580, 900);
+        await button('查看布局示例');
+        await wait("document.querySelectorAll('.project-file-grid thead th').length===8");
+        await evaluate(
+          `document.querySelector('.project-file-grid button[title="01 合同与附件"]').click()`,
+        );
+        await wait(
+          "!document.querySelector('.project-file-grid').textContent.includes('设备采购合同.pdf')",
+        );
+        await evaluate(
+          `document.querySelector('.project-file-grid button[title="01 合同与附件"]').click()`,
+        );
+        await wait(
+          "document.querySelector('.project-file-grid').textContent.includes('设备采购合同.pdf')",
+        );
+        await wait(
+          "[...document.querySelectorAll('.project-file-grid tr[data-folder] td')].every(cell=>!cell.textContent.trim())",
+        );
+        await capture('dev-1323-complete-list.png');
+        await evaluate(
+          `document.querySelector('.project-file-grid button[title="设备采购合同.pdf"]').click()`,
+        );
+        await wait(
+          "document.querySelector('.project-file-preview')?.textContent.includes('剩余价款')",
+        );
+        await capture('dev-1323-right-preview.png');
+        await evaluate(
+          `document.querySelector('.project-file-grid button[title="设备交接单.pdf"]').click()`,
+        );
+        await wait(
+          "document.querySelector('.project-file-preview')?.textContent.includes('本单仅确认')",
+        );
+        await button('收起预览');
+        await wait("!document.querySelector('.project-file-preview')");
+        await button('返回项目文件');
+        await wait("document.querySelectorAll('[data-source-id]').length===2");
+      }
+
       const file = files[1];
       if (phase === 'project-files') {
         const path = join(
