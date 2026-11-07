@@ -1,4 +1,10 @@
 import {
+  CONTACTS_CHANNEL,
+  contactsResponseSchema,
+  type ContactsRequest,
+  type ContactsResponse,
+} from '@caselite/contracts';
+import {
   FINANCE_CHANNEL,
   financeResponseSchema,
   type FinanceRequest,
@@ -93,7 +99,8 @@ async function invokeBusinessCommand(
     | AppearanceRequest
     | MaterialRequest
     | ReminderRequest
-    | FinanceRequest,
+    | FinanceRequest
+    | ContactsRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -117,6 +124,7 @@ export type CaseLitePreloadApi = {
   dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
   appearance(request: AppearanceRequest): Promise<AppearanceResponse>;
   finance(request: FinanceRequest): Promise<FinanceResponse>;
+  contacts(request: ContactsRequest): Promise<ContactsResponse>;
   catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
   task(request: TaskRequest): Promise<TaskResponse>;
@@ -176,6 +184,14 @@ export function createCaseLitePreloadApi(
       return result.success
         ? result.data
         : { ok: false, message: '无法确认本机主题设置，请重新读取后重试。' };
+    },
+    async contacts(request) {
+      const result = contactsResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, CONTACTS_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : { ok: false, code: 'RESULT_UNKNOWN', message: '无法确认联系人结果，请核对原提交。' };
     },
     async finance(request) {
       const result = financeResponseSchema.safeParse(
@@ -271,3 +287,5 @@ export type {
 export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/contracts';
 
 export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
+
+export type { Contact, ContactsRequest } from '@caselite/contracts';

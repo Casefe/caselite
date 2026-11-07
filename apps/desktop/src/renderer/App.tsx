@@ -1,3 +1,4 @@
+import ContactsView from './features/contacts/ContactsView';
 import ReportView from './features/reports/ReportView';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { invalidateTaskPages } from './ui/task-list-query';
@@ -886,6 +887,8 @@ function Workbench() {
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
           />
+        ) : view === 'contacts' ? (
+          <ContactsView onDirty={setDirty} />
         ) : view === 'reports' ? (
           <ReportView
             tasks={tasks}

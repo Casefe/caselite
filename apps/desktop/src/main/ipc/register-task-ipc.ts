@@ -1,3 +1,9 @@
+import {
+  CONTACTS_CHANNEL,
+  contactsResponseSchema,
+  type ContactsResponse,
+} from '@caselite/contracts';
+import type { createContactsApplication } from '@caselite/application';
 import { FINANCE_CHANNEL, financeResponseSchema, type FinanceResponse } from '@caselite/contracts';
 import type { createFinanceApplication } from '@caselite/application';
 import {
@@ -47,5 +53,13 @@ export function registerReminderIpc(
     const result = reminderResponseSchema.parse(application.execute(payload));
     if (result.ok && result.receipt) changed();
     return result;
+  });
+}
+
+export function registerContactsIpc(application: ReturnType<typeof createContactsApplication>) {
+  ipcMain.handle(CONTACTS_CHANNEL, (event, payload): ContactsResponse => {
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问联系人。' };
+    return contactsResponseSchema.parse(application.execute(payload));
   });
 }

@@ -2572,11 +2572,31 @@ export async function runProjectDemo(
       await capture(
         phase === 'project-files' ? 'project-files-recovered.png' : 'project-files-reopened.png',
       );
+      const syntheticContact = '合成验收联系人';
+      await evaluate("document.querySelector('[data-nav=contacts]').click()");
+      if (phase === 'project-files') {
+        await button('新建联系人');
+        await input('联系人姓名', syntheticContact);
+        await wait(`[...(document.querySelector('.contacts-inspector select[multiple]')?.options ?? [])]
+          .some(item => item.value === ${JSON.stringify(projectId)})`);
+        await evaluate(`(() => {
+          const select = document.querySelector('.contacts-inspector select[multiple]');
+          const option = [...select.options].find(item => item.value === ${JSON.stringify(projectId)});
+          if (!option) throw new Error('Missing test project for contact');
+          option.selected = true;
+          select.dispatchEvent(new Event('change',{bubbles:true}));
+        })()`);
+        await button('保存联系人');
+      }
+      await wait(`document.querySelector('.contacts-inspector h2')?.textContent === ${JSON.stringify(syntheticContact)}
+        && document.querySelector('.contacts-inspector li')?.textContent === '独立任务转项目验收'`);
+      await captureRenderer('dev-1806-contacts.png');
       writeFileSync(
         join(root, phase + '.json'),
         JSON.stringify(
           {
             status: 'PASS_REAL',
+            contact: phase === 'project-files' ? 'saved' : 'reopened',
             files: files.map((m) => ({ id: m.id, asset: m.asset_version_id, sha256: m.sha256 })),
             missingReadRecovery: phase === 'project-files',
             isolation,

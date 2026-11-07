@@ -12,6 +12,7 @@ import {
   tagListSchema,
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
+import { createContactsStore } from './contacts-store';
 import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
@@ -60,6 +61,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     materials: createMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),
     finance: createFinanceStore(db, workspace),
+    contacts: createContactsStore(db, workspace),
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {

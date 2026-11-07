@@ -43,7 +43,12 @@ import {
 } from './credential-preflight';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
-import { registerCatalogIpc, registerFinanceIpc, registerTaskIpc } from './ipc/register-task-ipc';
+import {
+  registerCatalogIpc,
+  registerContactsIpc,
+  registerFinanceIpc,
+  registerTaskIpc,
+} from './ipc/register-task-ipc';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -52,6 +57,7 @@ import { basename, join, resolve, sep } from 'node:path';
 
 import {
   createOfflineProbeApplication,
+  createContactsApplication,
   createSpikeApplication,
   createTaskApplication,
 } from '@caselite/application';
@@ -710,6 +716,7 @@ app
         : undefined;
     registerCatalogIpc(catalogQueryProbe?.application ?? catalog);
     registerFinanceIpc(createFinanceApplication(taskStore.finance));
+    registerContactsIpc(createContactsApplication(taskStore.contacts));
     const materials = createMaterialApplication({
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),

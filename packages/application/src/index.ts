@@ -9,3 +9,4 @@ export * from './material-application';
 export * from './reminder-application';
 export * from './finance-application';
 export * from './document-review-application';
+export * from './contacts-application';

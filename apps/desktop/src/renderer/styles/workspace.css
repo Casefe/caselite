@@ -460,3 +460,37 @@
 .report-project-list {
   overflow-x: auto;
 }
+
+.contacts-tabs {
+  padding: 0 16px 12px;
+}
+.contacts-inspector {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  border-inline-start: 1px solid var(--line);
+}
+.contacts-inspector h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+.contacts-inspector fieldset,
+.contacts-inspector label,
+.contacts-inspector dl {
+  display: grid;
+  gap: 7px;
+}
+.contacts-inspector fieldset {
+  border: 0;
+  padding: 0;
+}
+.contacts-inspector dd {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.contacts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
