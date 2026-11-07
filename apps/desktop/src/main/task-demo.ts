@@ -427,7 +427,6 @@ export async function runTaskDemo(
       expected.projectId = await evaluate(
         "document.querySelector('[data-project-id]').dataset.projectId",
       );
-      await button('打开项目');
       await wait("document.querySelector('[data-testid=project-overview-editor]')");
       await input('[data-testid=project-overview-editor]', '项目说明重启保全：梳理事实与缺件。');
       await selectAllText('[data-testid=project-overview-editor]');
@@ -436,9 +435,9 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-testid=project-overview-editor] strong')");
       await button('保存项目概述');
       await wait(
-        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目说明重启保全') && Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('已保存 · 说明修订 1'))",
+        "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目说明重启保全') && Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
       );
-      await button('返回项目列表');
+      await click('#project-tab-tasks');
       await evaluate(
         `(()=>{const e=document.querySelector('[aria-label=归入已有任务]');e.value=${JSON.stringify(expected.id)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
       );
@@ -581,21 +580,25 @@ export async function runTaskDemo(
       await wait("document.querySelector('[data-testid=project-catalog] [data-project-id]')");
       await assertCollectionColumns('.collection-main', '.project-properties');
       await capture('projects-list.png');
-      await button('打开项目');
+      await button('本地项目验收样本');
       await wait(
         "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目说明重启保全')",
       );
       await capture('project-overview.png');
       await capture('project-editors.png');
       await button('返回项目列表');
-      await button('归档项目');
-      await wait("document.querySelectorAll('[data-project-id]').length===0");
-      await button('已归档');
-      await wait("document.querySelector('[data-project-id]')");
-      await button('恢复项目');
-      await wait("document.querySelectorAll('[data-project-id]').length===0");
-      await button('全部项目');
-      await wait("document.querySelector('[data-project-id]')");
+      const projectStatus = (value: string) =>
+        evaluate(
+          `(()=>{const e=document.querySelector('[aria-label=项目状态]');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        );
+      await projectStatus('archived');
+      await wait(
+        "document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[aria-label=项目状态]').disabled",
+      );
+      await projectStatus('restore');
+      await wait(
+        "document.querySelector('[aria-label=项目状态]').value==='planned' && !document.querySelector('[aria-label=项目状态]').disabled",
+      );
       const catalog = await evaluate(
         "window.caselite.catalog({protocol_version:1,operation:'list'})",
       );

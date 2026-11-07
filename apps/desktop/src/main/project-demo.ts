@@ -74,6 +74,21 @@ export async function runProjectDemo(
     button.click();
   })()`);
   };
+  const projectTab = async (tab: 'tasks' | 'overview') => {
+    const target = `document.querySelector('#project-tab-${tab}')`;
+    await wait(`${target} && !${target}.disabled`);
+    await evaluate(`${target}.click()`);
+    await wait(`${target}?.getAttribute('aria-selected')==='true'`);
+  };
+  const select = async (label: string, value: string) =>
+    evaluate(
+      `(()=>{const e=document.querySelector(${JSON.stringify('[aria-label="' + label + '"]')});if(!e||e.disabled)throw new Error('Project select unavailable');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+  const assertRemovedControls = () =>
+    wait(`(()=>{const aside=document.querySelector('.project-properties');return aside.querySelector('form') &&
+      !aside.querySelector('[data-project-task],[aria-label="归入已有任务"]') &&
+      !Array.from(aside.querySelectorAll('button')).some(b=>['保存项目属性','打开项目','归档项目','归入项目'].includes(b.textContent.trim())) &&
+      !aside.textContent.includes('项目属性已保存') && !document.querySelector('.view-toolbar .view-tabs');})()`);
   try {
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
@@ -106,7 +121,7 @@ export async function runProjectDemo(
       if (!projectRead.ok) throw new Error('Navigation project missing');
       const project = projectRead.projects.find((p) => p.id === projectId);
       if (!project) throw new Error('Navigation project substituted');
-      if (project.archived_at) await button('已归档');
+      if (project.archived_at) await select('筛选项目状态', 'archived');
       await wait("document.querySelector('[aria-label=搜索项目]')");
       if (navigationMode === 'write') {
         await evaluate(
@@ -458,32 +473,28 @@ export async function runProjectDemo(
         );
         try {
           fixture.sqlite
-            .prepare('UPDATE matters SET start_date=? WHERE id=?')
+            .prepare('UPDATE matters SET start_date=?,version=version+1 WHERE id=?')
             .run('2024-02-29', current.id);
         } finally {
           fixture.sqlite.close();
         }
         await button('返回项目列表');
-        await button('打开项目');
+        await button(current.title);
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
         current = (await read(current.id)).projects[0];
         const original = await read(current.id);
         if (!original.state || current.body_revision !== 1)
           throw new Error('Description not saved');
-        await button('任务');
+        await projectTab('tasks');
+        await assertRemovedControls();
         await input('项目负责人', '合成右栏负责人');
         if (professional) await input('程序阶段', '合成阶段');
-        await input('项目优先级', '4', true);
         await input('项目目标日', '2024-02-28');
         await wait("document.querySelector('[aria-label=项目目标日][aria-invalid=true]')");
         await wait(
           "document.querySelector('.project-property-error')?.textContent.includes('2024-02-29')",
         );
-        if (
-          !(await evaluate(
-            "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
-          ))
-        )
+        if ((await read(current.id)).projects[0].version !== current.version)
           throw new Error('Legacy date conflict remained savable');
         await input('项目目标日', '2024-03-01');
         await evaluate(
@@ -493,25 +504,11 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('[aria-label=项目目标日]').dataset.observedBadInput==='true'",
         );
-        if (
-          !(await evaluate(
-            "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
-          ))
-        )
-          throw new Error('Native incomplete date remained savable');
-        await input('项目目标日', '2024-03-01');
         await wait(
-          "!Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存项目属性').disabled",
+          "document.querySelector('.project-properties [role=alert]')?.textContent.includes('输入已保留')",
         );
-        writeFileSync(
-          join(root, 'properties-native-date.json'),
-          JSON.stringify({
-            status: 'PASS_REAL',
-            badInputBlocked: true,
-            sameCanonicalInputRecovered: true,
-          }),
-        );
-        await input('项目目标日', '');
+        if ((await read(current.id)).projects[0].version !== current.version)
+          throw new Error('Native incomplete date remained savable');
         const connection = openToolchainProbe(
           join(isolation.userData, 'caselite.sqlite'),
           join(process.resourcesPath, 'migrations'),
@@ -520,9 +517,10 @@ export async function runProjectDemo(
           "CREATE TRIGGER reject_properties BEFORE INSERT ON catalog_activity BEGIN SELECT RAISE(ABORT,'synthetic properties failure'); END",
         );
         try {
-          await button('保存项目属性');
+          await input('项目目标日', '2024-03-01');
+          await input('项目优先级', '4', true);
           await wait(
-            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交')",
+            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原属性提交')",
           );
           const failed = await read(current.id);
           if (JSON.stringify(failed.projects[0]) !== JSON.stringify(current))
@@ -532,9 +530,17 @@ export async function runProjectDemo(
           connection.sqlite.exec('DROP TRIGGER reject_properties');
           connection.sqlite.close();
         }
-        await button('核对原提交');
+        await button('核对原属性提交');
         await wait(
-          "!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交') && !document.querySelector('[aria-label=项目负责人]').disabled",
+          "!document.querySelector('.project-properties [role=alert]') && !document.querySelector('#project-tab-tasks').disabled",
+        );
+        writeFileSync(
+          join(root, 'properties-native-date.json'),
+          JSON.stringify({
+            status: 'PASS_REAL',
+            badInputBlocked: true,
+            sameCanonicalInputRecovered: true,
+          }),
         );
         const saved = await read(current.id);
         if (
@@ -555,11 +561,11 @@ export async function runProjectDemo(
         await input('项目标签', '列表侧栏,合成');
         if (!(await evaluate("document.querySelector('[aria-label=搜索项目]').disabled")))
           throw new Error('Filtering can discard property draft');
-        await button('保存项目属性');
+        await assertRemovedControls();
         await wait("!document.querySelector('[aria-label=搜索项目]').disabled");
         if (await evaluate("Boolean(document.querySelector('.project-detail-heading'))"))
           throw new Error('List property save opened detail');
-        await button('打开项目');
+        await button(current.title);
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
         for (const width of [1440, 640]) {
           window.setSize(width, 1000);
@@ -581,7 +587,7 @@ export async function runProjectDemo(
               );
             await capture(`properties-sidebar-${width}-${theme}.png`);
             await evaluate(
-              "Array.from(document.querySelectorAll('.project-properties button')).find(e=>e.textContent.trim()==='保存项目属性').scrollIntoView({block:'center'})",
+              "document.querySelector('.project-properties [aria-label=项目标签]').scrollIntoView({block:'center'})",
             );
             await assertPropertyRows('.project-properties');
             const reachable = await evaluate(
@@ -630,7 +636,7 @@ export async function runProjectDemo(
             JSON.stringify(current.state) !== JSON.stringify(expected.state))
         )
           throw new Error('Restart lost attributes or body');
-        if (project.archived_at) await button('已归档');
+        if (project.archived_at) await select('筛选项目状态', 'archived');
         await button(project.title);
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
         if (professional && process.env.CASELITE_PROJECT_PROPERTIES !== 'preview') {
@@ -679,7 +685,7 @@ export async function runProjectDemo(
       if (!catalog.ok) throw new Error('Cannot reopen isolated project');
       const project = catalog.projects.find((p) => p.id === expected.task.matter_id);
       if (!project) throw new Error('Original isolated project missing');
-      if (project.archived_at) await button('已归档');
+      if (project.archived_at) await select('筛选项目状态', 'archived');
       await button(project.title);
       await wait(
         "document.querySelector('.project-summary') && document.querySelector('[aria-label=编辑项目名称]')",
@@ -690,9 +696,8 @@ export async function runProjectDemo(
         await evaluate(
           `(()=>{const input=document.querySelector('[aria-label=编辑项目名称]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(title)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
         );
-        await button('保存项目概述');
         await wait(
-          `document.querySelector('[aria-label=编辑项目名称]')?.value===${JSON.stringify(title)} && Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='保存项目概述'&&b.disabled) && !document.querySelector('[aria-label=编辑项目名称]').disabled`,
+          `document.querySelector('.project-detail-heading strong')?.textContent===${JSON.stringify(title)}`,
         );
         writeFileSync(
           join(root, 'summary-preview-saved.json'),
@@ -755,9 +760,8 @@ export async function runProjectDemo(
           await evaluate(
             "(()=>{const input=document.querySelector('[aria-label=项目状态]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'active');input.dispatchEvent(new Event('change',{bubbles:true}));})()",
           );
-          await button('保存项目概述');
           await wait(
-            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交')",
+            "Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原属性提交')",
           );
           if (JSON.stringify(await list()) !== JSON.stringify(before))
             throw new Error('Failed save created success activity');
@@ -766,9 +770,9 @@ export async function runProjectDemo(
           connection.sqlite.exec('DROP TRIGGER project_probe_reject');
           connection.sqlite.close();
         }
-        await button('核对原提交');
+        await button('核对原属性提交');
         await wait(
-          "!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原提交') && document.querySelector('[aria-label=项目状态]')?.value==='active'",
+          "!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='核对原属性提交') && document.querySelector('[aria-label=项目状态]')?.value==='active'",
         );
         const after = await list();
         if (
@@ -876,17 +880,35 @@ export async function runProjectDemo(
           `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
         );
         await capture('project-summary-activity-task.png');
-        await evaluate("document.querySelector('[data-nav=projects]').click()");
-        await button('独立任务转项目验收');
+        await wait("document.querySelector('[aria-label=返回来源项目]')");
+        await evaluate("document.querySelector('[aria-label=返回来源项目]').click()");
         await wait("document.querySelector('.project-summary [data-activity-id]')");
+        await assertRemovedControls();
+        await projectTab('tasks');
         await button('移出项目');
+        await wait("!document.querySelector('#project-tab-overview').disabled");
+        await projectTab('overview');
         await wait(
           "document.querySelector('.project-summary-counts dd')?.textContent==='0' && document.querySelector('.project-summary .project-files')?.textContent.includes('项目还没有已登记材料')",
         );
+        await projectTab('tasks');
         await evaluate(
           `(()=>{const select=document.querySelector('[aria-label=归入已有任务]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,${JSON.stringify(expected.task.id)});select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
         );
         await button('归入项目');
+        await wait("!document.querySelector('#project-tab-overview').disabled");
+        const memberButton = `document.querySelector('#project-panel-tasks [data-project-task="${expected.task.id}"]')`;
+        await wait(`${memberButton} && !${memberButton}.disabled`);
+        await evaluate(`${memberButton}.click()`);
+        await wait(
+          `document.querySelector('[data-active-task="${expected.task.id}"]') && document.querySelector('[aria-label=返回来源项目]')`,
+        );
+        await evaluate("document.querySelector('[aria-label=返回来源项目]').click()");
+        await wait("document.querySelector('#project-tab-tasks[aria-selected=true]')");
+        await wait(
+          `document.activeElement?.dataset.projectTask===${JSON.stringify(expected.task.id)}`,
+        );
+        await projectTab('overview');
         await wait(
           "document.querySelector('.project-summary-counts dd')?.textContent==='1' && document.querySelectorAll('.project-summary [data-source-id]').length===2",
         );
@@ -1188,7 +1210,7 @@ export async function runProjectDemo(
             throw new Error('Project section switch changed identity');
         }
         await capture('project-sections.png');
-        await button('概述');
+        await projectTab('overview');
         await wait("document.querySelector('#project-panel-overview')?.hidden===false");
         await evaluate(
           "document.querySelector('.project-summary-records > section:nth-child(2) button').click()",
@@ -1273,7 +1295,7 @@ export async function runProjectDemo(
       const expected = JSON.parse(readFileSync(join(root, 'project-expected.json'), 'utf8'));
       const restored = phase === 'project-restore';
       const title = restored ? '验收项目（已编辑）' : '项目创建与重启验收';
-      if (restored) await button('已归档');
+      if (restored) await select('筛选项目状态', 'archived');
       await wait("document.querySelector('.project-title-link')");
       await button(title);
       await wait(
@@ -1295,9 +1317,12 @@ export async function runProjectDemo(
           const body=document.querySelector('[data-testid=project-overview-editor]');
           body.focus(); document.execCommand('insertText',false,'项目概述：保存与归档恢复验收。');
         })()`);
+        await wait(
+          "document.querySelector('.project-detail-heading strong')?.textContent==='验收项目（已编辑）'",
+        );
         await button('保存项目概述');
         await wait(
-          "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('已保存 · 说明修订 1'))",
+          "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
         );
         const saved: CatalogResponse = await evaluate(
           `window.caselite.catalog({operation:'read_project',protocol_version:1,id:${JSON.stringify(expected.id)}})`,
@@ -1309,13 +1334,12 @@ export async function runProjectDemo(
           sha256: createHash('sha256').update(Uint8Array.from(saved.state)).digest('hex'),
         };
         writeFileSync(join(root, 'project-expected.json'), JSON.stringify(expected, null, 2));
+        await assertRemovedControls();
         await capture('project-edited.png');
-        await button('归档项目');
-        await wait("!document.querySelector('[data-project-id]')");
-        await button('已归档');
-        await wait("document.querySelector('.project-title-link')");
-        await button('验收项目（已编辑）');
-        await wait("document.querySelector('[aria-label=编辑项目名称]')?.disabled");
+        await select('项目状态', 'archived');
+        await wait(
+          "document.querySelector('[aria-label=编辑项目名称]')?.disabled && document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[aria-label=项目状态]').disabled",
+        );
         const archived: CatalogResponse = await evaluate(
           "window.caselite.catalog({operation:'list',protocol_version:1})",
         );
@@ -1323,19 +1347,17 @@ export async function runProjectDemo(
           throw new Error('Archive was not persisted');
         if (
           !(await evaluate(
-            "document.querySelector('[aria-label=项目状态]').disabled && !document.querySelector('[data-testid=project-overview-editor]').isContentEditable",
+            "document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[data-testid=project-overview-editor]').isContentEditable",
           ))
         )
           throw new Error('Archived project remains writable');
         await capture('project-archived.png');
       }
       if (restored) {
-        await wait("document.querySelector('[aria-label=编辑项目名称]')?.disabled");
-        await button('恢复项目');
-        await wait("!document.querySelector('[data-project-id]')");
-        await button('全部项目');
-        await wait("document.querySelector('.project-title-link')");
-        await button(title);
+        await wait(
+          "document.querySelector('[aria-label=编辑项目名称]')?.disabled && document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[aria-label=项目状态]').disabled",
+        );
+        await select('项目状态', 'restore');
         await wait(
           "document.querySelector('[aria-label=编辑项目名称]') && !document.querySelector('[aria-label=编辑项目名称]').disabled",
         );

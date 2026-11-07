@@ -30,10 +30,12 @@ export function useCatalog(projectProperties = false) {
           setData(r);
           setError('');
         } else setError(r.message);
+        return r.ok ? r : null;
       }
     } catch {
       if (alive.current && current === generation.current) setError('无法读取本地目录，请重试。');
     }
+    return null;
   }, [projectProperties]);
   useEffect(() => {
     alive.current = true;

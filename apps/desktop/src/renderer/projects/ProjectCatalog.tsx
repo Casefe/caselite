@@ -1,8 +1,8 @@
-import { createPortal } from 'react-dom';
-import ProjectFields, { projectValues, validProject, type ProjectValues } from './ProjectFields';
+import { projectStatuses } from './ProjectFields';
+import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
-import type { Matter, Task, CatalogRequest } from '../../preload/caselite-api';
-import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
+import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
+import { DraftEditor, type RichDraft } from '../editors/RichEditor';
 import { Icon } from '../ui/Workspace';
 import AgentPanel from '../ui/AgentPanel';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
@@ -10,7 +10,9 @@ import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
-const names = { planned: '待开始', active: '进行中', done: '已完成' };
+const names = { ...projectStatuses, archived: '已归档' };
+const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
+type CatalogSuccess = Extract<CatalogResponse, { ok: true }>;
 const sections = {
   overview: '概述',
   tasks: '任务',
@@ -22,9 +24,8 @@ export type ProjectViewState = {
   selected: string | null;
   projectId: string | null;
   section: keyof typeof sections;
-  archived: boolean;
   query: string;
-  statusFilter: Matter['status'] | 'all';
+  statusFilter: keyof typeof names | 'all';
   order: string;
   columns: { status: boolean; tasks: boolean; updated: boolean };
   scrollTop: number;
@@ -48,21 +49,24 @@ export default function ProjectCatalog({
 }) {
   const c = useCatalog(true),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
-    [archived, setArchived] = useState(initialView?.archived ?? false),
     [creating, setCreating] = useState(false),
     [editor, setEditor] = useState<{
       project: Matter;
       state: number[] | null;
       epoch: number;
     } | null>(null),
-    [dirty, setDirty] = useState(false),
+    [bodyDirty, setBodyDirty] = useState(false),
+    [propertyDirty, setPropertyDirty] = useState(false),
+    [acknowledged, setAcknowledged] = useState<Record<string, Matter>>({}),
     [assigning, setAssigning] = useState('');
+  const [bodyError, setBodyError] = useState('');
+  const [bodyCommand, setBodyCommand] = useState(false);
+  const [lifecycleDraft, setLifecycleDraft] = useState(false);
   const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
-  const [propertyHost, setPropertyHost] = useState<HTMLDivElement | null>(null);
   const [side, setSide] = useState('properties'),
     [aiTask, setAiTask] = useState('');
   const [query, setQuery] = useState(initialView?.query ?? '');
-  const [statusFilter, setStatusFilter] = useState<Matter['status'] | 'all'>(
+  const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
   );
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
@@ -85,31 +89,42 @@ export default function ProjectCatalog({
     };
   }, []);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const list = (c.data?.projects ?? [])
-      .filter(
-        (p) =>
-          !!p.archived_at === archived &&
-          (statusFilter === 'all' || p.status === statusFilter) &&
-          p.title.toLocaleLowerCase().includes(normalizedQuery),
-      )
-      .sort((a, b) => {
-        if (order === 'title')
-          return a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id);
-        if (order === 'status') {
-          const positions = { planned: 0, active: 1, done: 2 };
-          return (
-            positions[a.status] - positions[b.status] || a.title.localeCompare(b.title, 'zh-CN')
-          );
-        }
-        return b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id);
+  const dirty = bodyDirty || propertyDirty;
+  const projects = Object.values({
+    ...acknowledged,
+    ...Object.fromEntries(
+      (c.data?.projects ?? []).map((project) => {
+        const confirmed = acknowledged[project.id];
+        return [project.id, confirmed && confirmed.version > project.version ? confirmed : project];
       }),
-    p = editor
-      ? (c.data?.projects.find(
-          (x) => x.id === editor.project.id && x.version >= editor.project.version,
-        ) ?? editor.project)
-      : initialView?.projectId && (reading || sourceUnavailable)
-        ? undefined
-        : (list.find((x) => x.id === selected) ?? (selected ? undefined : list[0]));
+    ),
+  });
+  const list = projects
+    .filter(
+      (p) =>
+        (statusFilter === 'all' ? !p.archived_at : projectStatus(p) === statusFilter) &&
+        p.title.toLocaleLowerCase().includes(normalizedQuery),
+    )
+    .sort((a, b) => {
+      if (order === 'title')
+        return a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id);
+      if (order === 'status') {
+        const positions = { planned: 0, active: 1, done: 2, archived: 3 };
+        return (
+          positions[projectStatus(a)] - positions[projectStatus(b)] ||
+          a.title.localeCompare(b.title, 'zh-CN')
+        );
+      }
+      return b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id);
+    });
+  const p = editor
+    ? (projects.find((x) => x.id === editor.project.id && x.version >= editor.project.version) ??
+      editor.project)
+    : initialView?.projectId && (reading || sourceUnavailable)
+      ? undefined
+      : (list.find((x) => x.id === selected) ??
+        (propertyDirty ? projects.find((x) => x.id === selected) : undefined) ??
+        list[0]);
   useEffect(() => {
     onDirty(dirty || creating || reading || c.pending || c.unknown);
     return () => onDirty(false);
@@ -129,6 +144,9 @@ export default function ProjectCatalog({
         const actual = r.projects.find((p) => p.id === id);
         if (actual) {
           setEditor({ project: actual, state: r.state, epoch: sequence });
+          setAssigning('');
+          setBodyDirty(false);
+          setBodyError('');
           setCreatedId(null);
           if (!restore) setSection('overview');
           setSourceUnavailable(false);
@@ -163,9 +181,7 @@ export default function ProjectCatalog({
     if (!source || reading || (source.projectId ? !editor : !c.data)) return;
     const target = Array.from(
       workspace.current?.querySelectorAll<HTMLButtonElement>(
-        source.projectId
-          ? `#project-panel-${source.section} [data-project-task]`
-          : '.project-properties [data-project-task]',
+        `#project-panel-${source.section} [data-project-task]`,
       ) ?? [],
     ).find(
       (button) => button.dataset.projectTask === source.returnTaskId && !button.closest('[hidden]'),
@@ -194,7 +210,6 @@ export default function ProjectCatalog({
       selected: p?.id ?? selected,
       projectId: editor?.project.id ?? null,
       section,
-      archived,
       query,
       statusFilter,
       order,
@@ -207,20 +222,25 @@ export default function ProjectCatalog({
   const open = async (project: Matter) => {
     if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
   };
-  const command = (
-    input: CatalogRequest,
-    done?: (
-      r: Extract<Awaited<ReturnType<typeof c.execute>>, { ok: true }>,
-    ) => void | Promise<void>,
-  ) =>
+  const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
+  const command = (input: CatalogRequest, done?: (r: CatalogSuccess) => void | Promise<void>) =>
     c.execute(input, async (r) => {
       onChanged();
-      if (input.operation === 'archive_project') {
-        setEditor(null);
-        setSelected(null);
-      }
       await done?.(r);
     });
+  const handleBodyResult = (result: CatalogResponse | null) => {
+    if (result?.ok) return;
+    setBodyError(result?.message ?? '说明提交结果未知。');
+    if (result && result.code !== 'RESULT_UNKNOWN' && result.code !== 'UNAVAILABLE')
+      setBodyCommand(false);
+  };
+  const acknowledge = (result: CatalogSuccess, base: Matter) => {
+    const actual = result.projects.find((item) => item.id === base.id);
+    if (result.target_id !== base.id || !actual || actual.version <= base.version) return null;
+    const project = { ...base, ...actual, attributes: actual.attributes ?? base.attributes };
+    setAcknowledged((previous) => ({ ...previous, [base.id]: project }));
+    return project;
+  };
   return (
     <section
       ref={workspace}
@@ -237,22 +257,6 @@ export default function ProjectCatalog({
           <span>{list.length}</span>
         </div>
         <div className="view-toolbar">
-          <div className="view-tabs">
-            {[false, true].map((a) => (
-              <button
-                key={String(a)}
-                className={a === archived ? 'current' : ''}
-                disabled={reading || dirty || creating || c.pending || c.unknown}
-                onClick={() => {
-                  setArchived(a);
-                  setSelected(null);
-                  setEditor(null);
-                }}
-              >
-                {a ? '已归档' : '全部项目'}
-              </button>
-            ))}
-          </div>
           <button
             disabled={reading || dirty || creating || c.pending || c.unknown}
             onClick={() => setCreating(true)}
@@ -276,9 +280,12 @@ export default function ProjectCatalog({
               disabled={dirty || creating || reading || c.pending || c.unknown}
               aria-label="筛选项目状态"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              onChange={(e) => {
+                setSelected(null);
+                setStatusFilter(e.target.value as typeof statusFilter);
+              }}
             >
-              <option value="all">全部状态</option>
+              <option value="all">未归档项目</option>
               {Object.entries(names).map(([id, label]) => (
                 <option key={id} value={id}>
                   {label}
@@ -357,12 +364,17 @@ export default function ProjectCatalog({
             </button>
           </div>
         )}
-        {c.error && !creating && (
-          <p role="alert" className="assistant-error">
+        {c.error && !creating && !propertyDirty && !bodyDirty && (
+          <div role="alert" className="assistant-error">
             {c.error}
-          </p>
+            {!c.unknown && (
+              <button disabled={c.pending} onClick={() => void c.load()}>
+                重新读取项目列表
+              </button>
+            )}
+          </div>
         )}
-        {c.unknown && !creating && (
+        {c.unknown && !creating && !propertyDirty && !bodyDirty && (
           <button disabled={c.pending} onClick={() => void c.retry()}>
             核对原提交
           </button>
@@ -410,34 +422,49 @@ export default function ProjectCatalog({
                     unavailable={!!c.error || !c.data}
                     disabled={navigationPending || reading || dirty || c.pending || c.unknown}
                     onOpen={openTask}
-                    onProject={(id) => void read(id)}
+                    onProject={(id) => {
+                      if (!blocked) void read(id);
+                    }}
                   />
                 )}
                 <ProjectEditor
-                  key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
+                  key={editor.project.id + ':' + editor.epoch}
                   data={editor}
-                  propertyHost={propertyHost}
-                  pending={reading || c.pending || c.unknown}
-                  onDirty={setDirty}
-                  onReload={() => {
-                    setDirty(false);
-                    void read(editor.project.id);
-                  }}
-                  onSave={async (values, onCommitted) => {
-                    await command(
+                  archived={!!p?.archived_at}
+                  pending={navigationPending || reading || c.pending || c.unknown || propertyDirty}
+                  disabled={navigationPending || reading || lifecycleDraft || bodyCommand}
+                  unknown={c.unknown && bodyCommand}
+                  error={bodyError}
+                  onRetry={() => void c.retry().then(handleBodyResult)}
+                  onDirty={setBodyDirty}
+                  onReload={() => void read(editor.project.id)}
+                  onSave={async (state, onCommitted) => {
+                    if (!p) return;
+                    setBodyCommand(true);
+                    setBodyError('');
+                    const result = await command(
                       catalogMutation({
                         operation: 'update_project' as const,
-                        id: editor.project.id,
-                        expected_version: editor.project.version,
+                        id: p.id,
+                        title: p.title,
+                        status: p.status,
+                        expected_version: p.version,
                         expected_body_revision: editor.project.body_revision,
-                        ...values,
+                        state,
                       }),
-                      async () => {
+                      (r) => {
+                        setBodyCommand(false);
+                        const confirmed = acknowledge(r, p);
+                        if (!confirmed) {
+                          setBodyError('保存回执缺少说明版本，请重新读取项目。');
+                          return;
+                        }
+                        setBodyError('');
+                        setEditor({ ...editor, project: confirmed, state });
                         onCommitted();
-                        setDirty(false);
-                        await read(editor.project.id);
                       },
                     );
+                    handleBodyResult(result);
                   }}
                 />
               </div>
@@ -450,22 +477,79 @@ export default function ProjectCatalog({
               >
                 <h2>项目任务</h2>
                 {tasks
-                  .filter((task) => task.matter_id === editor.project.id)
-                  .map((task) => (
-                    <button
-                      key={task.id}
-                      disabled={reading || c.pending || c.unknown}
-                      data-project-task={task.id}
-                      onClick={() => openTask(task.id)}
-                    >
-                      {task.title}
-                    </button>
+                  .filter((t) => t.matter_id === editor.project.id)
+                  .map((t) => (
+                    <div key={t.id}>
+                      <button
+                        disabled={blocked}
+                        data-project-task={t.id}
+                        onClick={() => openTask(t.id)}
+                      >
+                        {t.title}
+                      </button>
+                      <button
+                        disabled={blocked || !!p?.archived_at}
+                        onClick={() =>
+                          void command(
+                            catalogMutation({
+                              operation: 'assign_task' as const,
+                              task_id: t.id,
+                              expected_version: t.version,
+                              matter_id: null,
+                            }),
+                          )
+                        }
+                      >
+                        移出项目
+                      </button>
+                    </div>
                   ))}
+                {!p?.archived_at && (
+                  <>
+                    <label>
+                      归入已有任务
+                      <select
+                        aria-label="归入已有任务"
+                        value={assigning}
+                        disabled={blocked}
+                        onChange={(e) => setAssigning(e.target.value)}
+                      >
+                        <option value="">选择任务</option>
+                        {tasks
+                          .filter((t) => t.matter_id !== editor.project.id)
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.title}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <button
+                      disabled={!assigning || blocked}
+                      onClick={() => {
+                        const t = tasks.find((t) => t.id === assigning);
+                        if (t)
+                          void command(
+                            catalogMutation({
+                              operation: 'assign_task' as const,
+                              task_id: t.id,
+                              expected_version: t.version,
+                              matter_id: editor.project.id,
+                            }),
+                            () => setAssigning(''),
+                          );
+                      }}
+                    >
+                      归入项目
+                    </button>
+                  </>
+                )}
+                <p className="caption">归组保留任务、正文和历史身份。</p>
                 {!tasks.some((task) => task.matter_id === editor.project.id) && (
                   <p>
                     {p?.task_count
                       ? '任务列表正在更新，请稍后重读。'
-                      : '还没有任务。可在右侧归入已有任务，或从独立任务创建项目。'}
+                      : '还没有任务。可在此归入已有任务，或从独立任务创建项目。'}
                   </p>
                 )}
               </section>
@@ -509,7 +593,9 @@ export default function ProjectCatalog({
                     scope={{ type: 'project', id: editor.project.id }}
                     disabled={navigationPending || reading || dirty || c.pending || c.unknown}
                     onTask={openTask}
-                    onProject={(id) => void read(id)}
+                    onProject={(id) => {
+                      if (!blocked) void read(id);
+                    }}
                   />
                 )}
               </section>
@@ -553,9 +639,9 @@ export default function ProjectCatalog({
                       </td>
                       {columns.status && (
                         <td>
-                          <span className={`project-status-label is-${m.status}`}>
+                          <span className={`project-status-label is-${projectStatus(m)}`}>
                             <i />
-                            {names[m.status]}
+                            {names[projectStatus(m)]}
                           </span>
                         </td>
                       )}
@@ -619,12 +705,10 @@ export default function ProjectCatalog({
           <div className="project-property-heading">
             <h3>{p.title}</h3>
             <p>
-              {names[p.status]} · {p.task_count} 个任务 · 版本 {p.version}
-              {p.archived_at ? ' · 已归档' : ''}
+              {names[projectStatus(p)]} · {p.task_count} 个任务 · 版本 {p.version}
             </p>
           </div>
         )}
-        <div ref={setPropertyHost} hidden={side !== 'properties' || !editor} />
         {side === 'ai' ? (
           <div className="project-ai-content">
             <h3>项目任务 AI</h3>
@@ -648,125 +732,55 @@ export default function ProjectCatalog({
             )}
           </div>
         ) : p && !sourceUnavailable ? (
-          <>
-            {!editor && (
-              <ProjectPropertyEditor
-                key={p.id + ':' + p.version}
-                project={p}
-                pending={reading || creating || c.pending || c.unknown}
-                onDirty={setDirty}
-                onReload={() => void c.load()}
-                onSave={async (values, onCommitted) => {
-                  await command(
-                    catalogMutation({
-                      operation: 'update_project',
-                      id: p.id,
-                      expected_version: p.version,
-                      expected_body_revision: p.body_revision,
-                      ...values,
-                    }),
-                    () => {
-                      setDirty(false);
-                      onCommitted();
-                    },
-                  );
-                }}
-              />
-            )}
-            <div className="catalog-buttons">
-              <button
-                disabled={reading || creating || dirty || c.pending || c.unknown}
-                onClick={() => void open(p)}
-              >
-                打开项目
-              </button>
-              <button
-                disabled={reading || creating || dirty || c.pending || c.unknown}
-                onClick={() =>
-                  void command(
-                    catalogMutation({
-                      operation: 'archive_project' as const,
-                      id: p.id,
-                      expected_version: p.version,
-                      archived: !p.archived_at,
-                    }),
-                  )
-                }
-              >
-                {p.archived_at ? '恢复项目' : '归档项目'}
-              </button>
-            </div>
-            <h3>项目任务</h3>
-            {tasks
-              .filter((t) => t.matter_id === p.id)
-              .map((t) => (
-                <div key={t.id}>
-                  <button
-                    disabled={reading || dirty || creating || c.pending || c.unknown}
-                    data-project-task={t.id}
-                    onClick={() => openTask(t.id)}
-                  >
-                    {t.title}
-                  </button>
-                  <button
-                    disabled={reading || dirty || creating || c.pending || c.unknown}
-                    onClick={() =>
-                      void command(
-                        catalogMutation({
-                          operation: 'assign_task' as const,
-                          task_id: t.id,
-                          expected_version: t.version,
-                          matter_id: null,
-                        }),
-                      )
-                    }
-                  >
-                    移出项目
-                  </button>
-                </div>
-              ))}
-            {!p.archived_at && (
-              <>
-                <label>
-                  归入已有任务
-                  <select
-                    aria-label="归入已有任务"
-                    value={assigning}
-                    disabled={reading || dirty || creating || c.pending || c.unknown}
-                    onChange={(e) => setAssigning(e.target.value)}
-                  >
-                    <option value="">选择任务</option>
-                    {tasks
-                      .filter((t) => t.matter_id !== p.id)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.title}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <button
-                  disabled={reading || !assigning || dirty || creating || c.pending || c.unknown}
-                  onClick={() => {
-                    const t = tasks.find((t) => t.id === assigning);
-                    if (t)
-                      void command(
-                        catalogMutation({
-                          operation: 'assign_task' as const,
-                          task_id: t.id,
-                          expected_version: t.version,
-                          matter_id: p.id,
-                        }),
-                        () => setAssigning(''),
-                      );
-                  }}
-                >
-                  归入项目
-                </button>
-              </>
-            )}
-            <p className="caption">归组保留任务、正文和历史身份。</p>
-          </>
+          <ProjectPropertyEditor
+            key={p.id}
+            project={p}
+            sidebar={!editor}
+            pending={c.pending}
+            disabled={
+              navigationPending ||
+              reading ||
+              creating ||
+              bodyCommand ||
+              (!propertyDirty && (c.pending || c.unknown))
+            }
+            unknown={c.unknown && !bodyCommand}
+            bodyDirty={bodyDirty}
+            onDirty={(value, lifecycle = false) => {
+              setLifecycleDraft(value && lifecycle);
+              if (value) setSelected(p.id);
+              setPropertyDirty(value);
+            }}
+            onReload={c.load}
+            onRetry={c.retry}
+            onSave={(base, values, onCommitted) =>
+              command(
+                catalogMutation({
+                  operation: 'update_project' as const,
+                  id: base.id,
+                  expected_version: base.version,
+                  expected_body_revision: base.body_revision,
+                  ...values,
+                }),
+                (r) => onCommitted(acknowledge(r, base)),
+              )
+            }
+            onArchive={(base, archived, onCommitted) =>
+              command(
+                catalogMutation({
+                  operation: 'archive_project' as const,
+                  id: base.id,
+                  expected_version: base.version,
+                  archived,
+                }),
+                (r) => {
+                  const confirmed = acknowledge(r, base);
+                  if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
+                  onCommitted(confirmed);
+                },
+              )
+            }
+          />
         ) : (
           <p>选择项目查看实际属性。</p>
         )}
@@ -783,7 +797,7 @@ export default function ProjectCatalog({
               catalogMutation({ operation: 'create_project' as const, ...values }),
               async (r) => {
                 setCreating(false);
-                setArchived(false);
+                setStatusFilter('all');
                 setSelected(r.target_id);
                 setEditor(null);
                 if (r.target_id) {
@@ -800,249 +814,72 @@ export default function ProjectCatalog({
 }
 function ProjectEditor({
   data,
-  propertyHost,
   pending,
+  disabled,
+  archived,
+  unknown,
+  error,
+  onRetry,
   onDirty,
   onSave,
   onReload,
 }: {
   data: { project: Matter; state: number[] | null };
-  propertyHost: HTMLDivElement | null;
   pending: boolean;
+  disabled: boolean;
+  archived: boolean;
+  unknown: boolean;
+  error: string;
+  onRetry(): void;
   onDirty(v: boolean): void;
-  onSave(v: ProjectValues & { state?: number[] }, onCommitted: () => void): Promise<void>;
+  onSave(state: number[], onCommitted: () => void): Promise<void>;
   onReload(): void;
 }) {
-  const [values, setValues] = useState(() => projectValues(data.project)),
-    [dateInvalid, setDateInvalid] = useState(false),
-    [draft, setDraft] = useState<RichDraft>(() => ({ text: '', state: data.state })),
-    [dirty, setDirty] = useState(false),
-    [descriptionDirty, setDescriptionDirty] = useState(false),
-    [committed, setCommitted] = useState(false);
-  const change = () => {
-    setDirty(true);
-    onDirty(true);
-  };
+  const [draft, setDraft] = useState<RichDraft>(() => ({ text: '', state: data.state }));
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   return (
     <div className="catalog-actions" data-project-id={data.project.id}>
       <h2>项目概述</h2>
-      {propertyHost &&
-        createPortal(
-          <>
-            <ProjectFields
-              value={values}
-              disabled={committed || pending || !!data.project.archived_at}
-              onChange={(v) => {
-                setValues(v);
-                change();
-              }}
-              onInvalid={(v) => {
-                setDateInvalid(v);
-                change();
-              }}
-            />
-            {(dateInvalid || !validProject(values)) && (
-              <p role="alert">请核对名称、日期、负责人和标签格式，输入已保留。</p>
-            )}
-            <button
-              className="primary"
-              disabled={
-                !dirty ||
-                committed ||
-                pending ||
-                dateInvalid ||
-                !validProject(values) ||
-                !!data.project.archived_at
-              }
-              onClick={() => {
-                if (!propertyHost.querySelector('input:invalid'))
-                  void onSave(
-                    {
-                      ...values,
-                      ...(descriptionDirty && draft.state ? { state: draft.state } : {}),
-                    },
-                    () => setCommitted(true),
-                  );
-              }}
-            >
-              保存项目属性
-            </button>
-            <p role="status">
-              {committed
-                ? '项目已保存，当前内容需要刷新。'
-                : dirty
-                  ? '项目属性尚未保存。'
-                  : '项目属性已保存'}
-            </p>
-            {committed && (
-              <button disabled={pending} onClick={onReload}>
-                重新读取已保存项目
-              </button>
-            )}
-          </>,
-          propertyHost,
-        )}
       <DraftEditor
-        value={draft ?? emptyDraft()}
+        value={draft}
         onChange={(v) => {
           setDraft(v);
-          setDescriptionDirty(true);
-          change();
+          setDirty(true);
+          onDirty(true);
         }}
         label="项目概述"
         testId="project-overview-editor"
-        disabled={committed || pending || !!data.project.archived_at}
+        disabled={disabled || archived || saving}
       />
       <button
         className="primary"
-        disabled={
-          !dirty ||
-          committed ||
-          pending ||
-          dateInvalid ||
-          !validProject(values) ||
-          !!data.project.archived_at
-        }
-        onClick={() =>
-          !propertyHost?.querySelector('input:invalid') &&
-          void onSave(
-            {
-              ...values,
-              ...(descriptionDirty && draft.state ? { state: draft.state } : {}),
-            },
-            () => setCommitted(true),
-          )
-        }
+        disabled={!dirty || pending || archived || !draft.state}
+        onClick={() => {
+          if (draft.state) {
+            setSaving(true);
+            void onSave(draft.state, () => {
+              setDirty(false);
+              onDirty(false);
+            }).finally(() => setSaving(false));
+          }
+        }}
       >
         保存项目概述
       </button>
       <button
         disabled={pending}
         onClick={() => {
-          if (committed || !dirty || window.confirm('放弃当前未保存修改并重新读取项目？'))
-            onReload();
+          if (!dirty || window.confirm('放弃当前未保存修改并重新读取项目？')) onReload();
         }}
       >
-        {committed ? '重新读取已保存概述' : '放弃修改并重读'}
+        放弃修改并重读
       </button>
+      {error && <p role="alert">项目说明保存失败。{error}</p>}
+      {unknown && <button onClick={onRetry}>核对原说明提交</button>}
       <p role="status">
-        {committed
-          ? '已保存，当前内容需要刷新。'
-          : dirty
-            ? '有未保存修改，请保存后切换。'
-            : `已保存 · 说明修订 ${data.project.body_revision}`}
+        {dirty ? '有未保存的说明修改，请保存后切换。' : `说明修订 ${data.project.body_revision}`}
       </p>
     </div>
-  );
-}
-
-function ProjectPropertyEditor({
-  project,
-  pending,
-  onDirty,
-  onSave,
-  onReload,
-}: {
-  project: Matter;
-  pending: boolean;
-  onDirty(value: boolean): void;
-  onSave(value: ProjectValues, onCommitted: () => void): Promise<void>;
-  onReload(): void;
-}) {
-  const [values, setValues] = useState(() => projectValues(project));
-  const [dirty, setDirty] = useState(false);
-  const [invalid, setInvalid] = useState(false);
-  const [committed, setCommitted] = useState(false);
-  const [epoch, setEpoch] = useState(0);
-  const form = useRef<HTMLFormElement>(null);
-  const composing = useRef(false);
-  const change = () => {
-    setDirty(true);
-    onDirty(true);
-  };
-  return (
-    <form
-      ref={form}
-      onCompositionStart={() => {
-        composing.current = true;
-      }}
-      onCompositionEnd={() => {
-        composing.current = false;
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing))
-          event.preventDefault();
-      }}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (
-          !composing.current &&
-          dirty &&
-          !pending &&
-          !invalid &&
-          !project.archived_at &&
-          validProject(values) &&
-          form.current?.checkValidity()
-        )
-          void onSave(values, () => {
-            setCommitted(true);
-            setDirty(false);
-          });
-      }}
-    >
-      <ProjectFields
-        key={epoch}
-        sidebar
-        value={values}
-        disabled={committed || pending || !!project.archived_at}
-        onChange={(value) => {
-          setValues(value);
-          change();
-        }}
-        onInvalid={(value) => {
-          setInvalid(value);
-          change();
-        }}
-      />
-      {(invalid || !validProject(values)) && <p role="alert">请核对属性格式，输入已保留。</p>}
-      <button
-        type="submit"
-        disabled={
-          committed ||
-          !dirty ||
-          pending ||
-          invalid ||
-          !validProject(values) ||
-          !!project.archived_at
-        }
-      >
-        保存项目属性
-      </button>
-      {committed && (
-        <p role="status">
-          项目已保存，当前属性需要刷新。
-          <button type="button" onClick={onReload}>
-            重新读取已保存属性
-          </button>
-        </p>
-      )}
-      {dirty && (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            if (window.confirm('放弃未保存的项目属性？')) {
-              setValues(projectValues(project));
-              setInvalid(false);
-              setDirty(false);
-              onDirty(false);
-              setEpoch((v) => v + 1);
-            }
-          }}
-        >
-          放弃属性修改
-        </button>
-      )}
-    </form>
   );
 }

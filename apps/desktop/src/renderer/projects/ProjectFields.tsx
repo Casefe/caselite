@@ -161,13 +161,20 @@ export default function ProjectFields({
   sidebar = false,
   onChange,
   onInvalid,
+  archive,
 }: {
   value: ProjectValues;
   disabled: boolean;
   creating?: boolean;
   sidebar?: boolean;
-  onChange(value: ProjectValues): void;
+  onChange(value: ProjectValues, immediate?: boolean): void;
   onInvalid(value: boolean): void;
+  archive?: {
+    archived: boolean;
+    disabled: boolean;
+    canArchive: boolean;
+    onChange(archived: boolean): void;
+  };
 }) {
   const invalidTarget = useRef(false);
   const targetHintId = useId();
@@ -183,20 +190,26 @@ export default function ProjectFields({
     if (professionalCard.current) professionalCard.current.open = true;
     const refined =
       next === 'general' || next === 'litigation' || next === 'contract_review' ? null : next;
-    onChange({
-      ...value,
-      attributes: {
-        ...a,
-        project_type: legacyTypes[next],
-        professional_type: refined,
+    onChange(
+      {
+        ...value,
+        attributes: {
+          ...a,
+          project_type: legacyTypes[next],
+          professional_type: refined,
+        },
       },
-    });
+      true,
+    );
   };
-  const attribute = <K extends keyof ProjectAttributes>(key: K, next: ProjectAttributes[K]) =>
-    onChange({ ...value, attributes: { ...a, [key]: next } });
+  const attribute = <K extends keyof ProjectAttributes>(
+    key: K,
+    next: ProjectAttributes[K],
+    immediate = false,
+  ) => onChange({ ...value, attributes: { ...a, [key]: next } }, immediate);
   return (
     <>
-      <fieldset className="project-fields" disabled={disabled}>
+      <fieldset className="project-fields">
         <legend>{creating ? '项目属性' : '编辑项目属性'}</legend>
         <ProjectPropertyRow label="名称" icon="name">
           <input
@@ -227,16 +240,27 @@ export default function ProjectFields({
         </ProjectPropertyRow>
         <ProjectPropertyRow label="状态" icon="status">
           <select
-            disabled={disabled}
+            disabled={archive ? archive.disabled : disabled}
             aria-label="项目状态"
-            value={value.status}
-            onChange={(e) => onChange({ ...value, status: e.target.value as Matter['status'] })}
+            value={archive?.archived ? 'archived' : value.status}
+            onChange={(e) => {
+              const status = e.target.value;
+              if (status === 'archived' || status === 'restore')
+                archive?.onChange(status === 'archived');
+              else onChange({ ...value, status: status as Matter['status'] }, true);
+            }}
           >
-            {Object.entries(projectStatuses).map(([key, label]) => (
+            {(!archive?.archived ? Object.entries(projectStatuses) : []).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
+            {archive && (
+              <option value="archived" disabled={!archive.archived && !archive.canArchive}>
+                已归档
+              </option>
+            )}
+            {archive?.archived && <option value="restore">恢复项目</option>}
           </select>
         </ProjectPropertyRow>
         <ProjectPropertyRow label="负责人" icon="person">
@@ -255,7 +279,7 @@ export default function ProjectFields({
             disabled={disabled}
             aria-label="项目优先级"
             value={a.priority}
-            onChange={(e) => attribute('priority', Number(e.target.value))}
+            onChange={(e) => attribute('priority', Number(e.target.value), true)}
           >
             {['无优先级', '紧急', '高', '中', '低'].map((label, key) => (
               <option key={key} value={key}>
@@ -275,18 +299,18 @@ export default function ProjectFields({
             aria-describedby={targetBeforeLegacyDate ? targetHintId : undefined}
             value={a.target_date ?? ''}
             onInput={(e) => {
-              if (invalidTarget.current && e.currentTarget.validity.valid) {
-                invalidTarget.current = false;
-                onInvalid(false);
-                attribute('target_date', e.currentTarget.value || null);
+              const valid = e.currentTarget.validity.valid;
+              if (invalidTarget.current !== !valid) {
+                invalidTarget.current = !valid;
+                onInvalid(!valid);
+                if (valid) attribute('target_date', e.currentTarget.value || null);
               }
             }}
             onChange={(e) => {
               // 浏览器的半输入日期也可能返回空字符串，不能把它当用户清除。
               invalidTarget.current = !e.target.validity.valid;
               onInvalid(invalidTarget.current);
-              if (invalidTarget.current) onChange({ ...value });
-              else attribute('target_date', e.target.value || null);
+              if (!invalidTarget.current) attribute('target_date', e.target.value || null);
             }}
           />
         </ProjectPropertyRow>

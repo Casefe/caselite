@@ -30,13 +30,13 @@ const ok = (projects = [project]) => ({
   receipt: null,
   target_id: null,
 });
-function setup(read = ok()) {
+function setup(read = ok(), list = ok()) {
   const catalog = vi.fn(async (r: CatalogRequest) =>
     r.operation === 'read_project'
       ? read
       : r.operation === 'list_activity'
         ? { ...ok(), activity: [], activity_has_more: false }
-        : ok(),
+        : list,
   );
   window.caselite = { catalog } as unknown as Window['caselite'];
   return catalog;
@@ -97,7 +97,6 @@ const source: ProjectViewState = {
   selected: project.id,
   projectId: project.id,
   section: 'tasks',
-  archived: false,
   query: '',
   order: 'updated',
   statusFilter: 'all',
@@ -124,7 +123,8 @@ it('does not substitute another project when the source is unavailable', async (
   await screen.findByRole('table', { name: '项目列表' });
 });
 it('falls back to the original section when the task moved and shows an archived source read-only', async () => {
-  setup(ok([{ ...project, archived_at: '2026-11-07' }]));
+  const archived = ok([{ ...project, archived_at: '2026-11-07' }]);
+  setup(archived, archived);
   render(
     <ProjectCatalog
       tasks={[]}
@@ -179,14 +179,24 @@ it('refreshes same-version task counts and compact PDF projection after assignin
   fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
   await screen.findByLabelText('编辑项目名称');
   await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
+  fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   fireEvent.change(screen.getByLabelText('归入已有任务'), { target: { value: task.id } });
   fireEvent.click(screen.getByText('归入项目'));
+  await waitFor(() =>
+    expect((screen.getByRole('tab', { name: '概述' }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(screen.getByRole('tab', { name: '概述' }));
   await screen.findByText('归入原件.pdf');
   expect(screen.getByText('项目任务', { selector: 'dt' }).nextElementSibling?.textContent).toBe(
     '1',
   );
   expect(screen.getByText('已完成任务').nextElementSibling?.textContent).toBe('1');
+  fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   fireEvent.click(screen.getByText('移出项目'));
+  await waitFor(() =>
+    expect((screen.getByRole('tab', { name: '概述' }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(screen.getByRole('tab', { name: '概述' }));
   await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
   expect(screen.queryByText('归入原件.pdf')).toBeNull();
   expect(screen.getByText('项目任务', { selector: 'dt' }).nextElementSibling?.textContent).toBe(
@@ -204,12 +214,17 @@ it.each([false, true])(
     await screen.findByRole('button', { name: '来源项目', exact: true });
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '来源' } });
     fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'title' } });
+    // 原列表侧栏入口已移到项目任务栏目，往返后仍应保留列表筛选与焦点。
+    fireEvent.click(screen.getByRole('button', { name: '来源项目', exact: true }));
+    await screen.findByLabelText('编辑项目名称');
+    fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
     const scroll = document.querySelector('.collection-scroll')!;
     scroll.scrollTop = 65;
-    fireEvent.click(document.querySelector('.project-properties [data-project-task]')!);
+    fireEvent.click(document.querySelector('#project-panel-tasks [data-project-task]')!);
     const listSource = onOpen.mock.calls[0][1] as ProjectViewState;
     expect(listSource).toMatchObject({
-      projectId: null,
+      projectId: project.id,
+      section: 'tasks',
       selected: project.id,
       query: '来源',
       order: 'title',
@@ -218,17 +233,17 @@ it.each([false, true])(
     first.unmount();
     const catalog = setup();
     render(<ProjectCatalog {...props} tasks={moved ? [] : [task]} initialView={listSource} />);
-    await screen.findByRole('button', { name: '来源项目', exact: true });
+    await screen.findByLabelText('编辑项目名称');
     await waitFor(() =>
       expect(document.activeElement).toBe(
         document.querySelector(
-          moved ? '.project-title-link' : '.project-properties [data-project-task]',
+          moved ? '#project-tab-tasks' : '#project-panel-tasks [data-project-task]',
         ),
       ),
     );
-    expect(screen.queryByLabelText('编辑项目名称')).toBeNull();
     expect(document.querySelector('.collection-scroll')?.scrollTop).toBe(65);
+    fireEvent.click(screen.getByText('返回项目列表'));
     expect((screen.getByLabelText('搜索项目') as HTMLInputElement).value).toBe('来源');
-    expect(catalog.mock.calls.some(([r]) => r.operation === 'read_project')).toBe(false);
+    expect(catalog.mock.calls.some(([r]) => r.operation === 'read_project')).toBe(true);
   },
 );
