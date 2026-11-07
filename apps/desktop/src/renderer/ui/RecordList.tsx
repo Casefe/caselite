@@ -409,6 +409,7 @@ export default function RecordList({
         key={selected?.id ?? 'empty'}
         task={error || result?.query !== q ? null : selected}
         suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
+        assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
         onPropertiesBlocked={onPropertiesBlocked}
         propertiesDisabled={projectDirty}
         projectDisabled={propertyEditBlocked || loading}

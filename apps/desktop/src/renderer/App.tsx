@@ -944,6 +944,7 @@ function Workbench() {
                 onPropertiesBlocked={setPropertiesBlocked}
                 onTaskChanged={acceptTaskProperties}
                 suggestions={tagSuggestions}
+                assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
                 onProjectDirty={setProjectDirty}
                 onProjectChanged={acceptTaskProperties}
               />

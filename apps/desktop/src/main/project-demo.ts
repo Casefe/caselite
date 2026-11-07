@@ -452,6 +452,24 @@ export async function runProjectDemo(
       const taskRow = `[data-row-task="${taskId}"]`;
       const tag = '[aria-label="移除标签 合成文档标签"]';
       const projectField = `document.querySelector('[aria-label="所属项目"]:enabled')`;
+      const assigneeButton = '.task-assignee-value';
+      const assigneeInput = '[aria-label="本地负责人称呼"]';
+      const checkAssignee = async (value: string | null) => {
+        await wait(`document.querySelector('${assigneeButton}')?.textContent===${JSON.stringify(value ?? '未分配')} &&
+          !document.querySelector('.task-properties-editor [role=status], .task-property-recovery')`);
+        const result: TaskResponse = await evaluate(
+          `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(taskId)}})`,
+        );
+        if (!result.ok || result.tasks[0]?.assignee !== value)
+          throw new Error('Task assignee did not persist');
+      };
+      const enterAssignee = async (name: string) => {
+        await evaluate(`(()=>{
+          const field=document.querySelector('${assigneeInput}');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,${JSON.stringify(name)});
+          field.dispatchEvent(new Event('input',{bubbles:true}));
+        })()`);
+      };
       const readDocumentProperties = () =>
         wait(`(()=>{const e=document.querySelector('.document-property-values');
           const row=document.querySelector('${documentRow}');
@@ -511,6 +529,9 @@ export async function runProjectDemo(
         await click('[data-nav=tasks]');
         await click(taskRow);
         await wait(`${projectField}?.value===${JSON.stringify(projectId)}`);
+        await checkAssignee(null);
+        await scrollAndCheck(assigneeButton);
+        await capture('task-assignee-reopened.png');
 
         assertNoRuns();
         return;
@@ -757,6 +778,42 @@ export async function runProjectDemo(
       await wait(`${projectField}?.value===''`);
       await select('所属项目', projectId);
       await wait(`${projectField}?.value===${JSON.stringify(projectId)}`);
+      await checkAssignee('本人');
+      await scrollAndCheck(assigneeButton);
+      window.setContentSize(1440, 900);
+      await wait('innerWidth===1440 && innerHeight===900');
+      await click(assigneeButton);
+      await enterAssignee('  合成本地负责人  ');
+      const checkAssigneeGuard = async () => {
+        await click('[data-nav=projects]');
+        await wait(`document.querySelector('[data-nav=tasks][aria-current=page]') &&
+          document.body.textContent.includes('请先保存当前内容或核对提交结果，再离开当前页面。')`);
+      };
+      await checkAssigneeGuard();
+      await scrollAndCheck(assigneeInput);
+      await capture('task-assignee-list-draft.png');
+      const fault = openToolchainProbe(
+        join(isolation.userData, 'caselite.sqlite'),
+        join(process.resourcesPath, 'migrations'),
+      ).sqlite;
+      try {
+        fault.exec(
+          "CREATE TRIGGER fail_demo_assignee BEFORE INSERT ON task_receipts BEGIN SELECT RAISE(ABORT, 'synthetic'); END",
+        );
+        await button('保存称呼');
+        await wait("document.querySelector('.task-property-recovery')");
+        await checkAssigneeGuard();
+        const stored = fault.prepare('SELECT assignee FROM task_items WHERE id=?').get(taskId);
+        if (JSON.stringify(stored) !== JSON.stringify({ assignee: '本人' }))
+          throw new Error('Unconfirmed assignee escaped transaction rollback');
+        await scrollAndCheck('.task-property-recovery button');
+        await capture('task-assignee-write-failed.png');
+      } finally {
+        fault.exec('DROP TRIGGER IF EXISTS fail_demo_assignee');
+        fault.close();
+      }
+      await button('重试保存');
+      await checkAssignee('合成本地负责人');
       await capture('task-list-project-reassigned.png');
       await click(`${taskRow} .task-row-title`);
       await wait(
@@ -771,6 +828,22 @@ export async function runProjectDemo(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
       );
       await capture('task-detail-project-reassigned.png');
+      await checkAssignee('合成本地负责人');
+      window.setContentSize(640, 480);
+      await wait('innerWidth===640 && innerHeight===480');
+      await scrollAndCheck(assigneeButton);
+      await wait(
+        `getComputedStyle(document.querySelector('${assigneeButton}')).borderTopWidth==='0px'`,
+      );
+      await click(assigneeButton);
+      await select('选择本地负责人', '本人');
+      await checkAssignee('本人');
+      await click(assigneeButton);
+      await button('清空负责人');
+      await checkAssignee(null);
+      await evaluate('document.activeElement.blur()');
+      await scrollAndCheck(assigneeButton);
+      await capture('task-assignee-detail-cleared.png');
       assertNoRuns();
       writeFileSync(
         join(root, 'inspector-density-result.json'),
@@ -793,6 +866,7 @@ export async function runProjectDemo(
               'project-switch-and-archive',
               'document-catalog-values-tag-draft-archive-and-knowledge',
               'task-list-project-filter-and-detail-assignment',
+              'task-local-assignee-input-selection-clear-write-failure',
             ],
           },
           null,

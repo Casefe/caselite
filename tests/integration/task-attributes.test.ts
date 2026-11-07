@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { openTaskStore, openToolchainProbe } from '../../packages/local-db/src';
 import { createTaskApplication } from '../../packages/application/src/task-application';
@@ -137,7 +137,7 @@ it('upgrades populated pre-attribute WAL data and its backup, preserving status,
     expect(checked.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.pragma('foreign_key_check')).toEqual([]);
     expect(checked.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 14,
+      n: 15,
     });
     checked.close();
   }
@@ -182,6 +182,114 @@ it('rolls failed attribute DDL back without dropping old status, Task or body ro
   });
   upgraded.close();
 });
+it('upgrades a populated 0013 library, preserving the legacy request digest, grouping and body after a failed migration', () => {
+  const dir = root();
+  const file = join(dir, '0013.sqlite');
+  const old = migrationCopy(dir, 14);
+  const before = openToolchainProbe(file, old).sqlite;
+  const id = randomUUID();
+  const document = randomUUID();
+  const body = randomUUID();
+  const project = randomUUID();
+  const timestamp = '2026-11-01';
+  const request = {
+    protocol_version: 1 as const,
+    idempotency_key: randomUUID(),
+    operation: 'update_attributes' as const,
+    task_id: id,
+    expected_version: 1,
+    priority: 2,
+    due_date: null,
+    tags: ['合成标签'],
+  };
+  const legacy = {
+    id,
+    title: '合成旧任务',
+    objective: '',
+    status: 'todo',
+    priority: request.priority,
+    due_date: request.due_date,
+    tags: request.tags,
+    matter_id: project,
+    matter_title: '合成项目',
+    version: 2,
+    document_id: document,
+    body_id: body,
+    body_revision: 1,
+    editor_schema: 1,
+    updated_at: timestamp,
+  };
+  before
+    .prepare(
+      'INSERT INTO task_items(id,workspace_id,title,objective,priority,tags,version,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+    )
+    .run(
+      id,
+      'local',
+      legacy.title,
+      '',
+      legacy.priority,
+      JSON.stringify(legacy.tags),
+      legacy.version,
+      timestamp,
+    );
+  before
+    .prepare(
+      'INSERT INTO matters(id,workspace_id,title,version,body_id,assignee,updated_at) VALUES(?,?,?,?,?,?,?)',
+    )
+    .run(project, 'local', legacy.matter_title, 1, randomUUID(), '合成项目负责人', timestamp);
+  before.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(id, project);
+  before
+    .prepare(
+      'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,1,1)',
+    )
+    .run(document, id, body);
+  const bytes = binary();
+  before
+    .prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,1,?)')
+    .run(body, Buffer.from(bytes));
+  before
+    .prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)')
+    .run(
+      'local',
+      request.idempotency_key,
+      createHash('sha256').update(JSON.stringify(request)).digest('hex'),
+      JSON.stringify({ ok: true, tasks: [legacy], state: null, receipt: request.idempotency_key }),
+    );
+  const snapshot = (db: typeof before) =>
+    ['documents', 'body_revisions', 'matters', 'task_projects', 'task_receipts'].map((table) =>
+      db.prepare(`SELECT * FROM ${table}`).all(),
+    );
+  const original = snapshot(before);
+  const taskBefore = before.prepare('SELECT * FROM task_items').get();
+  before.close();
+  expect(() => openTaskStore(file, migrationCopy(dir, 15, true))).toThrow();
+  const rolledBack = openToolchainProbe(file, old).sqlite;
+  expect(snapshot(rolledBack)).toEqual(original);
+  expect(rolledBack.prepare('SELECT * FROM task_items').get()).toEqual(taskBefore);
+  expect(rolledBack.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: 14,
+  });
+  rolledBack.close();
+
+  const store = openTaskStore(file, migrations);
+  const app = createTaskApplication(store);
+  const replay = ok(app.execute({ ...request, request_id: randomUUID() }));
+  expect(replay.tasks[0]).toEqual(legacy);
+  const current = ok(app.execute({ protocol_version: 1, operation: 'read', task_id: id }));
+  expect(current.tasks[0]).toMatchObject({ ...legacy, assignee: '本人' });
+  expect(current.state).toEqual(bytes);
+  const checked = openToolchainProbe(file, migrations).sqlite;
+  expect(snapshot(checked)).toEqual(original);
+  expect(checked.pragma('foreign_key_check')).toEqual([]);
+  for (const value of ['', '   ', '甲'.repeat(81), '甲\0乙', Buffer.from('甲')]) {
+    expect(() =>
+      checked.prepare('UPDATE task_items SET assignee=? WHERE id=?').run(value, id),
+    ).toThrow();
+  }
+  checked.close();
+  store.close();
+});
 it('sets/clears literal dates and priorities, keeps them through legacy writes and status changes, and rejects stale or cross-workspace mutations', () => {
   const file = join(root(), 'db.sqlite'),
     store = openTaskStore(file, migrations),
@@ -194,6 +302,7 @@ it('sets/clears literal dates and priorities, keeps them through legacy writes a
   };
   let task = ok(app.execute(create)).tasks[0];
   const createTask = task;
+  expect(task.assignee).toBe('本人');
   const first = {
     ...identity(),
     operation: 'update_attributes' as const,
@@ -201,9 +310,12 @@ it('sets/clears literal dates and priorities, keeps them through legacy writes a
     expected_version: task.version,
     priority: 1,
     due_date: '2024-02-29',
+    assignee: '  合成负责人  ',
   };
   const result = app.execute(first);
   task = ok(result).tasks[0];
+  expect(task.assignee).toBe('合成负责人');
+  expect(app.execute({ ...first, assignee: null })).toMatchObject({ ok: false, code: 'CONFLICT' });
   expect(ok(app.execute(create)).tasks[0]).toMatchObject({ priority: 0, due_date: null });
   expect(
     ok(app.execute({ protocol_version: 1, operation: 'read', task_id: task.id })).tasks[0],
@@ -285,6 +397,34 @@ it('sets/clears literal dates and priorities, keeps them through legacy writes a
   expect(
     ok(app.execute({ protocol_version: 1, operation: 'read', task_id: task.id })).state,
   ).toEqual(bytes);
+  expect(task.assignee).toBe('合成负责人');
+  const clear = {
+    ...identity(),
+    operation: 'update_attributes' as const,
+    task_id: task.id,
+    expected_version: task.version,
+    priority: task.priority,
+    due_date: task.due_date,
+    assignee: null,
+  };
+  for (const assignee of ['   ', '甲'.repeat(81), '甲\0乙', 2])
+    expect(app.execute({ ...clear, assignee })).toMatchObject({
+      ok: false,
+      code: 'INVALID_REQUEST',
+    });
+  task = ok(app.execute(clear)).tasks[0];
+  expect(task.assignee).toBeNull();
+  task = ok(
+    app.execute({
+      ...identity(),
+      operation: 'update_attributes',
+      task_id: task.id,
+      expected_version: task.version,
+      priority: 3,
+      due_date: task.due_date,
+    }),
+  ).tasks[0];
+  expect(task.assignee).toBeNull();
   const db = openToolchainProbe(file, migrations).sqlite;
   for (const priority of [-1, 5, 1.5, 'unexpected'])
     expect(() =>
@@ -325,6 +465,7 @@ it.each(['task_activity', 'task_receipts'])(
       expected_version: task.version,
       priority: 2,
       due_date: '2026-01-01',
+      assignee: '合成负责人',
     };
     db.exec(
       `CREATE TRIGGER fail_attributes BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic attributes failure'); END`,
@@ -341,7 +482,7 @@ it.each(['task_activity', 'task_receipts'])(
       }),
     ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
     db.exec('DROP TRIGGER fail_attributes');
-    ok(app.execute(command));
+    expect(ok(app.execute(command)).tasks[0].assignee).toBe('合成负责人');
     ok(app.execute(command));
     expect(
       db

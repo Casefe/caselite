@@ -4,7 +4,7 @@ const actions: Record<string, string> = {
   create: '创建任务',
   update: '修改任务',
   change_status: '修改任务状态',
-  update_attributes: '修改优先级与普通日期',
+  update_attributes: '修改任务属性',
   save: '保存正文',
   create_project: '创建项目',
   promote_task: '从任务创建项目',

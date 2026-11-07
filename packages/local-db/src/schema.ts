@@ -29,6 +29,7 @@ export const taskItems = sqliteTable(
       .default('todo'),
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
+    assignee: text('assignee').default('本人'),
     tags: text('tags', { mode: 'json' })
       .$type<string[]>()
       .notNull()
@@ -37,6 +38,10 @@ export const taskItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    check(
+      'task_assignee_valid',
+      sql`${table.assignee} IS NULL OR (typeof(${table.assignee}) = 'text' AND instr(${table.assignee}, char(0)) = 0 AND length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
+    ),
     check(
       'task_tags_valid',
       sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags}) = 'array' AND json_array_length(${table.tags}) <= 20 ELSE 0 END`,

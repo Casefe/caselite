@@ -13,12 +13,12 @@ import { openToolchainProbe } from './connection';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
-type Row = Omit<Task, 'tags'> & { tags: string };
-const decodeTask = ({ tags, ...row }: Row): Task => ({
+type Row = Omit<Task, 'tags' | 'assignee'> & { tags: string; assignee: string | null };
+const decodeTask = ({ tags, ...row }: Row) => ({
   ...row,
   tags: tagListSchema.parse(JSON.parse(tags)),
 });
-const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.tags,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -29,7 +29,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
-  const get = (id: string): Task | null => {
+  const get = (id: string) => {
     const row = db.prepare(`${select} WHERE t.id=? AND t.workspace_id=?`).get(id, workspace) as
       Row | undefined;
     return row ? decodeTask(row) : null;
@@ -220,20 +220,23 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           } else if (request.operation === 'update_attributes') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
-            // 旧请求省略标签时保留当前标签；提交摘要仍基于原始请求。
+            // 旧请求省略属性时保留当前值；null 是明确清空，不能按省略处理。
+            const assignee = request.assignee === undefined ? task.assignee : request.assignee;
             const tags = JSON.stringify(request.tags ?? task.tags);
             if (
               task.priority === request.priority &&
               task.due_date === request.due_date &&
+              assignee === task.assignee &&
               tags === JSON.stringify(task.tags)
             )
               return fail('INVALID_REQUEST', '任务属性没有变化。');
             db.prepare(
-              'UPDATE task_items SET priority=?,due_date=?,tags=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
+              'UPDATE task_items SET priority=?,due_date=?,tags=?,assignee=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
             ).run(
               request.priority,
               request.due_date,
               tags,
+              assignee,
               new Date().toISOString(),
               taskId,
               workspace,

@@ -1,28 +1,36 @@
 import type { ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Task, TaskRequest } from '../../preload/caselite-api';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
 import TaskTags from './TaskTags';
 
 type Command = Extract<TaskRequest, { operation: 'change_status' | 'update_attributes' }>;
-type Attributes = { priority: number; due_date: string | null; tags: string[] };
+type Attributes = {
+  priority: number;
+  due_date: string | null;
+  tags: string[];
+  assignee: string | null;
+};
 type Edit = { status: Task['status'] } | Partial<Attributes>;
 type Failure = { kind: 'unknown' | 'read' | 'conflict' | 'write'; message: string };
 const attributes = (task: Task): Attributes => ({
   priority: task.priority ?? 0,
   due_date: task.due_date ?? null,
   tags: task.tags ?? [],
+  assignee: task.assignee === undefined ? '本人' : task.assignee,
 });
 const sameAttributes = (left: Attributes, right: Attributes) =>
   left.priority === right.priority &&
   left.due_date === right.due_date &&
+  left.assignee === right.assignee &&
   JSON.stringify(left.tags) === JSON.stringify(right.tags);
 
 export default function TaskProperties({
   task,
   disabled,
   suggestions = [],
+  assigneeSuggestions = [],
   groupTags = false,
   project,
   onBlocked,
@@ -31,6 +39,7 @@ export default function TaskProperties({
   task: Task;
   disabled: boolean;
   suggestions?: string[];
+  assigneeSuggestions?: string[];
   groupTags?: boolean;
   project?: ReactNode;
   onBlocked(value: boolean): void;
@@ -43,13 +52,25 @@ export default function TaskProperties({
   const [tagDraft, setTagDraft] = useState(false);
   const [date, setDate] = useState<string | null>(null);
   const [dateInvalid, setDateInvalid] = useState(false);
+  const [assigneeDraft, setAssigneeDraft] = useState<string | null>(null);
+  const assigneeButton = useRef<HTMLButtonElement>(null);
+  const focusAssigneeInput = useCallback((input: HTMLInputElement | null) => input?.focus(), []);
+  const assigneeComposing = useRef(false);
+  const [assigneeInComposition, setAssigneeInComposition] = useState(false);
   const queue = useRef<Edit[]>([]);
   const running = useRef(false);
   const command = useRef<Command | null>(null);
   const base = useRef(task);
   const composing = useRef(false);
   const alive = useRef(true);
-  const blocked = pending || edits.length > 0 || date !== null || tagDraft || failure !== null;
+  const blocked =
+    pending ||
+    edits.length > 0 ||
+    date !== null ||
+    Boolean(assigneeDraft) ||
+    assigneeInComposition ||
+    tagDraft ||
+    failure !== null;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -87,6 +108,7 @@ export default function TaskProperties({
         setConfirmed(current);
         setEdits([]);
         setDate(null);
+        setAssigneeDraft(null);
         setDateInvalid(false);
         onChanged(current, description);
         setFailure(null);
@@ -114,7 +136,13 @@ export default function TaskProperties({
             expected_version: previous.version,
             ...('status' in edit
               ? { operation: 'change_status' as const, status: edit.status }
-              : { operation: 'update_attributes' as const, ...next }),
+              : {
+                  operation: 'update_attributes' as const,
+                  priority: next.priority,
+                  due_date: next.due_date,
+                  tags: next.tags,
+                  ...('assignee' in edit ? { assignee: next.assignee } : {}),
+                }),
           };
         }
         const original = command.current;
@@ -153,6 +181,10 @@ export default function TaskProperties({
                   priority: original.priority,
                   due_date: original.due_date,
                   tags: original.tags ?? [],
+                  assignee:
+                    original.assignee === undefined
+                      ? attributes(previous).assignee
+                      : original.assignee,
                 }))
           )
             throw new Error('提交回执与任务不一致，请核对原提交。');
@@ -215,6 +247,15 @@ export default function TaskProperties({
     enqueue({ due_date: input.value });
   };
 
+  const finishAssignee = (value?: string | null) => {
+    if (assigneeComposing.current) return;
+    setAssigneeDraft(null);
+    assigneeButton.current?.focus();
+    if (value !== undefined) enqueue({ assignee: value });
+  };
+  const assigneeName = assigneeDraft?.trim() ?? '';
+  const assigneeInvalid = assigneeName.length > 80 || assigneeName.includes('\0');
+  const assigneeValid = assigneeName.length > 0 && !assigneeInvalid;
   const tags = (
     <TaskTags
       onDemand={groupTags}
@@ -315,8 +356,111 @@ export default function TaskProperties({
         <>
           <div className="task-property-value">
             <span>负责人</span>
-            <span>本人</span>
+            <button
+              ref={assigneeButton}
+              className="task-assignee-value"
+              type="button"
+              aria-label={`编辑任务负责人，当前${shown.assignee ?? '未分配'}`}
+              aria-expanded={assigneeDraft !== null}
+              disabled={locked}
+              onClick={() => {
+                if (assigneeDraft === null) {
+                  assigneeComposing.current = false;
+                  setAssigneeDraft('');
+                } else finishAssignee();
+              }}
+            >
+              {shown.assignee ?? '未分配'}
+            </button>
           </div>
+          {assigneeDraft !== null && (
+            <div
+              className="task-assignee-editor"
+              role="group"
+              aria-label="编辑任务负责人"
+              onKeyDown={(event) => {
+                if (
+                  assigneeComposing.current ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                )
+                  return;
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  finishAssignee();
+                }
+              }}
+            >
+              <input
+                ref={focusAssigneeInput}
+                aria-label="本地负责人称呼"
+                placeholder={shown.assignee ?? '输入本地称呼'}
+                value={assigneeDraft}
+                disabled={locked}
+                aria-invalid={assigneeInvalid}
+                onCompositionStart={() => {
+                  assigneeComposing.current = true;
+                  setAssigneeInComposition(true);
+                  onBlocked(true);
+                }}
+                onCompositionEnd={() => {
+                  assigneeComposing.current = false;
+                  setAssigneeInComposition(false);
+                }}
+                onChange={(event) => {
+                  setAssigneeDraft(event.target.value);
+                  if (event.target.value) onBlocked(true);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== 'Enter' ||
+                    assigneeComposing.current ||
+                    event.nativeEvent.isComposing ||
+                    event.keyCode === 229
+                  )
+                    return;
+                  event.preventDefault();
+                  if (assigneeValid) finishAssignee(assigneeName);
+                }}
+              />
+              <select
+                aria-label="选择本地负责人"
+                value=""
+                disabled={locked}
+                onChange={(event) => finishAssignee(event.target.value)}
+              >
+                <option value="" disabled>
+                  选择已有称呼
+                </option>
+                {[...new Set(['本人', ...assigneeSuggestions])].map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              {assigneeInvalid && <p role="alert">请输入 1–80 字的有效负责人称呼。</p>}
+              <div className="task-assignee-actions">
+                <button
+                  type="button"
+                  disabled={locked || !assigneeValid}
+                  onClick={() => finishAssignee(assigneeName)}
+                >
+                  保存称呼
+                </button>
+                <button
+                  type="button"
+                  disabled={locked || shown.assignee === null}
+                  onClick={() => finishAssignee(null)}
+                >
+                  清空负责人
+                </button>
+                <button type="button" onClick={() => finishAssignee()}>
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
           {project ?? (
             <div className="task-property-value">
               <span>项目</span>

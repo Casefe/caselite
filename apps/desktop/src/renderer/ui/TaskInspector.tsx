@@ -11,6 +11,7 @@ export default function TaskInspector({
   onProjectDirty,
   projectDisabled = false,
   suggestions = [],
+  assigneeSuggestions = [],
   propertiesDisabled = false,
   reminderEditing = false,
   onPropertiesBlocked,
@@ -21,6 +22,7 @@ export default function TaskInspector({
   onProjectDirty?(dirty: boolean): void;
   projectDisabled?: boolean;
   suggestions?: string[];
+  assigneeSuggestions?: string[];
   propertiesDisabled?: boolean;
   reminderEditing?: boolean;
   onPropertiesBlocked?(value: boolean): void;
@@ -43,6 +45,7 @@ export default function TaskInspector({
             task={task}
             disabled={propertiesDisabled}
             suggestions={suggestions}
+            assigneeSuggestions={assigneeSuggestions}
             groupTags
             project={
               onProjectChanged && onProjectDirty ? (
@@ -68,7 +71,7 @@ export default function TaskInspector({
               <dt>日期</dt>
               <dd>{task.due_date ?? '未设置'}</dd>
               <dt>负责人</dt>
-              <dd>本人</dd>
+              <dd>{task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}</dd>
               <dt>项目</dt>
               <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</dd>
             </dl>

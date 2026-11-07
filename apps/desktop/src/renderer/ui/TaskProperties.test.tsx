@@ -358,3 +358,51 @@ it('retains the exact date/priority request through unknown delivery and rejects
   expect(requests[0]).toEqual(requests[1]);
   expect(requests[0]).toMatchObject({ priority: 2, due_date: '2026-01-01', tags: ['原标签'] });
 });
+
+it('holds an IME draft before input, ignores candidate Enter and cancels without dispatching', async () => {
+  const task = initial();
+  const api = vi.fn(async () => response(task));
+  const { blocked } = show(task, api);
+  const toggle = screen.getByRole('button', { name: '编辑任务负责人，当前本人' });
+  fireEvent.click(toggle);
+  const name = screen.getByRole('textbox', { name: '本地负责人称呼' });
+  expect(document.activeElement).toBe(name);
+  fireEvent.compositionStart(name);
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  fireEvent.change(name, { target: { value: '合成称呼' } });
+  fireEvent.keyDown(name, { key: 'Enter' });
+  expect(api).not.toHaveBeenCalled();
+  fireEvent.compositionEnd(name);
+  fireEvent.keyDown(name, { key: 'Enter', keyCode: 229 });
+  expect(api).not.toHaveBeenCalled();
+  fireEvent.keyDown(name, { key: 'Escape' });
+  expect(document.activeElement).toBe(toggle);
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(api).not.toHaveBeenCalled();
+});
+
+it('retains an unconfirmed assignee edit and reloads the explicit unassigned value after conflict', async () => {
+  const task = { ...initial(), assignee: null };
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> =>
+    request.operation === 'update_attributes'
+      ? { ok: false, code: 'CONFLICT', message: '任务已有新版本' }
+      : response({ ...task, version: 2 }),
+  );
+  const { blocked } = show(task, api);
+  fireEvent.click(screen.getByRole('button', { name: '编辑任务负责人，当前未分配' }));
+  const name = screen.getByRole('textbox', { name: '本地负责人称呼' });
+  fireEvent.change(name, { target: { value: ' 合成称呼 ' } });
+  fireEvent.keyDown(name, { key: 'Enter' });
+  expect(await screen.findByText('任务已有新版本')).toBeTruthy();
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  expect(screen.getByRole('button', { name: '编辑任务负责人，当前合成称呼' })).toBeTruthy();
+  expect(api.mock.calls[0]?.[0]).toMatchObject({ assignee: '合成称呼' });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  try {
+    fireEvent.click(screen.getByRole('button', { name: '放弃修改并重读' }));
+    await screen.findByRole('button', { name: '编辑任务负责人，当前未分配' });
+    await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  } finally {
+    confirm.mockRestore();
+  }
+});
