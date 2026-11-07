@@ -352,7 +352,7 @@ export async function runProjectDemo(
         window.setContentSize(width, 900);
         await wait(`innerWidth===${width}`);
         await click('[data-nav=settings]');
-        await button('外观');
+        await button('常规');
         await click(`.theme-option:has(.theme-swatch--${theme})`);
         await wait(`document.documentElement.dataset.theme==='${theme}'`);
         await button('返回工作区');
@@ -529,7 +529,7 @@ export async function runProjectDemo(
       await inspectComposer('.task-inspector');
       await captureRenderer('task-compact-ai-light.png');
       await click('[data-nav=settings]');
-      await button('外观');
+      await button('常规');
       await click('.theme-option:has(.theme-swatch--dark)');
       await wait("document.documentElement.dataset.theme==='dark'");
       await button('返回工作区');
@@ -557,7 +557,7 @@ export async function runProjectDemo(
 
       window.setContentSize(1440, 900);
       await click('[data-nav=settings]');
-      await button('外观');
+      await button('常规');
       await click('.theme-option:has(.theme-swatch--light)');
       await wait("document.documentElement.dataset.theme==='light'");
       await button('返回工作区');
@@ -776,7 +776,7 @@ export async function runProjectDemo(
         window.setContentSize(width, height);
         await wait(`innerWidth===${width} && innerHeight===${height}`);
         await click('[data-nav=settings]');
-        await button('外观');
+        await button('常规');
         await click(`.theme-option:has(.theme-swatch--${theme})`);
         await wait(`document.documentElement.dataset.theme==='${theme}'`);
         await button('返回工作区');
@@ -1359,7 +1359,7 @@ export async function runProjectDemo(
     const professional = process.env.CASELITE_PROJECT_PROFESSIONAL === '1';
     const assertPropertyRows = async (scope: string) => {
       const layout = await evaluate(
-        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:flat(panel.querySelector('.project-professional-card')),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
+        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:(()=>{const s=getComputedStyle(panel.querySelector('.project-professional-card'));return s.borderTopWidth==='1px'&&s.borderRightWidth==='0px'&&s.borderBottomWidth==='0px'&&s.borderLeftWidth==='0px'&&s.boxShadow==='none';})(),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
       );
       if (
         layout.rows < 7 ||
