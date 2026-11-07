@@ -38,6 +38,8 @@ export type ProjectViewState = {
   query: string;
   statusFilter: keyof typeof names | 'all';
   order: string;
+  ownerFilter?: string;
+  typeFilter?: string;
   columns: { status: boolean; tasks: boolean; updated: boolean };
   scrollTop: number;
   workspaceScrollTop: number;
@@ -86,6 +88,8 @@ export default function ProjectCatalog({
   const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
   );
+  const [ownerFilter, setOwnerFilter] = useState(initialView?.ownerFilter ?? '');
+  const [typeFilter, setTypeFilter] = useState(initialView?.typeFilter ?? '');
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
   const [columns, setColumns] = useState(
     initialView?.columns ?? { status: true, tasks: true, updated: true },
@@ -120,11 +124,19 @@ export default function ProjectCatalog({
       }),
     ),
   });
+  const ownerOptions = [
+    ...new Set(
+      projects.flatMap((item) => (item.attributes?.assignee ? [item.attributes.assignee] : [])),
+    ),
+  ].sort();
   const list = projects
     .filter(
       (p) =>
         (statusFilter === 'all' ? !p.archived_at : projectStatus(p) === statusFilter) &&
-        p.title.toLocaleLowerCase().includes(normalizedQuery),
+        p.title.toLocaleLowerCase().includes(normalizedQuery) &&
+        (!ownerFilter || p.attributes?.assignee === ownerFilter) &&
+        (!typeFilter ||
+          (p.attributes?.professional_type ?? p.attributes?.project_type) === typeFilter),
     )
     .sort((a, b) => {
       if (order === 'title')
@@ -265,6 +277,8 @@ export default function ProjectCatalog({
     section,
     query,
     statusFilter,
+    ownerFilter,
+    typeFilter,
     order,
     columns,
     scrollTop: scroll.current?.scrollTop ?? 0,
@@ -358,6 +372,9 @@ export default function ProjectCatalog({
           </button>
         </div>
         {!editor && (
+          <p className="workbench-list-caption">集中管理项目，追踪负责人、项目阶段与待收余额。</p>
+        )}
+        {!editor && (
           <div className="project-list-controls" aria-label="项目列表选项">
             <label className="project-list-search">
               <Icon name="search" size={15} />
@@ -380,6 +397,36 @@ export default function ProjectCatalog({
             >
               <option value="all">未归档项目</option>
               {Object.entries(names).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="按负责人筛选项目"
+              disabled={blocked}
+              value={ownerFilter}
+              onChange={(event) => {
+                setSelected(null);
+                setOwnerFilter(event.target.value);
+              }}
+            >
+              <option value="">全部负责人</option>
+              {ownerOptions.map((owner) => (
+                <option key={owner}>{owner}</option>
+              ))}
+            </select>
+            <select
+              aria-label="按类型筛选项目"
+              disabled={blocked}
+              value={typeFilter}
+              onChange={(event) => {
+                setSelected(null);
+                setTypeFilter(event.target.value);
+              }}
+            >
+              <option value="">全部类型</option>
+              {Object.entries(projectTypes).map(([id, label]) => (
                 <option key={id} value={id}>
                   {label}
                 </option>
@@ -423,6 +470,46 @@ export default function ProjectCatalog({
                 )}
               </div>
             </details>
+          </div>
+        )}
+        {!editor && (
+          <div className="project-list-stages" aria-label="项目阶段">
+            {(
+              [
+                ['active', '开放'],
+                ['planned', '待开案'],
+                ['done', '已结案'],
+              ] as const
+            ).map(([status, label]) => (
+              <button
+                type="button"
+                key={status}
+                aria-pressed={statusFilter === status}
+                disabled={blocked}
+                onClick={() => {
+                  setSelected(null);
+                  setStatusFilter(statusFilter === status ? 'all' : status);
+                }}
+              >
+                {label}{' '}
+                <span>{projects.filter((item) => projectStatus(item) === status).length}</span>
+              </button>
+            ))}
+            {(query || statusFilter !== 'all' || ownerFilter || typeFilter) && (
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => {
+                  setQuery('');
+                  setStatusFilter('all');
+                  setOwnerFilter('');
+                  setTypeFilter('');
+                  setSelected(null);
+                }}
+              >
+                清除筛选
+              </button>
+            )}
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}
@@ -872,21 +959,10 @@ export default function ProjectCatalog({
               {!list.length && (
                 <p className="catalog-empty">
                   {c.data
-                    ? normalizedQuery || statusFilter !== 'all'
+                    ? normalizedQuery || statusFilter !== 'all' || ownerFilter || typeFilter
                       ? '没有匹配的项目。'
                       : '暂无项目，独立任务仍可直接使用。'
                     : '正在读取本地项目…'}
-                  {(normalizedQuery || statusFilter !== 'all') && (
-                    <button
-                      disabled={dirty || creating || reading || c.pending || c.unknown}
-                      onClick={() => {
-                        setQuery('');
-                        setStatusFilter('all');
-                      }}
-                    >
-                      清除筛选
-                    </button>
-                  )}
                 </p>
               )}
             </>

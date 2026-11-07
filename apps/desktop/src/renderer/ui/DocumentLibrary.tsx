@@ -1,3 +1,4 @@
+import DocumentPreview from '../features/documents/DocumentPreview';
 import ReadTable from '../shared/ui/ReadTable';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
@@ -20,6 +21,11 @@ export default function DocumentLibrary({
   const c = useCatalog(false, read);
   const [selected, setSelected] = useState<string | null>(null),
     [filter, setFilter] = useState('active');
+  const [text, setText] = useState('');
+  const [group, setGroup] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
+  const [sort, setSort] = useState('updated');
+  const [preview, setPreview] = useState(false);
   const [editing, setEditing] = useState(false),
     [collection, setCollection] = useState(''),
     [tagDraft, setTagDraft] = useState(false),
@@ -33,12 +39,24 @@ export default function DocumentLibrary({
   );
   const dirty = editing || tagDraft || c.pending || c.unknown || awaitingRead;
   const blocked = dirty || read.isFetching;
-  const docs = (c.data?.documents ?? []).filter(
-    (d) =>
-      (!library || d.in_library) &&
-      (filter === 'archived' ? !!d.archived_at : !d.archived_at) &&
-      (filter !== 'favorite' || d.favorite),
-  );
+  const projectNames = new Map(c.data?.projects.map((project) => [project.id, project.title]));
+  const allDocuments = c.data?.documents ?? [];
+  const groups = [...new Set(allDocuments.map((doc) => doc.collection).filter(Boolean))].sort();
+  const docs = allDocuments
+    .filter(
+      (d) =>
+        (!library || d.in_library) &&
+        (filter === 'archived' ? !!d.archived_at : !d.archived_at) &&
+        (filter !== 'favorite' || d.favorite) &&
+        (!group || d.collection === group) &&
+        (!projectFilter || d.matter_id === projectFilter) &&
+        d.title.toLocaleLowerCase().includes(text.trim().toLocaleLowerCase()),
+    )
+    .sort((a, b) =>
+      sort === 'name'
+        ? a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id)
+        : b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id),
+    );
   const d =
     docs.find((x) => x.id === selected) ??
     (blocked ? c.data?.documents.find((x) => x.id === selected) : undefined) ??
@@ -122,6 +140,59 @@ export default function DocumentLibrary({
             刷新
           </button>
         </div>
+        {!library && (
+          <div className="document-directory-filters" aria-label="文件夹与文档筛选">
+            <input
+              aria-label="搜索文档"
+              placeholder="搜索文档…"
+              disabled={blocked}
+              value={text}
+              onChange={(event) => {
+                setText(event.target.value);
+                setSelected(null);
+              }}
+            />
+            <select
+              aria-label="文档文件夹"
+              disabled={blocked}
+              value={group}
+              onChange={(event) => {
+                setGroup(event.target.value);
+                setSelected(null);
+              }}
+            >
+              <option value="">所有文件夹</option>
+              {groups.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+            <select
+              aria-label="文档关联项目"
+              disabled={blocked}
+              value={projectFilter}
+              onChange={(event) => {
+                setProjectFilter(event.target.value);
+                setSelected(null);
+              }}
+            >
+              <option value="">所有项目</option>
+              {[...projectNames].map(([id, title]) => (
+                <option key={id} value={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="文档排序"
+              disabled={blocked}
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+            >
+              <option value="updated">修改时间</option>
+              <option value="name">名称</option>
+            </select>
+          </div>
+        )}
         {c.error && (
           <div role="alert" className="assistant-error">
             {c.error}
@@ -134,22 +205,56 @@ export default function DocumentLibrary({
         )}
         <div className="collection-scroll">
           <ReadTable
+            label={library ? '知识库列表' : '文档列表'}
+            className={library ? 'catalog-table' : 'catalog-table document-directory-table'}
             data={docs}
             getRowId={(doc) => doc.id}
             columns={[
               {
                 id: 'title',
-                header: '文档',
+                header: library ? '文档' : '名称',
                 cell: ({ row }) => (
                   <>
                     <Icon name="file" size={14} /> {row.original.title}
                   </>
                 ),
               },
-              { id: 'collection', header: '分类', accessorFn: (doc) => doc.collection || '未分类' },
-              { id: 'tags', header: '标签', accessorFn: (doc) => doc.tags.join('、') || '—' },
-              { accessorKey: 'body_revision', header: '修订' },
-              { id: 'favorite', header: '收藏', accessorFn: (doc) => (doc.favorite ? '★' : '☆') },
+              ...(library
+                ? [
+                    {
+                      id: 'collection',
+                      header: '分类',
+                      accessorFn: (doc: CatalogDocument) => doc.collection || '未分类',
+                    },
+                    {
+                      id: 'tags',
+                      header: '标签',
+                      accessorFn: (doc: CatalogDocument) => doc.tags.join('、') || '—',
+                    },
+                    { accessorKey: 'body_revision', header: '修订' },
+                    {
+                      id: 'favorite',
+                      header: '收藏',
+                      accessorFn: (doc: CatalogDocument) => (doc.favorite ? '★' : '☆'),
+                    },
+                  ]
+                : [
+                    {
+                      id: 'project',
+                      header: '关联项目',
+                      accessorFn: (doc: CatalogDocument) =>
+                        projectNames.get(doc.matter_id ?? '') ?? '—',
+                    },
+                    { id: 'owner', header: '所有者', cell: () => null },
+                    {
+                      id: 'modified',
+                      header: '修改时间',
+                      accessorFn: (doc: CatalogDocument) =>
+                        new Date(doc.updated_at).toLocaleString('zh-CN'),
+                    },
+                    { accessorKey: 'body_revision', header: '版本' },
+                    { id: 'sharing', header: '共享状态', cell: () => null },
+                  ]),
             ]}
             rowProps={(doc) => ({
               tabIndex: 0,
@@ -271,24 +376,47 @@ export default function DocumentLibrary({
           {docs.length} 份文档 · 仅此设备 · 单击查看，双击打开
         </footer>
       </div>
-      <DocumentInspector
-        key={d?.id ?? 'empty'}
-        document={d}
-        project={c.data?.projects.find((project) => project.id === d?.matter_id)}
-        blocked={blocked}
-        tagDraft={tagDraft}
-        tagsDisabled={
-          read.isFetching || editing || c.pending || c.unknown || awaitingRead || !!d?.archived_at
-        }
-        tagsLocked={c.pending || c.unknown}
-        tagEditor={tagEditor}
-        suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}
-        onTags={(tags, added) => d && void organize(d, { tags }, added)}
-        onTagDraft={(dirty) => {
-          if (dirty && d) setSelected(d.id);
-          setTagDraft(dirty);
-        }}
-      />
+      <div className="document-directory-sidebar">
+        {!library && d && (
+          <section className="document-directory-preview" aria-label="文档预览">
+            <h2>{d.title}</h2>
+            <div className="view-tabs">
+              <button aria-pressed={preview} disabled={blocked} onClick={() => setPreview(true)}>
+                预览
+              </button>
+              <button aria-pressed={!preview} onClick={() => setPreview(false)}>
+                属性
+              </button>
+            </div>
+            {preview && !blocked && <DocumentPreview key={d.id} document={d} />}
+          </section>
+        )}
+        {(!preview || library || tagDraft) && (
+          <DocumentInspector
+            key={d?.id ?? 'empty'}
+            document={d}
+            project={c.data?.projects.find((project) => project.id === d?.matter_id)}
+            blocked={blocked}
+            tagDraft={tagDraft}
+            tagsDisabled={
+              read.isFetching ||
+              editing ||
+              c.pending ||
+              c.unknown ||
+              awaitingRead ||
+              !!d?.archived_at
+            }
+            tagsLocked={c.pending || c.unknown}
+            tagEditor={tagEditor}
+            suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}
+            onTags={(tags, added) => d && void organize(d, { tags }, added)}
+            onTagDraft={(dirty) => {
+              if (dirty && d) setSelected(d.id);
+              setTagDraft(dirty);
+            }}
+          />
+        )}
+      </div>
     </section>
   );
 }

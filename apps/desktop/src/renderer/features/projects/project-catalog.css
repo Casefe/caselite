@@ -795,3 +795,22 @@
 .project-deliverables-table {
   min-width: 580px;
 }
+
+.project-list-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px 12px;
+}
+.project-list-stages button {
+  border-radius: 16px;
+  padding-inline: 12px;
+}
+.project-list-stages button[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--active);
+}
+.project-list-stages span {
+  margin-inline-start: 4px;
+  color: var(--muted);
+}

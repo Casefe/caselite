@@ -1,3 +1,4 @@
+import TaskListSummary from '../features/tasks/TaskListSummary';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
@@ -140,12 +141,13 @@ export default function RecordList({
       <div className="collection-main">
         <div className="collection-heading">
           <Icon name="check" size={18} />
-          <h1>我的任务</h1>
+          <h1>任务</h1>
           <span className="collection-total">{loading ? '…' : total}</span>
           <button data-testid="new-task" onClick={onNew}>
             新建任务
           </button>
         </div>
+        <p className="workbench-list-caption">跟踪和管理任务，查看当前工作区的截止日期与进展。</p>
         <div className="task-query-toolbar">
           <input
             aria-label="搜索任务"
@@ -367,19 +369,22 @@ export default function RecordList({
           </div>
         </footer>
       </div>
-      <TaskInspector
-        key={selected?.id ?? 'empty'}
-        task={error ? null : selected}
-        suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
-        assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
-        onPropertiesBlocked={onPropertiesBlocked}
-        propertiesDisabled={projectDirty}
-        projectDisabled={propertyEditBlocked || loading}
-        reminderEditing={projectDirty}
-        onProjectDirty={onProjectDirty}
-        onProjectChanged={onTaskChanged}
-        onTaskChanged={onTaskChanged}
-      />
+      <div className="task-list-sidebar">
+        <TaskListSummary tasks={tasks} disabled={propertiesBlocked} onOpen={openTask} />
+        <TaskInspector
+          key={selected?.id ?? 'empty'}
+          task={error ? null : selected}
+          suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
+          assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
+          onPropertiesBlocked={onPropertiesBlocked}
+          propertiesDisabled={projectDirty}
+          projectDisabled={propertyEditBlocked || loading}
+          reminderEditing={projectDirty}
+          onProjectDirty={onProjectDirty}
+          onProjectChanged={onTaskChanged}
+          onTaskChanged={onTaskChanged}
+        />
+      </div>
     </section>
   );
 }

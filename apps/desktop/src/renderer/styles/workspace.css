@@ -290,15 +290,116 @@
 }
 
 .collection-workspace .task-table-structured {
-  min-width: 530px;
+  min-width: 620px;
 }
 .collection-workspace .task-table-structured .table-head,
 .collection-workspace .task-table-structured .task-row {
-  grid-template-columns: minmax(170px, 1.5fr) repeat(3, minmax(56px, 0.6fr)) minmax(100px, 1fr);
+  grid-template-columns: minmax(170px, 1.5fr) repeat(4, minmax(58px, 0.6fr)) minmax(100px, 1fr);
 }
 .collection-workspace .task-table-structured .table-head > span,
 .collection-workspace .task-table-structured .task-row > span {
   display: block;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.workbench-list-caption {
+  margin: 12px 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-list-sidebar {
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  border-inline-start: 1px solid var(--line);
+}
+.task-list-sidebar > .task-inspector {
+  height: auto;
+  border-inline-start: 0;
+}
+.task-list-summary {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+}
+.task-list-summary section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--canvas);
+}
+.task-list-summary h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.task-list-summary h2 span,
+.task-list-summary p,
+.task-list-summary time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-list-summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.task-list-summary dl div {
+  flex: 1;
+  min-width: 40px;
+}
+.task-list-summary dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+.task-list-summary ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.task-list-summary button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  text-align: left;
+}
+.task-list-summary [data-deadline-group='overdue'] h2 {
+  color: #a53138;
+}
+
+.document-directory-sidebar {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-inline-start: 1px solid var(--line);
+}
+.document-directory-sidebar > .task-inspector {
+  height: auto;
+  border-inline-start: 0;
+}
+.document-directory-preview {
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+.document-directory-preview h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.document-directory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.document-directory-filters input {
+  flex: 1;
+  min-width: 160px;
+}
+.document-directory-table {
+  min-width: 560px;
 }

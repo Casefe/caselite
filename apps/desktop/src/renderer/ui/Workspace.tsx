@@ -208,6 +208,11 @@ export function TaskTable({
     : [
         titleColumn,
         {
+          id: 'priority',
+          header: '优先级',
+          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+        },
+        {
           id: 'status',
           header: '状态',
           cell: ({ row: { original: task } }) => (
@@ -216,11 +221,7 @@ export function TaskTable({
             </small>
           ),
         },
-        {
-          id: 'priority',
-          header: '优先级',
-          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
-        },
+        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
         {
           id: 'owner',
           header: '负责人',
