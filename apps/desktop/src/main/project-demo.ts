@@ -2518,9 +2518,9 @@ export async function runProjectDemo(
         })()`);
         await captureRenderer('dev-1802-project-graph.png');
         await evaluate("document.querySelector('.project-graph-document').click()");
-        await wait("document.querySelector('[data-testid=task-result-tab]')");
-        await wait("document.querySelector('.workspace-project-back-button:enabled')");
-        await evaluate("document.querySelector('.workspace-project-back-button').click()");
+        await wait("document.querySelector('[data-testid=task-result-tab][aria-selected=true]')");
+        await wait("document.querySelector('[data-testid=back-to-tasks]:enabled')");
+        await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
         await wait("document.querySelector('#project-tab-visualization[aria-selected=true]')");
         await button('交付物');
         await wait(`(() => {
