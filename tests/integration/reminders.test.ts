@@ -1,3 +1,4 @@
+import * as Y from 'yjs';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,7 +90,7 @@ it('keeps ordinary due_date independent; atomic schedule receipts, scope, versio
     attempt: 'failed',
     read_at: null,
   });
-  const read = ok(
+  let read = ok(
     app.execute({
       ...identity(),
       operation: 'mark_read',
@@ -101,6 +102,22 @@ it('keeps ordinary due_date independent; atomic schedule receipts, scope, versio
   ).reminders[0];
   expect(read.read_at).not.toBeNull();
   expect(read.plan_revision).toBe(1);
+  for (const value of [false, true]) {
+    read = ok(
+      app.execute({
+        ...identity(),
+        operation: 'mark_read',
+        task_id: task.id,
+        reminder_id: r.id,
+        expected_version: read.version,
+        read: value,
+      }),
+    ).reminders[0];
+    expect(!!read.read_at).toBe(value);
+    expect(read.plan_revision).toBe(1);
+    expect(read.attempt).toBe('failed');
+    expect(app.claimDue('2026-01-02T00:00:00.000Z')).toEqual([]);
+  }
   expect(app.claimDue('2026-01-02T00:00:00.000Z')).toEqual([]);
   const changed = ok(
     app.execute({
@@ -126,6 +143,19 @@ it('keeps ordinary due_date independent; atomic schedule receipts, scope, versio
     }),
   ).reminders[0];
   expect(canceled).toMatchObject({ status: 'canceled', plan_revision: 3 });
+  expect(
+    app.execute({
+      ...identity(),
+      operation: 'mark_read',
+      task_id: task.id,
+      reminder_id: r.id,
+      expected_version: canceled.version,
+      read: true,
+    }),
+  ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  expect(ok(app.execute({ protocol_version: 1, operation: 'list' })).reminders[0]).toEqual(
+    canceled,
+  );
   expect(app.claimDue('2026-01-02T00:00:00.000Z')).toEqual([]);
   store.close();
   const reopened = openTaskStore(file, migrations),
@@ -237,7 +267,35 @@ it('upgrades an exact eight-migration populated database preserving all existing
   const file = join(dir, 'db.sqlite'),
     store = openTaskStore(file, old),
     tasks = createTaskApplication(store);
-  tasks.execute({ ...identity(), operation: 'create', title: '合成旧库任务', objective: '' });
+
+  const doc = new Y.Doc(),
+    paragraph = new Y.XmlElement('paragraph'),
+    text = new Y.XmlText();
+  text.insert(0, '合成旧库富文本说明与正文，迁移不得覆盖。');
+  paragraph.insert(0, [text]);
+  doc.getXmlFragment('default').insert(0, [paragraph]);
+  const bytes = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const created = tasks.execute({
+    ...identity(),
+    operation: 'create',
+    title: '合成旧库任务',
+    objective: '',
+    objective_state: bytes,
+  });
+  if (!created.ok) throw new Error('Old Task fixture create failed');
+  const task = created.tasks[0],
+    saved = tasks.execute({
+      ...identity(),
+      operation: 'save',
+      task_id: task.id,
+      document_id: task.document_id,
+      body_id: task.body_id,
+      expected_revision: 0,
+      editor_schema: 1,
+      state: bytes,
+    });
+  expect(saved.ok).toBe(true);
   store.close();
   const db = openToolchainProbe(file, old).sqlite,
     tables = (
@@ -247,6 +305,12 @@ it('upgrades an exact eight-migration populated database preserving all existing
         )
         .all() as { name: string }[]
     ).map((r) => r.name);
+  expect(db.prepare('SELECT state FROM body_revisions').get()).toEqual({
+    state: Buffer.from(bytes),
+  });
+  expect(db.prepare('SELECT state FROM task_objective_revisions').get()).toEqual({
+    state: Buffer.from(bytes),
+  });
   const snapshot = JSON.stringify(tables.map((name) => db.prepare(`SELECT * FROM ${name}`).all()));
   db.close();
   expect(() => openTaskStore(file, bad)).toThrow();
@@ -254,6 +318,16 @@ it('upgrades an exact eight-migration populated database preserving all existing
   expect(
     rollback.prepare("SELECT name FROM sqlite_master WHERE name='reminders'").get(),
   ).toBeUndefined();
+  expect(
+    JSON.stringify(tables.map((name) => rollback.prepare(`SELECT * FROM ${name}`).all())),
+  ).toBe(snapshot);
+  expect(rollback.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: 8,
+  });
+  for (const name of ['reminders', 'reminder_attempts', 'reminder_receipts'])
+    expect(
+      rollback.prepare('SELECT name FROM sqlite_master WHERE name=?').get(name),
+    ).toBeUndefined();
   rollback.close();
   const upgraded = openToolchainProbe(file, migrations).sqlite;
   expect(
