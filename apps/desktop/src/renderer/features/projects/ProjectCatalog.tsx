@@ -671,7 +671,10 @@ export default function ProjectCatalog({
                 <h2>项目文件</h2>
                 {section === 'files' && (
                   <>
-                    <section aria-labelledby="project-pdf-heading">
+                    <section
+                      className="project-managed-files"
+                      aria-labelledby="project-pdf-heading"
+                    >
                       <h3 id="project-pdf-heading">受管 PDF 原件</h3>
                       <ProjectFiles
                         key={editor.project.id}

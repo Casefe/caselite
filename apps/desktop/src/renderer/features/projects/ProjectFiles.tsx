@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { Material } from '../../../preload/caselite-api';
+import { ProjectFileExample, ProjectFileTable } from './ProjectFileTable';
 const PdfReader = lazy(() => import('../../ui/PdfReader'));
 const states: Record<Material['status'], string> = {
   imported: '原件已保存',
@@ -19,6 +20,7 @@ export default function ProjectFiles({
   disabled: boolean;
   compact?: boolean;
 }) {
+  const [example, setExample] = useState(false);
   const [data, setData] = useState<Material[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,11 +52,18 @@ export default function ProjectFiles({
         );
         if (request !== epoch.current) return;
         if (!r.ok) {
+          if (r.code === 'SCOPE') {
+            setData(null);
+            setSelected(null);
+          }
           setError(r.message);
           return;
         }
         setData(r.materials);
-        if (source && r.data) setBytes(r.data);
+        if (source && r.data) {
+          setSelected(r.materials.find((material) => material.id === source.id) ?? null);
+          setBytes(r.data);
+        }
       } catch {
         if (request === epoch.current) setError('无法读取项目文件，请重试。已保存的原件保留。');
       } finally {
@@ -87,6 +96,31 @@ export default function ProjectFiles({
     );
   const pages = Math.max(1, Math.ceil(filtered.length / 20));
   const current = Math.min(page, pages - 1);
+  const closePreview = () => {
+    epoch.current++;
+    setBusy(false);
+    setBytes(null);
+    setSelected(null);
+    setError('');
+  };
+  const reader = selected && bytes && (
+    <Suspense fallback={<p>正在打开阅读器…</p>}>
+      <PdfReader
+        key={selected.id}
+        bytes={bytes}
+        name={selected.name}
+        textPages={selected.pages}
+        onClose={closePreview}
+        {...(!compact && { initialWidth: 320 })}
+      />
+    </Suspense>
+  );
+  if (example && !compact)
+    return (
+      <div className="project-files">
+        <ProjectFileExample onExit={() => setExample(false)} />
+      </div>
+    );
   return (
     <div className="project-files">
       {!compact && (
@@ -130,6 +164,15 @@ export default function ProjectFiles({
           <button disabled={busy || disabled} onClick={() => void load()}>
             重新读取文件
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (selected) closePreview();
+              setExample(true);
+            }}
+          >
+            查看布局示例
+          </button>
         </div>
       )}
       {compact && (
@@ -168,37 +211,39 @@ export default function ProjectFiles({
                 ))}
             </ul>
           ) : (
-            <table className="catalog-table">
-              <thead>
-                <tr>
-                  <th>文件名</th>
-                  <th>类型</th>
-                  <th>原件</th>
-                  <th>文字处理</th>
-                  <th>固定版本</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.slice(current * 20, current * 20 + 20).map((m) => (
-                  <tr key={m.id} data-source-id={m.id} aria-selected={selected?.id === m.id}>
-                    <td>
-                      <button disabled={disabled || busy} onClick={() => void load(m)}>
-                        {m.name}
-                      </button>
-                      <small>
-                        {Math.ceil(m.bytes / 1024)} KB · {m.page_count} 页
-                      </small>
-                    </td>
-                    <td>PDF</td>
-                    <td>本地已保存</td>
-                    <td>{states[m.status]}</td>
-                    <td>
-                      <code title={m.id}>{m.id.slice(0, 8)}</code>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="project-file-split" data-preview={Boolean(selected)}>
+              <ProjectFileTable
+                rows={filtered.slice(current * 20, current * 20 + 20).map((material) => ({
+                  id: material.id,
+                  name: material.name,
+                  material,
+                }))}
+                selectedId={selected?.id}
+                disabled={disabled}
+                onSelect={(node) => {
+                  if (node.material) void load(node.material);
+                }}
+              />
+              {selected && (
+                <aside className="project-file-preview" aria-label="文件预览">
+                  <header className="project-file-preview-header">
+                    <strong>文件预览</strong>
+                    <button type="button" onClick={closePreview}>
+                      收起预览
+                    </button>
+                  </header>
+                  {busy && <p role="status">正在读取原件…</p>}
+                  {bytes && (
+                    <div className="project-file-preview-meta">
+                      PDF · {states[selected.status]} · {selected.page_count} 页 ·{' '}
+                      {Math.ceil(selected.bytes / 1024)} KB · 固定版本{' '}
+                      <code title={selected.id}>{selected.id.slice(0, 8)}</code>
+                    </div>
+                  )}
+                  {reader}
+                </aside>
+              )}
+            </div>
           )}
           {!filtered.length && (
             <p>
@@ -222,21 +267,7 @@ export default function ProjectFiles({
           )}
         </>
       )}
-      {selected && bytes && (
-        <Suspense fallback={<p>正在打开阅读器…</p>}>
-          <PdfReader
-            key={selected.id}
-            bytes={bytes}
-            name={selected.name}
-            textPages={selected.pages}
-            onClose={() => {
-              epoch.current++;
-              setBytes(null);
-              setSelected(null);
-            }}
-          />
-        </Suspense>
-      )}
+      {compact && reader}
     </div>
   );
 }
