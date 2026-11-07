@@ -2598,7 +2598,7 @@ export async function runProjectDemo(
         );
         await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
         await captureRenderer('linear-task-list.png');
-        await click('.task-list-preview-toggle');
+        await evaluate("document.querySelector('.task-list-preview-toggle').click()");
         await wait(
           "document.querySelector('.task-list-summary')?.textContent.includes('今日到期')",
         );
