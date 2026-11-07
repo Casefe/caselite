@@ -1,4 +1,5 @@
-import { QueryClient, useQuery } from '@tanstack/react-query';
+import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type { TaskListQuery } from '../../preload/caselite-api';
 
 const taskPages = ['task-list', 'pages'] as const;
@@ -24,6 +25,11 @@ export function invalidateTaskPages(client: QueryClient) {
 }
 
 export function useTaskPage(query: TaskListQuery, enabled: boolean) {
+  const client = useQueryClient();
+  useEffect(() => {
+    // 禁用只会阻止新的自动读取。编辑开始时也要丢弃已在途的响应，保护属性草稿。
+    if (!enabled) void client.cancelQueries({ queryKey: [...taskPages, query], exact: true });
+  }, [client, enabled, query]);
   return useQuery({
     queryKey: [...taskPages, query],
     enabled,
