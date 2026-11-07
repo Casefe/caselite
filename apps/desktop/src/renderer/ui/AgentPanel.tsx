@@ -11,6 +11,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentProps,
   type RefObject,
 } from 'react';
 import {
@@ -23,6 +24,7 @@ import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
+import { Icon } from './Workspace';
 import { ModelSettingsNavigation } from './SettingsView';
 import { agentModelLabel, agentProviderFor } from './model-labels';
 import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
@@ -120,9 +122,9 @@ const ComposerInput = forwardRef<
     draft: RichDraft;
     onDraft(value: RichDraft): void;
     disabled: boolean;
-    scope: string;
+    home?: boolean;
   }
->(function ComposerInput({ draft, onDraft, disabled, scope }, ref) {
+>(function ComposerInput({ draft, onDraft, disabled, home }, ref) {
   const aui = useAui();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(
@@ -142,8 +144,8 @@ const ComposerInput = forwardRef<
   return (
     <ComposerPrimitive.Input
       ref={inputRef}
-      aria-label={scope === 'home' ? 'Agent 工作目标' : 'AI 工作要求'}
-      data-testid={scope === 'home' ? 'agent-input' : 'assistant-input'}
+      aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
+      data-testid={home ? 'agent-input' : 'assistant-input'}
       className="assistant-input"
       placeholder="描述你的工作目标或问题…"
       rows={1}
@@ -155,6 +157,60 @@ const ComposerInput = forwardRef<
     />
   );
 });
+
+function ComposerFrame({
+  compact,
+  ...props
+}: Omit<ComponentProps<typeof ComposerPrimitive.Root>, 'className'> & { compact: boolean }) {
+  return (
+    <ComposerPrimitive.Root
+      {...props}
+      className={compact ? 'assistant-compose agent-prompt' : 'assistant-compose'}
+    />
+  );
+}
+
+export function UnavailableAgentPanel({ reason }: { reason: string }) {
+  // 未确认任务范围时只使用本地空状态渲染输入框，不挂载对话轮询或材料控制器。
+  const runtime = useExternalStoreRuntime<ThreadMessageLike>({
+    messages: [],
+    convertMessage: (message) => message,
+    onNew: async () => {},
+  });
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <section className="assistant-panel assistant-panel--compact" aria-label="AI 对话未启用">
+        <ComposerFrame compact onSubmit={(event) => event.preventDefault()}>
+          <div className="material-composer">
+            <ComposerInput draft={emptyDraft()} onDraft={() => {}} disabled />
+            <div className="assistant-actions">
+              <div className="material-menu">
+                <button
+                  type="button"
+                  className="material-menu-trigger"
+                  aria-label="添加文件与材料"
+                  disabled
+                >
+                  <Icon name="plus" size={18} />
+                </button>
+              </div>
+              <select className="home-model-select" aria-label="选择大模型" disabled>
+                <option>选择模型</option>
+              </select>
+              <button type="button" className="primary assistant-submit" aria-label="发送" disabled>
+                发送
+              </button>
+            </div>
+          </div>
+        </ComposerFrame>
+        <p className="assistant-run-status" role="status">
+          {reason}
+        </p>
+      </section>
+    </AssistantRuntimeProvider>
+  );
+}
 
 export default function AgentPanel({
   scope,
@@ -482,8 +538,8 @@ export default function AgentPanel({
                 重新填写上次要求 · 附件请重新添加
               </button>
             )}
-          <ComposerPrimitive.Root
-            className={homeComposer ? 'assistant-compose agent-prompt' : 'assistant-compose'}
+          <ComposerFrame
+            compact={homeComposer}
             onSubmit={(event) => {
               event.preventDefault();
               void send();
@@ -577,13 +633,13 @@ export default function AgentPanel({
             >
               <ComposerInput
                 ref={editorRef}
-                scope={scope}
+                home={scope === 'home'}
                 draft={draft}
                 onDraft={setDraft}
                 disabled={false}
               />
             </PdfAttachments>
-          </ComposerPrimitive.Root>
+          </ComposerFrame>
           {scope !== 'home' && variant !== 'compact' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。

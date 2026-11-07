@@ -109,6 +109,25 @@ export async function runProjectDemo(
       `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable: ${label}');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
     );
   };
+  const projectComposer = '.project-ai-content .agent-prompt';
+  const projectInput = `${projectComposer} [data-testid=assistant-input]`;
+  const disabledProjectComposer = `(() => {
+    const form = document.querySelector('${projectComposer}');
+    const input = document.querySelector('${projectInput}:disabled');
+    return form instanceof HTMLFormElement && input?.value === '' &&
+      ['添加文件与材料', '选择大模型', '发送'].every(label =>
+        form.querySelector('[aria-label="' + label + '"]:disabled')) &&
+      !document.querySelector('.project-ai-content .assistant-thread');
+  })()`;
+  const typeProjectDraft = async (draft: string) => {
+    await wait(`document.querySelector('${projectInput}:enabled')`);
+    await evaluate(`(() => {
+      const input = document.querySelector('${projectInput}');
+      input.focus();
+      document.execCommand('insertText', false, ${JSON.stringify(draft)});
+    })()`);
+    await wait(`document.querySelector('${projectInput}')?.value === ${JSON.stringify(draft)}`);
+  };
   const assertRemovedControls = () =>
     wait(`(()=>{const aside=document.querySelector('.project-properties');return aside.querySelector('form') &&
       !aside.querySelector('[data-project-task],[aria-label="归入已有任务"]') &&
@@ -378,14 +397,40 @@ export async function runProjectDemo(
         document.activeElement?.dataset.projectTask===${JSON.stringify(projectTask)}`);
       await capture('task-project-return.png');
       await wait(
-        "document.querySelector('.project-ai-content > select')?.value==='' && !document.querySelector('.project-ai-content .agent-prompt')",
+        `document.querySelector('.project-ai-content > select')?.value==='' &&
+          (${disabledProjectComposer}) && document.querySelector('.project-ai-content [role=status]').textContent.includes('请先选择项目任务')`,
       );
+      await inspectComposer('.project-ai-content');
+      await captureRenderer('project-ai-unselected-dark-640.png');
       await select('项目 AI 任务', projectTask);
       await inspectComposer('.project-ai-content');
       await wait(
         "document.querySelector('.project-ai-content [data-testid=assistant-input]')?.value.includes('合成草稿')",
       );
       await captureRenderer('project-compact-ai-dark-640.png');
+      const materialTrigger = `${projectComposer} [aria-label="添加文件与材料"]`;
+      await click(materialTrigger);
+      await wait(`document.querySelector('${materialTrigger}')?.getAttribute('aria-expanded')==='true' &&
+        document.querySelector('${projectComposer} [role=menu]:not([hidden]) [aria-label=文件]:enabled')`);
+      await captureRenderer('project-ai-attachment-menu.png');
+      await evaluate(
+        "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+      );
+      await wait(
+        `document.querySelector('${materialTrigger}')?.getAttribute('aria-expanded')==='false'`,
+      );
+      await select('项目 AI 任务', fixture.task.id);
+      await wait(`document.querySelector('${projectInput}:enabled')?.value === ''`);
+      await typeProjectDraft('合成任务 B 的草稿');
+      await select('项目 AI 任务', projectTask);
+      await wait(`document.querySelector('${projectInput}:enabled')?.value === '合成草稿，不发送'`);
+      await select('项目 AI 任务', '');
+      await wait(disabledProjectComposer);
+      await select('项目 AI 任务', fixture.task.id);
+      await wait(
+        `document.querySelector('${projectInput}:enabled')?.value === '合成任务 B 的草稿'`,
+      );
+
       window.setContentSize(1440, 900);
       await click('[data-nav=settings]');
       await button('外观');
@@ -440,9 +485,6 @@ export async function runProjectDemo(
       const sidebar = '.project-properties';
       const activity = '#project-panel-activity .activity-list';
       const composer = '[data-testid=assistant-input]';
-      const disabledComposer = `document.querySelector('.project-ai-content textarea:disabled') &&
-        ['添加文件与材料','选择大模型','发送'].every(label=>
-          document.querySelector('.project-ai-content [aria-label="'+label+'"]:disabled'))`;
       const scrollAndCheck = async (selector: string) => {
         const el = `document.querySelector(${JSON.stringify(selector)})`;
         await wait(el);
@@ -617,7 +659,7 @@ export async function runProjectDemo(
         await openFixture();
         await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
         await wait(`document.querySelector('.project-ai-content > select').value==='' &&
-          (${disabledComposer}) && !document.querySelector('${composer}') && document.querySelector('.profile-avatar').naturalWidth>0 &&
+          (${disabledProjectComposer}) && document.querySelector('.profile-avatar').naturalWidth>0 &&
           document.querySelector('.profile-pro').textContent==='Pro' &&
           document.querySelector('.primary-navigation button').getBoundingClientRect().height===30`);
         await checkProperties();
@@ -661,13 +703,15 @@ export async function runProjectDemo(
       await projectTab('tasks');
       await button('移出项目');
       await wait(
-        `(${disabledComposer}) && !document.querySelector('${composer}') && document.querySelector('.project-ai-content').textContent.includes('暂无')`,
+        `(${disabledProjectComposer}) && document.querySelector('.project-ai-content').textContent.includes('暂无')`,
       );
+      await scrollAndCheck(projectInput);
+      await captureRenderer('project-ai-no-available-task.png');
       await select('归入已有任务', taskId);
       await button('归入项目');
       await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
       await wait(
-        `document.querySelector('.project-ai-content > select').value==='' && (${disabledComposer}) && !document.querySelector('${composer}')`,
+        `document.querySelector('.project-ai-content > select').value==='' && (${disabledProjectComposer})`,
       );
       await select('项目 AI 任务', taskId);
       await wait(`document.querySelector('${composer}')?.value.includes('合成草稿，不发送')`);
@@ -740,7 +784,7 @@ export async function runProjectDemo(
       })()`);
       await click('dialog[open] button[type=submit]');
       await wait(`document.querySelector('.project-catalog-heading h1')?.textContent==='合成无任务项目' &&
-        document.querySelector('.project-ai-content')?.textContent.includes('暂无') && (${disabledComposer}) && !document.querySelector('${composer}')`);
+        document.querySelector('.project-ai-content')?.textContent.includes('暂无') && (${disabledProjectComposer})`);
       await scrollAndCheck('.project-ai-content textarea');
       await captureRenderer('project-ai-without-task.png');
       await click('.workspace-project-back-button');
@@ -750,13 +794,15 @@ export async function runProjectDemo(
       await wait(`document.querySelector('${composer}')?.value.includes('合成草稿，不发送')`);
       await select('项目状态', 'archived');
       await wait(
-        `document.querySelector('.project-ai-content')?.textContent.includes('已归档') && (${disabledComposer}) && !document.querySelector('${composer}') &&
+        `document.querySelector('.project-ai-content')?.textContent.includes('已归档') && (${disabledProjectComposer}) &&
           document.querySelector('[aria-label=项目优先级]')?.disabled &&
           document.querySelector('[aria-label=项目状态]:enabled')?.value==='archived'`,
       );
+      await scrollAndCheck(projectInput);
+      await captureRenderer('project-ai-archived.png');
       await select('项目状态', 'restore');
       await wait(
-        `document.querySelector('.project-ai-content > select')?.value==='' && (${disabledComposer}) && !document.querySelector('${composer}')`,
+        `document.querySelector('.project-ai-content > select')?.value==='' && (${disabledProjectComposer})`,
       );
       await click('#project-tab-activity');
       await wait(

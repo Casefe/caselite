@@ -3525,6 +3525,11 @@ dd {
   color: #647080;
   font-size: 12px;
 }
+.project-ai-content > label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
 .catalog-actions input,
 .catalog-actions select,
 .project-ai-task-select {

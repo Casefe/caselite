@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AgentRequest, AgentResponse } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
+import SidebarAgent from './SidebarAgent';
 import userEvent from '@testing-library/user-event';
 vi.stubGlobal(
   'ResizeObserver',
@@ -44,6 +45,32 @@ const profile: AgentResponse = {
   providers: { openai: true, deepseek: false },
   runs: [],
 };
+it('keeps the shared composer disabled and performs no Agent or material IPC without a task', async () => {
+  const agent = vi.fn();
+  const material = vi.fn();
+  const pickPdf = vi.fn();
+  const dropPdf = vi.fn();
+  window.caselite = { agent, material, pickPdf, dropPdf } as unknown as Window['caselite'];
+
+  render(<SidebarAgent unavailable="请先选择项目任务。" />);
+  const input = screen.getByTestId('assistant-input') as HTMLTextAreaElement;
+  const attachment = screen.getByRole<HTMLButtonElement>('button', { name: '添加文件与材料' });
+  const model = screen.getByRole<HTMLSelectElement>('combobox', { name: '选择大模型' });
+  const send = screen.getByRole<HTMLButtonElement>('button', { name: '发送' });
+  for (const control of [input, attachment, model, send]) expect(control.disabled).toBe(true);
+  expect(input.closest('form')).toHaveProperty('className', 'assistant-compose agent-prompt');
+  expect(screen.getByRole('status').textContent).toBe('请先选择项目任务。');
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.submit(input.closest('form')!);
+  await userEvent.click(attachment);
+  await userEvent.click(send);
+  expect(input.value).toBe('');
+  expect(agent).not.toHaveBeenCalled();
+  expect(material).not.toHaveBeenCalled();
+  expect(pickPdf).not.toHaveBeenCalled();
+  expect(dropPdf).not.toHaveBeenCalled();
+});
+
 describe('AI submission UI lifecycle', () => {
   it('keeps disclosure outside the composer and preserves Enter, Shift+Enter and IME submission semantics', async () => {
     const agent = vi.fn(async () => profile);

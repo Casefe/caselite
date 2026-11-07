@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { projectStatuses } from './ProjectFields';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
-import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useRef, useId } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import { DraftEditor, type RichDraft } from '../editors/RichEditor';
 import { Icon } from '../ui/Workspace';
@@ -46,6 +46,7 @@ function ProjectConversation({
   blocked: boolean;
 }) {
   const [selectedTask, setSelectedTask] = useState('');
+  const taskSelectId = useId();
   const available = project.archived_at ? [] : members.filter((task) => !task.document_archived_at);
   const task = available.find((item) => item.id === selectedTask);
   // 移出或归档后取消选择；原草稿仍由 AgentPanel 保存在原任务范围内。
@@ -54,8 +55,10 @@ function ProjectConversation({
   return (
     <section className="project-inspector-section project-ai-content" aria-label="AI 对话">
       <h3>AI 对话</h3>
+      {available.length > 0 && <label htmlFor={taskSelectId}>项目 AI 任务</label>}
       {available.length > 0 && (
         <select
+          id={taskSelectId}
           className="project-ai-task-select"
           aria-label="项目 AI 任务"
           disabled={blocked}
@@ -75,10 +78,10 @@ function ProjectConversation({
         blocked={blocked}
         unavailable={
           project.archived_at
-            ? '项目已归档。恢复项目并选择任务后可发送。'
+            ? '项目已归档。恢复项目并选择任务后可使用对话。'
             : available.length === 0
-              ? '此项目暂无可用任务。添加并选择任务后可发送。'
-              : '选择本项目的任务后可发送。'
+              ? '此项目暂无可用任务。将任务归入项目并选中后可使用对话。'
+              : '请先选择项目任务。对话和材料只使用所选任务的范围。'
         }
       />
     </section>
@@ -929,7 +932,10 @@ export default function ProjectCatalog({
               }
             />
             {taskScopeUnavailable ? (
-              <section className="project-inspector-section" aria-label="AI 对话">
+              <section
+                className="project-inspector-section project-ai-content"
+                aria-label="AI 对话"
+              >
                 <h3>AI 对话</h3>
                 <SidebarAgent unavailable="无法确认当前项目任务，请重新打开项目。" />
               </section>
