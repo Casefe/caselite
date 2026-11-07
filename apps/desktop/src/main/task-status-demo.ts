@@ -61,9 +61,7 @@ export async function runTaskStatusDemo(
     );
   const open = async (id: string) => {
     await wait(`document.querySelector('[data-row-task="${id}"]')`);
-    await evaluate(
-      `document.querySelector('[data-row-task="${id}"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
-    );
+    await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
     await wait(
       `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
     );
@@ -445,9 +443,7 @@ export async function runTaskStatusDemo(
       const expected = JSON.parse(readFileSync(join(root, 'task-status-expected.json'), 'utf8'));
       id = expected.task.id;
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
-      await evaluate(
-        `document.querySelector('[data-row-task="${id}"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
-      );
+      await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
       await wait(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
       );

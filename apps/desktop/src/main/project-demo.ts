@@ -1330,9 +1330,7 @@ export async function runProjectDemo(
       await wait("document.querySelector('#project-tab-overview[aria-selected=true]')");
       await evaluate("document.querySelector('[data-nav=tasks]').click()");
       await wait("document.querySelector('[data-row-task]')");
-      await evaluate(
-        "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))",
-      );
+      await evaluate("document.querySelector('[data-row-task]').click()");
       await wait("document.querySelector('[aria-label=返回任务列表]')");
       await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
       await wait("document.querySelector('[data-row-task]')");

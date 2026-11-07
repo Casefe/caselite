@@ -49,6 +49,7 @@ export default function RecordList({
   onTaskChanged(task: Task, state: number[] | null): void;
 }) {
   const propertiesBlocked = propertyEditBlocked || projectDirty;
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [projects, setProjects] = useState<Matter[]>([]);
   const [catalogError, setCatalogError] = useState(''),
     [retry, setRetry] = useState(0);
@@ -135,7 +136,7 @@ export default function RecordList({
   return (
     <section
       className="list-view collection-workspace issue-collection task-query-list"
-      data-layout="three-column"
+      data-layout={previewOpen ? 'three-column' : undefined}
       data-collection="tasks"
     >
       <div className="collection-main">
@@ -143,11 +144,21 @@ export default function RecordList({
           <Icon name="check" size={18} />
           <h1>任务</h1>
           <span className="collection-total">{loading ? '…' : total}</span>
+          <button
+            type="button"
+            className="task-list-preview-toggle"
+            aria-label="任务预览"
+            aria-expanded={previewOpen}
+            disabled={propertiesBlocked}
+            onClick={() => setPreviewOpen((open) => !open)}
+          >
+            <Icon name="panel" size={16} />
+          </button>
           <button data-testid="new-task" onClick={onNew}>
+            <Icon name="plus" size={15} />
             新建任务
           </button>
         </div>
-        <p className="workbench-list-caption">跟踪和管理任务，查看当前工作区的截止日期与进展。</p>
         <div className="task-query-toolbar">
           <input
             aria-label="搜索任务"
@@ -326,9 +337,13 @@ export default function RecordList({
               tasks={rows}
               documents={false}
               selectedId={selected?.id}
-              onSelect={(id) => {
-                if (!propertiesBlocked) onViewState({ ...viewState, selected: id });
-              }}
+              onSelect={
+                previewOpen
+                  ? (id) => {
+                      if (!propertiesBlocked) onViewState({ ...viewState, selected: id });
+                    }
+                  : undefined
+              }
               onOpen={openTask}
             />
           )}
@@ -369,22 +384,24 @@ export default function RecordList({
           </div>
         </footer>
       </div>
-      <div className="task-list-sidebar">
-        <TaskListSummary tasks={tasks} disabled={propertiesBlocked} onOpen={openTask} />
-        <TaskInspector
-          key={selected?.id ?? 'empty'}
-          task={error ? null : selected}
-          suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
-          assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
-          onPropertiesBlocked={onPropertiesBlocked}
-          propertiesDisabled={projectDirty}
-          projectDisabled={propertyEditBlocked || loading}
-          reminderEditing={projectDirty}
-          onProjectDirty={onProjectDirty}
-          onProjectChanged={onTaskChanged}
-          onTaskChanged={onTaskChanged}
-        />
-      </div>
+      {previewOpen && (
+        <div className="task-list-sidebar">
+          <TaskListSummary tasks={tasks} disabled={propertiesBlocked} onOpen={openTask} />
+          <TaskInspector
+            key={selected?.id ?? 'empty'}
+            task={error ? null : selected}
+            suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
+            assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
+            onPropertiesBlocked={onPropertiesBlocked}
+            propertiesDisabled={projectDirty}
+            projectDisabled={propertyEditBlocked || loading}
+            reminderEditing={projectDirty}
+            onProjectDirty={onProjectDirty}
+            onProjectChanged={onTaskChanged}
+            onTaskChanged={onTaskChanged}
+          />
+        </div>
+      )}
     </section>
   );
 }

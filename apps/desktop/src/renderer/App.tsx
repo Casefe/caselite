@@ -697,6 +697,22 @@ function Workbench() {
                       </>
                     )}
                     <span>{active.title}</span>
+                    <button
+                      type="button"
+                      className="favorite-toggle"
+                      data-testid="toggle-favorite"
+                      aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
+                      aria-pressed={favorites.includes(active.id)}
+                      onClick={() =>
+                        setFavorites((ids) =>
+                          ids.includes(active.id)
+                            ? ids.filter((id) => id !== active.id)
+                            : [...ids, active.id],
+                        )
+                      }
+                    >
+                      <Icon name="star" size={15} />
+                    </button>
                   </div>
                 </div>
 
@@ -742,27 +758,8 @@ function Workbench() {
                 </div>
 
                 <div className="task-title">
-                  <span className="task-symbol">
-                    <Icon name="check" size={23} />
-                  </span>
                   <div>
                     <h1>{active.title}</h1>
-                    <button
-                      type="button"
-                      className="favorite-toggle"
-                      data-testid="toggle-favorite"
-                      aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
-                      aria-pressed={favorites.includes(active.id)}
-                      onClick={() =>
-                        setFavorites((ids) =>
-                          ids.includes(active.id)
-                            ? ids.filter((id) => id !== active.id)
-                            : [...ids, active.id],
-                        )
-                      }
-                    >
-                      <Icon name="star" size={15} />
-                    </button>
                   </div>
                 </div>
                 {detailTab === '成果正文' ? (

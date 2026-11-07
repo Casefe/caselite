@@ -174,7 +174,7 @@ export function TaskTable({
   onOpen(id: string): void;
   documents?: boolean;
   selectedId?: string;
-  onSelect(id: string): void;
+  onSelect?(id: string): void;
 }) {
   const titleColumn: ColumnDef<Task> = {
     id: 'title',
@@ -264,8 +264,8 @@ export function TaskTable({
           data-row-task={row.id}
           aria-label={`选择${documents ? '文档' : '任务'}：${row.original.title}`}
           aria-current={selectedId === row.id ? 'true' : undefined}
-          onClick={() => onSelect(row.id)}
-          onDoubleClick={() => onOpen(row.id)}
+          onClick={() => (onSelect ?? onOpen)(row.id)}
+          onDoubleClick={onSelect ? () => onOpen(row.id) : undefined}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();

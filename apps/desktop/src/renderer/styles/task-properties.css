@@ -292,3 +292,15 @@
     padding: 10px 18px;
   }
 }
+
+.task-query-list:not([data-layout='three-column']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.task-query-list .task-list-preview-toggle {
+  margin-inline-start: auto;
+}
+.task-query-list [data-testid='new-task'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
