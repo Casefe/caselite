@@ -2596,6 +2596,9 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.task-table-structured [role=columnheader]:nth-child(4)')?.textContent === '截止日期'",
         );
+        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
+        await captureRenderer('linear-task-list.png');
+        await click('.task-list-preview-toggle');
         await wait(
           "document.querySelector('.task-list-summary')?.textContent.includes('今日到期')",
         );
