@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { MaterialResponse } from '../../preload/caselite-api';
 import ProjectFiles from './ProjectFiles';
@@ -60,4 +60,52 @@ it('ignores a response after leaving its project', async () => {
   view.unmount();
   finish({ ok: true, materials: [source('old')] });
   expect(screen.queryByText('同名.pdf')).toBeNull();
+});
+
+it('compact shows only the last three registered sources in reverse registration order and revalidates the exact source', async () => {
+  const rows = ['z', 'a', 'y', 'b'].map(source);
+  const material = vi.fn(async (r) =>
+    r.operation === 'list_project'
+      ? { ok: true, materials: rows }
+      : { ok: false, message: '目标不在当前项目' },
+  );
+  window.caselite = { material } as unknown as Window['caselite'];
+  const view = render(<ProjectFiles projectId="p" disabled={false} compact />);
+  await screen.findAllByText('同名.pdf');
+  expect(
+    Array.from(view.container.querySelectorAll('[data-source-id]')).map((e) =>
+      e.getAttribute('data-source-id'),
+    ),
+  ).toEqual(['b', 'y', 'a']);
+  expect(screen.queryByLabelText('文件排序')).toBeNull();
+  fireEvent.click(screen.getAllByText('同名.pdf')[0]);
+  await screen.findByText('目标不在当前项目');
+  expect(material.mock.calls.at(-1)?.[0]).toMatchObject({
+    operation: 'read_project',
+    project_id: 'p',
+    source_id: 'b',
+  });
+  expect(screen.queryByText(/固定原件/)).toBeNull();
+});
+
+it('compact distinguishes a failed query from a real empty project and discards a late project response', async () => {
+  let finish!: (r: MaterialResponse) => void;
+  window.caselite = {
+    material: vi.fn((r) =>
+      r.project_id === 'old'
+        ? new Promise<MaterialResponse>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve({ ok: false, message: '无权读取项目' }),
+    ),
+  } as unknown as Window['caselite'];
+  const view = render(<ProjectFiles key="old" projectId="old" disabled={false} compact />);
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  view.rerender(<ProjectFiles key="new" projectId="new" disabled={false} compact />);
+  await screen.findByText('无权读取项目');
+  await act(async () => {
+    finish({ ok: true, materials: [source('old-source')] });
+  });
+  expect(screen.queryByText('同名.pdf')).toBeNull();
+  expect(screen.queryByText('项目还没有已登记材料，请在任务中添加 PDF。')).toBeNull();
 });

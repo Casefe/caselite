@@ -357,3 +357,31 @@
     right: auto;
   }
 }
+
+.project-summary-records + .project-summary-records {
+  margin-top: 24px;
+}
+.project-summary-counts {
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.project-summary-records > section {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-summary .project-files ul {
+  list-style: none;
+  padding: 0;
+}
+.project-summary .project-files li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.project-summary .project-files small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-summary .material-reader header > div {
+  flex-wrap: wrap;
+}

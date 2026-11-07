@@ -735,6 +735,7 @@ app
         : undefined;
     const baseAgentCredentials =
       taskDemoPhase?.startsWith('reminder') ||
+      taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
@@ -863,6 +864,7 @@ app
           : createPiRuntime(
               credentialUi ||
                 taskDemoPhase?.startsWith('reminder') ||
+                taskDemoPhase?.startsWith('project-') ||
                 taskDemoPhase === 'task-status-write' ||
                 taskDemoPhase === 'task-status-read' ||
                 taskDemoPhase === 'agent-read' ||

@@ -91,3 +91,43 @@ it('ignores a late target response after the parent switches its keyed scope', a
   expect(open).not.toHaveBeenCalled();
   expect(screen.queryByText('创建任务')).toBeNull();
 });
+
+it('compact keeps three committed events in query order and routes the verified project target', async () => {
+  const events = [4, 3, 2, 1].map((n) => ({
+    id: `event-${n}`,
+    origin: 'catalog',
+    target_id: 'project',
+    target_type: 'project',
+    operation: 'create_project',
+    committed_at: `2026-11-06T0${n}:00:00Z`,
+    actor: null,
+    recorded_version: null,
+  }));
+  const catalog = vi.fn(async (r) =>
+    r.operation === 'list_activity'
+      ? { ok: true, activity: events, activity_has_more: true }
+      : {
+          ok: true,
+          activity_target: { type: 'project', id: 'verified-project', current_version: 2 },
+        },
+  );
+  window.caselite = { catalog } as unknown as Window['caselite'];
+  const open = vi.fn();
+  const view = render(
+    <ActivityList scope={{ type: 'project', id: 'p' }} onTask={vi.fn()} onProject={open} compact />,
+  );
+  await screen.findAllByText('创建项目');
+  expect(
+    Array.from(view.container.querySelectorAll('[data-activity-id]')).map((e) =>
+      e.getAttribute('data-activity-id'),
+    ),
+  ).toEqual(['event-4', 'event-3', 'event-2']);
+  expect(screen.queryByText('下一页活动')).toBeNull();
+  fireEvent.click(screen.getAllByRole('button', { name: /打开当前项目/ })[0]);
+  await vi.waitFor(() => expect(open).toHaveBeenCalledWith('verified-project'));
+  expect(catalog.mock.calls.at(-1)?.[0]).toMatchObject({
+    operation: 'activity_target',
+    scope: { type: 'project', id: 'p' },
+    event_id: 'event-4',
+  });
+});

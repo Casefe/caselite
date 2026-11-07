@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ActivityEvent, ActivityScope } from '../../preload/caselite-api';
 const actions: Record<string, string> = {
   create: '创建任务',
@@ -20,9 +20,11 @@ export default function ActivityList({
   disabled = false,
   onTask,
   onProject,
+  compact = false,
 }: {
   scope: ActivityScope;
   disabled?: boolean;
+  compact?: boolean;
   onTask(id: string): void;
   onProject?(id: string): void;
 }) {
@@ -32,6 +34,10 @@ export default function ActivityList({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const epoch = useRef(0);
+  const navigationBlocked = useRef(disabled);
+  useLayoutEffect(() => {
+    navigationBlocked.current = disabled;
+  }, [disabled]);
   const { type, id } = scope;
   const load = useCallback(
     async (next: number) => {
@@ -73,6 +79,7 @@ export default function ActivityList({
     };
   }, [load]);
   const open = async (event: ActivityEvent) => {
+    if (navigationBlocked.current) return;
     const sequence = ++epoch.current;
     setBusy(true);
     setError('');
@@ -84,7 +91,8 @@ export default function ActivityList({
         event_id: event.id,
         origin: event.origin,
       });
-      if (sequence !== epoch.current) return;
+      // 回跳等待期间父页仍可编辑；必须读取最新阻止状态，不能用发起时的闭包覆盖草稿。
+      if (sequence !== epoch.current || navigationBlocked.current) return;
       if (!r.ok) {
         setError(r.message);
         return;
@@ -118,9 +126,10 @@ export default function ActivityList({
       </p>
       {busy && <p role="status">正在读取活动…</p>}
       {error && <p role="alert">{error}</p>}
-      {rows?.length === 0 && <p>还没有可显示的成功活动。</p>}
+      {error && rows && <p role="status">以下为上次读取的活动，请重新读取核对当前范围。</p>}
+      {!error && rows?.length === 0 && <p>还没有可显示的成功活动。</p>}
       <ol>
-        {rows?.map((event) => (
+        {(compact ? rows?.slice(0, 3) : rows)?.map((event) => (
           <li key={event.origin + event.id} data-activity-id={event.id}>
             <div>
               <strong>{actions[event.operation] ?? event.operation}</strong>
@@ -145,7 +154,7 @@ export default function ActivityList({
           </li>
         ))}
       </ol>
-      {rows && (
+      {rows && !compact && (
         <div className="project-query-toolbar">
           <button
             disabled={busy || disabled || !offset}

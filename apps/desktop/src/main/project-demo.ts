@@ -1,5 +1,5 @@
 import { app, type BrowserWindow, session } from 'electron';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
@@ -33,6 +33,25 @@ export async function runProjectDemo(
   );
   const window = await createWindow();
   window.webContents.setBackgroundThrottling(false);
+  const assertNoRuns = () => {
+    const connection = openToolchainProbe(
+      join(isolation.userData, 'caselite.sqlite'),
+      join(process.resourcesPath, 'migrations'),
+    );
+    try {
+      if (
+        (
+          connection.sqlite.prepare('SELECT count(*) AS count FROM agent_runs').get() as {
+            count: number;
+          }
+        ).count !== 0 ||
+        existsSync(join(root, 'unexpected-runtime.txt'))
+      )
+        throw new Error('Project viewing dispatched an Agent Run');
+    } finally {
+      connection.sqlite.close();
+    }
+  };
   const evaluate = (code: string) => window.webContents.executeJavaScript(code);
   const wait = async (predicate: string) => {
     for (let i = 0; i < 100; i++) {
@@ -59,6 +78,66 @@ export async function runProjectDemo(
     await wait("document.querySelector('[data-nav=projects]')");
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[data-testid=project-catalog]')");
+    const previewMode = process.env.CASELITE_PROJECT_SUMMARY_PREVIEW;
+    if (previewMode) {
+      // 人工验收复开只读取同一隔离工作区，不能重造样本或按旧快照覆写用户修改。
+      const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const catalog: CatalogResponse = await evaluate(
+        "window.caselite.catalog({protocol_version:1,operation:'list'})",
+      );
+      if (!catalog.ok) throw new Error('Cannot reopen isolated project');
+      const project = catalog.projects.find((p) => p.id === expected.task.matter_id);
+      if (!project) throw new Error('Original isolated project missing');
+      if (project.archived_at) await button('已归档');
+      await button(project.title);
+      await wait(
+        "document.querySelector('.project-summary') && document.querySelector('[aria-label=编辑项目名称]')",
+      );
+      if (previewMode === 'write') {
+        if (project.archived_at) throw new Error('Cannot edit archived preview project');
+        const title = project.title + ' · 已保存复开验收';
+        await evaluate(
+          `(()=>{const input=document.querySelector('[aria-label=编辑项目名称]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(title)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+        );
+        await button('保存项目概述');
+        await wait(
+          `document.querySelector('[aria-label=编辑项目名称]')?.value===${JSON.stringify(title)} && Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='保存项目概述'&&b.disabled) && !document.querySelector('[aria-label=编辑项目名称]').disabled`,
+        );
+        writeFileSync(
+          join(root, 'summary-preview-saved.json'),
+          JSON.stringify({ id: project.id, title }),
+        );
+        await capture('project-summary-preview-saved.png');
+        assertNoRuns();
+        return;
+      }
+      if (previewMode === 'read') {
+        const saved = JSON.parse(readFileSync(join(root, 'summary-preview-saved.json'), 'utf8'));
+        if (saved.id !== project.id || saved.title !== project.title)
+          throw new Error('Reopen changed saved project');
+        await wait(
+          `document.querySelector('[aria-label=编辑项目名称]')?.value===${JSON.stringify(saved.title)}`,
+        );
+        await capture('project-summary-preview-reopened.png');
+        assertNoRuns();
+        writeFileSync(
+          join(root, 'summary-preview-result.json'),
+          JSON.stringify({
+            status: 'PASS_REAL',
+            projectId: project.id,
+            title: project.title,
+            isolation,
+            providerDispatches: 0,
+          }),
+        );
+        return;
+      }
+      assertNoRuns();
+      window.setTitle('CaseLite · 同一合成工作区 · 零模型派发');
+      await new Promise<void>((resolve) => window.once('closed', () => resolve()));
+      assertNoRuns();
+      return;
+    }
     if (phase === 'project-activity' || phase === 'project-activity-read') {
       const expected = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
       const scope = { type: 'project', id: expected.task.matter_id };
@@ -106,11 +185,164 @@ export async function runProjectDemo(
           after.filter((e) => e.operation === 'update_project').length !== 1
         )
           throw new Error('Recovery duplicated or lost committed activity');
+        await wait(
+          "Array.from(document.querySelectorAll('.project-summary [data-activity-id] strong')).some(e=>e.textContent==='保存项目概述')",
+        );
         writeFileSync(join(root, 'activity-expected.json'), JSON.stringify(after, null, 2));
       } else {
         const prior = JSON.parse(readFileSync(join(root, 'activity-expected.json'), 'utf8'));
         if (JSON.stringify(before) !== JSON.stringify(prior))
           throw new Error('Restart changed committed history');
+      }
+      if (phase === 'project-activity-read') {
+        const expectedFiles = JSON.parse(
+          readFileSync(join(root, 'files-expected.json'), 'utf8'),
+        ) as { id: string; asset_version_id: string }[];
+        await wait(
+          "document.querySelectorAll('.project-summary [data-source-id]').length===2 && document.querySelectorAll('.project-summary [data-activity-id]').length===3",
+        );
+        const visibleIds = await evaluate(
+          "Array.from(document.querySelectorAll('.project-summary [data-source-id]')).map(e=>e.dataset.sourceId)",
+        );
+        if (
+          JSON.stringify(visibleIds) !==
+          JSON.stringify(
+            expectedFiles
+              .slice(-3)
+              .reverse()
+              .map((m) => m.id),
+          )
+        )
+          throw new Error('Summary changed registration order or source scope');
+        if (
+          (await evaluate(
+            "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent.trim()).join(',')",
+          )) !== '1,0,1'
+        )
+          throw new Error('Summary invented task or delivery counts');
+        const layouts = [];
+        for (const width of [1440, 1024, 768, 640]) {
+          window.setSize(width, 900);
+          await wait(`innerWidth===${width}`);
+          for (const theme of ['light', 'dark']) {
+            await evaluate(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+            const geometry = await evaluate(
+              `(()=>{const scroller=document.querySelector('.collection-scroll');scroller.scrollTop=0;return {width:innerWidth, scrollWidth:document.documentElement.scrollWidth, clientWidth:document.documentElement.clientWidth, scrollHeight:scroller.scrollHeight, clientHeight:scroller.clientHeight};})()`,
+            );
+            if (geometry.scrollWidth > geometry.clientWidth + 1)
+              throw new Error('Summary causes horizontal viewport overflow');
+            await capture(`project-summary-${width}-${theme}.png`);
+            layouts.push({ theme, ...geometry });
+          }
+        }
+        window.setSize(1440, 1000);
+        await evaluate("document.documentElement.dataset.theme='light'");
+        const file = expectedFiles.at(-1)!;
+        const original = join(
+          isolation.userData,
+          'materials',
+          'originals',
+          file.asset_version_id + '.pdf',
+        );
+        renameSync(original, original + '.summary-hold');
+        try {
+          await evaluate(
+            `document.querySelector('.project-summary [data-source-id="${file.id}"] button').click()`,
+          );
+          await wait("document.querySelector('.project-summary .project-files [role=alert]')");
+          if (await evaluate("Boolean(document.querySelector('.material-paper canvas'))"))
+            throw new Error('Missing summary source opened another PDF');
+          await capture('project-summary-source-missing.png');
+        } finally {
+          renameSync(original + '.summary-hold', original);
+        }
+        await button('重试读取');
+        await wait("document.querySelector('.material-paper canvas')?.width>0");
+        for (const width of [640, 1440]) {
+          window.setSize(width, 1000);
+          await wait(`innerWidth===${width}`);
+          await evaluate(
+            "document.querySelector('.material-reader').scrollIntoView({block:'center'})",
+          );
+          const reachable = await evaluate(
+            `(()=>{const reader=document.querySelector('.material-reader').getBoundingClientRect();return Array.from(document.querySelectorAll('.material-reader header button')).every(b=>{const r=b.getBoundingClientRect();return r.left>=reader.left && r.right<=reader.right+1 && r.right<=innerWidth+1;});})()`,
+          );
+          if (!reachable) throw new Error('Summary PDF toolbar clipped at ' + width);
+          await capture(`project-summary-source-opened-${width}.png`);
+        }
+        // 阅读器关闭后仍留在原概述，随后只用受控activity_target返回任务。
+        await button('收起阅读');
+        const taskEvent = before.find((e) => e.target_type === 'task')!;
+        if (!taskEvent) throw new Error('No real task event');
+        const visibleTaskEvent = await evaluate(
+          "Array.from(document.querySelectorAll('.project-summary [data-activity-id]')).find(e=>e.querySelector('button').textContent.includes('任务'))?.dataset.activityId",
+        );
+        if (!visibleTaskEvent) throw new Error('Summary task event unavailable');
+        await evaluate(
+          `document.querySelector('.project-summary [data-activity-id="${visibleTaskEvent}"] button').click()`,
+        );
+        await wait(
+          `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(expected.task.id)}`,
+        );
+        await capture('project-summary-activity-task.png');
+        await evaluate("document.querySelector('[data-nav=projects]').click()");
+        await button('独立任务转项目验收');
+        await wait("document.querySelector('.project-summary [data-activity-id]')");
+        await button('移出项目');
+        await wait(
+          "document.querySelector('.project-summary-counts dd')?.textContent==='0' && document.querySelector('.project-summary .project-files')?.textContent.includes('项目还没有已登记材料')",
+        );
+        await evaluate(
+          `(()=>{const select=document.querySelector('[aria-label=归入已有任务]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,${JSON.stringify(expected.task.id)});select.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+        );
+        await button('归入项目');
+        await wait(
+          "document.querySelector('.project-summary-counts dd')?.textContent==='1' && document.querySelectorAll('.project-summary [data-source-id]').length===2",
+        );
+        writeFileSync(join(root, 'activity-expected.json'), JSON.stringify(await list(), null, 2));
+        await capture('project-summary-membership-refreshed.png');
+        const projectEvent = await evaluate(
+          "Array.from(document.querySelectorAll('.project-summary [data-activity-id]')).find(e=>e.querySelector('button').textContent.includes('项目'))?.dataset.activityId",
+        );
+        if (!projectEvent) throw new Error('Summary project event unavailable');
+        await evaluate(
+          `document.querySelector('.project-summary [data-activity-id="${projectEvent}"] button').click()`,
+        );
+        await wait(
+          "document.querySelector('.project-summary [data-activity-id]') && !document.querySelector('[aria-label=编辑项目名称]').disabled",
+        );
+        if (
+          (await evaluate("document.querySelector('.catalog-actions').dataset.projectId")) !==
+          expected.task.matter_id
+        )
+          throw new Error('Activity changed original project');
+        await evaluate(
+          "document.querySelector('.project-summary-records > section button').focus()",
+        );
+        await window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+        await window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+        if (
+          !(await evaluate(
+            "Boolean(document.querySelector('.project-summary').contains(document.activeElement))",
+          ))
+        )
+          throw new Error('Summary keyboard focus escaped');
+        await evaluate("document.querySelector('.collection-scroll').scrollTop=100000");
+        await capture('project-summary-description-scroll.png');
+        writeFileSync(
+          join(root, 'summary-expected.json'),
+          JSON.stringify(
+            {
+              projectId: expected.task.matter_id,
+              taskId: expected.task.id,
+              files: expectedFiles,
+              activities: before,
+              layouts,
+            },
+            null,
+            2,
+          ),
+        );
       }
       await button('活动');
       await wait("document.querySelectorAll('[data-activity-id]').length>=3");
@@ -337,7 +569,7 @@ export async function runProjectDemo(
         await button('独立任务转项目验收');
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
         await wait(
-          "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent).join(',')==='1,1'",
+          "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent).join(',')==='1,0,1'",
         );
         await capture('project-overview-summary.png');
         for (const [label, id] of [
@@ -539,6 +771,7 @@ export async function runProjectDemo(
         await capture('project-restored.png');
       }
     }
+    assertNoRuns();
     writeFileSync(
       join(root, phase + '.json'),
       JSON.stringify({ status: 'PASS_REAL', isolation }, null, 2),

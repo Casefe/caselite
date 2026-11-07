@@ -114,7 +114,11 @@ describe('durable project UI receipts and target identity', () => {
     const p = project();
     const original = { id: crypto.randomUUID(), title: '项目原任务', matter_id: p.id } as Task;
     const open = vi.fn();
-    const catalog = vi.fn(async () => response([p], p.id));
+    const catalog = vi.fn(async (request: CatalogRequest) =>
+      request.operation === 'list_activity'
+        ? { ...response([p], p.id), activity: [], activity_has_more: false }
+        : response([p], p.id),
+    );
     window.caselite = { catalog } as unknown as Window['caselite'];
     render(
       <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
@@ -141,7 +145,8 @@ describe('durable project UI receipts and target identity', () => {
     ).toBe(true);
     fireEvent.click(screen.getByRole('tab', { name: '文件', exact: true }));
     expect(screen.getByRole('tabpanel', { name: '概述', exact: true })).toBeTruthy();
-    expect(catalog.mock.calls).toHaveLength(2);
+    expect(catalog.mock.calls.filter(([r]) => r.operation !== 'list_activity')).toHaveLength(2);
+    expect(catalog.mock.calls.filter(([r]) => r.operation === 'list_activity')).toHaveLength(1);
   });
   it('opens the exact saved project, including when creating from the archive view', async () => {
     const p = project(undefined, '中文项目');
@@ -366,3 +371,49 @@ describe('durable project UI receipts and target identity', () => {
     vi.restoreAllMocks();
   });
 });
+
+it.each(['编辑项目名称', '项目概述'])(
+  'preserves a new %s draft when an activity project target resolves late',
+  async (label) => {
+    const p = project();
+    let finish!: (r: CatalogResponse) => void;
+    const event = {
+      id: 'event',
+      origin: 'catalog' as const,
+      operation: 'update_project',
+      target_id: p.id,
+      target_type: 'project' as const,
+      committed_at: '2026-11-07T00:00:00Z',
+      actor: null,
+      recorded_version: null,
+    };
+    const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> =>
+      r.operation === 'activity_target'
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : r.operation === 'list_activity'
+          ? { ...response([p]), activity: [event], activity_has_more: false }
+          : response([p], p.id),
+    );
+    window.caselite = {
+      catalog,
+      material: vi.fn(async () => ({ ok: true, materials: [] })),
+    } as unknown as Window['caselite'];
+    render(<ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />);
+    fireEvent.click(await screen.findByText('打开项目'));
+    fireEvent.click(await screen.findByRole('button', { name: /打开当前项目/ }));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '未保存草稿' } });
+    const before = catalog.mock.calls.filter(([r]) => r.operation === 'read_project').length;
+    await act(async () =>
+      finish({
+        ...response([p]),
+        activity_target: { type: 'project', id: p.id, current_version: 1 },
+      }),
+    );
+    expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe('未保存草稿');
+    expect(catalog.mock.calls.filter(([r]) => r.operation === 'read_project')).toHaveLength(before);
+    expect(screen.getByText('有未保存修改，请保存后切换。')).toBeTruthy();
+  },
+);

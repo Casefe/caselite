@@ -270,14 +270,17 @@ export default function ProjectCatalog({
                 id="project-panel-overview"
                 aria-labelledby="project-tab-overview"
               >
-                <ProjectSummary
-                  project={p ?? editor.project}
-                  tasks={tasks}
-                  documents={c.data?.documents ?? []}
-                  unavailable={!!c.error || !c.data}
-                  disabled={reading || dirty || c.pending || c.unknown}
-                  onOpen={onOpen}
-                />
+                {section === 'overview' && (
+                  <ProjectSummary
+                    project={p ?? editor.project}
+                    tasks={tasks}
+                    documents={c.data?.documents ?? []}
+                    unavailable={!!c.error || !c.data}
+                    disabled={reading || dirty || c.pending || c.unknown}
+                    onOpen={onOpen}
+                    onProject={(id) => void read(id)}
+                  />
+                )}
                 <ProjectEditor
                   key={editor.project.id + ':' + editor.project.version + ':' + editor.epoch}
                   data={editor}
