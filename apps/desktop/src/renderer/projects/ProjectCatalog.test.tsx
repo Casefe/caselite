@@ -135,6 +135,8 @@ describe('durable project UI receipts and target identity', () => {
       original.id,
       expect.objectContaining({ projectId: p.id, section: 'tasks', returnTaskId: original.id }),
     );
+    const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
+    expect(within(sidebar).queryByLabelText('真实业务活动')).toBeNull();
     for (const label of ['文件', '交付物', '活动']) {
       fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
       const panel = screen.getByRole('tabpanel', { name: label, exact: true });
@@ -156,14 +158,7 @@ describe('durable project UI receipts and target identity', () => {
     const requests = catalog.mock.calls.map(([request]) => request);
     expect(
       requests.filter((r) => r.operation !== 'list_discussion').map((r) => r.operation),
-    ).toEqual([
-      'list',
-      'read_project',
-      'list_activity',
-      'list_activity',
-      'list_activity',
-      'list_activity',
-    ]);
+    ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list_activity']);
     expect(requests.filter((r) => r.operation === 'list_discussion').map((r) => r.scope)).toEqual([
       { kind: 'project_comment', project_id: p.id },
       { kind: 'update', project_id: p.id },
@@ -424,8 +419,8 @@ it.each(['编辑项目名称', '项目概述'])(
     } as unknown as Window['caselite'];
     render(<ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
-    const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
-    fireEvent.click(await within(sidebar).findByRole('button', { name: /打开当前项目/ }));
+    const summary = await screen.findByRole('region', { name: '项目工作摘要' });
+    fireEvent.click(await within(summary).findByRole('button', { name: /打开当前项目/ }));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText(label), { target: { value: '未保存草稿' } });
     const before = catalog.mock.calls.filter(([r]) => r.operation === 'read_project').length;

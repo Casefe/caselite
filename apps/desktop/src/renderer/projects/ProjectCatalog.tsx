@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import { DraftEditor, type RichDraft } from '../editors/RichEditor';
 import { Icon } from '../ui/Workspace';
-import AgentPanel from '../ui/AgentPanel';
+import SidebarAgent from '../ui/SidebarAgent';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
@@ -61,6 +61,7 @@ function ProjectConversation({
       ) : (
         <>
           <select
+            className="project-ai-task-select"
             aria-label="项目 AI 任务"
             disabled={blocked}
             value={task?.id ?? ''}
@@ -73,11 +74,7 @@ function ProjectConversation({
               </option>
             ))}
           </select>
-          {task && (
-            <div inert={blocked}>
-              <AgentPanel key={task.id} scope={task.id} variant="compact" />
-            </div>
-          )}
+          {task && <SidebarAgent taskId={task.id} blocked={blocked} />}
         </>
       )}
     </section>
@@ -927,20 +924,6 @@ export default function ProjectCatalog({
                 )
               }
             />
-            {editor && (
-              <details className="project-inspector-section inspector-disclosure" open>
-                <summary>活动</summary>
-                <ActivityList
-                  key={p.id}
-                  scope={{ type: 'project', id: p.id }}
-                  refresh={activityRevision}
-                  disabled={blocked}
-                  onTask={openTask}
-                  onProject={openActivityProject}
-                  compact
-                />
-              </details>
-            )}
             {taskScopeUnavailable ? (
               <section className="project-inspector-section" aria-label="AI 对话">
                 <h3>AI 对话</h3>

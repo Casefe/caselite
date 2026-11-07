@@ -2172,9 +2172,6 @@ dd {
 .agent-start {
   margin-top: 36px;
 }
-.ai-inspector .assistant-viewport {
-  max-height: 350px;
-}
 .ai-inspector .assistant-panel {
   margin-top: 12px;
 }
@@ -3522,8 +3519,7 @@ dd {
   padding: 24px;
   border-bottom: 1px solid var(--line);
 }
-.catalog-actions label,
-.catalog-view .project-properties label {
+.catalog-actions label {
   display: block;
   margin: 16px 0;
   color: #647080;
@@ -3531,7 +3527,7 @@ dd {
 }
 .catalog-actions input,
 .catalog-actions select,
-.catalog-view .project-properties select:not(.home-model-select) {
+.project-ai-task-select {
   width: 100%;
   display: block;
   margin-top: 8px;
@@ -3547,8 +3543,7 @@ dd {
   gap: 8px;
   margin: 16px 0;
 }
-.catalog-actions button,
-.catalog-view .project-properties button {
+.catalog-actions button {
   margin: 4px;
 }
 .catalog-actions .notion-editor {
@@ -3764,7 +3759,7 @@ select,
 .provider-detail select,
 .catalog-actions input,
 .catalog-actions select,
-.catalog-view .project-properties select:not(.home-model-select) {
+.project-ai-task-select {
   background: var(--theme-panel);
   border-color: var(--line);
   color: var(--ink);

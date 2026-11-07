@@ -603,29 +603,9 @@
   margin: 0 0 6px;
   color: var(--ink);
 }
-.project-inspector-section
-  .activity-list--compact
-  :is(.caption, li p, .project-query-toolbar > span) {
-  display: none;
+.project-properties .project-fields label.project-property-row > select {
+  appearance: none;
 }
-.project-inspector-section .activity-list ol {
-  margin: 0;
-}
-.project-inspector-section .activity-list li {
-  padding: 6px 0;
-}
-.project-inspector-section .activity-list time {
-  display: block;
-  margin-top: 2px;
-}
-.project-inspector-section .activity-list button {
-  margin: 2px 0;
-  padding: 3px 7px;
-  font-size: 11px;
-}
-.project-ai-content > select {
-  width: 100%;
-}
-.project-ai-content .assistant-compose {
-  padding: 8px;
+.project-properties .project-fields label.project-property-row > select:enabled {
+  cursor: pointer;
 }

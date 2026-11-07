@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
-import AgentPanel from './AgentPanel';
+import SidebarAgent from './SidebarAgent';
 import TaskProjectAction from '../projects/TaskProjectAction';
 import TaskProperties from './TaskProperties';
 import { taskStatusNames } from './task-status';
@@ -92,9 +92,7 @@ export default function TaskInspector({
           )}
           <section aria-label="AI 对话" className="project-inspector-section">
             <h3>AI 对话</h3>
-            <div inert={reminderEditing || editing}>
-              <AgentPanel key={task.id} scope={task.id} variant="compact" />
-            </div>
+            <SidebarAgent taskId={task.id} blocked={reminderEditing || editing} />
           </section>
         </div>
       </aside>
@@ -179,7 +177,7 @@ export default function TaskInspector({
             <Icon name="check" size={15} />
             <span>{task.title}</span>
           </div>
-          <AgentPanel key={task.id} scope={task.id} />
+          <SidebarAgent taskId={task.id} />
         </div>
       )}
     </aside>

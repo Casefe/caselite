@@ -219,7 +219,7 @@ export async function runProjectDemo(
             key,
             code,
             windowsVirtualKeyCode: virtualKey,
-            ...(key === ' ' && type === 'keyDown' ? { text: ' ' } : {}),
+            ...(key.length === 1 && type === 'keyDown' ? { text: key } : {}),
           });
       } finally {
         debuggerSession.detach();
@@ -425,14 +425,15 @@ export async function runProjectDemo(
     if (densityMode === '1' || densityMode === 'read') {
       const seed = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
       const taskId = seed.task.id;
-      const title = '独立任务转项目验收';
       const click = async (selector: string) => {
         const el = `document.querySelector(${JSON.stringify(selector)})`;
         await wait(`${el} && !${el}.disabled`);
         await evaluate(`${el}.click()`);
       };
+      const openFixture = () =>
+        click(`tr[data-project-id="${seed.task.matter_id}"] .project-title-link`);
       const sidebar = '.project-properties';
-      const activity = `${sidebar} .activity-list`;
+      const activity = '#project-panel-activity .activity-list';
       const composer = '[data-testid=assistant-input]';
       const scrollAndCheck = async (selector: string) => {
         const el = `document.querySelector(${JSON.stringify(selector)})`;
@@ -442,19 +443,42 @@ export async function runProjectDemo(
           return r.width>0 && r.height>0 && r.left>=0 && r.right<=innerWidth &&
             e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));})()`);
       };
-      await button(title);
-      await wait(`document.querySelector('${activity} [data-activity-id]') &&
-        getComputedStyle(document.querySelector('${sidebar} .project-professional-card')).borderTopWidth==='1px' &&
-        !document.querySelector('${sidebar}').textContent.includes('负责人仅作记录')`);
+      const propertyLabels = ['项目状态', '项目优先级', '项目类型'];
+      const checkProperties = async () => {
+        await wait(`(()=>{const aside=document.querySelector('${sidebar}');return aside &&
+          !aside.querySelector('.activity-list') &&
+          getComputedStyle(aside.querySelector('.project-professional-card')).borderTopWidth==='1px' &&
+          !aside.textContent.includes('负责人仅作记录') &&
+          ${JSON.stringify(propertyLabels)}.every(label=>{
+            const e=aside.querySelector('[aria-label="'+label+'"]');
+            if (!(e instanceof HTMLSelectElement)) return false;
+            const style=getComputedStyle(e);
+            return style.appearance==='none' && style.borderTopWidth==='0px' &&
+              style.backgroundColor==='rgba(0, 0, 0, 0)' && style.cursor==='pointer';
+          });})()`);
+      };
+      const inspectComposer = async (owner: string, input = composer) => {
+        for (const control of [
+          input,
+          '[aria-label="添加文件与材料"]',
+          '[aria-label="选择大模型"]',
+          '[aria-label=发送]',
+        ])
+          await scrollAndCheck(`${owner} ${control}`);
+      };
+      await openFixture();
+      await checkProperties();
+      await click('#project-tab-activity');
+      await wait(`document.querySelector('${activity} [data-activity-id]')`);
       if (densityMode === 'read') {
         const saved = JSON.parse(readFileSync(join(root, 'inspector-density-result.json'), 'utf8'));
         const id = JSON.stringify(saved.lastActivityId);
         await wait(
           `Array.from(document.querySelectorAll('${activity} [data-activity-id]')).some(e=>e.dataset.activityId===${id})`,
         );
-        await click('#project-tab-activity');
-        await wait(`Array.from(document.querySelectorAll('#project-panel-activity [data-activity-id]')).some(e=>e.dataset.activityId===${id}) &&
-          document.querySelector('#project-panel-activity .project-discussion')`);
+        await wait(`document.querySelector('#project-panel-activity .project-discussion') &&
+          Object.entries(${JSON.stringify(saved.properties)}).every(([label,value])=>
+            document.querySelector('[aria-label="'+label+'"]')?.value===value)`);
         await capture('inspector-activity-reopened.png');
         assertNoRuns();
         return;
@@ -462,10 +486,36 @@ export async function runProjectDemo(
       const oldEvent = await evaluate(
         `document.querySelector('${activity} [data-activity-id]').dataset.activityId`,
       );
-      const currentPriority = await evaluate(
-        "document.querySelector('[aria-label=项目优先级]').value",
+      const properties = {
+        项目状态: 'done',
+        项目优先级: '4',
+        项目类型: 'civil_litigation',
+      };
+      const priority = '[aria-label="项目优先级"]';
+      await scrollAndCheck(priority);
+      await evaluate(
+        `document.querySelector('${priority}').closest('label').querySelector('span').scrollIntoView({block:'center'})`,
       );
-      await select('项目优先级', currentPriority === '2' ? '1' : '2');
+      window.focus();
+      window.webContents.focus();
+      await evaluate("document.querySelector('[aria-label=项目状态]').focus()");
+      await propertyKey('Tab', 'Tab', 9);
+      await wait(`document.activeElement===document.querySelector('${priority}') &&
+        document.activeElement.matches(':focus-visible') &&
+        getComputedStyle(document.activeElement).outlineWidth==='2px'`);
+      await capture('inspector-property-keyboard-focus.png');
+      await propertyKey('低', 'Unidentified', 0);
+      await wait(`document.querySelector('${priority}')?.value===${JSON.stringify(properties.项目优先级)} &&
+        !document.querySelector('.workspace-project-back-button')?.disabled`);
+      await evaluate('document.activeElement.blur()');
+      for (const label of ['项目状态', '项目类型'] as const) {
+        const field = `document.querySelector('[aria-label="${label}"]')`;
+        await wait(`${field} && !${field}.disabled`);
+        await select(label, properties[label]);
+        await wait(`${field}?.value===${JSON.stringify(properties[label])} &&
+          !document.querySelector('.workspace-project-back-button')?.disabled`);
+      }
+      await wait("document.querySelector('[aria-label=案号]')");
       await wait(`document.querySelector('${activity} [data-activity-id]')?.dataset.activityId!==${JSON.stringify(oldEvent)} &&
         document.querySelector('${activity} [data-activity-id] strong')?.textContent==='更新项目'`);
       for (const [theme, width, height] of [
@@ -481,17 +531,17 @@ export async function runProjectDemo(
         await click(`.theme-option:has(.theme-swatch--${theme})`);
         await wait(`document.documentElement.dataset.theme==='${theme}'`);
         await button('返回工作区');
-        await button(title);
+        await openFixture();
         await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
         await wait(`document.querySelector('.project-ai-content > select').value==='' &&
           !document.querySelector('${composer}') && document.querySelector('.profile-avatar').naturalWidth>0 &&
           document.querySelector('.profile-pro').textContent==='Pro' &&
           document.querySelector('.primary-navigation button').getBoundingClientRect().height===30`);
-        await scrollAndCheck(`${activity} li button`);
-        await capture(`inspector-activity-${theme}-${width}.png`);
+        await checkProperties();
+        await scrollAndCheck('[aria-label=项目状态]');
+        await capture(`inspector-properties-${theme}-${width}.png`);
         await select('项目 AI 任务', taskId);
-        await scrollAndCheck(composer);
-        await scrollAndCheck('.project-ai-content button[aria-label=发送]');
+        await inspectComposer('.project-ai-content .sidebar-agent .assistant-panel--compact');
         await scrollAndCheck(composer);
         await capture(`inspector-ai-${theme}-${width}.png`);
         await click('.workspace-navigation-toggle');
@@ -507,18 +557,13 @@ export async function runProjectDemo(
         await evaluate(
           `(()=>{const e=document.querySelector('${composer}');e.focus();document.execCommand('insertText',false,'合成草稿，不发送');})()`,
         );
-        await wait(
-          `document.querySelector('${composer}').textContent.includes('合成草稿，不发送')`,
-        );
+        await wait(`document.querySelector('${composer}').value.includes('合成草稿，不发送')`);
       };
       await editComposer();
       await projectTab('tasks');
       await button('移出项目');
       await wait(
         `!document.querySelector('${composer}') && document.querySelector('.project-ai-content').textContent.includes('暂无')`,
-      );
-      await wait(
-        `!Array.from(document.querySelectorAll('${activity} li button')).some(e=>e.textContent.includes('任务'))`,
       );
       await select('归入已有任务', taskId);
       await button('归入项目');
@@ -527,9 +572,11 @@ export async function runProjectDemo(
         `document.querySelector('.project-ai-content > select').value==='' && !document.querySelector('${composer}')`,
       );
       await select('项目 AI 任务', taskId);
-      await wait(`document.querySelector('${composer}')?.textContent.includes('合成草稿，不发送')`);
+      await wait(`document.querySelector('${composer}')?.value.includes('合成草稿，不发送')`);
+      await click('#project-tab-activity');
       await wait(
-        `Array.from(document.querySelectorAll('${activity} li button')).some(e=>e.textContent.includes('任务'))`,
+        `document.querySelector('#project-panel-activity .project-discussion') &&
+          Array.from(document.querySelectorAll('${activity} li button')).some(e=>e.textContent.includes('任务'))`,
       );
       await evaluate(
         `Array.from(document.querySelectorAll('${activity} li button')).find(e=>e.textContent.includes('任务')).click()`,
@@ -538,10 +585,30 @@ export async function runProjectDemo(
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
       );
+      await inspectComposer('.task-inspector .sidebar-agent .assistant-panel--compact');
+      await wait(
+        `document.querySelector('.task-inspector ${composer}')?.value.includes('合成草稿，不发送')`,
+      );
       await capture('inspector-return-original-task.png');
       await click('button[aria-label=返回来源项目]');
-      await wait("document.querySelector('#project-panel-tasks:not([hidden])')");
+      await wait("document.querySelector('#project-panel-activity:not([hidden])')");
       await click('.workspace-project-back-button');
+      await click('[data-nav=documents]');
+      await click(`[data-document-id="${seed.task.document_id}"]`);
+      await button('AI 助手');
+      await inspectComposer('.ai-inspector .sidebar-agent .assistant-panel--compact');
+      await wait(
+        `document.querySelector('.ai-inspector ${composer}')?.value.includes('合成草稿，不发送')`,
+      );
+      await capture('inspector-document-ai.png');
+      await click('[data-nav=home]');
+      await inspectComposer(
+        '.agent-home .assistant-panel:not(.assistant-panel--compact)',
+        '[data-testid=agent-input]',
+      );
+      await wait("!document.querySelector('.agent-home .sidebar-agent')");
+      await capture('inspector-home-ai.png');
+      await click('[data-nav=projects]');
       await button('创建项目');
       await wait("document.querySelector('dialog[open] input')===document.activeElement");
       await evaluate(`(()=>{
@@ -553,18 +620,21 @@ export async function runProjectDemo(
       await wait(`document.querySelector('.project-catalog-heading h1')?.textContent==='合成无任务项目' &&
         document.querySelector('.project-ai-content')?.textContent.includes('暂无') && !document.querySelector('${composer}')`);
       await click('.workspace-project-back-button');
-      await button(title);
+      await openFixture();
       await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
       await select('项目 AI 任务', taskId);
-      await wait(`document.querySelector('${composer}')?.textContent.includes('合成草稿，不发送')`);
+      await wait(`document.querySelector('${composer}')?.value.includes('合成草稿，不发送')`);
       await select('项目状态', 'archived');
       await wait(
-        `document.querySelector('.project-ai-content')?.textContent.includes('已归档') && !document.querySelector('${composer}')`,
+        `document.querySelector('.project-ai-content')?.textContent.includes('已归档') && !document.querySelector('${composer}') &&
+          document.querySelector('[aria-label=项目优先级]')?.disabled &&
+          document.querySelector('[aria-label=项目状态]:enabled')?.value==='archived'`,
       );
       await select('项目状态', 'restore');
       await wait(
         `document.querySelector('.project-ai-content > select')?.value==='' && !document.querySelector('${composer}')`,
       );
+      await click('#project-tab-activity');
       await wait(
         `document.querySelector('${activity} [data-activity-id] strong')?.textContent==='切换项目归档状态'`,
       );
@@ -580,9 +650,12 @@ export async function runProjectDemo(
             isolation,
             taskId,
             lastActivityId,
+            properties,
             providerDispatches: 0,
             checks: [
-              'commit-refresh',
+              'borderless-keyboard-focus-and-typeahead',
+              'commit-refresh-and-restart',
+              'shared-project-task-document-composer-and-home',
               'wide-and-short-hit-test',
               'theme-and-profile',
               'membership-and-draft',
