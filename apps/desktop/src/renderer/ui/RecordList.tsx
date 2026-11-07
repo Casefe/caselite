@@ -28,8 +28,10 @@ export default function RecordList({
   onViewState,
   onOpen,
   onNew,
-  propertiesBlocked,
+  propertiesBlocked: propertyEditBlocked,
   onPropertiesBlocked,
+  projectDirty = false,
+  onProjectDirty,
   onTaskChanged,
 }: {
   tasks: Task[];
@@ -39,8 +41,11 @@ export default function RecordList({
   onNew(): void;
   propertiesBlocked: boolean;
   onPropertiesBlocked(value: boolean): void;
+  projectDirty?: boolean;
+  onProjectDirty?(value: boolean): void;
   onTaskChanged(task: Task, state: number[] | null): void;
 }) {
+  const propertiesBlocked = propertyEditBlocked || projectDirty;
   const [projects, setProjects] = useState<Matter[]>([]);
   const [catalogError, setCatalogError] = useState(''),
     [retry, setRetry] = useState(0);
@@ -405,6 +410,11 @@ export default function RecordList({
         task={error || result?.query !== q ? null : selected}
         suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
         onPropertiesBlocked={onPropertiesBlocked}
+        propertiesDisabled={projectDirty}
+        projectDisabled={propertyEditBlocked || loading}
+        reminderEditing={projectDirty}
+        onProjectDirty={onProjectDirty}
+        onProjectChanged={onTaskChanged}
         onTaskChanged={onTaskChanged}
       />
     </section>

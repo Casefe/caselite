@@ -54,29 +54,33 @@ function ProjectConversation({
   return (
     <section className="project-inspector-section project-ai-content" aria-label="AI 对话">
       <h3>AI 对话</h3>
-      {project.archived_at ? (
-        <p>项目已归档，无法开始对话。</p>
-      ) : available.length === 0 ? (
-        <p>此项目暂无可用于对话的任务。</p>
-      ) : (
-        <>
-          <select
-            className="project-ai-task-select"
-            aria-label="项目 AI 任务"
-            disabled={blocked}
-            value={task?.id ?? ''}
-            onChange={(event) => setSelectedTask(event.target.value)}
-          >
-            <option value="">选择项目任务</option>
-            {available.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-          {task && <SidebarAgent taskId={task.id} blocked={blocked} />}
-        </>
+      {available.length > 0 && (
+        <select
+          className="project-ai-task-select"
+          aria-label="项目 AI 任务"
+          disabled={blocked}
+          value={task?.id ?? ''}
+          onChange={(event) => setSelectedTask(event.target.value)}
+        >
+          <option value="">选择项目任务</option>
+          {available.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.title}
+            </option>
+          ))}
+        </select>
       )}
+      <SidebarAgent
+        taskId={task?.id}
+        blocked={blocked}
+        unavailable={
+          project.archived_at
+            ? '项目已归档。恢复项目并选择任务后可发送。'
+            : available.length === 0
+              ? '此项目暂无可用任务。添加并选择任务后可发送。'
+              : '选择本项目的任务后可发送。'
+        }
+      />
     </section>
   );
 }
@@ -927,7 +931,7 @@ export default function ProjectCatalog({
             {taskScopeUnavailable ? (
               <section className="project-inspector-section" aria-label="AI 对话">
                 <h3>AI 对话</h3>
-                <p role="status">无法确认当前项目任务，请重新打开项目。</p>
+                <SidebarAgent unavailable="无法确认当前项目任务，请重新打开项目。" />
               </section>
             ) : (
               <ProjectConversation

@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { CatalogDocument, Task } from '../../preload/caselite-api';
+import type { CatalogDocument } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
-import TaskInspector from './TaskInspector';
+import DocumentInspector from './DocumentInspector';
 import { useCatalog, catalogMutation } from './useCatalog';
 export default function DocumentLibrary({
-  tasks,
   library = false,
   onOpen,
   onDirty,
 }: {
-  tasks: Task[];
   library?: boolean;
   onOpen(id: string): void;
   onDirty(dirty: boolean): void;
@@ -19,22 +17,34 @@ export default function DocumentLibrary({
     [filter, setFilter] = useState('active');
   const [editing, setEditing] = useState(false),
     [collection, setCollection] = useState(''),
-    [tags, setTags] = useState('');
+    [tagDraft, setTagDraft] = useState(false),
+    [tagEditor, setTagEditor] = useState(0),
+    [acknowledged, setAcknowledged] = useState<{ id: string; version: number } | null>(null);
+  const awaitingRead = Boolean(
+    acknowledged &&
+    !c.data?.documents.some(
+      (doc) => doc.id === acknowledged.id && doc.version >= acknowledged.version,
+    ),
+  );
+  const blocked = editing || tagDraft || c.pending || c.unknown || awaitingRead;
   const docs = (c.data?.documents ?? []).filter(
     (d) =>
       (!library || d.in_library) &&
       (filter === 'archived' ? !!d.archived_at : !d.archived_at) &&
       (filter !== 'favorite' || d.favorite),
   );
-  const d = docs.find((x) => x.id === selected) ?? docs[0],
-    task = tasks.find((t) => t.id === d?.task_id) ?? null;
+  const d =
+    docs.find((x) => x.id === selected) ??
+    (blocked ? c.data?.documents.find((x) => x.id === selected) : undefined) ??
+    docs[0];
   useEffect(() => {
-    onDirty(editing || c.pending || c.unknown);
+    onDirty(blocked);
     return () => onDirty(false);
-  }, [editing, c.pending, c.unknown, onDirty]);
+  }, [blocked, onDirty]);
   const organize = async (
     doc: CatalogDocument,
     change: Partial<Pick<CatalogDocument, 'collection' | 'tags' | 'favorite' | 'in_library'>>,
+    addedTag = false,
   ) => {
     await c.execute(
       catalogMutation({
@@ -47,7 +57,15 @@ export default function DocumentLibrary({
         in_library: doc.in_library,
         ...change,
       }),
-      () => setEditing(false),
+      () => {
+        // 回执确认写入；目录读失败时仅允许重读，避免用旧版本再次整理。
+        setAcknowledged({ id: doc.id, version: doc.version + 1 });
+        setEditing(false);
+        if (addedTag) {
+          setTagDraft(false);
+          setTagEditor((value) => value + 1);
+        }
+      },
     );
   };
   return (
@@ -79,7 +97,7 @@ export default function DocumentLibrary({
             ].map(([value, label]) => (
               <button
                 key={value}
-                disabled={editing || c.pending || c.unknown}
+                disabled={blocked}
                 aria-pressed={filter === value}
                 className={filter === value ? 'current' : ''}
                 onClick={() => {
@@ -91,7 +109,10 @@ export default function DocumentLibrary({
               </button>
             ))}
           </div>
-          <button disabled={c.pending || c.unknown || editing} onClick={() => void c.load()}>
+          <button
+            disabled={c.pending || c.unknown || (blocked && !c.error)}
+            onClick={() => void c.load()}
+          >
             刷新
           </button>
         </div>
@@ -121,17 +142,16 @@ export default function DocumentLibrary({
                 <tr
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !editing && !c.pending && !c.unknown)
-                      onOpen(doc.task_id);
+                    if (e.key === 'Enter' && !blocked) onOpen(doc.task_id);
                   }}
                   key={doc.id}
                   data-document-id={doc.id}
                   aria-selected={d?.id === doc.id}
                   onClick={() => {
-                    if (!editing && !c.pending && !c.unknown) setSelected(doc.id);
+                    if (!blocked) setSelected(doc.id);
                   }}
                   onDoubleClick={() => {
-                    if (!editing && !c.pending && !c.unknown) onOpen(doc.task_id);
+                    if (!blocked) onOpen(doc.task_id);
                   }}
                 >
                   <td>
@@ -163,13 +183,14 @@ export default function DocumentLibrary({
               </p>
               <div className="catalog-buttons">
                 <button
-                  disabled={editing || c.pending || c.unknown}
+                  data-testid="inspector-open"
+                  disabled={blocked}
                   onClick={() => onOpen(d.task_id)}
                 >
                   打开正文
                 </button>
                 <button
-                  disabled={editing || c.pending || c.unknown}
+                  disabled={blocked}
                   onClick={() =>
                     void c.execute(
                       catalogMutation({
@@ -178,6 +199,7 @@ export default function DocumentLibrary({
                         expected_version: d.version,
                         archived: !d.archived_at,
                       }),
+                      () => setAcknowledged({ id: d.id, version: d.version + 1 }),
                     )
                   }
                 >
@@ -186,26 +208,26 @@ export default function DocumentLibrary({
                 {!d.archived_at && (
                   <>
                     <button
-                      disabled={editing || c.pending || c.unknown}
+                      disabled={blocked}
                       onClick={() => void organize(d, { favorite: !d.favorite })}
                     >
                       {d.favorite ? '取消收藏' : '收藏文档'}
                     </button>
                     <button
-                      disabled={editing || c.pending || c.unknown}
+                      disabled={blocked}
                       onClick={() => void organize(d, { in_library: !d.in_library })}
                     >
                       {d.in_library ? '移出知识库' : '加入知识库'}
                     </button>
                     <button
-                      disabled={c.pending || c.unknown}
+                      disabled={blocked}
                       onClick={() => {
+                        setSelected(d.id);
                         setCollection(d.collection);
-                        setTags(d.tags.join('，'));
                         setEditing(true);
                       }}
                     >
-                      编辑分类与标签
+                      编辑分类
                     </button>
                   </>
                 )}
@@ -214,13 +236,7 @@ export default function DocumentLibrary({
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void organize(d, {
-                      collection,
-                      tags: tags
-                        .split(/[,，]/)
-                        .map((t) => t.trim())
-                        .filter(Boolean),
-                    });
+                    void organize(d, { collection });
                   }}
                 >
                   <label>
@@ -233,16 +249,7 @@ export default function DocumentLibrary({
                       onChange={(e) => setCollection(e.target.value)}
                     />
                   </label>
-                  <label>
-                    标签（逗号分隔）
-                    <input
-                      aria-label="文档标签"
-                      value={tags}
-                      disabled={c.pending || c.unknown}
-                      onChange={(e) => setTags(e.target.value)}
-                    />
-                  </label>
-                  <button disabled={c.pending || c.unknown} className="primary">
+                  <button disabled={c.pending || c.unknown || !!d.archived_at} className="primary">
                     保存分类
                   </button>
                   <button
@@ -261,7 +268,22 @@ export default function DocumentLibrary({
           {docs.length} 份文档 · 仅此设备 · 单击查看，双击打开
         </footer>
       </div>
-      <TaskInspector key={task?.id ?? 'empty'} task={task} documents onOpen={onOpen} />
+      <DocumentInspector
+        key={d?.id ?? 'empty'}
+        document={d}
+        project={c.data?.projects.find((project) => project.id === d?.matter_id)}
+        blocked={blocked}
+        tagDraft={tagDraft}
+        tagsDisabled={editing || c.pending || c.unknown || awaitingRead || !!d?.archived_at}
+        tagsLocked={c.pending || c.unknown}
+        tagEditor={tagEditor}
+        suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}
+        onTags={(tags, added) => d && void organize(d, { tags }, added)}
+        onTagDraft={(dirty) => {
+          if (dirty && d) setSelected(d.id);
+          setTagDraft(dirty);
+        }}
+      />
     </section>
   );
 }

@@ -954,7 +954,6 @@ function Workbench() {
         ) : view === 'documents' || view === 'knowledge' ? (
           <DocumentLibrary
             key={view}
-            tasks={tasks}
             library={view === 'knowledge'}
             onOpen={(id) => void open(id, null, true)}
             onDirty={setDirty}
@@ -968,6 +967,8 @@ function Workbench() {
             onOpen={(id) => void open(id)}
             onNew={() => newTask()}
             propertiesBlocked={propertiesBlocked}
+            projectDirty={projectDirty}
+            onProjectDirty={setProjectDirty}
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
           />

@@ -459,12 +459,17 @@ export async function runTaskDemo(
       await click('[data-nav=documents]');
       await wait("document.querySelector('[data-document-id]')");
       await click(`[data-document-id="${expected.documentId}"]`);
-      await button('编辑分类与标签');
+      await button('编辑分类');
       await input('[aria-label=文档分类]', '内部资料');
-      await input('[aria-label=文档标签]', '验收');
       await button('保存分类');
       await wait(
         "!document.querySelector('[aria-label=文档分类]') && document.querySelector('.catalog-table')?.textContent.includes('内部资料')",
+      );
+      await button('添加标签');
+      await input('[aria-label=新标签]', '验收');
+      await click('[aria-label="文档标签"] .task-tag-input button');
+      await wait(
+        `document.querySelector('[aria-label="移除标签 验收"]') && !document.querySelector('[aria-label=新标签]')`,
       );
       await button('收藏文档');
       await wait(
@@ -572,8 +577,8 @@ export async function runTaskDemo(
       await wait("document.querySelector('.knowledge-view [data-document-id]')");
       await assertCollectionColumns('.collection-main', '.task-inspector');
       await capture('knowledge.png');
-      await evaluate(
-        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+      await wait(
+        "document.querySelector('[aria-label=文档标签]')?.textContent.includes('验收') && document.querySelector('.document-property-values')?.textContent.includes('本地项目验收样本')",
       );
       await wait("document.querySelector('[data-testid=assistant-input]')");
       await capture('knowledge-ai.png');
@@ -659,7 +664,9 @@ export async function runTaskDemo(
       await button('归档文档');
       await wait("document.querySelectorAll('[data-document-id]').length===0");
       await button('已归档');
-      await wait("document.querySelector('[data-document-id]')");
+      await wait(
+        "document.querySelector('[data-document-id]') && document.querySelector('[aria-label=文档标签]')?.textContent.includes('验收') && !document.querySelector('.task-tag-toggle')",
+      );
       await button('打开正文');
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.getAttribute('contenteditable')==='false' && document.querySelector('[data-testid=save-status]')?.textContent.includes('已归档')",
@@ -696,12 +703,13 @@ export async function runTaskDemo(
       await evaluate(
         "document.querySelector('.assistant-panel--compact')?.scrollIntoView({block:'nearest'})",
       );
-      await wait("document.querySelector('.model-settings-link')");
+      await wait("!document.querySelector('.assistant-panel--compact .model-settings-link')");
       if (
         await evaluate("Boolean(document.querySelector('.assistant-panel input[type=password]'))")
       )
         throw new Error('Credential form remains in AI panel');
-      await click('.model-settings-link');
+      await click('[data-nav=settings]');
+      await button('模型');
       await wait(
         "document.querySelector('[aria-label=设置中心]') && document.querySelector('[aria-label=\"OpenAI API Key\"]')",
       );

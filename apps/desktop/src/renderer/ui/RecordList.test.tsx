@@ -182,3 +182,65 @@ it('remembers the keyboard-opened target, filter, page and scroll when returning
   );
   expect((document.querySelector('.collection-scroll') as HTMLElement).scrollTop).toBe(123);
 });
+
+it('keeps the project assignment guard until a confirmed write can be read back', async () => {
+  const original = task('合成归组任务');
+  const project = { id: crypto.randomUUID(), title: '合成项目', archived_at: null };
+  const assigned = { ...original, matter_id: project.id, matter_title: project.title, version: 2 };
+  let readFailed = true;
+  let writes = 0;
+  const changed = vi.fn();
+  window.caselite = {
+    task: async (request: TaskRequest) => {
+      if (request.operation === 'read' && readFailed) throw new Error('read failure');
+      return result([writes ? assigned : original]);
+    },
+    catalog: async (request: { operation: string }) => {
+      if (request.operation === 'assign_task') writes++;
+      return {
+        ok: true,
+        projects: [project],
+        documents: [],
+        state: null,
+        target_id: null,
+        receipt: null,
+      };
+    },
+  } as unknown as Window['caselite'];
+  function Host() {
+    const [state, setState] = useState(initialTaskListState);
+    const [propertiesBlocked, setPropertiesBlocked] = useState(false);
+    const [projectDirty, setProjectDirty] = useState(false);
+    return (
+      <RecordList
+        tasks={source}
+        viewState={state}
+        onViewState={setState}
+        onOpen={vi.fn()}
+        onNew={vi.fn()}
+        propertiesBlocked={propertiesBlocked}
+        onPropertiesBlocked={setPropertiesBlocked}
+        projectDirty={projectDirty}
+        onProjectDirty={setProjectDirty}
+        onTaskChanged={changed}
+      />
+    );
+  }
+  render(<Host />);
+  const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
+  await waitFor(() => expect(field.disabled).toBe(false));
+  fireEvent.change(field, { target: { value: project.id } });
+  const reread = await screen.findByRole('button', { name: '重新读取任务关联' });
+  expect(field.disabled).toBe(true);
+  expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '任务状态' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '任务项目范围' }).disabled).toBe(
+    true,
+  );
+  expect(changed).not.toHaveBeenCalled();
+  readFailed = false;
+  fireEvent.click(reread);
+  await waitFor(() => expect(field.value).toBe(project.id));
+  expect(changed).toHaveBeenCalledWith(assigned, null);
+  expect(field.disabled).toBe(false);
+  expect(writes).toBe(1);
+});

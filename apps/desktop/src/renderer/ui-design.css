@@ -4608,6 +4608,17 @@ select,
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
 }
+.inspector-content .document-property-values {
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  margin: 4px 0 8px;
+}
+.document-property-values dd {
+  margin: 0;
+  padding: 5px 6px;
+  overflow-wrap: anywhere;
+}
 .task-inspector-content .task-properties-editor {
   margin: 0;
   padding: 4px 0 8px;

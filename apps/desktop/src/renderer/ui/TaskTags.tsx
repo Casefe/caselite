@@ -7,13 +7,17 @@ export default function TaskTags({
   onChange,
   onDraft,
   onDemand = false,
+  retainDraftOnAdd = false,
+  lockDraft = false,
 }: {
   tags: string[];
   suggestions: string[];
   disabled?: boolean;
-  onChange(tags: string[]): void;
+  onChange(tags: string[], added?: boolean): void;
   onDraft?(value: boolean): void;
   onDemand?: boolean;
+  retainDraftOnAdd?: boolean;
+  lockDraft?: boolean;
 }) {
   const [text, setText] = useState('');
   const composing = useRef(false);
@@ -37,8 +41,8 @@ export default function TaskTags({
   };
   const add = (tag: string) => {
     if (composing.current || !canAdd || !tag || tag.length > 40 || tags.includes(tag)) return;
-    onChange([...tags, tag]);
-    close();
+    onChange([...tags, tag], true);
+    if (!retainDraftOnAdd) close();
   };
 
   return (
@@ -49,7 +53,7 @@ export default function TaskTags({
           <button
             key={index}
             type="button"
-            disabled={disabled}
+            disabled={disabled || (retainDraftOnAdd && Boolean(text))}
             aria-label={`移除标签 ${tag}`}
             onClick={() => onChange(tags.filter((_, position) => position !== index))}
           >
@@ -63,7 +67,7 @@ export default function TaskTags({
           type="button"
           className="task-tag-toggle"
           aria-expanded={expanded}
-          disabled={!expanded && !canAdd}
+          disabled={lockDraft || (!expanded && !canAdd)}
           onClick={() => (expanded ? close() : setExpanded(true))}
         >
           <svg
@@ -104,7 +108,7 @@ export default function TaskTags({
               onKeyDown={(event) => {
                 if (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current)
                   return;
-                if (event.key === 'Escape') {
+                if (event.key === 'Escape' && !lockDraft) {
                   event.preventDefault();
                   close();
                 }
