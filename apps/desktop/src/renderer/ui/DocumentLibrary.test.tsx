@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { invalidateOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
+import {
+  invalidateOrdinaryCatalog,
+  useProjectCatalog,
+} from '../shared/data/ordinary-catalog-query';
 import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -147,6 +150,8 @@ it('提交确认晚于切页时，新页面仍读回同一份目录', async () =
       <DocumentLibrary key={String(library)} library={library} onOpen={onOpen} onDirty={onDirty} />
     </QueryClientProvider>
   );
+  const projectKey = ['catalog', 'project-properties'];
+  client.setQueryData(projectKey, projection(original));
   const { rerender } = render(view(false));
   fireEvent.click(await screen.findByRole('button', { name: '加入知识库' }));
   await waitFor(() => expect(confirm).toBeDefined());
@@ -154,11 +159,25 @@ it('提交确认晚于切页时，新页面仍读回同一份目录', async () =
   expect(screen.getByText(/知识库暂无选定文档/)).toBeTruthy();
   confirm!();
   expect(await screen.findByRole('button', { name: '移出知识库' })).toBeTruthy();
+  expect(client.getQueryState(projectKey)?.isInvalidated).toBe(true);
+
+  function ProjectDirectory() {
+    const read = useProjectCatalog();
+    return <p>{read.data?.documents[0]?.in_library ? '项目目录已读到新版本' : '旧版本'}</p>;
+  }
+  rerender(
+    <QueryClientProvider client={client}>
+      <ProjectDirectory />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText('项目目录已读到新版本')).toBeTruthy();
   expect(catalog.mock.calls.map(([request]) => request.operation)).toEqual([
     'list',
     'organize_document',
     'list',
+    'list',
   ]);
+  expect(catalog.mock.calls.at(-1)?.[0]).toMatchObject({ project_properties: true });
 });
 
 it('外部提交使首次在途目录过期后，会补发读取并忽略迟到旧结果', async () => {

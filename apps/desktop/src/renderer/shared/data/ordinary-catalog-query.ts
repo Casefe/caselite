@@ -58,6 +58,9 @@ export function useProjectCatalog() {
     data: read.data ?? null,
     error: read.error?.message ?? '',
     isFetching: read.isFetching,
+    onCommit: () => {
+      void invalidateOrdinaryCatalog(client);
+    },
     async load() {
       await client.cancelQueries({ queryKey: projectCatalog.queryKey, exact: true });
       await client.invalidateQueries({
@@ -77,6 +80,9 @@ export function useOrdinaryCatalog() {
     data: read.data ?? null,
     error: read.error?.message ?? '',
     isFetching: read.isFetching,
+    onCommit: () => {
+      void invalidateProjectCatalog(client);
+    },
     async load() {
       await invalidateOrdinaryCatalog(client, false);
       return client.fetchQuery(ordinaryCatalog);

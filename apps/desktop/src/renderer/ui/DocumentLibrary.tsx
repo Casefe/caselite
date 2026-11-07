@@ -1,5 +1,4 @@
 import ReadTable from '../shared/ui/ReadTable';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   invalidateProjectCatalog,
   useOrdinaryCatalog,
@@ -20,7 +19,6 @@ export default function DocumentLibrary({
   onOpen(id: string): void;
   onDirty(dirty: boolean): void;
 }) {
-  const client = useQueryClient();
   const read = useOrdinaryCatalog();
   const c = useCatalog(false, read);
   const [selected, setSelected] = useState<string | null>(null),
@@ -70,7 +68,6 @@ export default function DocumentLibrary({
       }),
       () => {
         // 回执确认写入；目录读失败时仅允许重读，避免用旧版本再次整理。
-        void invalidateProjectCatalog(client);
         setAcknowledged({ id: doc.id, version: doc.version + 1 });
         setEditing(false);
         if (addedTag) {
@@ -207,7 +204,6 @@ export default function DocumentLibrary({
                         archived: !d.archived_at,
                       }),
                       () => {
-                        void invalidateProjectCatalog(client);
                         setAcknowledged({ id: d.id, version: d.version + 1 });
                       },
                     )

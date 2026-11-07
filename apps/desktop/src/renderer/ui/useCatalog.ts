@@ -5,6 +5,7 @@ type SharedRead = {
   data: Success | null;
   error: string;
   load(): Promise<Success>;
+  onCommit?(): void;
 };
 
 export function useCatalog(projectProperties = false, shared?: SharedRead) {
@@ -78,6 +79,8 @@ export function useCatalog(projectProperties = false, shared?: SharedRead) {
       );
       // 结果未知先查原键；仅明确未落盘时重试原请求，不生成新身份。
       if (queryFirst && !r.ok && r.code === 'NOT_FOUND') r = await window.caselite.catalog(request);
+      // 已提交的读缓存失效与界面存活无关。
+      if (r.ok) shared?.onCommit?.();
       if (!alive.current) {
         // 页面离开不等于提交取消。其他目录消费者仍需看到已经落盘的版本。
         if (shared && r.ok) await load();
