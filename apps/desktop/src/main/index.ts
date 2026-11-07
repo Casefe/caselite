@@ -17,6 +17,7 @@ import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runProjectDemo } from './project-demo';
+import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
 import {
@@ -685,7 +686,13 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
-    registerTaskIpc(tasks);
+    const taskQueryProbe =
+      taskDemoRoot &&
+      taskDemoPhase === 'task-status-write' &&
+      process.env.CASELITE_TASK_QUERY_PROBE === '1'
+        ? createTaskQueryProbe(tasks)
+        : undefined;
+    registerTaskIpc(taskQueryProbe?.application ?? tasks);
     const reminders = createReminderApplication(taskStore.reminders);
     const reminderScheduler = startReminderScheduler(
       reminders,
@@ -981,7 +988,9 @@ app
       taskDemoRoot &&
       (taskDemoPhase === 'task-status-write' || taskDemoPhase === 'task-status-read')
     ) {
-      await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      if (taskQueryProbe) {
+        await runTaskQueryProbe(() => createWindow(), taskDemoRoot, tasks, taskQueryProbe.counts);
+      } else await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;
     }

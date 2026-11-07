@@ -1,3 +1,5 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createTaskListQueryClient, invalidateTaskPages } from './ui/task-list-query';
 import { Icon } from './shared/ui/Icon';
 import FinanceView from './features/finance/FinanceView';
 import TagPicker from './shared/ui/TagPicker';
@@ -51,6 +53,7 @@ function Workbench() {
   const [reviewDock, setReviewDock] = useState<HTMLElement | null>(null);
   const [reviewSaving, setReviewSaving] = useState(false);
   const [detailTab, setDetailTab] = useState('内容');
+  const [taskListClient] = useState(createTaskListQueryClient);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
   const [state, setState] = useState<number[] | null>(null);
@@ -83,12 +86,13 @@ function Workbench() {
   const createRequest = useRef<CreateTaskCommand | null>(null);
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
+    invalidateTaskPages(taskListClient);
     const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
     if (sequence !== listReadSequence.current) return false;
     setTasks(r.tasks);
     return true;
-  }, []);
+  }, [taskListClient]);
   useEffect(() => {
     void refresh()
       .catch(() => setError('任务列表读取失败，请重试；原数据没有被修改。'))
@@ -861,19 +865,21 @@ function Workbench() {
             onDirty={setDirty}
           />
         ) : view === 'tasks' ? (
-          <RecordList
-            key={view}
-            tasks={tasks}
-            viewState={taskListState}
-            onViewState={setTaskListState}
-            onOpen={(id) => void open(id)}
-            onNew={() => newTask()}
-            propertiesBlocked={propertiesBlocked}
-            projectDirty={projectDirty}
-            onProjectDirty={setProjectDirty}
-            onPropertiesBlocked={setPropertiesBlocked}
-            onTaskChanged={acceptTaskProperties}
-          />
+          <QueryClientProvider client={taskListClient}>
+            <RecordList
+              key={view}
+              tasks={tasks}
+              viewState={taskListState}
+              onViewState={setTaskListState}
+              onOpen={(id) => void open(id)}
+              onNew={() => newTask()}
+              propertiesBlocked={propertiesBlocked}
+              projectDirty={projectDirty}
+              onProjectDirty={setProjectDirty}
+              onPropertiesBlocked={setPropertiesBlocked}
+              onTaskChanged={acceptTaskProperties}
+            />
+          </QueryClientProvider>
         ) : view === 'finance' ? (
           <FinanceView initialProject={financeProject} onDirty={setDirty} />
         ) : view === 'tools' || view === 'whiteboard' ? (

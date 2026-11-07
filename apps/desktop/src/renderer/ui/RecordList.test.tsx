@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
+import { createTaskListQueryClient, invalidateTaskPages } from './task-list-query';
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,6 +9,7 @@ import RecordList, { initialTaskListState, type TaskListState } from './RecordLi
 vi.mock('./AgentPanel', () => ({ default: () => null }));
 afterEach(() => {
   cleanup();
+  onlineManager.setOnline(true);
   vi.unstubAllGlobals();
 });
 beforeEach(() => {
@@ -49,6 +52,7 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
     }),
   } as unknown as Window['caselite'];
   const changed = vi.fn();
+  const client = createTaskListQueryClient();
   function Host() {
     const [state, setState] = useState<TaskListState>(initial),
       [blocked, setBlocked] = useState(false),
@@ -67,11 +71,19 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
         onOpen={setOpened}
         propertiesBlocked={blocked}
         onPropertiesBlocked={setBlocked}
-        onTaskChanged={vi.fn()}
+        onTaskChanged={() => invalidateTaskPages(client)}
       />
     );
   }
-  return { ...render(<Host />), changed };
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <Host />
+      </QueryClientProvider>,
+    ),
+    changed,
+    client,
+  };
 }
 it('invalidates query A before B and never displays its late rows or count under B filters', async () => {
   const a = task('旧范围甲'),
@@ -87,7 +99,7 @@ it('invalidates query A before B and never displays its late rows or count under
   fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '乙' } });
   await waitFor(() => expect(pending).toHaveLength(2));
   await act(async () => pending[1].finish(result([b])));
-  expect(screen.getByRole('row', { name: '选择任务：新范围乙' })).toBeTruthy();
+  expect(await screen.findByRole('row', { name: '选择任务：新范围乙' })).toBeTruthy();
   await act(async () => pending[0].finish(result([a])));
   expect(screen.queryByRole('row', { name: '选择任务：旧范围甲' })).toBeNull();
 });
@@ -109,7 +121,7 @@ it('hides the completed A count while query B is pending rather than assigning i
   expect(document.querySelector('.collection-total')?.textContent).toBe('…');
   expect(document.querySelector('.collection-footer')?.textContent).toContain('正在读取任务');
   await act(async () => finish(result([b])));
-  expect(document.querySelector('.collection-total')?.textContent).toBe('1');
+  await waitFor(() => expect(document.querySelector('.collection-total')?.textContent).toBe('1'));
 });
 it('waits for Chinese composition end before querying and retains task property draft guards', async () => {
   const t = task('中文任务');
@@ -190,6 +202,7 @@ it('keeps the project assignment guard until a confirmed write can be read back'
   let readFailed = true;
   let writes = 0;
   const changed = vi.fn();
+  const client = createTaskListQueryClient();
   window.caselite = {
     task: async (request: TaskRequest) => {
       if (request.operation === 'read' && readFailed) throw new Error('read failure');
@@ -222,11 +235,18 @@ it('keeps the project assignment guard until a confirmed write can be read back'
         onPropertiesBlocked={setPropertiesBlocked}
         projectDirty={projectDirty}
         onProjectDirty={setProjectDirty}
-        onTaskChanged={changed}
+        onTaskChanged={(saved, state) => {
+          changed(saved, state);
+          invalidateTaskPages(client);
+        }}
       />
     );
   }
-  render(<Host />);
+  render(
+    <QueryClientProvider client={client}>
+      <Host />
+    </QueryClientProvider>,
+  );
   const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
   await waitFor(() => expect(field.disabled).toBe(false));
   fireEvent.change(field, { target: { value: project.id } });
@@ -243,4 +263,35 @@ it('keeps the project assignment guard until a confirmed write can be read back'
   expect(changed).toHaveBeenCalledWith(assigned, null);
   expect(field.disabled).toBe(false);
   expect(writes).toBe(1);
+});
+
+it('reads when offline and reuses a revisited filter without another task IPC', async () => {
+  onlineManager.setOnline(false);
+  const a = task('查询甲'),
+    b = task('查询乙');
+  const api = vi.fn(async (r: TaskRequest) =>
+    result(r.operation === 'list' && r.query?.text ? [b] : [a]),
+  );
+  show(api);
+  await screen.findByRole('row', { name: '选择任务：查询甲' });
+  const input = screen.getByLabelText('搜索任务');
+  fireEvent.change(input, { target: { value: '乙' } });
+  await screen.findByRole('row', { name: '选择任务：查询乙' });
+  fireEvent.change(input, { target: { value: '' } });
+  await screen.findByRole('row', { name: '选择任务：查询甲' });
+  expect(api).toHaveBeenCalledTimes(2);
+});
+
+it('drops an in-flight page response once a confirmed change invalidates that page', async () => {
+  const stale = task('过期任务'),
+    fresh = task('当前任务');
+  const pending: ((r: TaskResponse) => void)[] = [];
+  const { client } = show(() => new Promise((resolve) => pending.push(resolve)));
+  await waitFor(() => expect(pending).toHaveLength(1));
+  act(() => invalidateTaskPages(client));
+  await waitFor(() => expect(pending).toHaveLength(2));
+  await act(async () => pending[1](result([fresh])));
+  await screen.findByRole('row', { name: '选择任务：当前任务' });
+  await act(async () => pending[0](result([stale])));
+  expect(screen.queryByRole('row', { name: '选择任务：过期任务' })).toBeNull();
 });

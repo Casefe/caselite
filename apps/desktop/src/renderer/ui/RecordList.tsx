@@ -5,6 +5,7 @@ import { TaskTable } from './Workspace';
 import TaskInspector from './TaskInspector';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
+import { useTaskPage } from './task-list-query';
 
 export type TaskListState = { query: TaskListQuery; selected: string | null; scroll: number };
 export const initialTaskListState: TaskListState = {
@@ -50,15 +51,6 @@ export default function RecordList({
   const [projects, setProjects] = useState<Matter[]>([]);
   const [catalogError, setCatalogError] = useState(''),
     [retry, setRetry] = useState(0);
-  const [result, setResult] = useState<{
-    query: TaskListQuery;
-    source: Task[];
-    retry: number;
-    rows: Task[];
-    total: number;
-    more: boolean;
-    error: string;
-  } | null>(null);
   const [text, setText] = useState(viewState.query.text);
   const [dateErrors, setDateErrors] = useState({ from: false, to: false });
   const restoring = useRef(true),
@@ -71,12 +63,16 @@ export default function RecordList({
     update.current = onViewState;
   }, [viewState, onViewState]);
   const q = viewState.query;
-  const matches = result?.query === q && result?.source === tasks && result?.retry === retry;
-  const loading = !propertiesBlocked && !matches;
-  const rows = result?.rows ?? [],
-    total = loading ? 0 : (result?.total ?? 0),
-    more = result?.more ?? false,
-    error = matches ? (result?.error ?? '') : '';
+  const taskPage = useTaskPage(q, !propertiesBlocked);
+  const data = taskPage.data;
+  const outOfRange = Boolean(data && q.offset > 0 && q.offset >= data.page.total);
+  const loading =
+    !propertiesBlocked &&
+    (taskPage.isPending || taskPage.isFetching || (!taskPage.isError && outOfRange));
+  const rows = taskPage.isError ? [] : (data?.rows ?? []);
+  const total = loading || taskPage.isError ? 0 : (data?.page.total ?? 0);
+  const more = data?.page.has_more ?? false;
+  const error = taskPage.error?.message ?? '';
   useEffect(() => {
     let alive = true;
     void window.caselite
@@ -95,58 +91,23 @@ export default function RecordList({
     };
   }, [retry]);
   useEffect(() => {
-    if (propertiesBlocked) return;
-    let alive = true;
-    restoring.current = true;
-    void window.caselite
-      .task({ protocol_version: 1, operation: 'list', query: q })
-      .then((r) => {
-        if (!alive) return;
-        if (!r.ok) throw new Error(r.message);
-        if (!r.page) throw new Error('任务列表响应缺少分页信息，请使用当前版本。');
-        if (q.offset > 0 && q.offset >= r.page.total) {
-          update.current({
-            ...latest.current,
-            query: { ...q, offset: Math.max(0, Math.floor((r.page.total - 1) / 20) * 20) },
-          });
-          return;
-        }
-        setResult({
-          query: q,
-          source: tasks,
-          retry,
-          rows: r.tasks,
-          total: r.page.total,
-          more: r.page.has_more,
-          error: '',
-        });
-      })
-      .catch((e) => {
-        if (alive) {
-          setResult({
-            query: q,
-            source: tasks,
-            retry,
-            rows: [],
-            total: 0,
-            more: false,
-            error: e instanceof Error ? e.message : '任务读取失败，请重试。',
-          });
-        }
-      });
-    return () => {
-      alive = false;
-    };
-  }, [q, tasks, propertiesBlocked, retry]);
+    if (propertiesBlocked || taskPage.isFetching || taskPage.isError || !data || !outOfRange)
+      return;
+    update.current({
+      ...latest.current,
+      query: { ...q, offset: Math.max(0, Math.floor((data.page.total - 1) / 20) * 20) },
+    });
+  }, [data, outOfRange, propertiesBlocked, q, taskPage.isError, taskPage.isFetching]);
   useEffect(() => {
-    if (!loading && scroll.current) {
+    if (loading) restoring.current = true;
+    else if (scroll.current) {
       scroll.current.scrollTop = latest.current.scroll;
       const frame = requestAnimationFrame(() => {
         restoring.current = false;
       });
       return () => cancelAnimationFrame(frame);
     }
-  }, [loading]);
+  }, [loading, q]);
   const change = (patch: Partial<TaskListQuery>) => {
     if (propertiesBlocked) return;
     onViewState({ ...viewState, query: { ...q, ...patch, offset: 0 }, scroll: 0, selected: null });
@@ -343,7 +304,7 @@ export default function RecordList({
         {error && (
           <p role="alert">
             {error}
-            <button onClick={() => setRetry((n) => n + 1)} disabled={propertiesBlocked}>
+            <button onClick={() => void taskPage.refetch()} disabled={propertiesBlocked}>
               重试任务列表
             </button>
           </p>
@@ -408,7 +369,7 @@ export default function RecordList({
       </div>
       <TaskInspector
         key={selected?.id ?? 'empty'}
-        task={error || result?.query !== q ? null : selected}
+        task={error ? null : selected}
         suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
         assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
         onPropertiesBlocked={onPropertiesBlocked}
