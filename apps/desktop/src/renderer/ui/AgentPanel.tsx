@@ -27,7 +27,7 @@ import {
 } from '@assistant-ui/react';
 import { Icon } from './Workspace';
 import { ModelSettingsNavigation } from './SettingsView';
-import { agentModelLabel, agentProviderFor } from './model-labels';
+import { agentModelLabel, agentModels, agentProviderFor } from './model-labels';
 import { projectStatuses, projectTypes } from '../projects/ProjectFields';
 import type { AgentResponse } from '../../preload/caselite-api';
 import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
@@ -255,7 +255,9 @@ export default function AgentPanel({
   };
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [model, setModel] = useState<AgentModel>('gpt-4.1-mini');
-  const [providers, setProviders] = useState({ openai: false, deepseek: false });
+  const [providers, setProviders] = useState<
+    Partial<Record<import('../../preload/caselite-api').AgentProvider, boolean>>
+  >({});
   const configured = providers[agentProviderFor(model)];
   const [error, setError] = useState('');
   const [credentialUnavailable, setCredentialUnavailable] = useState(false);
@@ -537,21 +539,15 @@ export default function AgentPanel({
             })
           }
         >
-          <option value="gpt-4.1-mini" disabled={!providers.openai && model !== 'gpt-4.1-mini'}>
-            gpt-4.1-mini
-          </option>
-          <option
-            value="deepseek-flash"
-            disabled={!providers.deepseek && model !== 'deepseek-flash'}
-          >
-            deepseek-flash
-          </option>
-          <option
-            value="deepseek-v4-pro"
-            disabled={!providers.deepseek && model !== 'deepseek-v4-pro'}
-          >
-            deepseek-v4-pro
-          </option>
+          {agentModels.map((option) => (
+            <option
+              key={option}
+              value={option}
+              disabled={!providers[agentProviderFor(option)] && model !== option}
+            >
+              {agentProviderFor(option) === 'siliconflow' ? agentModelLabel(option) : option}
+            </option>
+          ))}
         </select>
       )}
       {pending && !submissions.has(scope) && (

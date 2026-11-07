@@ -2,13 +2,16 @@ import { app, session } from 'electron';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { agentProviderFor, type AgentProvider } from '@caselite/contracts';
+import { agentProviderFor, agentProviderSchema, type AgentProvider } from '@caselite/contracts';
 import type { AgentCredentialPort } from '@caselite/application';
 import { createAgentCredentials } from './adapters/agent-credentials';
 
 export const credentialFingerprints = (credentialRoot: string) =>
   Object.fromEntries(
-    ['openai-credential.enc', 'deepseek-credential.enc', 'agent-model.json'].map((name) => {
+    [
+      ...agentProviderSchema.options.map((provider) => `${provider}-credential.enc`),
+      'agent-model.json',
+    ].map((name) => {
       const file = join(credentialRoot, name);
       return [
         name,
@@ -20,8 +23,14 @@ export const credentialFingerprints = (credentialRoot: string) =>
 export function credentialStatus(vault: AgentCredentialPort) {
   const model = vault.getDefaultModel();
   const credentialErrors: Partial<Record<AgentProvider, 'UNAVAILABLE'>> = {};
-  const providers = { openai: false, deepseek: false };
-  for (const provider of ['openai', 'deepseek'] as const) {
+  const providers: Record<AgentProvider, boolean> = {
+    openai: false,
+    deepseek: false,
+    glm: false,
+    kimi: false,
+    siliconflow: false,
+  };
+  for (const provider of agentProviderSchema.options) {
     try {
       providers[provider] = Boolean(vault.get(provider));
     } catch {

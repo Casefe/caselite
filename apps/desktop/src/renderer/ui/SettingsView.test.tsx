@@ -13,7 +13,7 @@ const response = (configured: boolean): AgentResponse => ({
   runs: [],
 });
 function show() {
-  return render(<SettingsView section="AI 与服务" onSection={vi.fn()} onBack={vi.fn()} />);
+  return render(<SettingsView section="models" onSection={vi.fn()} onBack={vi.fn()} />);
 }
 describe('central model settings', () => {
   it('clears entered credentials, reports failure without claiming saved, and requires delete confirmation', async () => {

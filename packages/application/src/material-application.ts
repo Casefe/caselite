@@ -1,5 +1,6 @@
 import {
   materialRequestSchema,
+  agentModelAcceptsImages,
   MATERIAL_MAX_CONTEXT,
   type AgentModel,
   type Material,
@@ -320,7 +321,7 @@ export function createMaterialApplication(ports: {
             if (abort.signal.aborted) throw new Error('CANCELLED');
           };
           try {
-            const vision = r.automatic && r.model !== 'deepseek-v4-pro';
+            const vision = r.automatic && agentModelAcceptsImages(r.model);
             const images: NonNullable<MaterialPreview['images']> = [];
             const seen = new Set<string>();
             const selections: MaterialPreview['selections'] = [];
@@ -490,7 +491,7 @@ export function createMaterialApplication(ports: {
         if (planned.length) {
           if (
             !processor.render ||
-            model === 'deepseek-v4-pro' ||
+            !agentModelAcceptsImages(model) ||
             planned.some(
               (image) =>
                 image.configuration !== processor.configuration || !item.pages.includes(image.page),

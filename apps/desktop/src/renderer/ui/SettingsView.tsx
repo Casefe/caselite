@@ -1,18 +1,68 @@
 import { createContext, useEffect, useRef, useState } from 'react';
-import { agentProviderFor, agentModelLabel } from './model-labels';
+import { agentProviderFor, agentModelLabel, agentModels, providerNames } from './model-labels';
 import type { AgentModel, AgentProvider, AgentRequest } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import { ThemeSetting } from './Appearance';
 
 export const ModelSettingsNavigation = createContext<(() => void) | null>(null);
-export const settingsSections = [
-  '工作区',
-  '外观',
-  'AI 与服务',
-  '数据与隐私',
-  '账户与协作',
+export const settingsGroups = [
+  {
+    title: '个人',
+    items: [
+      ['general', '常规'],
+      ['account', '账户'],
+      ['notifications', '通知'],
+      ['workbench', '工作台'],
+      ['privacy', '安全'],
+    ],
+  },
+  {
+    title: '高级',
+    items: [
+      ['models', '模型'],
+      ['editor', '编辑器'],
+      ['drawing', '绘图工具'],
+      ['workflows', '工作流'],
+      ['skills', 'Skills'],
+    ],
+  },
+  {
+    title: '管理',
+    items: [
+      ['workspace', '工作区'],
+      ['teams', '团队'],
+      ['members', '成员'],
+      ['security', '安全'],
+      ['mcp', 'MCP'],
+      ['plan', '套餐'],
+      ['transfer', '导入导出'],
+      ['backups', '备份'],
+    ],
+  },
 ] as const;
-export type SettingsSection = (typeof settingsSections)[number];
+export type SettingsSection = (typeof settingsGroups)[number]['items'][number][0];
+
+const information: Partial<Record<SettingsSection, readonly [string, string, string][]>> = {
+  notifications: [['任务提醒', '在任务中设置提醒，到侧栏「提醒」查看。', '本机提醒']],
+  workbench: [['项目与财务', '在工作台侧栏进入项目、任务、知识库和财务。', '工作台']],
+  privacy: [
+    ['本机保存', '任务、工作稿和导入的材料保存在此设备。', '本地保存'],
+    ['向模型发送内容', '文档审阅在点击发送后提交所选段落和本轮问题。', '显式发送'],
+    ['文档审阅写回', '确认候选后保存为同一文档的新修订，保留原版本。', '人工确认'],
+  ],
+  editor: [['文档编辑', '在工作稿中使用富文本编辑器。全局编辑器偏好待开放。', '待开放']],
+  drawing: [['绘图工具', '绘图工具设置待接入。', '待接入']],
+  workflows: [['工作流', '自定义工作流设置待开放。', '待开放']],
+  skills: [['Skills', '技能管理待接入。', '待接入']],
+  workspace: [['工作区', '当前使用此设备上的个人工作区。', '本地工作区']],
+  teams: [['团队与同步', '跨设备同步与团队协作待开放。', '待开放']],
+  members: [['成员管理', '成员邀请和管理待开放。', '待开放']],
+  security: [['工作区安全', '团队访问策略和审计设置待开放。', '待开放']],
+  mcp: [['MCP 连接', 'MCP 连接管理待接入。', '待接入']],
+  plan: [['套餐', '订阅和套餐管理待开放。', '待开放']],
+  transfer: [['导入导出', '工作区级导入导出待开放。', '待开放']],
+  backups: [['备份与恢复', '备份选择与隔离恢复将在后续版本开放。', '待开放']],
+};
 const services = [
   {
     id: 'openai',
@@ -35,6 +85,36 @@ const services = [
     note: '',
   },
   {
+    id: 'glm',
+    name: providerNames.glm,
+    mark: 'G',
+    kind: '对话模型',
+    description: '智谱开放平台',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.7-flash',
+    note: '',
+  },
+  {
+    id: 'kimi',
+    name: providerNames.kimi,
+    mark: 'K',
+    kind: '对话模型',
+    description: '月之暗面开放平台',
+    endpoint: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2.6',
+    note: '',
+  },
+  {
+    id: 'siliconflow',
+    name: providerNames.siliconflow,
+    mark: '硅',
+    kind: '对话模型',
+    description: '硅基流动开放平台',
+    endpoint: 'https://api.siliconflow.cn/v1',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    note: '',
+  },
+  {
     id: 'mineru',
     name: 'MinerU OCR',
     mark: 'M',
@@ -54,7 +134,9 @@ const services = [
     model: '元典开放平台',
     note: '法律数据服务尚未接入。当前按元典开放平台设计，后续使用前确认查询内容与授权范围。',
   },
-];
+] as const;
+const isProvider = (id: (typeof services)[number]['id']): id is AgentProvider =>
+  id in providerNames;
 
 export default function SettingsView({
   section,
@@ -65,6 +147,8 @@ export default function SettingsView({
   onSection(section: SettingsSection): void;
   onBack(): void;
 }) {
+  const group = settingsGroups.find(({ items }) => items.some(([id]) => id === section))!;
+  const label = group.items.find(([id]) => id === section)![1];
   return (
     <section className="settings-center" aria-label="设置中心">
       <aside className="settings-navigation">
@@ -73,15 +157,19 @@ export default function SettingsView({
           <h1>设置</h1>
         </div>
         <nav aria-label="设置分类">
-          {settingsSections.map((name, i) => (
-            <button
-              key={name}
-              aria-current={section === name ? 'page' : undefined}
-              onClick={() => onSection(name)}
-            >
-              <Icon name={['home', 'grid', 'spark', 'file', 'settings'][i]} size={16} />
-              {name}
-            </button>
+          {settingsGroups.map(({ title, items }) => (
+            <div className="settings-nav-group" key={title} role="group" aria-label={title}>
+              <span>{title}</span>
+              {items.map(([id, name]) => (
+                <button
+                  key={id}
+                  aria-current={section === id ? 'page' : undefined}
+                  onClick={() => onSection(id)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <button className="settings-back" onClick={onBack}>
@@ -96,81 +184,25 @@ export default function SettingsView({
       </aside>
       <div className="settings-content">
         <header className="settings-heading">
-          <span>设置 / {section}</span>
+          <span>
+            设置 / {group.title} / {label}
+          </span>
           <span>仅此设备</span>
         </header>
         <div className="settings-page">
-          <h2>{section}</h2>
-          {section === 'AI 与服务' ? (
-            <>
-              <ModelSettings />
-              <SettingRow
-                title="写作偏好"
-                description="自定义写作风格和默认写作偏好尚未开放。"
-                value="待开放"
-              />
-            </>
-          ) : section === '工作区' ? (
-            <>
-              <p className="settings-lead">在工作区管理日常办案事项。</p>
-              <SettingRow
-                title="任务提醒"
-                description="在对应任务中设置提醒，在侧栏「提醒」（Inbox）查看和处理。"
-                value="任务与提醒"
-              />
-              <SettingRow
-                title="财务记录"
-                description="在侧栏「财务」查看项目收费合同、分期与已确认收款。"
-                value="工作区"
-              />
-            </>
-          ) : section === '外观' ? (
-            <>
-              <p className="settings-lead">选择适合你的工作台外观。</p>
-              <ThemeSetting />
-            </>
-          ) : section === '数据与隐私' ? (
-            <>
-              <p className="settings-lead">了解材料保存位置和使用外部服务的条件。</p>
-              <SettingRow
-                title="本机保存"
-                description="任务、工作稿和导入的材料保存在此设备。"
-                value="本地保存"
-              />
-              <SettingRow
-                title="向模型发送内容"
-                description="发送前可核对本轮范围。文档单段审阅仅在你点击发送后提交选中的段落和本轮问题。"
-                value="显式发送"
-              />
-              <SettingRow
-                title="文档审阅写回"
-                description="在可编辑工作稿中，人工确认审阅候选后才保存为同一文档的新修订，保留原版本。"
-                value="人工确认"
-              />
-              <SettingRow
-                title="备份与恢复"
-                description="备份选择与隔离恢复将在后续版本开放。"
-                value="待接入"
-              />
-            </>
-          ) : (
-            <>
-              <p className="settings-lead">本地功能无需登录即可使用。</p>
-              <div className="account-card">
-                <span className="account-symbol">我</span>
-                <div>
-                  <h3>个人本地工作区</h3>
-                  <p>当前在此设备上使用 CaseLite。</p>
-                </div>
-                <span className="settings-pill">本地使用</span>
-              </div>
-              <SettingRow
-                title="跨设备同步与团队协作"
-                description="跨设备同步和团队协作尚未开放。模型服务的 API Key 在「AI 与服务」管理。"
-                value="待开放"
-              />
-            </>
+          <h2>{label}</h2>
+          {section === 'models' && <ModelSettings />}
+          {section === 'general' && <ThemeSetting />}
+          {section === 'account' && (
+            <SettingRow
+              title="个人本地工作区"
+              description="当前在此设备使用 CaseLite，本地功能无需登录。"
+              value="本地使用"
+            />
           )}
+          {information[section]?.map(([title, description, value]) => (
+            <SettingRow key={title} title={title} description={description} value={value} />
+          ))}
         </div>
       </div>
     </section>
@@ -196,8 +228,8 @@ function SettingRow({
   );
 }
 function ModelSettings() {
-  const [selected, setSelected] = useState('openai');
-  const [providers, setProviders] = useState<{ openai: boolean; deepseek: boolean } | null>(null);
+  const [selected, setSelected] = useState<(typeof services)[number]['id']>('openai');
+  const [providers, setProviders] = useState<Partial<Record<AgentProvider, boolean>> | null>(null);
   const [credentialErrors, setCredentialErrors] = useState<
     Partial<Record<AgentProvider, 'UNAVAILABLE'>>
   >({});
@@ -211,12 +243,16 @@ function ModelSettings() {
   const mounted = useRef(false);
   const inFlight = useRef(true);
   const service = services.find((item) => item.id === selected)!;
-  const available = service.id === 'openai' || service.id === 'deepseek';
+  const available = isProvider(service.id);
   const provider = service.id as AgentProvider;
   const configured = available ? (providers?.[provider] ?? null) : null;
-  const modelOptions: AgentModel[] =
-    service.id === 'openai' ? ['gpt-4.1-mini'] : ['deepseek-flash', 'deepseek-v4-pro'];
-  const validKey = /^sk-[A-Za-z0-9_-]{8,}$/.test(key.trim()) && key.trim().length <= 512;
+  const modelOptions = agentModels.filter((model) => agentProviderFor(model) === service.id);
+  const trimmedKey = key.trim();
+  const validKey =
+    trimmedKey.length <= 512 &&
+    (provider === 'openai' || provider === 'deepseek'
+      ? /^sk-[A-Za-z0-9_-]{8,}$/.test(trimmedKey)
+      : /^[A-Za-z0-9._-]{10,}$/.test(trimmedKey));
   async function execute(request: AgentRequest) {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -296,9 +332,8 @@ function ModelSettings() {
                 setSelectedModel(
                   agentProviderFor(defaultModel) === item.id
                     ? defaultModel
-                    : item.id === 'openai'
-                      ? 'gpt-4.1-mini'
-                      : 'deepseek-flash',
+                    : (agentModels.find((model) => agentProviderFor(model) === item.id) ??
+                        defaultModel),
                 );
                 setKey('');
                 setError('');
@@ -312,7 +347,7 @@ function ModelSettings() {
                 <small>{item.kind}</small>
               </span>
               <span className="provider-state">
-                {item.id === 'openai' || item.id === 'deepseek'
+                {isProvider(item.id)
                   ? providers === null
                     ? pending
                       ? '读取中'

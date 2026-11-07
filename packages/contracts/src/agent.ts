@@ -2,12 +2,33 @@ import { z } from 'zod';
 import { matterSchema, projectProfessionalTypeSchema } from './catalog';
 import { ordinaryDateSchema, taskSchema } from './task';
 
-export const agentProviderSchema = z.enum(['openai', 'deepseek']);
-export const agentModelSchema = z.enum(['gpt-4.1-mini', 'deepseek-flash', 'deepseek-v4-pro']);
+export const agentProviderSchema = z.enum(['openai', 'deepseek', 'glm', 'kimi', 'siliconflow']);
+export const agentModelSchema = z.enum([
+  'gpt-4.1-mini',
+  'deepseek-flash',
+  'deepseek-v4-pro',
+  'glm-4.7-flash',
+  'kimi-k2.6',
+  'deepseek-ai/DeepSeek-V4-Flash',
+]);
 export type AgentProvider = z.infer<typeof agentProviderSchema>;
 export type AgentModel = z.infer<typeof agentModelSchema>;
-export const agentProviderFor = (model: AgentModel): AgentProvider =>
-  model === 'gpt-4.1-mini' ? 'openai' : 'deepseek';
+const modelProviders: Record<AgentModel, AgentProvider> = {
+  'gpt-4.1-mini': 'openai',
+  'deepseek-flash': 'deepseek',
+  'deepseek-v4-pro': 'deepseek',
+  'glm-4.7-flash': 'glm',
+  'kimi-k2.6': 'kimi',
+  'deepseek-ai/DeepSeek-V4-Flash': 'siliconflow',
+};
+export const agentProviderFor = (model: AgentModel): AgentProvider => modelProviders[model];
+export const agentModelAcceptsImages = (model: AgentModel) =>
+  model === 'gpt-4.1-mini' || model === 'deepseek-flash';
+
+const validProviderKey = (provider: AgentProvider, key: string) =>
+  provider === 'openai' || provider === 'deepseek'
+    ? /^sk-[A-Za-z0-9_-]{8,}$/.test(key)
+    : /^[A-Za-z0-9._-]{10,}$/.test(key);
 
 export const AGENT_CHANNEL = 'caselite:agent:v1';
 const projectScope = z.templateLiteral(['project:', z.string().uuid()]);
@@ -55,13 +76,10 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       ...base,
       operation: z.literal('configure'),
       provider: agentProviderSchema.optional(),
-      key: z
-        .string()
-        .trim()
-        .regex(/^sk-[A-Za-z0-9_-]{8,}$/)
-        .max(512),
+      key: z.string().trim().max(512),
     })
-    .strict(),
+    .strict()
+    .refine(({ provider, key }) => validProviderKey(provider ?? 'openai', key), { path: ['key'] }),
   z
     .object({
       ...base,
@@ -157,11 +175,20 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
     ok: z.literal(true),
     configured: z.boolean(),
     model: agentModelSchema,
-    providers: z.object({ openai: z.boolean(), deepseek: z.boolean() }),
+    providers: z.object({
+      openai: z.boolean(),
+      deepseek: z.boolean(),
+      glm: z.boolean().optional(),
+      kimi: z.boolean().optional(),
+      siliconflow: z.boolean().optional(),
+    }),
     credential_errors: z
       .object({
         openai: z.literal('UNAVAILABLE').optional(),
         deepseek: z.literal('UNAVAILABLE').optional(),
+        glm: z.literal('UNAVAILABLE').optional(),
+        kimi: z.literal('UNAVAILABLE').optional(),
+        siliconflow: z.literal('UNAVAILABLE').optional(),
       })
       .strict()
       .optional(),

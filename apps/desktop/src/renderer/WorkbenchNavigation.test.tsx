@@ -119,7 +119,7 @@ async function projectTask() {
 it('opens AI and services directly from the model shortcut and returns to home', async () => {
   setup();
   fireEvent.click(await screen.findByText('首页'));
-  await screen.findByRole('heading', { name: 'AI 与服务' });
+  await screen.findByRole('heading', { name: 'models' });
   fireEvent.click(screen.getByText('关闭设置'));
   await screen.findByText('首页');
 });

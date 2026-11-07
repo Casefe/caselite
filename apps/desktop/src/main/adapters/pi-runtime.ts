@@ -1,20 +1,81 @@
 import { Agent, type StreamFn } from '@earendil-works/pi-agent-core';
-import { createModels } from '@earendil-works/pi-ai';
-import { agentProviderFor } from '@caselite/contracts';
+import { createModels, createProvider, envApiKeyAuth } from '@earendil-works/pi-ai';
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { agentModelAcceptsImages, agentProviderFor } from '@caselite/contracts';
 import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import type { AgentRuntimePort } from '@caselite/application';
+
+const additionalProviders = [
+  {
+    id: 'glm',
+    model: 'glm-4.7-flash',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    thinkingFormat: 'zai',
+    contextWindow: 200_000,
+  },
+  {
+    id: 'kimi',
+    model: 'kimi-k2.6',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    thinkingFormat: 'deepseek',
+    contextWindow: 262_144,
+  },
+  {
+    id: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    thinkingFormat: 'qwen',
+    contextWindow: 262_144,
+  },
+] as const;
 
 export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
   const models = createModels();
   models.setProvider(openaiProvider());
   models.setProvider(deepseekProvider());
+  for (const { id, model, baseUrl, thinkingFormat, contextWindow } of additionalProviders) {
+    models.setProvider(
+      createProvider({
+        id,
+        baseUrl,
+        // 只接收本轮由凭据端口提供的 Key，环境变量不参与配置。
+        auth: { apiKey: envApiKeyAuth('CaseLite API Key', []) },
+        api: openAICompletionsApi(),
+        models: [
+          {
+            id: model,
+            name: model,
+            provider: id,
+            baseUrl,
+            api: 'openai-completions',
+            input: ['text'],
+            reasoning: true,
+            contextWindow,
+            maxTokens: 2048,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            compat: {
+              supportsStore: false,
+              supportsDeveloperRole: false,
+              supportsReasoningEffort: false,
+              maxTokensField: 'max_tokens',
+              thinkingFormat,
+            },
+          },
+        ],
+      }),
+    );
+  }
   return {
     start(input) {
       const model = models.getModel(agentProviderFor(input.model), input.model);
       if (!model) throw new Error('Required model unavailable');
-      if (input.images?.length && !model.input.includes('image'))
+      if (
+        input.images?.length &&
+        (!agentModelAcceptsImages(input.model) || !model.input.includes('image'))
+      )
         throw new Error('Vision unavailable');
+      const fixedRoute = additionalProviders.some(({ model }) => model === input.model);
       let dispatches = 0;
       let settled = false;
       const agent = new Agent({
@@ -36,6 +97,8 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
             ...options,
             apiKey: input.key,
             env: {},
+            // 拒绝重定向，避免把选中的材料转发给另一个服务地址。
+            ...(fixedRoute && { fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }) }),
             cacheRetention: 'none',
             maxTokens: 2048,
             maxRetries: 0,

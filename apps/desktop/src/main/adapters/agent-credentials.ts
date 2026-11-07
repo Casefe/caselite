@@ -1,7 +1,12 @@
 import { safeStorage } from 'electron';
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { agentModelSchema, type AgentModel, type AgentProvider } from '@caselite/contracts';
+import {
+  agentModelSchema,
+  agentProviderSchema,
+  type AgentModel,
+  type AgentProvider,
+} from '@caselite/contracts';
 import type { AgentCredentialPort } from '@caselite/application';
 
 const STORAGE_TIMEOUT_MS = 3_000;
@@ -39,10 +44,7 @@ export async function createAgentCredentials(
       clearTimeout(timer);
     }
   };
-  const files = {
-    openai: join(root, 'openai-credential.enc'),
-    deepseek: join(root, 'deepseek-credential.enc'),
-  };
+  const credentialFile = (provider: AgentProvider) => join(root, `${provider}-credential.enc`);
   let cached = new Map<AgentProvider, string>();
   let unavailable = new Set<AgentProvider>();
   let generation = 0;
@@ -63,8 +65,8 @@ export async function createAgentCredentials(
     };
     const nextCached = new Map<AgentProvider, string>();
     const nextUnavailable = new Set<AgentProvider>();
-    const storedProviders = (['openai', 'deepseek'] as const).filter((provider) =>
-      existsSync(files[provider]),
+    const storedProviders = agentProviderSchema.options.filter((provider) =>
+      existsSync(credentialFile(provider)),
     );
     if (storedProviders.length) {
       let available = false;
@@ -79,7 +81,7 @@ export async function createAgentCredentials(
         try {
           if (!available) throw new Error('System encryption unavailable');
           const decrypted = await bounded(`${provider}-decrypt`, () =>
-            safeStorage.decryptStringAsync(readFileSync(files[provider])),
+            safeStorage.decryptStringAsync(readFileSync(credentialFile(provider))),
           );
           current();
           nextCached.set(provider, decrypted.result);
@@ -107,7 +109,7 @@ export async function createAgentCredentials(
       if (revision !== generation) throw new Error('Credential operation superseded');
       const bytes = await bounded(`${provider}-encrypt`, () => safeStorage.encryptStringAsync(key));
       if (revision !== generation) throw new Error('Credential operation superseded');
-      const file = files[provider];
+      const file = credentialFile(provider);
       writeFileSync(`${file}.tmp`, bytes, { mode: 0o600 });
       renameSync(`${file}.tmp`, file);
       cached.set(provider, key);
@@ -115,7 +117,7 @@ export async function createAgentCredentials(
     },
     clear(provider = 'openai') {
       generation++;
-      const file = files[provider];
+      const file = credentialFile(provider);
       rmSync(file, { force: true });
       rmSync(`${file}.tmp`, { force: true });
       cached.delete(provider);

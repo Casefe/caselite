@@ -225,7 +225,7 @@ function BodyEditor({
 }
 function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('工作区');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
@@ -572,7 +572,7 @@ function Workbench() {
     <ModelSettingsNavigation.Provider
       value={() => {
         if (!canLeave()) return;
-        setSettingsSection('AI 与服务');
+        setSettingsSection('models');
         navigate('settings');
       }}
     >

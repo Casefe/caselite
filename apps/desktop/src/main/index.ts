@@ -718,7 +718,7 @@ app
     registerMaterialIpc(materials);
     app.on('will-quit', () => materials.close());
     // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
-    let materialDemoModel: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
+    let materialDemoModel: import('@caselite/contracts').AgentModel = 'gpt-4.1-mini';
     const materialDemoKeys = new Set(['openai', 'deepseek']);
     const credentialUi = taskDemoPhase === 'credential-preflight-ui';
     let credentialHttpAttempts = 0;

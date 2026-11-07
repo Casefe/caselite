@@ -122,19 +122,18 @@ export async function runDocumentReviewDemo(
   };
   await wait("document.querySelector('[data-nav=settings]')");
   await evaluate("document.querySelector('[data-nav=settings]').click()");
-  await wait("document.querySelector('.settings-page h2')?.textContent === '工作区'");
+  await wait("document.querySelector('.settings-page h2')?.textContent === '常规'");
   await wait(`JSON.stringify([...document.querySelectorAll('[aria-label=设置分类] button')].map(b=>b.textContent)) ===
-    JSON.stringify(['工作区','外观','AI 与服务','数据与隐私','账户与协作'])`);
-  await wait("!document.querySelector('.theme-option')");
+    JSON.stringify(['常规','账户','通知','工作台','安全','模型','编辑器','绘图工具','工作流','Skills','工作区','团队','成员','安全','MCP','套餐','导入导出','备份'])`);
   if (phase === 'document-review-write') {
     await capture('settings-workspace.png');
-    await click('数据与隐私');
+    await click('安全');
     await wait("document.querySelector('.settings-page').innerText.includes('保留原版本')");
     await capture('settings-privacy.png');
-    await click('账户与协作');
-    await wait("document.querySelector('.settings-page').innerText.includes('尚未开放')");
+    await click('团队');
+    await wait("document.querySelector('.settings-page').innerText.includes('待开放')");
     await capture('settings-account.png');
-    await click('AI 与服务');
+    await click('模型');
     await wait("document.querySelector('[data-provider=mineru]:not(:disabled)')");
     await capture('settings-ai.png');
     for (const id of ['mineru', 'yuandian']) {
@@ -151,7 +150,7 @@ export async function runDocumentReviewDemo(
     await capture('settings-narrow.png');
     window.setContentSize(width, height);
   }
-  await click('外观');
+  await click('常规');
   await wait(
     "document.querySelectorAll('.theme-setting').length === 1 && document.querySelector('.theme-option:not(:disabled)')",
   );

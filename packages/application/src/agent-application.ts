@@ -122,7 +122,13 @@ export function createAgentApplication(ports: {
         return false;
       }
     };
-    const providers = { openai: configured('openai'), deepseek: configured('deepseek') };
+    const providers = {
+      openai: configured('openai'),
+      deepseek: configured('deepseek'),
+      glm: configured('glm'),
+      kimi: configured('kimi'),
+      siliconflow: configured('siliconflow'),
+    };
     return {
       providers,
       ...(Object.keys(credential_errors).length ? { credential_errors } : {}),

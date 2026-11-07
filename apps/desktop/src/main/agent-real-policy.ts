@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { agentProviderFor, type AgentModel } from '@caselite/contracts';
+import { agentProviderFor, type AgentModel, type AgentProvider } from '@caselite/contracts';
 
 export const realDemoId = 'DEV-1650-20261106-two-calls';
 export const realDemoPrompts = [
@@ -41,7 +41,7 @@ export function selectedCredentialReady(
   state: {
     model: AgentModel;
     configured: boolean;
-    credential_errors?: Partial<Record<'openai' | 'deepseek', 'UNAVAILABLE'>>;
+    credential_errors?: Partial<Record<AgentProvider, 'UNAVAILABLE'>>;
   },
   expectedModel: AgentModel = 'deepseek-flash',
 ) {
