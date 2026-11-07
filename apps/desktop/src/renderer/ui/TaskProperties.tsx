@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { Task, TaskRequest } from '../../preload/caselite-api';
 import { taskStatusNames } from './task-status';
@@ -23,6 +24,7 @@ export default function TaskProperties({
   disabled,
   suggestions = [],
   groupTags = false,
+  project,
   onBlocked,
   onChanged,
 }: {
@@ -30,6 +32,7 @@ export default function TaskProperties({
   disabled: boolean;
   suggestions?: string[];
   groupTags?: boolean;
+  project?: ReactNode;
   onBlocked(value: boolean): void;
   onChanged(task: Task, objectiveState: number[] | null): void;
 }) {
@@ -214,6 +217,7 @@ export default function TaskProperties({
 
   const tags = (
     <TaskTags
+      onDemand={groupTags}
       onDraft={(value) => {
         setTagDraft(value);
         if (value) onBlocked(true);
@@ -257,7 +261,7 @@ export default function TaskProperties({
         </select>
       </label>
       <label>
-        <span>普通截止日期</span>
+        <span>{groupTags ? '日期' : '普通截止日期'}</span>
         <input
           aria-label="普通截止日期"
           type="date"
@@ -307,7 +311,22 @@ export default function TaskProperties({
           请输入完整有效的日期（YYYY-MM-DD），或选择清空截止日期。按 Esc 可取消编辑。
         </p>
       )}
-      {!groupTags && tags}
+      {groupTags ? (
+        <>
+          <div className="task-property-value">
+            <span>负责人</span>
+            <span>本人</span>
+          </div>
+          {project ?? (
+            <div className="task-property-value">
+              <span>项目</span>
+              <span>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</span>
+            </div>
+          )}
+        </>
+      ) : (
+        tags
+      )}
       {pending && <p role="status">正在保存任务属性…</p>}
       {failure && (
         <div className="task-property-recovery">

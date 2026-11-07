@@ -226,10 +226,22 @@ export async function runTaskStatusDemo(
       await wait(
         "document.querySelector('[aria-label=普通截止日期]')?.value==='2026-01-01' && !document.querySelector('[aria-label=搜索任务]').disabled",
       );
-      await evaluate(
-        "(()=>{const e=document.querySelector('[aria-label=新标签]');e.focus();document.execCommand('insertText',false,'合成列表标签');})()",
+      await wait("!document.querySelector('[aria-label=新标签]')");
+      await click('添加标签');
+      await wait("document.activeElement?.matches('[aria-label=新标签]')");
+      await insert('[aria-label=新标签]', '取消的标签草稿');
+      await wait("document.querySelector('[aria-label=搜索任务]').disabled");
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+      await wait(
+        "!document.querySelector('[aria-label=新标签]') && !document.querySelector('[aria-label=搜索任务]').disabled",
       );
-      await click('添加');
+      await click('添加标签');
+      await insert('[aria-label=新标签]', '合成列表标签');
+      await wait("document.querySelector('[aria-label=搜索任务]').disabled");
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+      await wait("!document.querySelector('[aria-label=新标签]')");
       await settled('done');
       if ((await read(id)).tasks[0].tags?.[0] !== '合成列表标签')
         throw new Error('Task list label did not persist');
@@ -440,6 +452,10 @@ export async function runTaskStatusDemo(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
       );
       const restored = await read(id);
+      await wait(
+        `document.querySelector('.task-label-section [aria-label="移除标签 合成列表标签"]') &&
+          !document.querySelector('[aria-label=新标签]')`,
+      );
       if (displayTimezone === expected.displayTimezone)
         throw new Error('Cross-process timezone did not change');
       if (

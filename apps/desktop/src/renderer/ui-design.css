@@ -4558,7 +4558,7 @@ select,
   grid-column: 1 / -1;
 }
 .create-form .task-create-properties :is(select, input),
-.task-inspector-content :is(.task-properties-editor, .task-label-section) :is(select, input) {
+.task-inspector-content .task-label-section :is(select, input) {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -4613,14 +4613,45 @@ select,
   padding: 4px 0 8px;
   border-top: 0;
 }
-.task-inspector-content .task-properties-editor label {
+.task-inspector-content .task-properties-editor > :is(label, .task-property-value) {
   display: grid;
-  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
   gap: 8px;
   margin: 4px 0;
 }
-.task-inspector-content :is(.task-properties-editor, .task-label-section) :is(select, input) {
+.task-inspector-content .task-property-value > span:last-child {
+  padding: 5px 6px;
+  overflow-wrap: anywhere;
+}
+.task-inspector-content .task-properties-editor > label > :is(select, input[type='date']) {
+  width: 100%;
+  min-width: 0;
   max-width: none;
+  box-sizing: border-box;
+  border: 0;
+  padding: 5px 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+.task-inspector-content .task-properties-editor > label > select {
+  appearance: none;
+}
+.task-inspector-content .task-properties-editor > label > select:enabled {
+  cursor: pointer;
+}
+.task-inspector-content .task-properties-editor > label > :is(select, input):enabled:hover,
+.task-inspector-content .task-properties-editor > label > :is(select, input):focus-visible {
+  background: var(--active);
+}
+.task-inspector-content .task-properties-editor > label > :is(select, input):focus-visible,
+.task-label-section .task-tag-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.task-inspector-content .task-properties-editor > label > :is(select, input):disabled {
+  opacity: 0.65;
 }
 .task-inspector-content .project-inspector-section {
   border-top: 0;
@@ -4780,26 +4811,30 @@ select,
 .task-inspector-content .task-label-section {
   margin-top: 2px;
 }
-.task-label-section .task-tags > span {
-  display: none;
+.task-label-section .task-tag-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
 }
-.task-inspector-content .task-project-section,
+.task-label-section .task-tag-toggle:enabled {
+  cursor: pointer;
+}
+.task-label-section .task-tag-toggle:enabled:hover {
+  background: var(--active);
+}
+.task-label-section .task-tag-toggle:disabled {
+  opacity: 0.65;
+}
 .task-inspector-content [aria-label='AI 对话'].project-inspector-section {
   margin-top: 8px;
   border-top: 1px solid var(--line);
-}
-.task-project-selector {
-  display: grid;
-  gap: 4px;
-}
-.task-project-selector select {
-  min-width: 0;
-  width: 100%;
-  background: var(--theme-panel);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px;
 }
 
 .task-content-panel .rich-editor--compact .block-controls {

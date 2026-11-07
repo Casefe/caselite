@@ -60,7 +60,7 @@ export default function TaskProjectAction({
   return (
     <>
       <label className="task-project-selector">
-        <span>所属项目</span>
+        <span>项目</span>
         <select
           aria-label="所属项目"
           value={task.matter_id ?? ''}

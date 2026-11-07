@@ -458,6 +458,10 @@ export async function runProjectDemo(
           });})()`);
       };
       const inspectComposer = async (owner: string, input = composer) => {
+        if (owner.includes('.sidebar-agent')) {
+          const el = `document.querySelector(${JSON.stringify(owner)})`;
+          await wait(`${el} && !${el}.querySelector('.assistant-footnote,.model-settings-link')`);
+        }
         for (const control of [
           input,
           '[aria-label="添加文件与材料"]',
@@ -585,6 +589,31 @@ export async function runProjectDemo(
       await wait(
         "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
       );
+      const taskFields = ['任务状态', '任务优先级', '普通截止日期', '所属项目'];
+      await wait(`(()=> {
+        const e=document.querySelector('.task-inspector-content .inspector-disclosure[open]');
+        const rows=Array.from(e?.querySelectorAll('.task-properties-editor > label, .task-property-value')??[]);
+        return rows.map(row=>row.firstElementChild.textContent).join('/')==='状态/优先级/日期/负责人/项目' &&
+          rows[3].lastElementChild.textContent==='本人' &&
+          ${JSON.stringify(taskFields)}.every(label=>{
+            const control=e.querySelector('[aria-label="'+label+'"]');
+            return control && getComputedStyle(control).borderTopWidth==='0px' &&
+              getComputedStyle(control).backgroundColor==='rgba(0, 0, 0, 0)';
+          });
+      })()`);
+      await evaluate("document.querySelector('[aria-label=任务状态]').focus()");
+      await propertyKey('Tab', 'Tab', 9);
+      await wait(`document.activeElement?.matches('[aria-label=任务优先级]:focus-visible') &&
+        getComputedStyle(document.activeElement).outlineWidth==='2px'`);
+      await capture('task-attribute-keyboard-focus.png');
+      await evaluate('document.activeElement.blur()');
+      for (const control of taskFields)
+        await scrollAndCheck(`.task-inspector [aria-label="${control}"]`);
+      await click('.task-inspector .inspector-disclosure > summary');
+      await wait("!document.querySelector('.task-inspector .inspector-disclosure[open]')");
+      await click('.task-inspector .inspector-disclosure > summary');
+      await wait("document.querySelector('.task-inspector .inspector-disclosure[open]')");
+      await scrollAndCheck('.task-inspector .task-tag-toggle');
       await inspectComposer('.task-inspector .sidebar-agent .assistant-panel--compact');
       await wait(
         `document.querySelector('.task-inspector ${composer}')?.value.includes('合成草稿，不发送')`,

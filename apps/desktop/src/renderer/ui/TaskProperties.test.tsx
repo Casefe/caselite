@@ -41,6 +41,8 @@ function show(
       <TaskProperties
         task={current}
         disabled={false}
+        groupTags
+        suggestions={['既有标签']}
         onBlocked={blocked}
         onChanged={(next, state) => {
           changed(next, state);
@@ -279,7 +281,11 @@ it('retains unadded label text during composition and only writes after a delibe
     return response(current, request.idempotency_key);
   });
   const { blocked } = show(current, api);
+  const addLabel = () => screen.getByRole('button', { name: '添加标签' });
+  expect(screen.queryByLabelText('新标签')).toBeNull();
+  fireEvent.click(addLabel());
   const input = screen.getByLabelText('新标签');
+  expect(document.activeElement).toBe(input);
   fireEvent.compositionStart(input);
   fireEvent.change(input, { target: { value: '合成标签' } });
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
@@ -289,9 +295,33 @@ it('retains unadded label text during composition and only writes after a delibe
   fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
   expect(current.tags).toEqual(['合成标签']);
+  expect(screen.queryByLabelText('新标签')).toBeNull();
+  expect(document.activeElement).toBe(addLabel());
+  fireEvent.click(addLabel());
+  const duplicate = screen.getByLabelText('新标签');
+  fireEvent.change(duplicate, { target: { value: ' 合成标签 ' } });
+  const calls = api.mock.calls.length;
+  fireEvent.keyDown(duplicate, { key: 'Enter' });
+  expect(api).toHaveBeenCalledTimes(calls);
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  fireEvent.keyDown(duplicate, { key: 'Escape' });
+  expect(screen.queryByLabelText('新标签')).toBeNull();
+  expect(blocked).toHaveBeenLastCalledWith(false);
+  fireEvent.click(addLabel());
+  fireEvent.change(screen.getByLabelText('选择已使用的任务标签'), {
+    target: { value: '既有标签' },
+  });
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(current.tags).toEqual(['合成标签', '既有标签']);
+  expect(screen.queryByLabelText('新标签')).toBeNull();
+  fireEvent.click(addLabel());
+  fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '待取消' } });
+  fireEvent.click(screen.getByRole('button', { name: '取消标签输入' }));
+  expect(blocked).toHaveBeenLastCalledWith(false);
+  expect(screen.queryByLabelText('新标签')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '移除标签 合成标签' }));
   await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
-  expect(current.tags).toEqual([]);
+  expect(current.tags).toEqual(['既有标签']);
 });
 
 it('retains the exact date/priority request through unknown delivery and rejects mismatched attribute receipts', async () => {

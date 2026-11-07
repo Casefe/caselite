@@ -63,6 +63,16 @@ export default function TaskInspector({
               disabled={propertiesDisabled}
               suggestions={suggestions}
               groupTags
+              project={
+                onProjectChanged && onProjectDirty ? (
+                  <TaskProjectAction
+                    task={task}
+                    disabled={projectDisabled}
+                    onChanged={onProjectChanged}
+                    onDirty={onProjectDirty}
+                  />
+                ) : undefined
+              }
               onBlocked={reportBlocked}
               onChanged={onTaskChanged}
             />
@@ -74,21 +84,14 @@ export default function TaskInspector({
                 <dd>{taskStatusNames[task.status ?? 'todo']}</dd>
                 <dt>优先级</dt>
                 <dd>{taskPriorityNames[task.priority ?? 0]}</dd>
-                <dt>普通截止日期</dt>
+                <dt>日期</dt>
                 <dd>{task.due_date ?? '未设置'}</dd>
+                <dt>负责人</dt>
+                <dd>本人</dd>
+                <dt>项目</dt>
+                <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</dd>
               </dl>
             </details>
-          )}
-          {onProjectChanged && onProjectDirty && (
-            <section aria-label="项目" className="project-inspector-section task-project-section">
-              <h3>项目</h3>
-              <TaskProjectAction
-                task={task}
-                disabled={projectDisabled}
-                onChanged={onProjectChanged}
-                onDirty={onProjectDirty}
-              />
-            </section>
           )}
           <section aria-label="AI 对话" className="project-inspector-section">
             <h3>AI 对话</h3>
