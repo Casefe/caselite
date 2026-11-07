@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import RecordList, { initialTaskListState, type TaskListState } from './RecordList';
+vi.mock('./AgentPanel', () => ({ default: () => null }));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

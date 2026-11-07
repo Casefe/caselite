@@ -92,6 +92,10 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
     .object({
       ...mutation,
       operation: z.literal('create'),
+      status: taskStatusSchema.optional(),
+      priority: taskPrioritySchema.optional(),
+      due_date: ordinaryDateSchema.nullable().optional(),
+      matter_id: taskIdSchema.optional(),
       title: z.string().trim().min(1).max(160),
       objective: z.string().max(4000),
       objective_state: richState.optional(),

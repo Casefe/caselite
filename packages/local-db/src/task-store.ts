@@ -140,7 +140,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
         };
       }
       // 幂等结果、对象/正文修订和成功事件同事务提交；异常不留下半个成功结果。
-      return db.transaction((): TaskResponse => {
+      const commit = db.transaction((): TaskResponse => {
         const { request_id: diagnosticId, ...content } = request;
         void diagnosticId;
         const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex');
@@ -165,11 +165,34 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             return fail('INVALID_REQUEST', '任务说明超过4000字符，输入已保留。');
         }
         if (request.operation === 'create') {
+          if (
+            request.matter_id &&
+            !db
+              .prepare(
+                'SELECT id FROM matters WHERE id=? AND workspace_id=? AND archived_at IS NULL',
+              )
+              .get(request.matter_id, workspace)
+          )
+            return fail('NOT_FOUND', '项目不存在、已归档或不在当前工作区。请核对所选项目。');
           taskId = randomUUID();
           const now = new Date().toISOString();
           db.prepare(
-            'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,1,?)',
-          ).run(taskId, workspace, request.title, objective, now);
+            'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at,status,priority,due_date) VALUES(?,?,?,?,1,?,?,?,?)',
+          ).run(
+            taskId,
+            workspace,
+            request.title,
+            objective,
+            now,
+            request.status ?? 'todo',
+            request.priority ?? 0,
+            request.due_date ?? null,
+          );
+          if (request.matter_id)
+            db.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(
+              taskId,
+              request.matter_id,
+            );
           db.prepare(
             'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
           ).run(randomUUID(), taskId, randomUUID());
@@ -247,7 +270,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           JSON.stringify(result),
         );
         return result;
-      })();
+      });
+      // 创建先锁定写事务，保证校验项目与归组之间不会插入并发归档。
+      return request.operation === 'create' ? commit.immediate() : commit();
     },
     close() {
       db.close();

@@ -283,13 +283,13 @@ export async function runTaskDemo(
       await click('.simple-toolbar [aria-label=加粗]');
       await wait("document.querySelector('[data-testid=body-editor] strong')");
       await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "document.querySelector('.assistant-panel--compact')?.scrollIntoView({block:'nearest'})",
       );
       await wait(
-        "document.querySelector('.ai-inspector') && document.querySelector('[data-testid=body-editor]')",
+        "document.querySelector('.assistant-panel--compact') && document.querySelector('[data-testid=body-editor]')",
       );
       await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('属性')).click()",
+        "document.querySelector('.task-inspector details > summary').scrollIntoView({block:'start'})",
       );
       await wait(
         "document.querySelector('.inspector-content') && document.querySelector('[data-testid=save-body]')?.disabled===false",
@@ -527,10 +527,10 @@ export async function runTaskDemo(
       await click('[data-testid=toggle-favorite]');
       await wait("document.querySelector('[data-task-id]')");
       await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "document.querySelector('.assistant-panel--compact')?.scrollIntoView({block:'nearest'})",
       );
       await wait(
-        "document.querySelector('.ai-inspector') && document.querySelector('[data-testid=revision]')?.textContent==='2'",
+        "document.querySelector('.assistant-panel--compact') && document.querySelector('[data-testid=revision]')?.textContent==='2'",
       );
       await capture('three-column-ai.png');
       await setViewport(980, 740);
@@ -541,7 +541,7 @@ export async function runTaskDemo(
       await capture('three-column-compact.png');
       await setViewport(1920, 1080);
       await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.includes('属性')).click()",
+        "document.querySelector('.task-inspector details > summary').scrollIntoView({block:'start'})",
       );
       await click('[data-nav=home]');
       await wait("document.querySelector('.home-view')");
@@ -637,7 +637,7 @@ export async function runTaskDemo(
       }
       await capture('task-list.png');
       await evaluate(
-        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "document.querySelector('.assistant-panel--compact')?.scrollIntoView({block:'nearest'})",
       );
       await wait("document.querySelector('[data-testid=assistant-input]')");
       await capture('task-list-ai.png');
@@ -685,7 +685,7 @@ export async function runTaskDemo(
         "document.querySelector('.task-detail').dataset.activeTask",
       );
       await evaluate(
-        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "document.querySelector('.assistant-panel--compact')?.scrollIntoView({block:'nearest'})",
       );
       await wait("document.querySelector('.model-settings-link')");
       if (

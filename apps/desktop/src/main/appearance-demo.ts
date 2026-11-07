@@ -98,9 +98,9 @@ export async function runAppearanceDemo(
         "(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'外观合成测试');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
       );
       await click('[data-testid=create-task]');
-      await wait("document.querySelector('.task-inspector [role=tab]')");
+      await wait("document.querySelector('.task-inspector .assistant-panel--compact')");
       await evaluate(
-        "Array.from(document.querySelectorAll('.task-inspector [role=tab]')).find(e=>e.textContent.includes('AI 助手')).click()",
+        "document.querySelector('.assistant-panel--compact').scrollIntoView({block:'nearest'})",
       );
       await wait("document.querySelector('[data-testid=assistant-input]')");
       const toolbarColor = await evaluate(

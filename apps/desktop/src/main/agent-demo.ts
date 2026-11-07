@@ -254,19 +254,22 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     );
     await evaluate("document.querySelector('[data-testid=create-task]').click()");
     await wait('document.querySelector(\'[aria-label="属性与 AI 侧边栏"]\')');
-    await clickText('AI 助手');
     await wait("document.querySelector('[data-testid=assistant-input]')");
     await type('[data-testid=assistant-input]', '保留本任务的未发送草稿');
-    await clickText('属性');
-    await clickText('AI 助手');
+    await evaluate("document.querySelector('.task-inspector details > summary').click()");
+    await evaluate("document.querySelector('.task-inspector details > summary').click()");
     await wait(
       "document.querySelector('[data-testid=assistant-input]')?.value.includes('保留本任务')",
     );
-    if (await evaluate("document.querySelector('.ai-inspector').innerText.includes('【合成演示')"))
+    if (
+      await evaluate(
+        "document.querySelector('.assistant-panel--compact').innerText.includes('【合成演示')",
+      )
+    )
       throw new Error('Home output leaked into task');
     await clickText('发送');
     await wait(
-      "document.querySelector('.ai-inspector').innerText.includes('生成完成，内容待人工核对。')",
+      "document.querySelector('.assistant-panel--compact').innerText.includes('生成完成，内容待人工核对。')",
     );
     const side = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
@@ -297,7 +300,6 @@ export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, r
     writeFileSync(join(root, 'deepseek-settings.png'), Buffer.from(modelSettings.data, 'base64'));
     await evaluate("document.querySelector('.settings-back').click()");
     await wait("document.querySelector('.task-inspector')");
-    await clickText('AI 助手');
     await wait("document.querySelector('[data-testid=assistant-input]')");
     await wait("document.querySelector('.assistant-panel')?.innerText.includes('发送')");
     await new Promise((resolve) => setTimeout(resolve, 500));

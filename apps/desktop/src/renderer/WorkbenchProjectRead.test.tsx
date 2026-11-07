@@ -7,6 +7,7 @@ import type {
   Matter,
   Task,
   TaskRequest,
+  TaskResponse,
 } from '../preload/caselite-api';
 import App from './App';
 vi.mock('@tiptap/react', () => ({ useEditor: () => null }));
@@ -17,7 +18,12 @@ vi.mock('./editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   localExtensions: () => [],
   EditorSurface: () => <div />,
-  DraftEditor: () => <div />,
+  DraftEditor: ({ onChange }: { onChange?(value: { text: string; state: number[] }): void }) => (
+    <textarea
+      aria-label="任务内容"
+      onChange={(event) => onChange?.({ text: event.target.value, state: [1] })}
+    />
+  ),
 }));
 vi.mock('./ui/Workspace', () => ({
   Icon: () => null,
@@ -128,4 +134,84 @@ it('keeps the same mounted project section on failed task read without an extra 
   expect(screen.getByRole('tabpanel', { name: '任务', exact: true })).toBeTruthy();
   expect(document.querySelector('.project-catalog')?.hasAttribute('inert')).toBe(false);
   expect(catalog.mock.calls.filter(([r]) => r.operation === 'read_project')).toHaveLength(1);
+});
+
+it('keeps all create fields on project rejection and resolves a lost acknowledgement using the same key', async () => {
+  type Create = Extract<TaskRequest, { operation: 'create' }>;
+  const secondProject = { ...project, id: 'Q', title: '可用替代项目' };
+  const catalog = vi.fn(async (request: CatalogRequest): Promise<CatalogResponse> =>
+    request.operation === 'list_activity'
+      ? { ...response, activity: [], activity_has_more: false }
+      : { ...response, projects: [project, secondProject] },
+  );
+  const creates: Create[] = [];
+  const statusKeys: string[] = [];
+  let saved: Task | undefined;
+  const taskApi = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'create') {
+      creates.push(request);
+      if (request.matter_id === 'P')
+        return { ok: false, code: 'NOT_FOUND', message: '所选项目已归档' };
+      saved = { ...task, ...request, id: 'saved-task', matter_id: request.matter_id ?? null };
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '合成回执丢失' };
+    }
+    if (request.operation === 'status') {
+      statusKeys.push(request.idempotency_key);
+      if (statusKeys.length === 1 || !saved)
+        return { ok: false, code: 'NOT_FOUND', message: '暂未查到回执' };
+      return { ok: true, tasks: [saved], state: null, receipt: request.idempotency_key };
+    }
+    return { ok: true, tasks: [task], state: null, receipt: null };
+  });
+  window.caselite = { catalog, task: taskApi } as unknown as Window['caselite'];
+  render(<App />);
+  fireEvent.click(screen.getByText('项目入口'));
+  fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
+  await screen.findByLabelText('编辑项目名称');
+  fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+  await screen.findByRole('option', { name: '可用替代项目' });
+  const values = {
+    任务名称: '保留的合成标题',
+    任务内容: '保留的说明',
+    任务状态: 'in_progress',
+    任务优先级: '2',
+    普通截止日期: '2027-01-15',
+  };
+  const read = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
+  for (const [name, value] of Object.entries(values))
+    fireEvent.change(read(name), { target: { value } });
+  const assertDraft = (projectId: string) => {
+    for (const [name, value] of Object.entries(values)) expect(read(name).value).toBe(value);
+    expect(read('所属项目').value).toBe(projectId);
+  };
+  assertDraft('P');
+  fireEvent.click(screen.getByTestId('create-task'));
+  await screen.findByText('所选项目已归档');
+  assertDraft('P');
+  expect(creates).toHaveLength(1);
+
+  fireEvent.change(read('所属项目'), { target: { value: 'Q' } });
+  fireEvent.click(screen.getByTestId('create-task'));
+  await screen.findByText('创建结果尚未确认，请核对或重试原提交。');
+  assertDraft('Q');
+  expect(read('任务名称').disabled).toBe(true);
+  expect(read('所属项目').matches(':disabled')).toBe(true);
+  expect(creates[1]).toMatchObject({
+    matter_id: 'Q',
+    title: values.任务名称,
+    objective: values.任务内容,
+    objective_state: [1],
+    status: values.任务状态,
+    priority: 2,
+    due_date: values.普通截止日期,
+  });
+  expect(creates[0].idempotency_key).not.toBe(creates[1].idempotency_key);
+  fireEvent.click(screen.getByRole('button', { name: '核对创建结果' }));
+  await screen.findByRole('heading', { name: values.任务名称 });
+  expect(document.querySelector('.task-detail')?.getAttribute('data-active-task')).toBe(
+    'saved-task',
+  );
+  expect(creates).toHaveLength(2);
+  expect(statusKeys).toEqual([creates[1].idempotency_key, creates[1].idempotency_key]);
 });

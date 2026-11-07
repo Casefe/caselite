@@ -2709,16 +2709,6 @@ dd {
 .create-form-spacer {
   flex: 1;
 }
-.create-scope {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--theme-secondary);
-  font-size: 12px;
-}
 @media (max-width: 850px) {
   .create-form {
     margin: 24px;
@@ -4550,4 +4540,136 @@ select,
 .rich-editor--compact .format-bar select {
   width: 85px;
   padding: 3px 7px;
+}
+
+.task-create-properties {
+  margin: 12px 0;
+  padding: 8px 0;
+  min-width: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 8px;
+}
+.task-create-properties legend {
+  font-weight: 600;
+  font-size: 13px;
+}
+.create-form .task-create-properties label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+}
+.task-create-properties p {
+  grid-column: 1 / -1;
+}
+.create-form .task-create-properties :is(select, input),
+.task-inspector-content .task-properties-editor :is(select, input) {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+  color: var(--ink);
+  background: var(--theme-panel);
+  margin: 0;
+}
+.create-form-footer {
+  flex-wrap: wrap;
+}
+
+.inspector-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+  border-radius: 4px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.inspector-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.inspector-disclosure > summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.inspector-disclosure[open] > summary::after {
+  transform: rotate(45deg);
+}
+.inspector-disclosure > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.task-inspector-content > .inspector-disclosure {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.task-inspector-content .task-properties-editor {
+  margin: 0;
+  padding: 4px 0 8px;
+  border-top: 0;
+}
+.task-inspector-content .task-properties-editor label {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  gap: 8px;
+  margin: 4px 0;
+}
+.task-inspector-content .task-properties-editor :is(select, input) {
+  max-width: none;
+}
+.task-inspector-content .project-inspector-section {
+  border-top: 0;
+}
+.assistant-panel--compact .assistant-viewport {
+  max-height: 280px;
+}
+.assistant-panel--compact .assistant-compose {
+  padding: 8px;
+  border-radius: 12px;
+}
+.assistant-panel--compact .assistant-compose .assistant-input {
+  padding-inline: 4px;
+  font-size: 13px;
+}
+.assistant-panel--compact .assistant-actions {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.assistant-panel--compact .assistant-model {
+  flex-wrap: wrap;
+}
+
+.task-inspector-content .project-inspector-section h3 {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+@media (max-width: 780px) {
+  .task-detail .task-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(420px, auto) auto;
+    min-width: 0;
+    overflow: auto;
+  }
+  .task-detail .task-inspector {
+    height: auto;
+    overflow: visible;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
 }

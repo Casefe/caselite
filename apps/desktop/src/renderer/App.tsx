@@ -2,12 +2,14 @@ import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
-import type { Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
+import type { Matter, Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './projects/ProjectCatalog';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
+import { taskStatusNames } from './ui/task-status';
+import { taskPriorityNames } from './ui/task-priority';
 
 import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
 import { AppearanceProvider } from './ui/Appearance';
@@ -28,6 +30,13 @@ const mutation = () => ({
   request_id: crypto.randomUUID(),
   idempotency_key: crypto.randomUUID(),
 });
+type CreateTaskCommand = Extract<TaskRequest, { operation: 'create' }>;
+const defaultCreateProperties = {
+  status: 'todo' as Task['status'],
+  priority: 0,
+  due_date: '',
+  matter_id: '',
+};
 function check(result: TaskResponse) {
   if (!result.ok) throw new Error(result.message);
   return result;
@@ -184,6 +193,13 @@ function Workbench() {
   const [active, setActive] = useState<Task | null>(null);
   const [state, setState] = useState<number[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createProperties, setCreateProperties] = useState(defaultCreateProperties);
+  const [createSource, setCreateSource] = useState<ProjectViewState | null>(null);
+  const [projectOptions, setProjectOptions] = useState<Matter[]>([]);
+  const [projectOptionsState, setProjectOptionsState] = useState<'loading' | 'ready' | 'failed'>(
+    'loading',
+  );
+  const [projectOptionsAttempt, setProjectOptionsAttempt] = useState(0);
   const [title, setTitle] = useState('');
   const [objective, setObjective] = useState<RichDraft>(emptyDraft);
   const [objectiveState, setObjectiveState] = useState<number[] | null>(null);
@@ -196,7 +212,7 @@ function Workbench() {
   const [uncertain, setUncertain] = useState(false);
   const readSequence = useRef(0);
   const composing = useRef(false);
-  const createRequest = useRef<TaskRequest | null>(null);
+  const createRequest = useRef<CreateTaskCommand | null>(null);
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
     const sequence = ++listReadSequence.current;
@@ -218,6 +234,34 @@ function Workbench() {
     return () => window.removeEventListener('caselite:material-task-saved', refreshMaterials);
   }, [refresh]);
   useEffect(() => {
+    if (!creating) return;
+    let current = true;
+    void (async () => {
+      try {
+        const result = await window.caselite.catalog({ operation: 'list', protocol_version: 1 });
+        if (!result.ok) throw new Error(result.message);
+        if (!current) return;
+        setProjectOptions(result.projects.filter((project) => !project.archived_at));
+        setProjectOptionsState('ready');
+      } catch {
+        if (current) setProjectOptionsState('failed');
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [creating, projectOptionsAttempt]);
+  const createDirty =
+    creating &&
+    Boolean(
+      title.trim() ||
+      objective.state ||
+      createProperties.status !== defaultCreateProperties.status ||
+      createProperties.priority ||
+      createProperties.due_date ||
+      createProperties.matter_id !== (createSource?.projectId ?? ''),
+    );
+  useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (
         dirty ||
@@ -225,7 +269,7 @@ function Workbench() {
         busy ||
         uncertain ||
         agentPrompt.text.trim() ||
-        (creating && (title.trim() || objective.text.trim()))
+        createDirty
       ) {
         event.preventDefault();
         event.returnValue = '';
@@ -233,13 +277,13 @@ function Workbench() {
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty, propertiesBlocked, busy, uncertain, creating, title, objective, agentPrompt]);
+  }, [dirty, propertiesBlocked, busy, uncertain, createDirty, agentPrompt]);
   function canLeave() {
     if (dirty || propertiesBlocked || busy || uncertain) {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
-    if (creating && (title.trim() || objective.text.trim())) {
+    if (createDirty) {
       setError('请先完成或取消当前新建表单。');
       return false;
     }
@@ -256,11 +300,17 @@ function Workbench() {
     setCreating(false);
     setError('');
   }
-  function newTask() {
+  function newTask(source: ProjectViewState | null = null) {
     if (!canLeave()) return;
     readSequence.current++;
     setLoading(false);
     setView('tasks');
+    setTitle('');
+    setObjective(emptyDraft());
+    setProjectOptionsState('loading');
+    setProjectOptions([]);
+    setCreateProperties({ ...defaultCreateProperties, matter_id: source?.projectId ?? '' });
+    setCreateSource(source);
     setCreating(true);
     setTaskReturn(null);
     setError('');
@@ -304,7 +354,19 @@ function Workbench() {
       if (seq === readSequence.current) setLoading(false);
     }
   }
-  async function create() {
+  function cancelCreate() {
+    if (busy || createRequest.current) return;
+    if (createSource) {
+      setProjectView(createSource);
+      setView('projects');
+    }
+    setCreating(false);
+    setError('');
+  }
+  async function create(mode: 'submit' | 'retry') {
+    if (busy || (mode === 'retry' && !createRequest.current)) return;
+    const original = createRequest.current;
+
     setBusy(true);
     setError('');
     const command = createRequest.current ?? {
@@ -312,29 +374,60 @@ function Workbench() {
       operation: 'create' as const,
       title,
       objective: objective.text,
+      status: createProperties.status,
+      priority: createProperties.priority,
+      due_date: createProperties.due_date || null,
+      ...(createProperties.matter_id ? { matter_id: createProperties.matter_id } : {}),
       ...(objective.state ? { objective_state: objective.state } : {}),
     };
     createRequest.current = command;
+    const lookup = () =>
+      window.caselite.task({
+        operation: 'status',
+        protocol_version: 1,
+        idempotency_key: command.idempotency_key,
+      });
     try {
-      let response = await window.caselite.task(command);
-      if (!response.ok && response.code === 'RESULT_UNKNOWN') {
+      // 未确认的提交先查原键，仅在用户选择重试且查无回执时重发同一请求。
+      let response = original ? await lookup() : await window.caselite.task(command);
+      const replay = original && mode === 'retry' && !response.ok && response.code === 'NOT_FOUND';
+      if (replay) response = await window.caselite.task(command);
+      if ((!original || replay) && !response.ok && response.code === 'RESULT_UNKNOWN') {
         setUncertain(true);
-        response = await window.caselite.task({
-          operation: 'status',
-          protocol_version: 1,
-          idempotency_key: 'idempotency_key' in command ? command.idempotency_key : '',
-        });
-        if (!response.ok) throw new Error('创建结果尚未确认，请保持原输入并再次核对。');
+        response = await lookup();
+        if (!response.ok) throw new Error('创建结果尚未确认，请核对或重试原提交。');
       } else if (!response.ok) {
-        createRequest.current = null;
-        setUncertain(false);
+        if (
+          !original ||
+          (replay && (response.code === 'NOT_FOUND' || response.code === 'INVALID_REQUEST'))
+        ) {
+          createRequest.current = null;
+          setUncertain(false);
+        }
+        throw new Error(response.message);
       }
       const r = check(response);
+      const saved = r.tasks[0];
+      if (
+        r.receipt !== command.idempotency_key ||
+        r.tasks.length !== 1 ||
+        !saved ||
+        saved.matter_id !== (command.matter_id ?? null)
+      )
+        throw new Error('创建回执与原提交不符，请核对原提交。');
       setUncertain(false);
       createRequest.current = null;
-      setActive(r.tasks[0]);
+      setTaskReturn(
+        createSource
+          ? {
+              taskId: saved.id,
+              source: { ...createSource, returnTaskId: saved.id },
+            }
+          : null,
+      );
+      setActive(saved);
       setState(null);
-      setObjectiveState(command.operation === 'create' ? (command.objective_state ?? null) : null);
+      setObjectiveState(command.objective_state ?? null);
       setView('tasks');
       setDetailTab('成果正文');
       setCreating(false);
@@ -342,6 +435,7 @@ function Workbench() {
       setObjective(emptyDraft());
       void refresh().catch(() => setError('任务已创建，列表刷新失败；请重试列表，不要重复创建。'));
     } catch (e) {
+      setUncertain(Boolean(createRequest.current));
       setError(e instanceof Error ? e.message : '创建失败');
     } finally {
       setBusy(false);
@@ -414,7 +508,7 @@ function Workbench() {
             className="create-form"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!composing.current) void create();
+              if (!composing.current) void create('submit');
             }}
           >
             <header className="create-form-header">
@@ -431,7 +525,7 @@ function Workbench() {
                 className="create-close"
                 aria-label="取消新建任务"
                 disabled={busy || uncertain}
-                onClick={() => setCreating(false)}
+                onClick={cancelCreate}
               >
                 ×
               </button>
@@ -444,7 +538,6 @@ function Workbench() {
                   value={title}
                   onChange={(e) => {
                     setTitle(e.target.value);
-                    if (!busy) createRequest.current = null;
                   }}
                   required
                   maxLength={160}
@@ -464,7 +557,6 @@ function Workbench() {
                   disabled={busy || uncertain}
                   onChange={(value) => {
                     setObjective(value);
-                    if (!busy) createRequest.current = null;
                   }}
                   placeholder="添加说明…"
                 />
@@ -474,13 +566,112 @@ function Workbench() {
                   </p>
                 )}
               </div>
+              <fieldset className="task-create-properties" disabled={busy || uncertain}>
+                <legend>任务属性</legend>
+                <label>
+                  <span>状态</span>
+                  <select
+                    aria-label="任务状态"
+                    value={createProperties.status}
+                    onChange={(e) =>
+                      setCreateProperties({
+                        ...createProperties,
+                        status: e.target.value as Task['status'],
+                      })
+                    }
+                  >
+                    {Object.entries(taskStatusNames).map(([value, name]) => (
+                      <option key={value} value={value}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>优先级</span>
+                  <select
+                    aria-label="任务优先级"
+                    value={createProperties.priority}
+                    onChange={(e) =>
+                      setCreateProperties({
+                        ...createProperties,
+                        priority: Number(e.target.value),
+                      })
+                    }
+                  >
+                    {Object.entries(taskPriorityNames).map(([value, name]) => (
+                      <option key={value} value={value}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>普通截止日期</span>
+                  <input
+                    type="date"
+                    aria-label="普通截止日期"
+                    min="0001-01-01"
+                    max="9999-12-31"
+                    value={createProperties.due_date}
+                    onChange={(e) =>
+                      setCreateProperties({ ...createProperties, due_date: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>所属项目</span>
+                  <select
+                    aria-label="所属项目"
+                    value={createProperties.matter_id}
+                    disabled={projectOptionsState === 'loading'}
+                    onChange={(e) =>
+                      setCreateProperties({ ...createProperties, matter_id: e.target.value })
+                    }
+                  >
+                    <option value="">独立任务</option>
+                    {createProperties.matter_id &&
+                      !projectOptions.some((p) => p.id === createProperties.matter_id) && (
+                        <option value={createProperties.matter_id}>
+                          {projectOptionsState === 'loading'
+                            ? '正在读取所选项目…'
+                            : '所选项目暂不可用'}
+                        </option>
+                      )}
+                    {projectOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {projectOptionsState !== 'ready' && (
+                  <p role="status">
+                    {projectOptionsState === 'loading' ? '正在读取项目…' : '项目列表读取失败。'}
+                    {projectOptionsState === 'failed' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProjectOptionsState('loading');
+                          setProjectOptions([]);
+                          setProjectOptionsAttempt((n) => n + 1);
+                        }}
+                      >
+                        重读项目列表
+                      </button>
+                    )}
+                  </p>
+                )}
+              </fieldset>
             </div>
             <footer className="create-form-footer">
-              <span className="create-scope">
-                <Icon name="check" size={15} /> 独立任务
-              </span>
+              {uncertain && (
+                <button type="button" disabled={busy} onClick={() => void create('retry')}>
+                  重试原创建请求
+                </button>
+              )}
               <span className="create-form-spacer" />
-              <button type="button" disabled={busy || uncertain} onClick={() => setCreating(false)}>
+              <button type="button" disabled={busy || uncertain} onClick={cancelCreate}>
                 取消
               </button>
               <button
@@ -503,6 +694,7 @@ function Workbench() {
             backSlot={projectBackSlot}
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
+            onNewTask={newTask}
             onDirty={setDirty}
             onChanged={async () => {
               try {
@@ -658,7 +850,7 @@ function Workbench() {
             viewState={taskListState}
             onViewState={setTaskListState}
             onOpen={(id) => void open(id)}
-            onNew={newTask}
+            onNew={() => newTask()}
             propertiesBlocked={propertiesBlocked}
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}

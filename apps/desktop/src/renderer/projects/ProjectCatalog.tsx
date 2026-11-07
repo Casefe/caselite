@@ -75,7 +75,7 @@ function ProjectConversation({
           </select>
           {task && (
             <div inert={blocked}>
-              <AgentPanel key={task.id} scope={task.id} />
+              <AgentPanel key={task.id} scope={task.id} variant="compact" />
             </div>
           )}
         </>
@@ -87,6 +87,7 @@ function ProjectConversation({
 export default function ProjectCatalog({
   tasks,
   onOpen,
+  onNewTask,
   onDirty,
   onChanged,
   initialView,
@@ -95,6 +96,7 @@ export default function ProjectCatalog({
 }: {
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
+  onNewTask?(source: ProjectViewState): void;
   initialView?: ProjectViewState | null;
   backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
@@ -295,21 +297,21 @@ export default function ProjectCatalog({
     ).find((button) => button.closest<HTMLElement>('[data-project-id]')?.dataset.projectId === id);
     (title ?? workspace.current?.querySelector<HTMLInputElement>('[aria-label=搜索项目]'))?.focus();
   }, [editor]);
+  const sourceView = (id: string, documentId?: string): ProjectViewState => ({
+    selected: p?.id ?? selected,
+    projectId: editor?.project.id ?? null,
+    section,
+    query,
+    statusFilter,
+    order,
+    columns,
+    scrollTop: scroll.current?.scrollTop ?? 0,
+    workspaceScrollTop: workspace.current?.scrollTop ?? 0,
+    returnTaskId: id,
+    ...(documentId ? { documentId } : {}),
+  });
   const openTask = (id: string, documentId?: string) => {
-    if (navigationPending || dirty || creating || reading || c.pending || c.unknown) return;
-    onOpen(id, {
-      selected: p?.id ?? selected,
-      projectId: editor?.project.id ?? null,
-      section,
-      query,
-      statusFilter,
-      order,
-      columns,
-      scrollTop: scroll.current?.scrollTop ?? 0,
-      workspaceScrollTop: workspace.current?.scrollTop ?? 0,
-      returnTaskId: id,
-      ...(documentId ? { documentId } : {}),
-    });
+    if (!blocked) onOpen(id, sourceView(id, documentId));
   };
   const open = async (project: Matter) => {
     if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
@@ -622,6 +624,15 @@ export default function ProjectCatalog({
                 className="project-record-panel"
               >
                 <h2>项目任务</h2>
+                {onNewTask && p && !p.archived_at && (
+                  <button
+                    type="button"
+                    disabled={blocked}
+                    onClick={() => onNewTask(sourceView(''))}
+                  >
+                    新建任务
+                  </button>
+                )}
                 {tasks
                   .filter((t) => t.matter_id === editor.project.id)
                   .map((t) => (
@@ -695,7 +706,7 @@ export default function ProjectCatalog({
                   <p>
                     {p?.task_count
                       ? '任务列表正在更新，请稍后重读。'
-                      : '还没有任务。可在此归入已有任务，或从独立任务创建项目。'}
+                      : '还没有任务。可在此新建任务或归入已有任务。'}
                   </p>
                 )}
               </section>
@@ -864,7 +875,6 @@ export default function ProjectCatalog({
         <footer className="collection-footer">真实本地项目 · 仅此设备</footer>
       </div>
       <aside className="project-properties" aria-label="项目辅助栏">
-        <h2 className="project-inspector-heading">属性</h2>
         {p && !sourceUnavailable ? (
           <>
             <ProjectPropertyEditor
@@ -918,8 +928,8 @@ export default function ProjectCatalog({
               }
             />
             {editor && (
-              <section className="project-inspector-section" aria-label="活动">
-                <h3>活动</h3>
+              <details className="project-inspector-section inspector-disclosure" open>
+                <summary>活动</summary>
                 <ActivityList
                   key={p.id}
                   scope={{ type: 'project', id: p.id }}
@@ -929,7 +939,7 @@ export default function ProjectCatalog({
                   onProject={openActivityProject}
                   compact
                 />
-              </section>
+              </details>
             )}
             {taskScopeUnavailable ? (
               <section className="project-inspector-section" aria-label="AI 对话">

@@ -158,12 +158,14 @@ const ComposerInput = forwardRef<
 
 export default function AgentPanel({
   scope,
+  variant = 'default',
   draft: controlled,
   onDraft,
   editorRef,
   onConversationChange,
 }: {
   scope: string;
+  variant?: 'default' | 'compact';
   draft?: RichDraft;
   onDraft?(value: RichDraft): void;
   editorRef?: RefObject<DraftEditorHandle | null>;
@@ -407,7 +409,7 @@ export default function AgentPanel({
         value={(id, task, name) => void materials.readReference(id, task, name)}
       >
         <section
-          className={`assistant-panel${runs.length ? ' assistant-panel--conversation' : ''}`}
+          className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${runs.length ? ' assistant-panel--conversation' : ''}`}
           aria-label={scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'}
         >
           {mockPreview && (

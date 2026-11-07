@@ -403,6 +403,7 @@ export default function RecordList({
         key={selected?.id ?? 'empty'}
         task={loading || error ? null : selected}
         onOpen={openTask}
+        onActivityOpen={openTask}
         onPropertiesBlocked={onPropertiesBlocked}
         onTaskChanged={onTaskChanged}
       />

@@ -423,3 +423,118 @@ describe('rich task descriptions preserve identity and confirmed formatting', ()
     store.close();
   });
 });
+
+it('creates project tasks with atomic attributes and rejects unavailable projects before writing', () => {
+  const { file, store } = setup();
+  const other = openTaskStore(file, migrations, 'other');
+  const observer = openToolchainProbe(file, migrations);
+  const db = observer.sqlite;
+  const application = createTaskApplication(store);
+  const count = () =>
+    [
+      'task_items',
+      'documents',
+      'task_projects',
+      'task_objective_revisions',
+      'task_activity',
+      'task_receipts',
+    ].map((table) =>
+      db
+        .prepare('SELECT count(*) AS n FROM ' + table)
+        .pluck()
+        .get(),
+    );
+  const project = (owner = store) => {
+    const result = owner.catalog.execute({
+      ...identity(),
+      operation: 'create_project',
+      title: '合成项目',
+      attributes: {
+        project_type: 'general',
+        assignee: null,
+        priority: 1,
+        start_date: null,
+        target_date: '2027-12-31',
+        tags: [],
+      },
+    });
+    if (!result.ok || !result.target_id) throw new Error('Project fixture failed');
+    return result.target_id;
+  };
+  try {
+    const matter = project();
+    const outside = project(other);
+    const archived = project();
+    db.prepare('UPDATE matters SET archived_at=? WHERE id=?').run('2026-11-07', archived);
+    const create = {
+      ...identity(),
+      operation: 'create' as const,
+      title: '合成任务',
+      objective: '',
+      objective_state: binary('合成说明'),
+      status: 'in_progress' as const,
+      priority: 2,
+      due_date: '2027-01-15',
+    };
+    for (const matter_id of [outside, archived, randomUUID()]) {
+      expect(application.execute({ ...create, matter_id })).toMatchObject({
+        ok: false,
+        code: 'NOT_FOUND',
+      });
+      expect(count()).toEqual([0, 0, 0, 0, 0, 0]);
+    }
+    expect(
+      application.execute({ ...create, due_date: '2027-02-29', matter_id: matter }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    // 故障位于文档之后、回执之前，确保事务会回退已写入的任务与关联。
+    db.exec(
+      "CREATE TRIGGER reject_task_receipt BEFORE INSERT ON task_receipts BEGIN SELECT RAISE(ABORT, 'synthetic'); END",
+    );
+    expect(application.execute({ ...create, matter_id: matter })).toMatchObject({
+      ok: false,
+      code: 'WRITE_FAILED',
+    });
+    expect(count()).toEqual([0, 0, 0, 0, 0, 0]);
+    db.exec('DROP TRIGGER reject_task_receipt');
+    const created = value(application.execute({ ...create, matter_id: matter }));
+    const [task] = created.tasks;
+    expect(task).toMatchObject({
+      matter_id: matter,
+      matter_title: '合成项目',
+      status: 'in_progress',
+      priority: 2,
+      due_date: '2027-01-15',
+      objective: '合成说明',
+      version: 1,
+    });
+    expect(count()).toEqual([1, 1, 1, 1, 1, 1]);
+    db.prepare('UPDATE matters SET archived_at=? WHERE id=?').run('2026-11-07', matter);
+    expect(
+      application.execute({
+        operation: 'status',
+        protocol_version: 1,
+        idempotency_key: create.idempotency_key,
+      }),
+    ).toEqual(created);
+    expect(application.execute({ ...create, request_id: randomUUID(), matter_id: matter })).toEqual(
+      created,
+    );
+    expect(application.execute({ ...create, matter_id: matter, priority: 3 })).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    expect(count()).toEqual([1, 1, 1, 1, 1, 1]);
+    const reopened = openTaskStore(file, migrations);
+    try {
+      expect(
+        value(reopened.execute({ operation: 'read', protocol_version: 1, task_id: task.id })),
+      ).toMatchObject({ tasks: [task], objective_state: create.objective_state });
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    observer.sqlite.close();
+    other.close();
+    store.close();
+  }
+});

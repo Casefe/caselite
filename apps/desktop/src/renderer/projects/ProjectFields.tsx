@@ -8,7 +8,7 @@ export type ProjectValues = {
   status: Matter['status'];
   attributes: ProjectAttributes;
 };
-const projectTypes = {
+export const projectTypes = {
   general: '通用',
   litigation: '诉讼（未细分）',
   civil_litigation: '民事诉讼',
@@ -250,7 +250,7 @@ export default function ProjectFields({
       />
     </ProjectPropertyRow>
   );
-  return (
+  const properties = (
     <>
       <fieldset className="project-fields">
         <legend className={creating ? undefined : 'sr-only'}>
@@ -342,8 +342,24 @@ export default function ProjectFields({
         {!creating && nameRow}
         {!creating && typeRow}
       </fieldset>
-      <details ref={professionalCard} className="project-professional-card" open>
-        <summary>领域：{group ? projectTypes[group] : ''}</summary>
+    </>
+  );
+  return (
+    <>
+      {creating ? (
+        properties
+      ) : (
+        <details className="inspector-disclosure" open>
+          <summary>属性</summary>
+          {properties}
+        </details>
+      )}
+      <details
+        ref={professionalCard}
+        className="project-professional-card inspector-disclosure"
+        open
+      >
+        <summary>领域</summary>
         <fieldset className="project-fields" disabled={disabled} aria-label="专业属性">
           {group ? (
             Object.entries(professionalFields[group]).map(([key, label]) => (
