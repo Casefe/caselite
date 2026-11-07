@@ -170,13 +170,31 @@ export async function runProjectDemo(
           await capture(`navigation-${width}-${theme}.png`);
         }
       }
-      window.setSize(1440, 900);
+      window.setSize(640, 900);
+      await wait('innerWidth===640');
       await evaluate("document.documentElement.dataset.theme='light'");
+      const sourceScroll = await evaluate(
+        "(()=>{const view=document.querySelector('.project-catalog');view.scrollTop=80;return view.scrollTop;})()",
+      );
+      if (sourceScroll <= 0) throw new Error('Navigation scroll fixture is not scrollable');
       await evaluate(
         `document.querySelector('#project-panel-tasks [data-project-task="${taskId}"]').focus()`,
       );
       window.focus();
       window.webContents.focus();
+      const keyboardFocus = {
+        window: window.isFocused(),
+        renderer: await evaluate(
+          '({focused:document.hasFocus(),task:document.activeElement?.dataset.projectTask,disabled:document.activeElement?.disabled})',
+        ),
+      };
+      if (
+        !keyboardFocus.window ||
+        !keyboardFocus.renderer.focused ||
+        keyboardFocus.renderer.task !== taskId ||
+        keyboardFocus.renderer.disabled
+      )
+        throw new Error('Native Enter has no focused enabled Task');
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
       window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
@@ -208,7 +226,23 @@ export async function runProjectDemo(
         "document.querySelector('#project-tab-tasks[aria-selected=true]') && document.querySelector('[aria-label=编辑项目名称]')?.value.endsWith('导航已保存')",
       );
       await wait(`document.activeElement?.dataset.projectTask===${JSON.stringify(taskId)}`);
+      const returnedScroll = await evaluate("document.querySelector('.project-catalog').scrollTop");
+      if (returnedScroll !== sourceScroll)
+        throw new Error('Navigation lost native scroll position');
       await capture('navigation-returned-current.png');
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+      await wait(
+        `document.activeElement!==document.body && document.activeElement?.dataset.projectTask!==${JSON.stringify(taskId)}`,
+      );
+      const tabFocus = await evaluate(
+        '({tag:document.activeElement.tagName,label:document.activeElement.textContent,focused:document.hasFocus()})',
+      );
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab', modifiers: ['shift'] });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab', modifiers: ['shift'] });
+      await wait(`document.activeElement?.dataset.projectTask===${JSON.stringify(taskId)}`);
+      window.setSize(1440, 900);
+      await wait('innerWidth===1440');
       await button('返回项目列表');
       const preferences = await evaluate(
         "({query:document.querySelector('[aria-label=搜索项目]').value,order:document.querySelector('[aria-label=项目排序]').value,updated:Array.from(document.querySelectorAll('.project-display-menu label')).find(e=>e.textContent==='更新时间').querySelector('input').checked})",
@@ -265,6 +299,10 @@ export async function runProjectDemo(
             project: currentProject,
             bodySha256: createHash('sha256').update(JSON.stringify(saved.state)).digest('hex'),
             preferences,
+            keyboardFocus,
+            tabFocus,
+            sourceScroll,
+            returnedScroll,
             layouts,
             isolation,
           },
