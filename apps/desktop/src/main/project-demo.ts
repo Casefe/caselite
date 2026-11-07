@@ -1,7 +1,7 @@
 import { app, type BrowserWindow, session } from 'electron';
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
 import { openToolchainProbe } from '@caselite/local-db';
 
@@ -811,6 +811,271 @@ export async function runProjectDemo(
           providerDispatches: 0,
           isolation,
         }),
+      );
+      return;
+    }
+    const routeMode = process.env.CASELITE_PROJECT_ROUTES_TEST;
+    if (routeMode) {
+      if (!['seed', 'write', 'read'].includes(routeMode))
+        throw new Error('Invalid routes test mode');
+      const { task: original } = JSON.parse(
+        readFileSync(join(root, 'promotion-expected.json'), 'utf8'),
+      ) as { task: Extract<TaskResponse, { ok: true }>['tasks'][number] };
+      const mutation = () => ({
+        protocol_version: 1,
+        request_id: randomUUID(),
+        idempotency_key: randomUUID(),
+      });
+      const catalog = async (request: object) => {
+        const result: CatalogResponse = await evaluate(
+          `window.caselite.catalog(${JSON.stringify({ protocol_version: 1, ...request })})`,
+        );
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      };
+      const task = async (request: object) => {
+        const result: TaskResponse = await evaluate(
+          `window.caselite.task(${JSON.stringify({ protocol_version: 1, ...request })})`,
+        );
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      };
+      const click = async (selector: string) => {
+        const target = `document.querySelector(${JSON.stringify(selector)})`;
+        await wait(`${target} && !${target}.disabled`);
+        await evaluate(`${target}.click()`);
+      };
+      const list = async () => (await task({ operation: 'list' })).tasks;
+      const panel = (name: string) => `#project-panel-${name}:not([hidden])`;
+      const link = (name: string, id: string) => `${panel(name)} [data-project-document="${id}"]`;
+      const identity = (item: typeof original) => [item.id, item.document_id, item.body_id];
+      const read = (id: string) => task({ operation: 'read', task_id: id });
+      const navigate = (name: string) => click(`[data-nav=${name}]`);
+      const originalProject = original.matter_id;
+      const projectTitle = '合成项目乙';
+      const secondTitle = '合成项目乙任务';
+      const standaloneTitle = '合成独立任务';
+      if (routeMode === 'seed') {
+        const created = await catalog({
+          ...mutation(),
+          operation: 'create_project',
+          title: projectTitle,
+        });
+        const second = (
+          await task({ ...mutation(), operation: 'create', title: secondTitle, objective: '' })
+        ).tasks[0];
+        await task({ ...mutation(), operation: 'create', title: standaloneTitle, objective: '' });
+        await catalog({
+          ...mutation(),
+          operation: 'assign_task',
+          task_id: second.id,
+          expected_version: second.version,
+          matter_id: created.target_id,
+        });
+        return;
+      }
+      const rows = await list();
+      const second = rows.find((row) => row.title === secondTitle);
+      const standalone = rows.find((row) => row.title === standaloneTitle);
+      if (
+        rows.length !== 3 ||
+        !second?.matter_id ||
+        !standalone ||
+        standalone.matter_id ||
+        !originalProject ||
+        second.matter_id === originalProject ||
+        rows.find((row) => row.id === original.id)?.matter_id !== originalProject
+      )
+        throw new Error('Expected two grouped tasks and one independent Task');
+      const openOriginal = async () => {
+        await button(original.title);
+        await wait(
+          `document.querySelector('.catalog-actions')?.dataset.projectId===${JSON.stringify(originalProject)}`,
+        );
+      };
+      const overview = () => catalog({ operation: 'read_project', id: originalProject });
+      const before = await overview();
+      const files = JSON.parse(readFileSync(join(root, 'files-expected.json'), 'utf8')) as {
+        id: string;
+        asset_version_id: string;
+        sha256: string;
+      }[];
+      const verifyOriginals = () => {
+        for (const file of files) {
+          const path = join(
+            isolation.userData,
+            'materials',
+            'originals',
+            file.asset_version_id + '.pdf',
+          );
+          if (createHash('sha256').update(readFileSync(path)).digest('hex') !== file.sha256)
+            throw new Error('Original PDF bytes changed');
+        }
+      };
+      verifyOriginals();
+      const assertRows = (ids: string[]) =>
+        wait(
+          `JSON.stringify(Array.from(document.querySelectorAll('[data-row-task]'), e => e.dataset.rowTask).sort())===${JSON.stringify(JSON.stringify(ids.sort()))}`,
+        );
+      await navigate('tasks');
+      await assertRows([original.id, second.id, standalone.id]);
+      await select('任务项目范围', second.matter_id);
+      await assertRows([second.id]);
+      await select('任务项目范围', 'workspace');
+      await assertRows([original.id, second.id, standalone.id]);
+      await navigate('projects');
+      await button(projectTitle);
+      await projectTab('tasks');
+      await wait(
+        `${JSON.stringify(second.id)}===document.querySelector('#project-panel-tasks [data-project-task]')?.dataset.projectTask && document.querySelectorAll('#project-panel-tasks [data-project-task]').length===1`,
+      );
+      await click('#project-tab-deliverables');
+      await wait(
+        "document.querySelector('#project-panel-deliverables').textContent.includes('还没有已保存的交付草稿')",
+      );
+      if (routeMode === 'write') {
+        await projectTab('tasks');
+        await select('归入已有任务', standalone.id);
+        await button('归入项目');
+        await wait(
+          `document.querySelector('#project-panel-tasks [data-project-task="${standalone.id}"]')`,
+        );
+        await click(`#project-panel-tasks [data-project-task="${standalone.id}"]`);
+        await wait(`document.querySelector('[data-active-task="${standalone.id}"]')`);
+        await click('[aria-label="返回来源项目"]');
+        await wait(
+          `document.activeElement?.dataset.projectTask===${JSON.stringify(standalone.id)}`,
+        );
+        await click(`#project-panel-tasks [data-project-task="${standalone.id}"] + button`);
+        await wait(
+          `!document.querySelector('#project-panel-tasks [data-project-task="${standalone.id}"]')`,
+        );
+        const restored = (await read(standalone.id)).tasks[0];
+        if (
+          restored.matter_id ||
+          JSON.stringify(identity(restored)) !== JSON.stringify(identity(standalone))
+        )
+          throw new Error('Assignment round trip changed Task identity');
+      }
+      await button('返回项目列表');
+      await openOriginal();
+      await wait("document.querySelector('[aria-label=已发布项目评论]')");
+      const comment = await evaluate(
+        "document.querySelector('[aria-label=已发布项目评论]').textContent",
+      );
+      await click('#project-tab-files');
+      const fileLink = link('files', original.document_id);
+      await wait(
+        `document.querySelector(${JSON.stringify(fileLink)}) && document.querySelectorAll('#project-panel-files [data-source-id]').length===2`,
+      );
+      await capture('routes-files.png');
+      await click(`${panel('files')} [data-source-id="${files[0].id}"] button`);
+      await wait(
+        "document.querySelector('.material-paper canvas')?.width>0 && document.querySelector('.material-paper .react-pdf__Page__textContent')?.textContent.length>0",
+      );
+      await capture('routes-pdf.png');
+      await button('收起阅读');
+      const checkBody = (sample: string) =>
+        wait(
+          `document.querySelector('[data-active-task="${original.id}"] [data-testid=body-editor]')?.textContent.includes(${JSON.stringify(sample)})`,
+        );
+      const returned = (name: string) =>
+        wait(
+          `document.activeElement === document.querySelector(${JSON.stringify(link(name, original.document_id))}) && document.activeElement?.dataset.projectDocument===${JSON.stringify(original.document_id)}`,
+        );
+      const append = async (sample: string) => {
+        await evaluate(`(() => {
+          const editor = document.querySelector('[data-testid=body-editor]');
+          editor.focus();
+          const selection = window.getSelection();
+          selection.selectAllChildren(editor);
+          selection.collapseToEnd();
+          document.execCommand('insertText', false, ${JSON.stringify(sample)});
+        })()`);
+        await wait("!document.querySelector('[data-testid=save-body]').disabled");
+        await click('[data-testid=save-body]');
+        await wait(
+          "document.querySelector('[data-testid=save-body]').disabled && document.querySelector('[data-testid=save-status]').textContent.includes('已保存到此设备')",
+        );
+      };
+      const sample1 = '文件入口保存的合成内容。';
+      const sample2 = '交付草稿保存的合成内容。';
+      await click(fileLink);
+      await checkBody('原任务正文与引用保全样本。');
+      if (routeMode === 'write') await append(sample1);
+      await checkBody(sample1);
+      await click('[aria-label="返回来源项目"]');
+      await returned('files');
+      await click('#project-tab-deliverables');
+      const draftLink = link('deliverables', original.document_id);
+      await wait(`document.querySelector(${JSON.stringify(draftLink)})`);
+      await capture('routes-drafts.png');
+      await click(draftLink);
+      await checkBody(sample1);
+      if (routeMode === 'write') await append(sample2);
+      await checkBody(sample2);
+      await capture('routes-editor.png');
+      await click('[aria-label="返回来源项目"]');
+      await returned('deliverables');
+      await click(draftLink);
+      await checkBody(sample2);
+      await click('[aria-label="返回来源项目"]');
+      await returned('deliverables');
+      if (routeMode === 'write') {
+        const archive = async (archived: boolean) => {
+          const doc = (await catalog({ operation: 'list' })).documents.find(
+            (row) => row.id === original.document_id,
+          );
+          if (!doc) throw new Error('Missing fixture document');
+          await catalog({
+            ...mutation(),
+            operation: 'archive_document',
+            id: doc.id,
+            expected_version: doc.version,
+            archived,
+          });
+        };
+        await archive(true);
+        try {
+          await click(draftLink);
+          await wait(
+            "document.querySelector('.error[role=alert]')?.textContent.includes('文档已归档或已离开来源项目') && document.querySelector('#project-panel-deliverables:not([hidden])') && !document.querySelector('[data-active-task]')",
+          );
+        } finally {
+          await archive(false);
+        }
+      }
+      await projectTab('overview');
+      await wait(
+        `document.querySelector('[aria-label=已发布项目评论]')?.textContent===${JSON.stringify(comment)}`,
+      );
+      const after = await overview();
+      const saved = (await read(original.id)).tasks[0];
+      if (
+        JSON.stringify(identity(saved)) !== JSON.stringify(identity(original)) ||
+        saved.body_revision !== original.body_revision + 2 ||
+        JSON.stringify(after.state) !== JSON.stringify(before.state) ||
+        after.projects[0]?.body_revision !== before.projects[0]?.body_revision
+      )
+        throw new Error('Task route changed identities or project overview');
+      verifyOriginals();
+      assertNoRuns();
+      writeFileSync(
+        join(root, `routes-${routeMode}.json`),
+        JSON.stringify(
+          {
+            status: 'PASS_REAL',
+            isolation,
+            files,
+            original: identity(saved),
+            revision: saved.body_revision,
+            projects: [originalProject, second.matter_id],
+            tasks: rows.map(identity),
+            providerDispatches: 0,
+          },
+          null,
+          2,
+        ),
       );
       return;
     }

@@ -32,6 +32,7 @@ export type ProjectViewState = {
   scrollTop: number;
   workspaceScrollTop: number;
   returnTaskId: string;
+  documentId?: string;
 };
 export default function ProjectCatalog({
   tasks,
@@ -180,15 +181,32 @@ export default function ProjectCatalog({
       cancelled = true;
     };
   }, [initialView, read]);
+  const documents = c.data?.documents.filter(
+    (doc) =>
+      doc.matter_id === p?.id &&
+      !doc.archived_at &&
+      tasks.some(
+        (task) =>
+          task.id === doc.task_id &&
+          task.document_id === doc.id &&
+          task.matter_id === doc.matter_id &&
+          !task.document_archived_at,
+      ),
+  );
   useLayoutEffect(() => {
     const source = restoring.current;
     if (!source || reading || (source.projectId ? !editor : !c.data)) return;
+    // 文档入口要等目录查询完成，才能恢复到原来的按钮或栏目。
+    if (source.documentId && !c.data && !c.error) return;
     const target = Array.from(
       workspace.current?.querySelectorAll<HTMLButtonElement>(
         `#project-panel-${source.section} [data-project-task]`,
       ) ?? [],
     ).find(
-      (button) => button.dataset.projectTask === source.returnTaskId && !button.closest('[hidden]'),
+      (button) =>
+        button.dataset.projectTask === source.returnTaskId &&
+        button.dataset.projectDocument === source.documentId &&
+        !button.closest('[hidden]'),
     );
     (
       target ??
@@ -207,8 +225,8 @@ export default function ProjectCatalog({
     if (scroll.current) scroll.current.scrollTop = source.scrollTop;
     if (workspace.current) workspace.current.scrollTop = source.workspaceScrollTop;
     restoring.current = null;
-  }, [reading, editor, c.data]);
-  const openTask = (id: string) => {
+  }, [reading, editor, c.data, c.error, tasks]);
+  const openTask = (id: string, documentId?: string) => {
     if (navigationPending || dirty || creating || reading || c.pending || c.unknown) return;
     onOpen(id, {
       selected: p?.id ?? selected,
@@ -221,12 +239,37 @@ export default function ProjectCatalog({
       scrollTop: scroll.current?.scrollTop ?? 0,
       workspaceScrollTop: workspace.current?.scrollTop ?? 0,
       returnTaskId: id,
+      ...(documentId ? { documentId } : {}),
     });
   };
   const open = async (project: Matter) => {
     if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
   };
   const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
+  const documentLinks = (draftsOnly: boolean) => {
+    if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
+    if (!documents) return <p role="status">正在读取项目文档…</p>;
+    const rows = draftsOnly ? documents.filter((doc) => doc.body_revision > 0) : documents;
+    if (!rows.length)
+      return <p>{draftsOnly ? '还没有已保存的交付草稿。' : '还没有可编辑文档。'}</p>;
+    return (
+      <ul className="project-document-list">
+        {rows.map((doc) => (
+          <li key={doc.id}>
+            <button
+              disabled={blocked}
+              data-project-task={doc.task_id}
+              data-project-document={doc.id}
+              onClick={() => openTask(doc.task_id, doc.id)}
+            >
+              {doc.title}
+            </button>
+            {draftsOnly && <span>已保存 · 修订 {doc.body_revision}</span>}
+          </li>
+        ))}
+      </ul>
+    );
+  };
   const command = (input: CatalogRequest, done?: (r: CatalogSuccess) => void | Promise<void>) =>
     c.execute(input, async (r) => {
       onChanged();
@@ -584,11 +627,20 @@ export default function ProjectCatalog({
               >
                 <h2>项目文件</h2>
                 {section === 'files' && (
-                  <ProjectFiles
-                    key={editor.project.id}
-                    projectId={editor.project.id}
-                    disabled={reading || dirty || c.pending || c.unknown}
-                  />
+                  <>
+                    <section aria-labelledby="project-pdf-heading">
+                      <h3 id="project-pdf-heading">受管 PDF 原件</h3>
+                      <ProjectFiles
+                        key={editor.project.id}
+                        projectId={editor.project.id}
+                        disabled={blocked}
+                      />
+                    </section>
+                    <section aria-labelledby="project-documents-heading">
+                      <h3 id="project-documents-heading">可编辑文档</h3>
+                      {documentLinks(false)}
+                    </section>
+                  </>
                 )}
               </section>
               <section
@@ -599,7 +651,13 @@ export default function ProjectCatalog({
                 className="project-record-panel"
               >
                 <h2>交付物</h2>
-                <p>正式交付物视图尚未接入。已保存文档可从概述打开，保存不代表正式交付。</p>
+                {section === 'deliverables' && (
+                  <>
+                    <h3>交付草稿</h3>
+                    {documentLinks(true)}
+                    <p>草稿沿用任务成果正文。正式交付视图尚未接入。</p>
+                  </>
+                )}
               </section>
               <section
                 hidden={section !== 'activity'}

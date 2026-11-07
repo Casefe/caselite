@@ -276,11 +276,19 @@ function Workbench() {
         await window.caselite.task({ operation: 'read', protocol_version: 1, task_id: id }),
       );
       if (seq === readSequence.current) {
-        if (r.tasks[0]?.id !== id) throw new Error('读取结果与目标任务不符，请重试。');
+        const task = r.tasks[0];
+        if (task?.id !== id) throw new Error('读取结果与目标任务不符，请重试。');
+        if (
+          source?.documentId &&
+          (task.document_id !== source.documentId ||
+            task.matter_id !== source.projectId ||
+            task.document_archived_at)
+        )
+          throw new Error('文档已归档或已离开来源项目，请重新打开项目查看。');
         // 只有当前读取成功才提交返回来源；迟到/失败读取不能污染下一次导航。
         setTaskReturn(source ? { taskId: id, source } : null);
         if (source) setProjectView(source);
-        setActive(r.tasks[0]);
+        setActive(task);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');

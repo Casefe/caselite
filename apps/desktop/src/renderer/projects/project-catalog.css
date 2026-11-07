@@ -559,3 +559,21 @@
 .project-discussion-entry > .project-discussion-compose {
   margin-inline-start: 12px;
 }
+
+.project-document-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.project-document-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+}
+
+.project-document-list span {
+  font-size: 12px;
+}
