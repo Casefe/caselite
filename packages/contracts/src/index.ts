@@ -15,3 +15,4 @@ export * from './appearance';
 export * from './material';
 
 export * from './reminder';
+export * from './finance';

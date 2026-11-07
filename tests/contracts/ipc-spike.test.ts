@@ -1,6 +1,7 @@
 import {
   IPC_CHANNELS,
   APPEARANCE_CHANNEL,
+  FINANCE_CHANNEL,
   IPC_PROTOCOL_VERSION,
   createAnchorRequestSchema,
   createMatterRequestSchema,
@@ -110,6 +111,7 @@ describe('typed preload to main IPC Spike', () => {
       'createAnchor',
       'createMatter',
       'dropPdf',
+      'finance',
       'material',
       'offlineProbe',
       'pickPdf',
@@ -131,6 +133,19 @@ describe('typed preload to main IPC Spike', () => {
       protocol_version: 1,
       operation: 'read',
     });
+  });
+
+  it('routes finance status through its fixed channel and rejects an invalid success receipt', async () => {
+    const invoke = vi.fn(async () => ({ ok: true, kind: 'status', evidence: null }));
+    const api = createCaseLitePreloadApi(invoke);
+    const status = {
+      protocol_version: 1 as const,
+      operation: 'status' as const,
+      project_id: '77777777-7777-4777-8777-777777777777',
+      idempotency_key: '88888888-8888-4888-8888-888888888888',
+    };
+    await expect(api.finance(status)).resolves.toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+    expect(invoke).toHaveBeenCalledWith(FINANCE_CHANNEL, status);
   });
 
   it('uses the fixed channel and returns a validated application result', async () => {

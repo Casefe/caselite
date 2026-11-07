@@ -97,6 +97,7 @@ export const matterSchema = z.object({
   body_revision: z.number().int().nonnegative(),
   editor_schema: z.literal(1),
   updated_at: z.string(),
+  outstanding_cents: z.number().int().nonnegative().nullable().optional(),
   task_count: z.number().int().nonnegative(),
   attributes: projectAttributesSchema.optional(),
 });

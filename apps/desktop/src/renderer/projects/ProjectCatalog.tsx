@@ -1,3 +1,4 @@
+import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses } from './ProjectFields';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
@@ -40,6 +41,7 @@ export default function ProjectCatalog({
   tasks,
   onOpen,
   onNewTask,
+  onFinance,
   onDirty,
   onChanged,
   initialView,
@@ -48,6 +50,7 @@ export default function ProjectCatalog({
 }: {
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
+  onFinance?(projectId: string): void;
   onNewTask?(source: ProjectViewState): void;
   initialView?: ProjectViewState | null;
   backSlot?: HTMLDivElement | null;
@@ -746,6 +749,7 @@ export default function ProjectCatalog({
                     <th>项目名称</th>
                     {columns.status && <th>状态</th>}
                     {columns.tasks && <th>任务</th>}
+                    <th>待收款（元）</th>
                     {columns.updated && <th>更新时间</th>}
                   </tr>
                 </thead>
@@ -784,6 +788,25 @@ export default function ProjectCatalog({
                         </td>
                       )}
                       {columns.tasks && <td className="project-list-count">{m.task_count}</td>}
+                      <td>
+                        {onFinance ? (
+                          <button
+                            type="button"
+                            className="project-title-link"
+                            aria-label={`查看 ${m.title} 的待收款 ${formatCents(m.outstanding_cents)} 元`}
+                            disabled={reading || creating || dirty || c.pending || c.unknown}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onFinance(m.id);
+                            }}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            {formatCents(m.outstanding_cents)}
+                          </button>
+                        ) : (
+                          formatCents(m.outstanding_cents)
+                        )}
+                      </td>
                       {columns.updated && (
                         <td>
                           <time dateTime={m.updated_at}>

@@ -1,3 +1,4 @@
+import { runFinanceDemo } from './finance-demo';
 import { runReminderDemo } from './reminder-demo';
 import { startReminderScheduler } from './adapters/reminder-scheduler';
 import { createReminderApplication } from '@caselite/application';
@@ -26,7 +27,7 @@ import {
 } from './agent-demo';
 import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
 import { documentReviewStore } from './document-review-store';
-import { createCatalogApplication } from '@caselite/application';
+import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
@@ -40,7 +41,7 @@ import {
 } from './credential-preflight';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
-import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
+import { registerCatalogIpc, registerFinanceIpc, registerTaskIpc } from './ipc/register-task-ipc';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -422,7 +423,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 15
+      result.value?.migration_count !== 16
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -557,6 +558,10 @@ if (taskDemoPhase) {
       'agent-credential-read',
       'agent-crash-synthetic',
       'agent-read-synthetic',
+      'finance-write',
+      'finance-reverse',
+      'finance-read',
+      'finance-preview',
       'appearance-write',
       'appearance-read',
     ].includes(taskDemoPhase)
@@ -689,6 +694,7 @@ app
     registerReminderIpc(reminders, reminderScheduler.tick);
     app.on('will-quit', reminderScheduler.stop);
     registerCatalogIpc(createCatalogApplication(taskStore.catalog));
+    registerFinanceIpc(createFinanceApplication(taskStore.finance));
     const materials = createMaterialApplication({
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
@@ -750,9 +756,12 @@ app
             );
           }
         : undefined;
+    const financeDemo = taskDemoPhase?.startsWith('finance-');
+    if (financeDemo) materialDemoKeys.clear();
     const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
     const baseAgentCredentials =
       documentReviewDemo ||
+      financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
@@ -885,7 +894,8 @@ app
           : createPiRuntime(
               documentReviewDemo
                 ? syntheticReviewStream
-                : credentialUi ||
+                : financeDemo ||
+                    credentialUi ||
                     taskDemoPhase?.startsWith('reminder') ||
                     (taskDemoPhase?.startsWith('project-') &&
                       taskDemoPhase !== 'project-agent-write') ||
@@ -1019,6 +1029,17 @@ app
       return;
     }
     app.on('will-quit', () => taskStore.close());
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'finance-write' ||
+        taskDemoPhase === 'finance-reverse' ||
+        taskDemoPhase === 'finance-read' ||
+        taskDemoPhase === 'finance-preview')
+    ) {
+      await runFinanceDemo(createWindow, taskDemoRoot, taskDemoPhase);
+      if (taskDemoPhase !== 'finance-preview') app.quit();
+      return;
+    }
     if (
       taskDemoRoot &&
       (taskDemoPhase === 'project-agent-write' ||

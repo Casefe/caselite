@@ -1,3 +1,5 @@
+import { FINANCE_CHANNEL, financeResponseSchema, type FinanceResponse } from '@caselite/contracts';
+import type { createFinanceApplication } from '@caselite/application';
 import {
   REMINDER_CHANNEL,
   reminderResponseSchema,
@@ -16,6 +18,14 @@ export function registerTaskIpc(application: ReturnType<typeof createTaskApplica
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
       return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问本地任务。' };
     return taskResponseSchema.parse(application.execute(payload));
+  });
+}
+
+export function registerFinanceIpc(application: ReturnType<typeof createFinanceApplication>) {
+  ipcMain.handle(FINANCE_CHANNEL, (event, payload): FinanceResponse => {
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问本地财务。' };
+    return financeResponseSchema.parse(application.execute(payload));
   });
 }
 

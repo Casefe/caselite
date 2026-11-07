@@ -15,6 +15,7 @@ import {
   type ActivityEvent,
   type DiscussionScope,
 } from '@caselite/contracts';
+import { projectOutstanding } from './finance-store';
 import { bodyPlainText, validateBody } from './body-schema';
 
 type Success = Extract<CatalogResponse, { ok: true }>;
@@ -24,11 +25,11 @@ const fail = (
 ): CatalogResponse => ({ ok: false, code, message });
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
-  const projects = (properties: string | true | null = null) =>
+  const projects = (properties: string | true | null = null, withFinance = false) =>
     (
       db
         .prepare(
-          `SELECT m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,m.professional_type,CASE WHEN ? OR m.id=? THEN m.professional_fields END AS professional_fields,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
+          `SELECT ${withFinance ? `(${projectOutstanding}) AS outstanding_cents,` : ''}m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,m.professional_type,CASE WHEN ? OR m.id=? THEN m.professional_fields END AS professional_fields,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
         )
         .all(
           Number(properties === true),
@@ -125,9 +126,10 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     receipt: string | null = null,
     state: number[] | null = null,
     properties: string | true | null = null,
+    withFinance = false,
   ): Success => ({
     ok: true,
-    projects: projects(properties),
+    projects: projects(properties, withFinance),
     documents: documents(),
     state,
     target_id: target,
@@ -192,7 +194,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       WHERE t.workspace_id=@workspace AND ((@kind='task' AND t.id=@scope) OR (@kind='project' AND p.matter_id=@scope AND a.operation NOT IN ('assign_project','promote_task')))
       UNION ALL
       SELECT a.id,'catalog' AS origin,a.target_id,
-        CASE WHEN a.operation IN ('create_project','promote_task','update_project','archive_project') THEN 'project'
+        CASE WHEN a.operation IN ('create_project','promote_task','update_project','archive_project','register_contract','record_payment','reverse_payment') THEN 'project'
              WHEN a.operation='assign_task' THEN 'task' ELSE 'document' END AS target_type,
         a.operation,a.created_at AS committed_at
       FROM catalog_activity a
@@ -318,7 +320,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         };
       }
       if (request.operation === 'list')
-        return result(null, null, null, request.project_properties ?? null);
+        return result(null, null, null, request.project_properties ?? null, true);
       if (request.operation === 'status') {
         const row = db
           .prepare('SELECT result FROM catalog_receipts WHERE workspace_id=? AND key=?')

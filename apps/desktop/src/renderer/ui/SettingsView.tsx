@@ -120,7 +120,7 @@ export default function SettingsView({
               />
               <SettingRow
                 title="财务记录"
-                description="「财务」位于侧栏的工作区分组，目前显示空态。"
+                description="在侧栏「财务」查看项目收费合同、分期与已确认收款。"
                 value="工作区"
               />
             </>

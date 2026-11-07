@@ -7,3 +7,4 @@ export * from './appearance-application';
 export * from './material-application';
 
 export * from './reminder-application';
+export * from './finance-application';

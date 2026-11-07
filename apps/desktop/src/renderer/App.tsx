@@ -1,3 +1,4 @@
+import FinanceView from './finance/FinanceView';
 import TaskTags from './ui/TaskTags';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
@@ -259,6 +260,7 @@ function Workbench() {
   const [reminderBlocked, setReminderBlocked] = useState(false);
   const [reminderTask, setReminderTask] = useState<string | null>(null);
   const [commentDirty, setCommentDirty] = useState(false);
+  const [financeProject, setFinanceProject] = useState('');
   const [projectDirty, setProjectDirty] = useState(false);
   const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
@@ -377,6 +379,7 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setView(next);
+    if (next === 'finance' && view !== 'finance') setFinanceProject('');
     if (next !== 'settings') setTaskReturn(null);
     if (next === 'tasks') setActive(null);
     setCreateTagDraft(false);
@@ -801,6 +804,11 @@ function Workbench() {
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
             onNewTask={newTask}
+            onFinance={(projectId) => {
+              if (!canLeave()) return;
+              navigate('finance');
+              setFinanceProject(projectId);
+            }}
             onDirty={setDirty}
             onChanged={async () => {
               try {
@@ -1055,17 +1063,13 @@ function Workbench() {
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
           />
-        ) : view === 'finance' || view === 'tools' || view === 'whiteboard' ? (
+        ) : view === 'finance' ? (
+          <FinanceView initialProject={financeProject} onDirty={setDirty} />
+        ) : view === 'tools' || view === 'whiteboard' ? (
           <section className="workspace-placeholder">
-            <h1>{{ finance: '财务', tools: '工具', whiteboard: '白板' }[view]}</h1>
+            <h1>{{ tools: '工具', whiteboard: '白板' }[view]}</h1>
             <div className="table-empty">
-              {
-                {
-                  finance: '这里还没有财务记录。',
-                  tools: '这里还没有可用工具。',
-                  whiteboard: '这里还没有白板。',
-                }[view]
-              }
+              {{ tools: '这里还没有可用工具。', whiteboard: '这里还没有白板。' }[view]}
             </div>
           </section>
         ) : view === 'settings' ? (

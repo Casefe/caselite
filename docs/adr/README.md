@@ -33,4 +33,6 @@
 
 | [ADR-015](./ADR-015-confirmed-local-task-reminders.md) | 提议 | 单Task人工确认时区、本机提醒与保守去重 | DEV-1686、原生通知/重启及人工接收 |
 
+| [ADR-016](./ADR-016-local-project-finance-ledger.md) | 首版实现，待独立复核和业务接收 | 项目收费与回款账本 | DEV-1793、事务、幂等核对和重启 |
+
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。
