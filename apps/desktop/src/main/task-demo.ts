@@ -183,7 +183,7 @@ export async function runTaskDemo(
       await wait(
         `document.querySelector('[data-row-task="${id}"]')?.getAttribute('aria-current')==='true'`,
       );
-      await click('[data-testid=inspector-open]');
+      await click(`[data-row-task="${id}"] .task-row-title`);
     };
     const navLabels = await evaluate(
       "Array.from(document.querySelectorAll('.primary-navigation button')).map(e=>e.getAttribute('aria-label'))",
@@ -619,7 +619,7 @@ export async function runTaskDemo(
         "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='未写正文').click()",
       );
       await wait(
-        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-inspector h2')?.textContent.includes('采购')",
+        "document.querySelectorAll('[data-row-task]').length===1 && document.querySelector('.task-row-title')?.textContent.includes('采购')",
       );
       await evaluate(
         "Array.from(document.querySelectorAll('.view-tabs button')).find(e=>e.textContent==='全部任务').click()",

@@ -2,40 +2,49 @@ import { useEffect, useRef, useState } from 'react';
 import type { Task, TaskRequest } from '../../preload/caselite-api';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
+import TaskTags from './TaskTags';
 
-type PropertyCommand = Extract<TaskRequest, { operation: 'change_status' | 'update_attributes' }>;
-type Draft = { version: number } & (
-  | { kind: 'status'; status: Task['status'] }
-  | { kind: 'attributes'; priority: number; due_date: string | null }
-);
+type Command = Extract<TaskRequest, { operation: 'change_status' | 'update_attributes' }>;
+type Attributes = { priority: number; due_date: string | null; tags: string[] };
+type Edit = { status: Task['status'] } | Partial<Attributes>;
+type Failure = { kind: 'unknown' | 'read' | 'conflict' | 'write'; message: string };
+const attributes = (task: Task): Attributes => ({
+  priority: task.priority ?? 0,
+  due_date: task.due_date ?? null,
+  tags: task.tags ?? [],
+});
+const sameAttributes = (left: Attributes, right: Attributes) =>
+  left.priority === right.priority &&
+  left.due_date === right.due_date &&
+  JSON.stringify(left.tags) === JSON.stringify(right.tags);
+
 export default function TaskProperties({
   task,
   disabled,
+  suggestions = [],
   onBlocked,
   onChanged,
 }: {
   task: Task;
   disabled: boolean;
+  suggestions?: string[];
   onBlocked(value: boolean): void;
   onChanged(task: Task, objectiveState: number[] | null): void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [edits, setEdits] = useState<Edit[]>([]);
   const [pending, setPending] = useState(false);
-  const [unknown, setUnknown] = useState(false);
-  const [committed, setCommitted] = useState(false);
-  const [error, setError] = useState('');
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [confirmed, setConfirmed] = useState(task);
+  const [tagDraft, setTagDraft] = useState(false);
+  const [date, setDate] = useState<string | null>(null);
   const [dateInvalid, setDateInvalid] = useState(false);
-  const request = useRef<PropertyCommand | null>(null);
-  const dateInput = useRef<HTMLInputElement | null>(null);
+  const queue = useRef<Edit[]>([]);
+  const running = useRef(false);
+  const command = useRef<Command | null>(null);
+  const base = useRef(task);
+  const composing = useRef(false);
   const alive = useRef(true);
-  const changed =
-    !!draft &&
-    (draft.kind === 'status'
-      ? draft.status !== (task.status ?? 'todo')
-      : draft.priority !== (task.priority ?? 0) || draft.due_date !== (task.due_date ?? null));
-  const attributes = draft?.kind === 'attributes';
-  const actionName = attributes ? '属性' : '状态';
-  const blocked = changed || dateInvalid || pending || unknown || committed;
+  const blocked = pending || edits.length > 0 || date !== null || tagDraft || failure !== null;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -44,8 +53,8 @@ export default function TaskProperties({
   }, []);
   useEffect(() => {
     onBlocked(blocked);
-    return () => onBlocked(false);
   }, [blocked, onBlocked]);
+  useEffect(() => () => onBlocked(false), [onBlocked]);
 
   const readCurrent = async () => {
     const result = await window.caselite.task({
@@ -53,175 +62,163 @@ export default function TaskProperties({
       operation: 'read',
       task_id: task.id,
     });
-    if (!alive.current) return;
-    const current = result.ok ? result.tasks.find((t) => t.id === task.id) : undefined;
-    if (!current) throw new Error('任务属性暂时无法重读，请保留当前结果后重试。');
-    onChanged(current, result.ok ? (result.objective_state ?? null) : null);
-    setDraft(null);
-    setDateInvalid(false);
-    request.current = null;
-    setUnknown(false);
-    setCommitted(false);
-    setError('');
+    if (!result.ok) throw new Error(result.message);
+    const current = result.tasks.find((item) => item.id === task.id);
+    if (!current || current.version < base.current.version) throw new Error('任务版本无法确认。');
+    return { current, description: result.objective_state ?? null };
   };
-  const execute = async (mode: 'save' | 'query' | 'retry') => {
-    if (
-      mode === 'save' &&
-      draft?.kind === 'attributes' &&
-      dateInput.current &&
-      !dateInput.current.validity.valid
-    ) {
-      setDateInvalid(true);
-      onBlocked(true);
-      return;
-    }
-    if (
-      pending ||
-      disabled ||
-      (mode === 'save' && (!draft || !changed || dateInvalid || unknown || committed))
-    )
-      return;
-    const command: PropertyCommand | null =
-      mode === 'save' && draft
-        ? {
-            protocol_version: 1 as const,
+  const drain = async (mode: 'save' | 'recover' | 'read' | 'discard' = 'save') => {
+    if (running.current || disabled) return;
+    running.current = true;
+    setPending(true);
+    let phase: Failure['kind'] = 'read';
+    try {
+      if (mode === 'discard') {
+        const { current, description } = await readCurrent();
+        if (!alive.current) return;
+        queue.current = [];
+        command.current = null;
+        base.current = current;
+        setConfirmed(current);
+        setEdits([]);
+        setDate(null);
+        setDateInvalid(false);
+        onChanged(current, description);
+        setFailure(null);
+        return;
+      }
+      while (alive.current && queue.current.length) {
+        const edit = queue.current[0]!;
+        const previous = base.current;
+        if (!command.current) {
+          const next = { ...attributes(previous), ...edit };
+          const unchanged =
+            'status' in edit
+              ? edit.status === previous.status
+              : sameAttributes(attributes(previous), next);
+          if (unchanged) {
+            queue.current = queue.current.slice(1);
+            setEdits(queue.current);
+            continue;
+          }
+          command.current = {
+            protocol_version: 1,
             request_id: crypto.randomUUID(),
             idempotency_key: crypto.randomUUID(),
             task_id: task.id,
-            expected_version: draft.version,
-            ...(draft.kind === 'status'
-              ? { operation: 'change_status' as const, status: draft.status }
-              : {
-                  operation: 'update_attributes' as const,
-                  priority: draft.priority,
-                  due_date: draft.due_date,
-                }),
-          }
-        : request.current;
-    if (!command) return;
-    request.current = command;
-    setPending(true);
-    setError('');
-    let confirmed = false;
-    try {
-      const result = await window.caselite.task(
-        mode === 'query'
-          ? {
-              protocol_version: 1,
-              operation: 'status',
-              idempotency_key: command.idempotency_key,
-            }
-          : command,
-      );
-      if (!alive.current) return;
-      if (!result.ok) {
-        if (mode === 'query' || result.code === 'RESULT_UNKNOWN') setUnknown(true);
-        else {
-          request.current = null;
-          setUnknown(false);
+            expected_version: previous.version,
+            ...('status' in edit
+              ? { operation: 'change_status' as const, status: edit.status }
+              : { operation: 'update_attributes' as const, ...next }),
+          };
         }
-        setError(result.message);
-        return;
+        const original = command.current;
+        if (mode !== 'read') {
+          phase = 'unknown';
+          // 结果未知时先查同一键，只有明确无回执才重发原请求。
+          let result =
+            mode === 'recover'
+              ? await window.caselite.task({
+                  protocol_version: 1,
+                  operation: 'status',
+                  idempotency_key: original.idempotency_key,
+                })
+              : await window.caselite.task(original);
+          if (mode === 'recover' && !result.ok && result.code === 'NOT_FOUND') {
+            mode = 'save';
+            if (!alive.current) return;
+            result = await window.caselite.task(original);
+          }
+          if (!alive.current) return;
+          if (!result.ok) {
+            if (mode !== 'recover' && result.code !== 'RESULT_UNKNOWN') {
+              phase = result.code === 'CONFLICT' ? 'conflict' : 'write';
+              command.current = null;
+            }
+            throw new Error(result.message);
+          }
+          const saved = result.tasks.find((item) => item.id === task.id);
+          if (
+            result.receipt !== original.idempotency_key ||
+            !saved ||
+            saved.version !== original.expected_version + 1 ||
+            (original.operation === 'change_status'
+              ? saved.status !== original.status
+              : !sameAttributes(attributes(saved), {
+                  priority: original.priority,
+                  due_date: original.due_date,
+                  tags: original.tags ?? [],
+                }))
+          )
+            throw new Error('提交回执与任务不一致，请核对原提交。');
+        }
+        // 回执是历史快照。后续写入只基于回读确认的版本，遇到其他修改时保留队列。
+        phase = 'read';
+        const { current, description } = await readCurrent();
+        if (!alive.current) return;
+        if (current.version < original.expected_version + 1)
+          throw new Error('暂时无法确认已保存版本，请重读。');
+        command.current = null;
+        base.current = current;
+        setConfirmed(current);
+        queue.current = queue.current.slice(1);
+        setEdits(queue.current);
+        onChanged(current, description);
+        if (queue.current.length && current.version !== original.expected_version + 1) {
+          phase = 'conflict';
+          throw new Error('任务已有其他修改。待保存的输入已保留，请核对当前版本。');
+        }
+        mode = 'save';
       }
-      // 回执是原提交快照；只用它确认提交，再读当前对象，避免历史状态倒灌。
-      if (
-        result.receipt !== command.idempotency_key ||
-        !result.tasks.some(
-          (current) =>
-            current.id === task.id &&
-            current.version === command.expected_version + 1 &&
-            (command.operation === 'change_status'
-              ? current.status === command.status
-              : current.priority === command.priority && current.due_date === command.due_date),
-        )
-      ) {
-        setUnknown(true);
-        setError('提交回执与当前任务不一致，请核对原提交。');
-        return;
-      }
-      setCommitted(true);
-      confirmed = true;
-      await readCurrent();
-    } catch {
-      if (alive.current) {
-        setUnknown(!confirmed);
-        setError(
-          confirmed
-            ? '属性已保存，当前属性暂时无法重读，请重试读取。'
-            : '结果暂未核实，请核对原提交；不更换提交身份。',
-        );
-      }
+      if (alive.current) setFailure(null);
+    } catch (error) {
+      if (alive.current)
+        setFailure({
+          kind: phase === 'read' && !command.current ? 'conflict' : phase,
+          message: error instanceof Error ? error.message : '任务属性暂时无法保存，请重试。',
+        });
     } finally {
+      running.current = false;
       if (alive.current) setPending(false);
     }
   };
-  const reload = async () => {
-    if (pending || disabled || unknown) return;
+  const enqueue = (edit: Edit) => {
+    if (disabled || failure) return;
+    if (!queue.current.length && !running.current && task.version > base.current.version)
+      base.current = task;
+    queue.current = [...queue.current, edit];
+    setEdits(queue.current);
+    onBlocked(true);
+    void drain();
+  };
+  const latest = confirmed.version > task.version ? confirmed : task;
+  const shown = Object.assign({ status: latest.status ?? 'todo', ...attributes(latest) }, ...edits);
+  const locked = disabled || Boolean(failure);
+  const finishDate = (input: HTMLInputElement) => {
+    if (locked || composing.current || date === null) return;
     if (
-      (changed || dateInvalid) &&
-      !committed &&
-      !window.confirm('放弃尚未保存的任务属性并重新读取？')
-    )
+      !input.validity.valid ||
+      !input.value ||
+      input.value.length !== 10 ||
+      input.value.startsWith('0000-')
+    ) {
+      setDateInvalid(true);
       return;
-    setPending(true);
-    try {
-      await readCurrent();
-    } catch {
-      if (alive.current) setError('无法重读任务属性，请重试。');
-    } finally {
-      if (alive.current) setPending(false);
     }
+    setDate(null);
+    setDateInvalid(false);
+    enqueue({ due_date: input.value });
   };
-  const editAttributes = (
-    patch: Partial<{ priority: number; due_date: string | null }>,
-    invalid = dateInvalid,
-  ) => {
-    if (disabled || pending || unknown || committed || (draft?.kind === 'status' && changed))
-      return;
-    const next = {
-      kind: 'attributes' as const,
-      version: attributes ? draft.version : task.version,
-      priority: task.priority ?? 0,
-      due_date: task.due_date ?? null,
-      ...(attributes ? draft : {}),
-      ...patch,
-    };
-    setDateInvalid(invalid);
-    onBlocked(
-      invalid ||
-        next.priority !== (task.priority ?? 0) ||
-        next.due_date !== (task.due_date ?? null),
-    );
-    setDraft(next);
-    setError('');
-  };
+
   return (
     <section className="task-properties-editor" aria-label="任务属性设置">
       <label>
         <span>状态</span>
         <select
           aria-label="任务状态"
-          value={draft?.kind === 'status' ? draft.status : (task.status ?? 'todo')}
-          disabled={
-            disabled || pending || unknown || committed || (attributes && (changed || dateInvalid))
-          }
-          onChange={(e) => {
-            if (
-              disabled ||
-              pending ||
-              unknown ||
-              committed ||
-              (attributes && (changed || dateInvalid))
-            )
-              return;
-            onBlocked(e.target.value !== (task.status ?? 'todo'));
-            setDraft({
-              kind: 'status',
-              status: e.target.value as Task['status'],
-              version: task.version,
-            });
-            setError('');
-          }}
+          value={shown.status}
+          disabled={locked}
+          onChange={(event) => enqueue({ status: event.target.value as Task['status'] })}
         >
           {Object.entries(taskStatusNames).map(([value, name]) => (
             <option key={value} value={value}>
@@ -230,16 +227,13 @@ export default function TaskProperties({
           ))}
         </select>
       </label>
-      <p className="caption">当前已保存：{taskStatusNames[task.status ?? 'todo']}</p>
       <label>
         <span>优先级</span>
         <select
           aria-label="任务优先级"
-          value={attributes ? draft.priority : (task.priority ?? 0)}
-          disabled={
-            disabled || pending || unknown || committed || (draft?.kind === 'status' && changed)
-          }
-          onChange={(e) => editAttributes({ priority: Number(e.target.value) })}
+          value={shown.priority}
+          disabled={locked}
+          onChange={(event) => enqueue({ priority: Number(event.target.value) })}
         >
           {Object.entries(taskPriorityNames).map(([value, name]) => (
             <option key={value} value={value}>
@@ -251,66 +245,95 @@ export default function TaskProperties({
       <label>
         <span>普通截止日期</span>
         <input
-          ref={dateInput}
-          type="date"
           aria-label="普通截止日期"
+          type="date"
           min="0001-01-01"
           max="9999-12-31"
-          value={(attributes ? draft.due_date : task.due_date) ?? ''}
-          disabled={
-            disabled || pending || unknown || committed || (draft?.kind === 'status' && changed)
-          }
-          onChange={(e) =>
-            editAttributes(
-              e.currentTarget.validity.valid ? { due_date: e.target.value || null } : {},
-              !e.currentTarget.validity.valid,
-            )
-          }
-          onInput={(e) => {
-            if (dateInvalid && e.currentTarget.validity.valid)
-              editAttributes({ due_date: e.currentTarget.value || null }, false);
-          }}
+          value={date ?? shown.due_date ?? ''}
+          disabled={locked}
           aria-invalid={dateInvalid}
-          aria-describedby={dateInvalid ? 'ordinary-date-error' : undefined}
+          onInput={(event) => {
+            setDate(event.currentTarget.value);
+            setDateInvalid(false);
+            onBlocked(true);
+          }}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={() => {
+            composing.current = false;
+          }}
+          onBlur={(event) => finishDate(event.currentTarget)}
+          onKeyDown={(event) => {
+            if (composing.current || event.nativeEvent.isComposing) return;
+            if (event.key === 'Enter') finishDate(event.currentTarget);
+            if (event.key === 'Escape') {
+              setDate(null);
+              setDateInvalid(false);
+            }
+          }}
         />
       </label>
+      {(shown.due_date || date !== null) && (
+        <button
+          type="button"
+          disabled={locked}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            setDate(null);
+            setDateInvalid(false);
+            enqueue({ due_date: null });
+          }}
+        >
+          清空截止日期
+        </button>
+      )}
       {dateInvalid && (
-        <p role="alert" id="ordinary-date-error">
-          请输入完整有效的普通日期（0001—9999年），或明确清空日期。
+        <p role="alert">
+          请输入完整有效的日期（YYYY-MM-DD），或选择清空截止日期。按 Esc 可取消编辑。
         </p>
       )}
-      <p className="caption" data-testid="saved-task-attributes">
-        已保存：{taskPriorityNames[task.priority ?? 0]} · {task.due_date ?? '无截止日期'}
-      </p>
-      <p className="caption">普通截止日期不含具体时刻；提醒需另行设置。</p>
-
-      {changed && !unknown && !committed && <p role="status">{actionName}尚未保存</p>}
-      {pending && <p role="status">正在核对任务属性…</p>}
-      {error && <p role="alert">{error}</p>}
-      {!unknown && !committed && (
-        <button
-          disabled={disabled || pending || dateInvalid || !changed}
-          onClick={() => void execute('save')}
-        >
-          保存任务{actionName}
-        </button>
+      <TaskTags
+        onDraft={(value) => {
+          setTagDraft(value);
+          if (value) onBlocked(true);
+        }}
+        tags={shown.tags}
+        suggestions={suggestions}
+        disabled={locked}
+        onChange={(tags) => enqueue({ tags })}
+      />
+      {pending && <p role="status">正在保存任务属性…</p>}
+      {failure && (
+        <div className="task-property-recovery">
+          <p role="alert">{failure.message}</p>
+          {failure.kind === 'unknown' && (
+            <button disabled={disabled || pending} onClick={() => void drain('recover')}>
+              核对并重试原提交
+            </button>
+          )}
+          {failure.kind === 'read' && (
+            <button disabled={disabled || pending} onClick={() => void drain('read')}>
+              重读已保存任务属性
+            </button>
+          )}
+          {failure.kind === 'write' && (
+            <button disabled={disabled || pending} onClick={() => void drain()}>
+              重试保存
+            </button>
+          )}
+          {(failure.kind === 'write' || failure.kind === 'conflict') && (
+            <button
+              disabled={disabled || pending}
+              onClick={() => {
+                if (window.confirm('放弃尚未保存的属性修改并重新读取？')) void drain('discard');
+              }}
+            >
+              放弃修改并重读
+            </button>
+          )}
+        </div>
       )}
-      {unknown && !committed && (
-        <>
-          <button disabled={disabled || pending} onClick={() => void execute('query')}>
-            核对原{actionName}提交
-          </button>
-          <button disabled={disabled || pending} onClick={() => void execute('retry')}>
-            重试原{actionName}请求
-          </button>
-        </>
-      )}
-      {!unknown || committed ? (
-        <button disabled={disabled || pending} onClick={() => void reload()}>
-          {committed ? '重读已保存任务属性' : '重新读取任务属性'}
-        </button>
-      ) : null}
-      <p className="caption">任务完成只表示工作项状态，定稿和交付另行确认。</p>
     </section>
   );
 }

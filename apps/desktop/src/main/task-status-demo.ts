@@ -95,11 +95,6 @@ export async function runTaskStatusDemo(
         "document.querySelector('[data-testid=revision]')?.textContent==='2' && document.querySelector('[data-testid=save-status]')?.textContent==='已保存到此设备'",
       );
       const bodyHash = digest((await read(id)).state);
-      await status('in_progress');
-      await wait("document.body.innerText.includes('状态尚未保存')");
-      await wait(
-        "document.querySelector('[data-testid=body-editor]')?.isContentEditable===false && document.querySelector('[data-testid=save-body]')?.disabled===true",
-      );
       const connection = openToolchainProbe(
         join(isolation.userData, 'caselite.sqlite'),
         join(process.resourcesPath, 'migrations'),
@@ -108,7 +103,7 @@ export async function runTaskStatusDemo(
         connection.sqlite.exec(
           "CREATE TRIGGER reject_status BEFORE INSERT ON task_activity WHEN NEW.operation='change_status' BEGIN SELECT RAISE(ABORT,'synthetic status failure'); END",
         );
-        await click('保存任务状态');
+        await status('in_progress');
         await wait("document.querySelector('.task-properties-editor [role=alert]')");
         if ((await read(id)).tasks[0].status !== 'todo')
           throw new Error('Failed status write changed the Task');
@@ -117,15 +112,17 @@ export async function runTaskStatusDemo(
         connection.sqlite.exec('DROP TRIGGER reject_status');
         connection.sqlite.close();
       }
-      await click('保存任务状态');
-      await wait(
-        "document.querySelector('.task-properties-editor')?.textContent.includes('当前已保存：进行中')",
-      );
+      const settled = async (expected: string) => {
+        await wait(
+          "!document.querySelector('.task-properties-editor [role=status]') && !document.querySelector('.task-properties-editor [role=alert]')",
+        );
+        if ((await read(id)).tasks[0].status !== expected)
+          throw new Error('Task status did not automatically save');
+      };
+      await click('重试保存');
+      await settled('in_progress');
       await status('done');
-      await click('保存任务状态');
-      await wait(
-        "document.querySelector('.task-properties-editor')?.textContent.includes('当前已保存：已完成')",
-      );
+      await settled('done');
       if (digest((await read(id)).state) !== bodyHash)
         throw new Error('Status changed the saved body bytes');
       await click('任务目标');
@@ -139,10 +136,7 @@ export async function runTaskStatusDemo(
         "document.querySelector('[data-testid=save-task-content]')?.disabled===true && document.querySelector('[data-testid=task-content-status]')?.textContent==='任务内容已保存'",
       );
       await status('todo');
-      await click('保存任务状态');
-      await wait(
-        "document.querySelector('.task-properties-editor')?.textContent.includes('当前已保存：待办')",
-      );
+      await settled('todo');
       await evaluate(
         "document.querySelector('[data-testid=task-content-editor]').focus();document.execCommand('insertText',false,'追加说明。')",
       );
@@ -154,19 +148,18 @@ export async function runTaskStatusDemo(
       await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
       await wait(`document.querySelector('[data-row-task="${id}"]')`);
       await status('done');
-      await click('保存任务状态');
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
       const attributes = async (date: string, priority: number) => {
         await evaluate(
           `(()=>{const p=document.querySelector('[aria-label=任务优先级]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(String(priority))});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
         );
-        await evaluate(
-          `(()=>{const d=document.querySelector('[aria-label=普通截止日期]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,${JSON.stringify(date)});d.dispatchEvent(new Event('input',{bubbles:true}));})()`,
-        );
-        await click('保存任务属性');
-        await wait(
-          `document.querySelector('[data-testid=saved-task-attributes]')?.textContent.includes(${JSON.stringify(date || '无截止日期')}) && !document.body.innerText.includes('属性尚未保存')`,
-        );
+        if (date) {
+          await evaluate(
+            `(()=>{const d=document.querySelector('[aria-label=普通截止日期]');d.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,${JSON.stringify(date)});d.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+          );
+          await evaluate("document.querySelector('[aria-label=普通截止日期]').blur()");
+        } else await click('清空截止日期');
+        await settled('done');
         const t = (await read(id)).tasks[0];
         if (t.due_date !== (date || null) || t.priority !== priority || t.status !== 'done')
           throw new Error('Task attributes literal/clear/status preservation failed');
@@ -177,23 +170,26 @@ export async function runTaskStatusDemo(
       await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      await evaluate("document.querySelector('[aria-label=普通截止日期]').blur()");
       await wait(
         "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='true'",
       );
-      if (
-        !(await evaluate(
-          "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存任务属性')?.disabled",
-        )) ||
-        (await read(id)).tasks[0].due_date !== '2026-01-01'
-      )
+      if ((await read(id)).tasks[0].due_date !== '2026-01-01')
         throw new Error('Native incomplete date can silently clear saved date');
       await capture('attributes-incomplete-date.png');
-      await evaluate(
-        "(()=>{const d=document.querySelector('[aria-label=普通截止日期]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,'2026-01-01');d.dispatchEvent(new Event('input',{bubbles:true}));})()",
-      );
+      await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
       await wait(
-        "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='false'",
+        "document.querySelector('[aria-label=普通截止日期]')?.value==='2026-01-01' && !document.querySelector('[aria-label=搜索任务]').disabled",
       );
+      await evaluate(
+        "(()=>{const e=document.querySelector('[aria-label=新标签]');e.focus();document.execCommand('insertText',false,'合成列表标签');})()",
+      );
+      await click('添加');
+      await settled('done');
+      if ((await read(id)).tasks[0].tags?.[0] !== '合成列表标签')
+        throw new Error('Task list label did not persist');
       const filter = async (label: string, value: string) =>
         evaluate(
           `(()=>{const p=document.querySelector('[aria-label="${label}"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(value)});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,

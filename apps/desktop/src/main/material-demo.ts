@@ -72,9 +72,7 @@ export async function runMaterialDemo(
   async function openTask(id: string) {
     await evaluate("document.querySelector('[data-nav=tasks]').click()");
     await waitFor(`Boolean(document.querySelector('[data-row-task="${id}"]'))`);
-    await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
-    await waitFor("Boolean(document.querySelector('[data-testid=inspector-open]'))");
-    await evaluate("document.querySelector('[data-testid=inspector-open]').click()");
+    await evaluate(`document.querySelector('[data-row-task="${id}"] .task-row-title').click()`);
     await waitFor("Boolean(document.querySelector('[data-testid=body-editor]'))");
   }
   async function drop(file: string) {

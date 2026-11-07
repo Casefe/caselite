@@ -1,3 +1,5 @@
+import TaskTags from './ui/TaskTags';
+import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
@@ -35,6 +37,7 @@ const defaultCreateProperties = {
   status: 'todo' as Task['status'],
   priority: 0,
   due_date: '',
+  tags: [] as string[],
   matter_id: '',
 };
 function check(result: TaskResponse) {
@@ -194,6 +197,7 @@ function Workbench() {
   const [state, setState] = useState<number[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [createProperties, setCreateProperties] = useState(defaultCreateProperties);
+  const [createTagDraft, setCreateTagDraft] = useState(false);
   const [createSource, setCreateSource] = useState<ProjectViewState | null>(null);
   const [projectOptions, setProjectOptions] = useState<Matter[]>([]);
   const [projectOptionsState, setProjectOptionsState] = useState<'loading' | 'ready' | 'failed'>(
@@ -205,6 +209,8 @@ function Workbench() {
   const [objectiveState, setObjectiveState] = useState<number[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [propertiesBlocked, setPropertiesBlocked] = useState(false);
+  const [reminderBlocked, setReminderBlocked] = useState(false);
+  const [reminderTask, setReminderTask] = useState<string | null>(null);
   const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -251,6 +257,7 @@ function Workbench() {
       current = false;
     };
   }, [creating, projectOptionsAttempt]);
+  const tagSuggestions = [...new Set(tasks.flatMap((task) => task.tags ?? []))];
   const createDirty =
     creating &&
     Boolean(
@@ -259,6 +266,8 @@ function Workbench() {
       createProperties.status !== defaultCreateProperties.status ||
       createProperties.priority ||
       createProperties.due_date ||
+      createProperties.tags.length ||
+      createTagDraft ||
       createProperties.matter_id !== (createSource?.projectId ?? ''),
     );
   useEffect(() => {
@@ -266,6 +275,7 @@ function Workbench() {
       if (
         dirty ||
         propertiesBlocked ||
+        reminderBlocked ||
         busy ||
         uncertain ||
         agentPrompt.text.trim() ||
@@ -277,9 +287,9 @@ function Workbench() {
     };
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty, propertiesBlocked, busy, uncertain, createDirty, agentPrompt]);
+  }, [dirty, propertiesBlocked, reminderBlocked, busy, uncertain, createDirty, agentPrompt]);
   function canLeave() {
-    if (dirty || propertiesBlocked || busy || uncertain) {
+    if (dirty || propertiesBlocked || reminderBlocked || busy || uncertain) {
       setError('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
@@ -297,6 +307,7 @@ function Workbench() {
     setView(next);
     if (next !== 'settings') setTaskReturn(null);
     if (next === 'tasks') setActive(null);
+    setCreateTagDraft(false);
     setCreating(false);
     setError('');
   }
@@ -346,6 +357,7 @@ function Workbench() {
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');
         setDetailTab('成果正文');
+        setCreateTagDraft(false);
         setCreating(false);
       }
     } catch (e) {
@@ -360,11 +372,12 @@ function Workbench() {
       setProjectView(createSource);
       setView('projects');
     }
+    setCreateTagDraft(false);
     setCreating(false);
     setError('');
   }
   async function create(mode: 'submit' | 'retry') {
-    if (busy || (mode === 'retry' && !createRequest.current)) return;
+    if (busy || createTagDraft || (mode === 'retry' && !createRequest.current)) return;
     const original = createRequest.current;
 
     setBusy(true);
@@ -377,6 +390,7 @@ function Workbench() {
       status: createProperties.status,
       priority: createProperties.priority,
       due_date: createProperties.due_date || null,
+      ...(createProperties.tags.length ? { tags: createProperties.tags } : {}),
       ...(createProperties.matter_id ? { matter_id: createProperties.matter_id } : {}),
       ...(objective.state ? { objective_state: objective.state } : {}),
     };
@@ -412,6 +426,7 @@ function Workbench() {
         r.receipt !== command.idempotency_key ||
         r.tasks.length !== 1 ||
         !saved ||
+        JSON.stringify(saved.tags ?? []) !== JSON.stringify(command.tags ?? []) ||
         saved.matter_id !== (command.matter_id ?? null)
       )
         throw new Error('创建回执与原提交不符，请核对原提交。');
@@ -430,6 +445,7 @@ function Workbench() {
       setObjectiveState(command.objective_state ?? null);
       setView('tasks');
       setDetailTab('成果正文');
+      setCreateTagDraft(false);
       setCreating(false);
       setTitle('');
       setObjective(emptyDraft());
@@ -645,6 +661,12 @@ function Workbench() {
                     ))}
                   </select>
                 </label>
+                <TaskTags
+                  tags={createProperties.tags}
+                  onDraft={setCreateTagDraft}
+                  suggestions={tagSuggestions}
+                  onChange={(tags) => setCreateProperties({ ...createProperties, tags })}
+                />
                 {projectOptionsState !== 'ready' && (
                   <p role="status">
                     {projectOptionsState === 'loading' ? '正在读取项目…' : '项目列表读取失败。'}
@@ -676,7 +698,7 @@ function Workbench() {
               </button>
               <button
                 className="primary"
-                disabled={busy || !title.trim() || objective.text.length > 4000}
+                disabled={busy || createTagDraft || !title.trim() || objective.text.length > 4000}
                 data-testid="create-task"
               >
                 {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
@@ -739,6 +761,12 @@ function Workbench() {
                       {taskReturn?.taskId === active.id ? '来源项目' : '任务'}
                     </button>
                     <Icon name="chevron" size={13} />
+                    {active.matter_title && (
+                      <>
+                        <span data-testid="task-project-context">{active.matter_title}</span>
+                        <Icon name="chevron" size={13} />
+                      </>
+                    )}
                     <span>{active.title}</span>
                   </div>
                 </div>
@@ -767,6 +795,23 @@ function Workbench() {
                     <Icon name="star" size={15} />
                   </button>
                 </div>
+                <div className="task-reminder-entry">
+                  <button
+                    type="button"
+                    aria-expanded={reminderTask === active.id}
+                    disabled={propertiesBlocked || reminderBlocked}
+                    onClick={() => setReminderTask(reminderTask === active.id ? null : active.id)}
+                  >
+                    本机提醒
+                  </button>
+                  {reminderTask === active.id && (
+                    <ReminderEditor
+                      taskId={active.id}
+                      disabled={dirty || busy || uncertain || propertiesBlocked}
+                      onBlocked={setReminderBlocked}
+                    />
+                  )}
+                </div>
                 <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
                   {['成果正文', '任务目标', '材料'].map((t) => (
                     <button
@@ -789,7 +834,7 @@ function Workbench() {
                     task={active}
                     initial={state}
                     onDirty={setDirty}
-                    disabled={propertiesBlocked}
+                    disabled={propertiesBlocked || reminderBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
                       setState(savedState);
@@ -802,7 +847,7 @@ function Workbench() {
                     task={active}
                     initial={objectiveState}
                     onDirty={setDirty}
-                    disabled={propertiesBlocked}
+                    disabled={propertiesBlocked || reminderBlocked}
                     onSaved={(saved, bytes) => {
                       setActive(saved);
                       setObjectiveState(bytes);
@@ -820,11 +865,12 @@ function Workbench() {
               <TaskInspector
                 key={active.id}
                 task={active}
-                projectDisabled={dirty || propertiesBlocked || busy || uncertain}
-                propertiesDisabled={dirty || busy || uncertain}
+                projectDisabled={dirty || propertiesBlocked || reminderBlocked || busy || uncertain}
+                propertiesDisabled={dirty || reminderBlocked || busy || uncertain}
+                reminderEditing={reminderBlocked}
                 onPropertiesBlocked={setPropertiesBlocked}
                 onTaskChanged={acceptTaskProperties}
-                onActivityOpen={(id) => void open(id)}
+                suggestions={tagSuggestions}
                 onProjectDirty={setDirty}
                 onProjectChanged={(task) => {
                   setActive(task);

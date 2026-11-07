@@ -316,12 +316,23 @@ export function TaskTable({
             )}
             <Icon name={documents ? 'file' : 'check'} size={16} />
             <small>{t.id.slice(0, 4).toUpperCase()}</small>
-            <strong>
+            <strong
+              className={documents ? undefined : 'task-row-title'}
+              onClick={
+                documents
+                  ? undefined
+                  : (event) => {
+                      event.stopPropagation();
+                      onOpen(t.id);
+                    }
+              }
+            >
               {t.title}
               {documents ? ' · 初稿' : ''}
               {!documents && (
                 <small className="task-attribute-summary">
                   {taskPriorityNames[t.priority ?? 0]} · {t.due_date ?? '无截止日期'}
+                  {t.matter_title && ` · ${t.matter_title}`}
                 </small>
               )}
             </strong>

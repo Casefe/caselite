@@ -7,13 +7,18 @@ import {
   type TaskRequest,
   type TaskResponse,
   taskResponseSchema,
+  tagListSchema,
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
-type Row = Task;
-const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+type Row = Omit<Task, 'tags'> & { tags: string };
+const decodeTask = ({ tags, ...row }: Row): Task => ({
+  ...row,
+  tags: tagListSchema.parse(JSON.parse(tags)),
+});
+const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.tags,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -27,7 +32,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   const get = (id: string): Task | null => {
     const row = db.prepare(`${select} WHERE t.id=? AND t.workspace_id=?`).get(id, workspace) as
       Row | undefined;
-    return row ?? null;
+    return row ? decodeTask(row) : null;
   };
   const objectiveState = (id: string, version: number) =>
     (
@@ -104,14 +109,14 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             .prepare(`${filtered} ORDER BY ${order} LIMIT 20 OFFSET ?`)
             .all(...params, q.offset) as Row[];
           return {
-            ...ok(rows),
+            ...ok(rows.map(decodeTask)),
             page: { offset: q.offset, total, has_more: q.offset + rows.length < total },
           };
         }
         const rows = db
           .prepare(`${select} WHERE t.workspace_id=? ORDER BY t.updated_at DESC,t.id`)
           .all(workspace) as Row[];
-        return ok(rows);
+        return ok(rows.map(decodeTask));
       }
       if (request.operation === 'status') {
         const row = db
@@ -177,7 +182,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           taskId = randomUUID();
           const now = new Date().toISOString();
           db.prepare(
-            'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at,status,priority,due_date) VALUES(?,?,?,?,1,?,?,?,?)',
+            'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at,status,priority,due_date,tags) VALUES(?,?,?,?,1,?,?,?,?,?)',
           ).run(
             taskId,
             workspace,
@@ -187,6 +192,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             request.status ?? 'todo',
             request.priority ?? 0,
             request.due_date ?? null,
+            JSON.stringify(request.tags ?? []),
           );
           if (request.matter_id)
             db.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(
@@ -214,11 +220,24 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           } else if (request.operation === 'update_attributes') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
-            if (task.priority === request.priority && task.due_date === request.due_date)
+            // 旧请求省略标签时保留当前标签；提交摘要仍基于原始请求。
+            const tags = JSON.stringify(request.tags ?? task.tags);
+            if (
+              task.priority === request.priority &&
+              task.due_date === request.due_date &&
+              tags === JSON.stringify(task.tags)
+            )
               return fail('INVALID_REQUEST', '任务属性没有变化。');
             db.prepare(
-              'UPDATE task_items SET priority=?,due_date=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
-            ).run(request.priority, request.due_date, new Date().toISOString(), taskId, workspace);
+              'UPDATE task_items SET priority=?,due_date=?,tags=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
+            ).run(
+              request.priority,
+              request.due_date,
+              tags,
+              new Date().toISOString(),
+              taskId,
+              workspace,
+            );
           } else if (request.operation === 'change_status') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');

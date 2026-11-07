@@ -1,41 +1,11 @@
-import ReminderEditor from './ReminderEditor';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import { Icon } from './Workspace';
 import AgentPanel from './AgentPanel';
 import TaskProjectAction from '../projects/TaskProjectAction';
-import ActivityList from '../projects/ActivityList';
 import TaskProperties from './TaskProperties';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
-import { projectTypes } from '../projects/ProjectFields';
-
-function TaskField({ matterId }: { matterId: string }) {
-  const [label, setLabel] = useState('正在读取项目领域…');
-  useEffect(() => {
-    let current = true;
-    void (async () => {
-      try {
-        const result = await window.caselite.catalog({
-          operation: 'read_project',
-          protocol_version: 1,
-          id: matterId,
-        });
-        if (!result.ok) throw new Error(result.message);
-        const attributes = result.projects.find((project) => project.id === matterId)?.attributes;
-        const type = attributes?.professional_type ?? attributes?.project_type;
-        if (current) setLabel(type ? projectTypes[type] : '所属项目暂无领域分类');
-      } catch {
-        if (current) setLabel('暂时无法读取所属项目领域。');
-      }
-    })();
-    return () => {
-      current = false;
-    };
-  }, [matterId]);
-  return <p>{label}</p>;
-}
-
 export default function TaskInspector({
   task,
   documents = false,
@@ -43,8 +13,9 @@ export default function TaskInspector({
   onProjectChanged,
   onProjectDirty,
   projectDisabled = false,
-  onActivityOpen,
+  suggestions = [],
   propertiesDisabled = false,
+  reminderEditing = false,
   onPropertiesBlocked,
   onTaskChanged,
 }: {
@@ -54,50 +25,46 @@ export default function TaskInspector({
   onProjectChanged?(task: Task): void;
   onProjectDirty?(dirty: boolean): void;
   projectDisabled?: boolean;
-  onActivityOpen?(id: string): void;
+  suggestions?: string[];
   propertiesDisabled?: boolean;
+  reminderEditing?: boolean;
   onPropertiesBlocked?(value: boolean): void;
   onTaskChanged?(task: Task, objectiveState: number[] | null): void;
 }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [propertiesEditing, setPropertiesEditing] = useState(false);
-  const [reminderEditing, setReminderEditing] = useState(false);
-  const reportProperties = useCallback(
+  const [editing, setEditing] = useState(false);
+  const reportBlocked = useCallback(
     (value: boolean) => {
-      setPropertiesEditing(value);
+      setEditing(value);
       onPropertiesBlocked?.(value);
     },
     [onPropertiesBlocked],
   );
   const open =
-    task && onOpen ? (
+    task && onOpen && documents ? (
       <button
         className="inspector-open"
         data-testid="inspector-open"
         onClick={() => onOpen(task.id)}
       >
         <Icon name="file" size={14} />
-        {documents ? '打开文档' : '打开任务'}
+        打开文档
         <Icon name="chevron" size={13} />
       </button>
     ) : null;
+  if (!task && !documents) return <aside className="task-inspector" aria-label="任务属性" />;
   if (task && !documents)
     return (
       <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
         <div className="inspector-content task-inspector-content" aria-label="任务属性">
-          {onOpen && <h2>{task.title}</h2>}
-          {open}
-          {onOpen && (
-            <p className="inspector-objective">{task.objective || '尚未填写工作目标。'}</p>
-          )}
           <details className="inspector-disclosure" open>
             <summary>属性</summary>
             {onPropertiesBlocked && onTaskChanged ? (
               <TaskProperties
                 task={task}
-                disabled={propertiesDisabled || reminderEditing}
-                onBlocked={reportProperties}
+                disabled={propertiesDisabled}
+                suggestions={suggestions}
+                onBlocked={reportBlocked}
                 onChanged={onTaskChanged}
               />
             ) : (
@@ -110,22 +77,6 @@ export default function TaskInspector({
                 <dd>{task.due_date ?? '未设置'}</dd>
               </dl>
             )}
-            <dl>
-              <dt>负责人</dt>
-              <dd>本人（个人本地）</dd>
-              <dt>所属项目</dt>
-              <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '独立任务')}</dd>
-            </dl>
-            {onPropertiesBlocked && (
-              <ReminderEditor
-                taskId={task.id}
-                disabled={propertiesDisabled || propertiesEditing}
-                onBlocked={(value) => {
-                  setReminderEditing(value);
-                  onPropertiesBlocked(value);
-                }}
-              />
-            )}
             {onProjectChanged && onProjectDirty && (
               <TaskProjectAction
                 task={task}
@@ -135,35 +86,9 @@ export default function TaskInspector({
               />
             )}
           </details>
-          <details className="inspector-disclosure" open>
-            <summary>领域</summary>
-            {task.matter_id ? (
-              <TaskField key={task.matter_id} matterId={task.matter_id} />
-            ) : (
-              <p>独立任务暂无所属项目领域。</p>
-            )}
-          </details>
-          {onActivityOpen && (
-            <details
-              className="inspector-disclosure"
-              onToggle={(e) => setActivityOpen(e.currentTarget.open)}
-            >
-              <summary>活动</summary>
-              {activityOpen && (
-                <ActivityList
-                  key={task.id}
-                  scope={{ type: 'task', id: task.id }}
-                  disabled={projectDisabled}
-                  onTask={onActivityOpen}
-                  compact
-                />
-              )}
-            </details>
-          )}
           <section aria-label="AI 对话" className="project-inspector-section">
             <h3>AI 对话</h3>
-            <p className="caption">当前任务 · {task.title}</p>
-            <div inert={propertiesEditing || reminderEditing}>
+            <div inert={reminderEditing || editing}>
               <AgentPanel key={task.id} scope={task.id} variant="compact" />
             </div>
           </section>

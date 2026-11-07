@@ -3534,7 +3534,7 @@ dd {
 }
 .catalog-actions input,
 .catalog-actions select,
-.catalog-view .project-properties select {
+.catalog-view .project-properties select:not(.home-model-select) {
   width: 100%;
   display: block;
   margin-top: 8px;
@@ -3767,7 +3767,7 @@ select,
 .provider-detail select,
 .catalog-actions input,
 .catalog-actions select,
-.catalog-view .project-properties select {
+.catalog-view .project-properties select:not(.home-model-select) {
   background: var(--theme-panel);
   border-color: var(--line);
   color: var(--ink);
@@ -4672,4 +4672,50 @@ select,
     border-top: 1px solid var(--line);
     border-left: 0;
   }
+}
+
+.task-tags {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.task-tag-list,
+.task-tag-input {
+  display: flex;
+  gap: 4px;
+}
+.task-tag-list {
+  flex-wrap: wrap;
+}
+.task-tag-list:empty {
+  display: none;
+}
+.task-tag-list button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.task-tag-input input {
+  min-width: 0;
+  flex: 1;
+}
+.task-tag-input button {
+  flex-shrink: 0;
+}
+.task-row-title:hover {
+  text-decoration: underline;
+}
+.task-reminder-entry {
+  margin: 0 0 8px;
+}
+.task-reminder-entry > button {
+  border: 0;
+  background: transparent;
+  color: var(--theme-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.assistant-panel--compact .home-model-select {
+  flex: 1;
+  max-width: 100%;
 }

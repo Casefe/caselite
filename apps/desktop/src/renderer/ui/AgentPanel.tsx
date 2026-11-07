@@ -403,6 +403,7 @@ export default function AgentPanel({
     },
   });
   const latest = runs.at(-1);
+  const homeComposer = scope === 'home' || variant === 'compact';
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <AttachmentReader.Provider
@@ -417,7 +418,7 @@ export default function AgentPanel({
               MOCK_ONLY · 离线演示 · 不调用真实模型，固定输出只验证界面流程。
             </p>
           )}
-          {scope !== 'home' && (
+          {!homeComposer && (
             <div className="assistant-model">
               <span>
                 <i className={configured ? 'local-dot' : 'unconnected-dot'} />{' '}
@@ -482,7 +483,7 @@ export default function AgentPanel({
               </button>
             )}
           <ComposerPrimitive.Root
-            className={scope === 'home' ? 'assistant-compose agent-prompt' : 'assistant-compose'}
+            className={homeComposer ? 'assistant-compose agent-prompt' : 'assistant-compose'}
             onSubmit={(event) => {
               event.preventDefault();
               void send();
@@ -500,7 +501,7 @@ export default function AgentPanel({
               disabled={pending || unknown || Boolean(active)}
               actions={
                 <>
-                  {scope === 'home' && (
+                  {homeComposer && (
                     <select
                       className="home-model-select"
                       aria-label="选择大模型"
@@ -583,6 +584,11 @@ export default function AgentPanel({
               />
             </PdfAttachments>
           </ComposerPrimitive.Root>
+          {variant === 'compact' && !configured && openSettings && (
+            <button type="button" className="model-settings-link" onClick={openSettings}>
+              前往设置配置 Key
+            </button>
+          )}
           {scope !== 'home' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。

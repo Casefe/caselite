@@ -29,10 +29,18 @@ export const taskItems = sqliteTable(
       .default('todo'),
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
+    tags: text('tags', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     version: integer('version').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    check(
+      'task_tags_valid',
+      sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags}) = 'array' AND json_array_length(${table.tags}) <= 20 ELSE 0 END`,
+    ),
     check('task_status_valid', sql`${table.status} IN ('todo', 'in_progress', 'done', 'canceled')`),
     check(
       'task_priority_valid',

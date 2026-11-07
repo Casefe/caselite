@@ -27,7 +27,11 @@ const response = (task: Task, receipt: string | null = null): TaskResponse => ({
   receipt,
   state: null,
 });
-function show(task: Task, catalog: (request: TaskRequest) => Promise<TaskResponse>) {
+function show(
+  task: Task,
+  catalog: (request: TaskRequest) => Promise<TaskResponse>,
+  freezeProps = false,
+) {
   window.caselite = { task: catalog } as unknown as Window['caselite'];
   const changed = vi.fn(),
     blocked = vi.fn();
@@ -40,7 +44,7 @@ function show(task: Task, catalog: (request: TaskRequest) => Promise<TaskRespons
         onBlocked={blocked}
         onChanged={(next, state) => {
           changed(next, state);
-          setCurrent(next);
+          if (!freezeProps) setCurrent(next);
         }}
       />
     );
@@ -60,8 +64,9 @@ it('checks the committed receipt then reads the current object instead of projec
   );
   const { changed } = show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
-  await screen.findByText('当前已保存：已取消');
+  await waitFor(() =>
+    expect((screen.getByLabelText('任务状态') as HTMLSelectElement).value).toBe('canceled'),
+  );
   expect(changed).toHaveBeenCalledWith(current, null);
   expect(api.mock.calls.map(([r]) => r.operation)).toEqual(['change_status', 'read']);
 });
@@ -79,9 +84,8 @@ it('queries a lost receipt with the original key, without dispatching the mutati
   });
   show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
-  fireEvent.click(await screen.findByText('核对原状态提交'));
-  await screen.findByText('当前已保存：已完成');
+  fireEvent.click(await screen.findByText('核对并重试原提交'));
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
   expect(api.mock.calls.find(([r]) => r.operation === 'status')?.[0]).toMatchObject({
     idempotency_key: key,
@@ -104,12 +108,8 @@ it('retains an unknown request after a missing receipt and retries only the same
   });
   show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
-  fireEvent.click(await screen.findByText('核对原状态提交'));
-  await screen.findByText('尚未找到回执');
-  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
-  fireEvent.click(screen.getByText('重试原状态请求'));
-  await screen.findByText('当前已保存：已完成');
+  fireEvent.click(await screen.findByText('核对并重试原提交'));
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   expect(mutations).toHaveLength(2);
   expect(mutations[0]).toEqual(mutations[1]);
 });
@@ -118,11 +118,9 @@ it('keeps the proposed state after a rolled-back write and never marks it as alr
   const task = initial();
   show(task, async () => ({ ok: false, code: 'WRITE_FAILED', message: '存储写入失败' }));
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
   await screen.findByText('存储写入失败');
   expect((screen.getByLabelText('任务状态') as HTMLSelectElement).value).toBe('done');
-  expect(screen.getByText('当前已保存：待办')).toBeTruthy();
-  expect(screen.getByText('状态尚未保存')).toBeTruthy();
+  expect(screen.getByText('重试保存')).toBeTruthy();
 });
 
 it('does not reissue a confirmed mutation when only the subsequent read fails', async () => {
@@ -136,9 +134,8 @@ it('does not reissue a confirmed mutation when only the subsequent read fails', 
   });
   show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
   fireEvent.click(await screen.findByText('重读已保存任务属性'));
-  await screen.findByText('当前已保存：已完成');
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   expect(reads).toBe(2);
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
 });
@@ -153,11 +150,10 @@ it('rejects a wrong-object receipt without clearing the draft or reading a diffe
   );
   const { changed } = show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
-  await screen.findByText('提交回执与当前任务不一致，请核对原提交。');
+  await screen.findByText('提交回执与任务不一致，请核对原提交。');
   expect(changed).not.toHaveBeenCalled();
   expect(api).toHaveBeenCalledTimes(1);
-  expect(screen.getByText('核对原状态提交')).toBeTruthy();
+  expect(screen.getByText('核对并重试原提交')).toBeTruthy();
 });
 
 it('ignores a delayed receipt after the original Task properties unmounts', async () => {
@@ -172,7 +168,6 @@ it('ignores a delayed receipt after the original Task properties unmounts', asyn
   });
   const { unmount, changed } = show(task, api);
   select();
-  fireEvent.click(screen.getByText('保存任务状态'));
   await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
   unmount();
   await act(async () =>
@@ -187,92 +182,149 @@ it('ignores a delayed receipt after the original Task properties unmounts', asyn
   expect(api).toHaveBeenCalledTimes(1);
 });
 
+// 延续既有回归标识。点选自动保存允许排队，但同一任务的写入不能重叠。
 it('edits ordinary attributes together, clears the date, and prevents overlapping status drafts', async () => {
   const task = initial();
   let current = task;
-  const api = vi.fn(async (r: TaskRequest) => {
-    if (r.operation === 'update_attributes') {
+  let confirm!: () => void;
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'change_status') {
+      await new Promise<void>((resolve) => {
+        confirm = resolve;
+      });
+      current = { ...current, status: request.status, version: 2 };
+      return response(current, request.idempotency_key);
+    }
+    if (request.operation === 'update_attributes') {
+      expect(request.expected_version).toBe(current.version);
       current = {
         ...current,
-        priority: r.priority,
-        due_date: r.due_date,
+        priority: request.priority,
+        due_date: request.due_date,
+        tags: request.tags,
         version: current.version + 1,
       };
-      return response(current, r.idempotency_key);
+      return response(current, request.idempotency_key);
     }
     return response(current);
   });
-  show(task, api);
-  fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '1' } });
-  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '2024-02-29' } });
-  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
-  fireEvent.click(screen.getByText('保存任务属性'));
-  await screen.findByText('已保存：紧急 · 2024-02-29');
-  expect(api.mock.calls[0][0]).toMatchObject({
-    operation: 'update_attributes',
-    priority: 1,
-    due_date: '2024-02-29',
-    expected_version: 1,
-  });
-  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '' } });
-  fireEvent.click(screen.getByText('保存任务属性'));
-  await screen.findByText('已保存：紧急 · 无截止日期');
-  expect(api.mock.calls[2][0]).toMatchObject({ due_date: null, priority: 1, expected_version: 2 });
+  const { blocked } = show(task, api, true);
   select();
-  expect((screen.getByLabelText('任务优先级') as HTMLSelectElement).disabled).toBe(true);
-});
-
-it('retains the exact date/priority request through unknown delivery and rejects mismatched attribute receipts', async () => {
-  const task = initial(),
-    mutations: TaskRequest[] = [];
-  let current = { ...task, priority: 2, due_date: '2026-01-01', version: 2 };
-  const api = vi.fn(async (r: TaskRequest): Promise<TaskResponse> => {
-    if (r.operation === 'update_attributes') {
-      mutations.push(r);
-      return mutations.length === 1
-        ? { ok: false, code: 'RESULT_UNKNOWN', message: '未核实' }
-        : response(current, r.idempotency_key);
-    }
-    if (r.operation === 'status')
-      return response({ ...current, due_date: '2026-01-02' }, r.idempotency_key);
-    return response(current);
-  });
-  show(task, api);
   fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '2' } });
-  fireEvent.change(screen.getByLabelText('普通截止日期'), { target: { value: '2026-01-01' } });
-  fireEvent.click(screen.getByText('保存任务属性'));
-  fireEvent.click(await screen.findByText('核对原属性提交'));
-  await screen.findByText('提交回执与当前任务不一致，请核对原提交。');
-  expect((screen.getByLabelText('普通截止日期') as HTMLInputElement).disabled).toBe(true);
-  current = { ...current, priority: 4, due_date: null, version: 3 };
-  // 原回执确认原属性后，读取后来版本；不能把旧快照当当前日期。
-  api.mockImplementation(async (r: TaskRequest) => {
-    if (r.operation === 'update_attributes') {
-      mutations.push(r);
-      return response(
-        { ...task, priority: 2, due_date: '2026-01-01', version: 2 },
-        r.idempotency_key,
-      );
-    }
-    return response(current);
+  const input = screen.getByLabelText('普通截止日期') as HTMLInputElement;
+  fireEvent.input(input, { target: { value: '2024-02-29' } });
+  expect(api).toHaveBeenCalledTimes(1);
+  await act(async () => confirm());
+  expect(current.version).toBe(3);
+  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).value).toBe('done');
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  fireEvent.blur(input);
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(current).toMatchObject({
+    version: 4,
+    due_date: '2024-02-29',
+    priority: 2,
+    status: 'done',
   });
-  fireEvent.click(screen.getByText('重试原属性请求'));
-  await screen.findByText('已保存：低 · 无截止日期');
-  expect(mutations).toHaveLength(2);
-  expect(mutations[0]).toEqual(mutations[1]);
+  fireEvent.click(screen.getByText('清空截止日期'));
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(current).toMatchObject({ version: 5, due_date: null, priority: 2 });
 });
 
 it('blocks incomplete native date input instead of treating it as an explicit clear', () => {
   const api = vi.fn();
-  show({ ...initial(), due_date: '2026-01-01' }, api);
+  const { blocked } = show({ ...initial(), due_date: '2026-01-01' }, api);
   const input = screen.getByLabelText('普通截止日期') as HTMLInputElement;
-  Object.defineProperty(input, 'validity', {
-    configurable: true,
-    get: () => ({ valid: false, badInput: true }),
-  });
-  fireEvent.change(input, { target: { value: '' } });
-  expect((screen.getByText('保存任务属性') as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, { target: { value: '' } });
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+  fireEvent.blur(input);
   expect(api).not.toHaveBeenCalled();
-  expect(screen.getByText('已保存：未设置 · 2026-01-01')).toBeTruthy();
+  fireEvent.compositionEnd(input);
+  fireEvent.blur(input);
+  expect(screen.getByRole('alert')).toBeTruthy();
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(input.value).toBe('2026-01-01');
+  expect(blocked).toHaveBeenLastCalledWith(false);
+  expect(api).not.toHaveBeenCalled();
+});
+
+it('stops queued edits when read-back observes an intervening version', async () => {
+  const task = initial();
+  let finish!: () => void;
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'change_status') {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return response({ ...task, status: 'done', version: 2 }, request.idempotency_key);
+    }
+    return response({ ...task, status: 'done', priority: 4, version: 3 });
+  });
+  show(task, api);
+  select();
+  fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '1' } });
+  await act(async () => finish());
+  expect(screen.getByRole('alert').textContent).toContain('已有其他修改');
+  expect((screen.getByLabelText('任务优先级') as HTMLSelectElement).value).toBe('1');
+  expect(api.mock.calls.map(([r]) => r.operation)).toEqual(['change_status', 'read']);
+});
+
+it('retains unadded label text during composition and only writes after a deliberate add or remove', async () => {
+  let current = initial();
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation !== 'update_attributes') return response(current);
+    current = { ...current, tags: request.tags, version: current.version + 1 };
+    return response(current, request.idempotency_key);
+  });
+  const { blocked } = show(current, api);
+  const input = screen.getByLabelText('新标签');
+  fireEvent.compositionStart(input);
+  fireEvent.change(input, { target: { value: '合成标签' } });
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+  expect(api).not.toHaveBeenCalled();
+  expect(blocked).toHaveBeenLastCalledWith(true);
+  fireEvent.compositionEnd(input);
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(current.tags).toEqual(['合成标签']);
+  fireEvent.click(screen.getByRole('button', { name: '移除标签 合成标签' }));
+  await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
+  expect(current.tags).toEqual([]);
+});
+
+it('retains the exact date/priority request through unknown delivery and rejects mismatched attribute receipts', async () => {
+  const task = { ...initial(), priority: 2, tags: ['原标签'] };
+  const committed = { ...task, due_date: '2026-01-01', version: 2 };
+  const later = { ...committed, priority: 4, due_date: null, version: 3 };
+  const requests: TaskRequest[] = [];
+  let missing = false;
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'update_attributes') {
+      requests.push(request);
+      return requests.length === 1
+        ? { ok: false, code: 'RESULT_UNKNOWN', message: '未核实' }
+        : response(committed, request.idempotency_key);
+    }
+    if (request.operation === 'status')
+      return missing
+        ? { ok: false, code: 'NOT_FOUND', message: '无回执' }
+        : response({ ...committed, due_date: '2026-01-02' }, request.idempotency_key);
+    return response(later);
+  });
+  const { changed } = show(task, api);
+  const input = screen.getByLabelText('普通截止日期');
+  fireEvent.input(input, { target: { value: '2026-01-01' } });
+  fireEvent.blur(input);
+  fireEvent.click(await screen.findByText('核对并重试原提交'));
+  await screen.findByText('提交回执与任务不一致，请核对原提交。');
+  expect((input as HTMLInputElement).disabled).toBe(true);
+  expect(changed).not.toHaveBeenCalled();
+  missing = true;
+  fireEvent.click(screen.getByText('核对并重试原提交'));
+  await waitFor(() => expect(changed).toHaveBeenCalledWith(later, null));
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual(requests[1]);
+  expect(requests[0]).toMatchObject({ priority: 2, due_date: '2026-01-01', tags: ['原标签'] });
 });
