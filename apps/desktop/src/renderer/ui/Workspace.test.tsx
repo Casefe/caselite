@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceShell } from './Workspace';
 import ProjectPreview from '../features/projects/ProjectPreview';
@@ -20,22 +20,18 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         <p>内容区域</p>
       </WorkspaceShell>,
     );
-    expect(
-      Array.from(screen.getByRole('navigation').querySelectorAll('button'), (b) => b.ariaLabel),
-    ).toEqual([
-      '首页',
-      '提醒',
-      '任务',
-      '知识库',
-      '项目',
-      '财务',
-      '报告',
-      '联系人',
-      '工具',
-      '白板',
-      '文档',
-    ]);
-    expect(screen.getByRole('group', { name: '工作区' })).toBeTruthy();
+    const checkNavigation = () => {
+      const sidebar = within(screen.getByRole('navigation'));
+      const labels = (group: string) =>
+        within(sidebar.getByRole('group', { name: group }))
+          .getAllByRole('button')
+          .map((button) => button.getAttribute('aria-label'));
+      expect(labels('常用')).toEqual(['首页', '提醒', '任务', '项目', '文档']);
+      expect(labels('工作区')).toEqual(['知识库', '财务', '客户']);
+      for (const name of ['白板', '报告', '工具', '联系人'])
+        expect(sidebar.queryByRole('button', { name, exact: true })).toBeNull();
+    };
+    checkNavigation();
     expect(screen.getByRole('region', { name: '收藏' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '项目', exact: true }));
     expect(navigate).toHaveBeenCalledWith('projects');
@@ -66,6 +62,9 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     expect(screen.getByRole('button', { name: '展开导航' }).getAttribute('aria-expanded')).toBe(
       'false',
     );
+    checkNavigation();
+    fireEvent.click(screen.getByRole('button', { name: '客户', exact: true }));
+    expect(navigate).toHaveBeenCalledWith('contacts');
     fireEvent.click(screen.getByRole('button', { name: '展开导航' }));
     expect(collapse).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: '谭律师 · 设置', exact: true }));

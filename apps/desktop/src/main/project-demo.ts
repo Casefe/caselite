@@ -293,17 +293,15 @@ export async function runProjectDemo(
         await evaluate(`${target}.click()`);
       };
       const title = '合成工作区导航项目';
-      for (const [id, label] of [
-        ['finance', '财务'],
-        ['tools', '工具'],
-        ['whiteboard', '白板'],
-      ]) {
-        await click(`[data-nav=${id}]`);
-        await wait(
-          `document.querySelector('.workspace-placeholder h1')?.textContent===${JSON.stringify(label)}`,
-        );
-        await capture(`workspace-${id}.png`);
-      }
+      const expectedNavigation = `(() => {
+        const groups = [...document.querySelectorAll('#primary-navigation [role=group]')];
+        const labels = groups.map(group => [...group.querySelectorAll('button')].map(button => button.getAttribute('aria-label')));
+        return JSON.stringify(labels) === JSON.stringify([['首页', '提醒', '任务', '项目', '文档'], ['知识库', '财务', '客户']]);
+      })()`;
+      await wait(expectedNavigation);
+      await click('[data-nav=finance]');
+      await wait("document.querySelector('.workspace-placeholder h1')?.textContent === '财务'");
+      await capture('workspace-finance.png');
       await click('[data-nav=projects]');
       await button('创建项目');
       await wait("document.querySelector('dialog[open] input')===document.activeElement");
@@ -363,7 +361,7 @@ export async function runProjectDemo(
           const rect=(selector)=>document.querySelector(selector).getBoundingClientRect();
           const fold=rect('.workspace-navigation-toggle'), back=rect('.workspace-project-back-button');
           const title=rect('.project-catalog-heading h1'), create=rect('.project-catalog-heading > .primary');
-          return [...document.querySelectorAll('#primary-navigation button')].map(b=>b.ariaLabel).join(',')==='首页,提醒,任务,知识库,项目,财务,工具,白板,文档'
+          return ${expectedNavigation}
             && labels('.project-section-tabs button')==='概述,任务,文件,可视化,交付物,活动'
             && labels('.project-properties .project-fields > label > .project-property-label').startsWith('状态,优先级,负责人,日期,标签,名称,项目类型')
             && document.querySelector('[data-nav=settings]').textContent.replace(/\\s/g,'')==='谭律师Pro'
@@ -376,6 +374,7 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.workspace-navigation-toggle[aria-expanded=false]') && document.querySelector('.workspace-project-back-button')",
         );
+        await wait(expectedNavigation);
         await capture(`workspace-${theme}-${width}-collapsed.png`);
         await click('.workspace-navigation-toggle');
         await click('.workspace-project-back-button');
@@ -2592,11 +2591,7 @@ export async function runProjectDemo(
         && document.querySelector('.contacts-inspector li')?.textContent === '独立任务转项目验收'`);
       await captureRenderer('dev-1806-contacts.png');
       if (phase === 'project-files-read') {
-        await evaluate("document.querySelector('[data-nav=reports]').click()");
-        await wait(
-          "document.querySelector('.report-project-list tbody')?.textContent.includes('独立任务转项目验收')",
-        );
-        await captureRenderer('dev-1805-report.png');
+        await wait("!document.querySelector('[data-nav=reports]')");
         await evaluate("document.querySelector('[data-nav=tasks]').click()");
         await wait(
           "document.querySelector('.task-table-structured [role=columnheader]:nth-child(4)')?.textContent === '截止日期'",

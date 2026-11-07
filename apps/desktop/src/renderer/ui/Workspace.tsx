@@ -26,16 +26,13 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
   { id: 'home', label: '首页', icon: 'home' },
   { id: 'reminders', label: '提醒', icon: 'bell' },
   { id: 'tasks', label: '任务', icon: 'check' },
-  { id: 'knowledge', label: '知识库', icon: 'book' },
+  { id: 'projects', label: '项目', icon: 'folder' },
+  { id: 'documents', label: '文档', icon: 'file' },
 ];
 const workspaceNavigation: typeof navigation = [
-  { id: 'projects', label: '项目', icon: 'folder' },
+  { id: 'knowledge', label: '知识库', icon: 'book' },
   { id: 'finance', label: '财务', icon: 'wallet' },
-  { id: 'reports', label: '报告', icon: 'board' },
-  { id: 'contacts', label: '联系人', icon: 'user' },
-  { id: 'tools', label: '工具', icon: 'tool' },
-  { id: 'whiteboard', label: '白板', icon: 'board' },
-  { id: 'documents', label: '文档', icon: 'file' },
+  { id: 'contacts', label: '客户', icon: 'user' },
 ];
 export function WorkspaceShell({
   view,
