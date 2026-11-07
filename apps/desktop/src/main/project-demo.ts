@@ -126,7 +126,12 @@ export async function runProjectDemo(
     await wait(
       `${projectComposerReady} && !document.querySelector('${projectInput}').closest('[inert]')`,
     );
-    await evaluate(`document.querySelector('${projectInput}').focus()`);
+    window.webContents.focus();
+    await evaluate(`(() => {
+      const input = document.querySelector('${projectInput}');
+      input.focus();
+      input.click();
+    })()`);
     await wait("document.querySelector('[aria-label=项目上下文] dl')");
   };
   const typeProjectDraft = async (draft: string) => {
