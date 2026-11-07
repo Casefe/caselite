@@ -66,7 +66,7 @@ describe('DEV-1566 controlled desktop database path', () => {
       try {
         await expect(first.api.offlineProbe(writeRequest)).resolves.toMatchObject({
           ok: true,
-          value: { stored_value: 'offline-integration-verified', migration_count: 16 },
+          value: { stored_value: 'offline-integration-verified', migration_count: 17 },
         });
         await expect(
           first.handler({ senderFrame: { url: 'https://untrusted.example' } }, readRequest),
@@ -90,7 +90,7 @@ describe('DEV-1566 controlled desktop database path', () => {
       try {
         await expect(second.api.offlineProbe(readRequest)).resolves.toMatchObject({
           ok: true,
-          value: { stored_value: 'offline-integration-verified', migration_count: 16 },
+          value: { stored_value: 'offline-integration-verified', migration_count: 17 },
         });
       } finally {
         second.close();

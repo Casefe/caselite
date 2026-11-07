@@ -62,12 +62,14 @@ describe('task promotion UI', () => {
     expect((screen.getByLabelText('项目名称') as HTMLInputElement).value).toBe(task.title);
     fireEvent.click(screen.getByText('保存项目'));
     fireEvent.click(await screen.findByText('核对原提交'));
-    await waitFor(() => expect(changed).toHaveBeenCalledWith(actual, null));
+    await waitFor(() => {
+      expect(changed).toHaveBeenCalledWith(actual, null);
+      expect(dirty).toHaveBeenLastCalledWith(false);
+    });
     expect(sent).toHaveLength(2);
     expect(sent[0]).toEqual(sent[1]);
     expect(sent[0]).toMatchObject({ task_id: task.id, expected_version: 3 });
     expect(dirty).toHaveBeenCalledWith(true);
-    expect(dirty).toHaveBeenLastCalledWith(false);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('never creates again when re-reading an already committed Task link fails', async () => {
