@@ -2,6 +2,7 @@ import TaskTags from './ui/TaskTags';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Matter, Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
@@ -28,6 +29,7 @@ import {
 import ActivityList from './projects/ActivityList';
 import { DiscussionFeed } from './projects/ProjectDiscussion';
 import TaskContentEditor from './editors/TaskContentEditor';
+import DocumentReview from './review/DocumentReview';
 
 const mutation = () => ({
   protocol_version: 1 as const,
@@ -53,12 +55,18 @@ function BodyEditor({
   onSaved,
   onDirty,
   disabled = false,
+  reviewDock,
+  reviewSaving,
+  onReviewSaving,
 }: {
   task: Task;
   initial: number[] | null;
   onSaved(task: Task, state: number[]): void;
   onDirty(dirty: boolean): void;
   disabled?: boolean;
+  reviewDock: HTMLElement | null;
+  reviewSaving: boolean;
+  onReviewSaving(value: boolean): void;
 }) {
   const [doc] = useState(() => {
     const d = new Y.Doc();
@@ -71,6 +79,7 @@ function BodyEditor({
   const [dirty, setDirty] = useState(false);
   const [hasPending, setHasPending] = useState(false);
   const changes = useRef(0);
+  const reviewHydrating = useRef(false);
   const editorReady = useRef(false);
   const pending = useRef<{ request: TaskRequest; sequence: number } | null>(null);
   const alive = useRef(true);
@@ -86,7 +95,7 @@ function BodyEditor({
         editorReady.current = true;
       },
       onUpdate: () => {
-        if (!editorReady.current) return;
+        if (!editorReady.current || reviewHydrating.current) return;
         changes.current++;
         setDirty(true);
         onDirty(true);
@@ -97,8 +106,8 @@ function BodyEditor({
   );
   useEffect(() => {
     // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
-    editor?.setEditable(!task.document_archived_at && !disabled, false);
-  }, [editor, task.document_archived_at, disabled]);
+    editor?.setEditable(!task.document_archived_at && !disabled && !reviewSaving, false);
+  }, [editor, task.document_archived_at, disabled, reviewSaving]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -109,7 +118,7 @@ function BodyEditor({
     };
   }, [doc]);
   async function save() {
-    if (!editor || busy || disabled) return;
+    if (!editor || busy || disabled || reviewSaving) return;
     setBusy(true);
     setStatus('正在保存…');
     const sequence = pending.current?.sequence ?? changes.current;
@@ -170,13 +179,46 @@ function BodyEditor({
         <button
           className="primary"
           data-testid="save-body"
-          disabled={disabled || !!task.document_archived_at || busy || (!dirty && !hasPending)}
+          disabled={
+            disabled ||
+            reviewSaving ||
+            !!task.document_archived_at ||
+            busy ||
+            (!dirty && !hasPending)
+          }
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
         </button>
       </footer>
       <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
+      {reviewDock &&
+        createPortal(
+          <DocumentReview
+            key={task.document_id}
+            editor={editor}
+            identity={{
+              task_id: task.id,
+              document_id: task.document_id,
+              body_id: task.body_id,
+              revision,
+            }}
+            blocked={disabled || !!task.document_archived_at || dirty || busy || hasPending}
+            onApplyBusy={onReviewSaving}
+            onSaved={({ task: saved, state }) => {
+              reviewHydrating.current = true;
+              try {
+                Y.applyUpdate(doc, Uint8Array.from(state));
+              } finally {
+                reviewHydrating.current = false;
+              }
+              setRevision(saved.body_revision);
+              setStatus('已保存到此设备');
+              onSaved(saved, state);
+            }}
+          />,
+          reviewDock,
+        )}
     </section>
   );
 }
@@ -193,6 +235,9 @@ function Workbench() {
     null,
   );
   const [taskListState, setTaskListState] = useState(initialTaskListState);
+  const [reviewDocument, setReviewDocument] = useState<string | null>(null);
+  const [reviewDock, setReviewDock] = useState<HTMLElement | null>(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
   const [detailTab, setDetailTab] = useState('内容');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
@@ -284,6 +329,7 @@ function Workbench() {
         reminderBlocked ||
         busy ||
         uncertain ||
+        reviewSaving ||
         agentPrompt.text.trim() ||
         createDirty
       ) {
@@ -303,9 +349,11 @@ function Workbench() {
     uncertain,
     createDirty,
     agentPrompt,
+    reviewSaving,
   ]);
   function canLeave() {
     if (
+      reviewSaving ||
       dirty ||
       commentDirty ||
       projectDirty ||
@@ -346,11 +394,17 @@ function Workbench() {
     setProjectOptions([]);
     setCreateProperties({ ...defaultCreateProperties, matter_id: source?.projectId ?? '' });
     setCreateSource(source);
+    setReviewDocument(null);
     setCreating(true);
     setTaskReturn(null);
     setError('');
   }
-  async function open(id: string, source: ProjectViewState | null = null, document = false) {
+  async function open(
+    id: string,
+    source: ProjectViewState | null = null,
+    document = false,
+    review = false,
+  ) {
     if (!canLeave()) return;
     if (dirty) {
       setError('请先保存当前正文，再切换任务。');
@@ -377,6 +431,7 @@ function Workbench() {
         setTaskReturn(source ? { taskId: id, source } : null);
         if (source) setProjectView(source);
         setActive(task);
+        setReviewDocument(review ? task.document_id : null);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');
@@ -486,6 +541,8 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setActive(null);
+    if (reviewDocument === active?.document_id) setView('documents');
+    setReviewDocument(null);
     if (taskReturn && taskReturn.taskId === active?.id) {
       setProjectView(taskReturn.source);
       setView('projects');
@@ -505,6 +562,8 @@ function Workbench() {
     }
     void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
   };
+  const documentEntry = reviewDocument !== null && reviewDocument === active?.document_id;
+  const documentReview = documentEntry && detailTab === '成果正文';
   return (
     <ModelSettingsNavigation.Provider
       value={() => {
@@ -514,7 +573,7 @@ function Workbench() {
       }}
     >
       <WorkspaceShell
-        view={view}
+        view={view === 'tasks' && documentEntry ? 'documents' : view}
         collapsed={collapsed}
         onCollapse={() => setCollapsed(!collapsed)}
         onNavigate={navigate}
@@ -779,7 +838,11 @@ function Workbench() {
                     <button
                       className="icon-button"
                       aria-label={
-                        taskReturn?.taskId === active.id ? '返回来源项目' : '返回任务列表'
+                        documentEntry
+                          ? '返回文档列表'
+                          : taskReturn?.taskId === active.id
+                            ? '返回来源项目'
+                            : '返回任务列表'
                       }
                       data-testid="back-to-tasks"
                       onClick={resetTask}
@@ -787,7 +850,11 @@ function Workbench() {
                       <Icon name="back" size={16} />
                     </button>
                     <button className="breadcrumb-button" onClick={resetTask}>
-                      {taskReturn?.taskId === active.id ? '来源项目' : '任务'}
+                      {documentEntry
+                        ? '文档'
+                        : taskReturn?.taskId === active.id
+                          ? '来源项目'
+                          : '任务'}
                     </button>
                     <Icon name="chevron" size={13} />
                     {active.matter_title && (
@@ -871,6 +938,9 @@ function Workbench() {
                     task={active}
                     initial={state}
                     onDirty={setDirty}
+                    reviewDock={documentReview ? reviewDock : null}
+                    reviewSaving={reviewSaving}
+                    onReviewSaving={setReviewSaving}
                     disabled={projectDirty || propertiesBlocked || reminderBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
@@ -931,23 +1001,34 @@ function Workbench() {
                   </section>
                 )}
               </div>
-              <TaskInspector
-                key={active.id}
-                task={active}
-                projectDisabled={
-                  dirty || commentDirty || propertiesBlocked || reminderBlocked || busy || uncertain
-                }
-                propertiesDisabled={
-                  dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
-                }
-                reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
-                onPropertiesBlocked={setPropertiesBlocked}
-                onTaskChanged={acceptTaskProperties}
-                suggestions={tagSuggestions}
-                assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
-                onProjectDirty={setProjectDirty}
-                onProjectChanged={acceptTaskProperties}
-              />
+              {documentReview ? (
+                <aside className="task-inspector" ref={setReviewDock} aria-label="文档审阅侧栏" />
+              ) : (
+                <TaskInspector
+                  key={active.id}
+                  task={active}
+                  projectDisabled={
+                    dirty ||
+                    commentDirty ||
+                    propertiesBlocked ||
+                    reminderBlocked ||
+                    busy ||
+                    uncertain
+                  }
+                  propertiesDisabled={
+                    dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+                  }
+                  reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
+                  onPropertiesBlocked={setPropertiesBlocked}
+                  onTaskChanged={acceptTaskProperties}
+                  suggestions={tagSuggestions}
+                  assigneeSuggestions={tasks.flatMap(({ assignee }) =>
+                    assignee ? [assignee] : [],
+                  )}
+                  onProjectDirty={setProjectDirty}
+                  onProjectChanged={acceptTaskProperties}
+                />
+              )}
             </div>
           </section>
         ) : view === 'reminders' ? (
@@ -956,7 +1037,7 @@ function Workbench() {
           <DocumentLibrary
             key={view}
             library={view === 'knowledge'}
-            onOpen={(id) => void open(id, null, true)}
+            onOpen={(id) => void open(id, null, true, view === 'documents')}
             onDirty={setDirty}
           />
         ) : view === 'tasks' ? (

@@ -6,7 +6,8 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
   // 项目真实范围只由原 scope 列恢复；空 UUID 不对应可创建的任务。
   const legacyProjectPlaceholder = '00000000-0000-0000-0000-000000000000';
   const encode = (run: AgentRun, now: string) => {
-    const project = run.scope.startsWith('project:');
+    const document = run.scope.startsWith('document:');
+    const project = run.scope.startsWith('project:') || document;
     return JSON.stringify({
       ...run,
       scope: project ? legacyProjectPlaceholder : run.scope,
@@ -20,7 +21,7 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
   const decode = (row: StoredRun) => {
     const stored = JSON.parse(row.payload);
     const payload = agentRunSchema.parse(stored);
-    if (!row.scope.startsWith('project:')) return payload;
+    if (!row.scope.startsWith('project:') && !row.scope.startsWith('document:')) return payload;
     if (payload.scope !== legacyProjectPlaceholder) throw new Error('Invalid stored project run');
     return agentRunSchema.parse({
       ...payload,

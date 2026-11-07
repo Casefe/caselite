@@ -1,8 +1,9 @@
 import { createReminderStore } from './reminder-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
-import { validateBody, bodyPlainText } from './body-schema';
+import { validateBody, bodyPlainText, reviewBodyRange } from './body-schema';
 import {
+  type ReviewRange,
   type Task,
   type TaskRequest,
   type TaskResponse,
@@ -48,6 +49,56 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    reviewDocumentExists(documentId: string) {
+      return Boolean(
+        db
+          .prepare(
+            'SELECT d.id FROM documents d JOIN task_items t ON t.id=d.task_id WHERE d.id=? AND t.workspace_id=?',
+          )
+          .get(documentId, workspace),
+      );
+    },
+    reviewSaved(range: ReviewRange, receipt: string) {
+      const result = this.execute({
+        protocol_version: 1,
+        operation: 'status',
+        idempotency_key: receipt,
+      });
+      if (!result.ok) return;
+      const task = result.tasks[0];
+      if (
+        !task ||
+        task.id !== range.task_id ||
+        task.document_id !== range.document_id ||
+        task.body_id !== range.body_id ||
+        task.body_revision !== range.revision + 1
+      )
+        throw new Error('Unexpected review receipt');
+      const row = db
+        .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
+        .get(task.body_id, task.body_revision) as { state: Buffer } | undefined;
+      if (!row) throw new Error('Missing review revision');
+      validateBody(row.state);
+      return { task, state: Array.from(row.state) };
+    },
+    reviewState(range: ReviewRange, replacement?: string) {
+      const task = get(range.task_id);
+      if (
+        !task ||
+        task.document_archived_at ||
+        task.document_id !== range.document_id ||
+        task.body_id !== range.body_id ||
+        task.body_revision !== range.revision ||
+        task.editor_schema !== 1
+      )
+        return;
+      const row = db
+        .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
+        .get(task.body_id, range.revision) as { state: Buffer } | undefined;
+      if (!row) return;
+      validateBody(row.state);
+      return reviewBodyRange(row.state, range, replacement);
+    },
     materials: createMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),
     catalog: createCatalogStore(db, workspace),

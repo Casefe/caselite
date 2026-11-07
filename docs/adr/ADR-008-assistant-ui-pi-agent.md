@@ -1,5 +1,16 @@
 # ADR-008｜assistant-ui 与 Pi 单运行适配
 
+
+## DEV-1788 文档审阅 UI 与确认写回｜2026-11-07
+
+本卡限定「文档 → 打开正文」中的现有任务成果工作稿，基线 `fda568686d4e879bf62c48b4781031a0227f208d`。复用现有 assistant-ui 的适配代码更少，但无法满足本卡对 AI SDK UI 的明确要求。采用 `@ai-sdk/react@3.0.327` 的 `useChat` 和 `ai@6.0.324` 的 `ChatTransport`；两包为 Apache-2.0，使用仍发布维护修复的 v6，避免 v7 引入的 MCP 客户端依赖。现有首页、任务和项目继续使用 assistant-ui。两种 UI 共用原 AgentApplication、Pi、Key 和本机运行历史。无需第二服务、SDK 后端或生产网关。依赖树内含官方上游的 `@ai-sdk/gateway@3.0.230`，不启用其 Provider、OIDC、HTTP transport 或遥测。传递依赖 `json-schema@0.4.0` 选择其 BSD-3-Clause 授权，随包提供通知，准入限精确版本。随包通知一并提供新增依赖的 Apache-2.0 全文、上游版权及 MIT 通知。未复制第三方实现。维护成本限两处 UI 适配的回归和升级验证，保存、恢复和运行仍走同一实现；不增加网络服务或订阅成本。
+
+现有 v1 Agent IPC 增加 `document:<UUID>` 范围和预览、拒绝、确认及只读回执查询操作。持久运行仍使用原表和作用域列。JSON 在旧版本可读的 UUID 下保留该记录；恢复时按该行实际范围解码。窗口内预览和提交回执绑定当前 Task、Document、Body、已保存修订、顶层段落内 UTF-16 坐标和原文。本机选区核对不派发。显式发送只携带选区及本轮问题，无自动重连或重新生成。写回只接受本窗口成功 Run 的单行替换文本，信任端重新定位并在原 Yjs 状态生成精确替换，通过 Task 原保存事务追加修订。未知回执只读核对同一私有提交键，缺回执后需另行人工重试确认。其余段落、原修订及 DEV-1655 接受另存新稿规则均沿用原合同。当前仅支持顶层段落内连续文字，嵌套列表、含硬换行的段落与跨段选择提示重选。
+
+隔离演练使用两份合成工作稿、Pi 合成流和原 Electron/SQLite 路径。真实 Provider 调用需单独授权。回退本卡提交即回退 UI、协议扩展和锁版，工作稿及所有已保存修订继续可读，文档审阅历史在回退版隐藏并保留原记录。验证命令、实际通过范围和构建指纹见本卡同树外部证据。
+
+来源：[AI SDK UI Transport](https://ai-sdk.dev/docs/ai-sdk-ui/transport)、[官方 npm @ai-sdk/react](https://www.npmjs.com/package/@ai-sdk/react/v/3.0.327)、[官方 npm ai](https://www.npmjs.com/package/ai/v/6.0.324)、安装包 LICENSE 与冻结锁文件。
+
 ## DEV-1735 首页输出展示增量｜2026-11-06
 
 沿用用户授权的首页/共用 Agent UI，新增官方 `@assistant-ui/react-markdown@0.14.24`，与已安装 `@assistant-ui/react@0.15.32`、React 19.3.1 的 peer 范围兼容。只用于不可信输出的只读 CommonMark 展示，不改变正文、Message、Run、Manifest 或 Runtime Owner；没有复制上游源码。官方包与 react-markdown 为 MIT；本轮已阅读安装包 LICENSE，传递依赖 `@ungap/structured-clone@1.4.0` 为 ISC，全文随 THIRD-PARTY-AI-NOTICES 分发。现有准入仅添加上述精确版本，不通配放行 ISC 或未来版本。

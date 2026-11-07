@@ -18,7 +18,14 @@ import { runTaskDemo } from './task-demo';
 import { runProjectDemo } from './project-demo';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
-import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
+import {
+  runAgentDemo,
+  runAgentHistoryProbe,
+  syntheticAgentStream,
+  syntheticReviewStream,
+} from './agent-demo';
+import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
+import { documentReviewStore } from './document-review-store';
 import { createCatalogApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
@@ -95,7 +102,8 @@ async function createWindow(
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
-    process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-')
+    process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-')
   )
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
@@ -512,6 +520,9 @@ const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'document-review-preview',
+      'document-review-write',
+      'document-review-read',
       'credential-preflight',
       'credential-preflight-ui',
       'task-status-write',
@@ -739,7 +750,9 @@ app
             );
           }
         : undefined;
+    const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
     const baseAgentCredentials =
+      documentReviewDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
@@ -816,6 +829,7 @@ app
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
       project: taskStore.catalog.agentProject,
+      review: documentReviewStore(taskStore, tasks),
       history: {
         ...taskStore.agentHistory,
         load() {
@@ -869,43 +883,65 @@ app
               },
             })
           : createPiRuntime(
-              credentialUi ||
-                taskDemoPhase?.startsWith('reminder') ||
-                (taskDemoPhase?.startsWith('project-') &&
-                  taskDemoPhase !== 'project-agent-write') ||
-                taskDemoPhase === 'task-status-write' ||
-                taskDemoPhase === 'task-status-read' ||
-                taskDemoPhase === 'agent-read' ||
-                taskDemoPhase === 'agent-credential-read' ||
-                taskDemoPhase === 'agent-read-synthetic' ||
-                taskDemoPhase === 'materials-read'
-                ? () => {
-                    if (credentialUi) {
-                      credentialRuntimeAttempts++;
-                      recordCredentialUi();
-                    }
-                    writeFileSync(
-                      join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                      'unexpected dispatch',
-                    );
-                    throw new Error('Unexpected restart dispatch');
-                  }
-                : taskDemoPhase === 'materials'
-                  ? (model, context, options) => {
+              documentReviewDemo
+                ? syntheticReviewStream
+                : credentialUi ||
+                    taskDemoPhase?.startsWith('reminder') ||
+                    (taskDemoPhase?.startsWith('project-') &&
+                      taskDemoPhase !== 'project-agent-write') ||
+                    taskDemoPhase === 'task-status-write' ||
+                    taskDemoPhase === 'task-status-read' ||
+                    taskDemoPhase === 'agent-read' ||
+                    taskDemoPhase === 'agent-credential-read' ||
+                    taskDemoPhase === 'agent-read-synthetic' ||
+                    taskDemoPhase === 'materials-read'
+                  ? () => {
+                      if (credentialUi) {
+                        credentialRuntimeAttempts++;
+                        recordCredentialUi();
+                      }
                       writeFileSync(
-                        join(taskDemoRoot!, 'material-pi-context.json'),
-                        JSON.stringify(context, null, 2),
+                        join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                        'unexpected dispatch',
                       );
-                      return syntheticAgentStream(model, context, options);
+                      throw new Error('Unexpected restart dispatch');
                     }
-                  : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
-                    ? syntheticAgentStream
-                    : undefined,
+                  : taskDemoPhase === 'materials'
+                    ? (model, context, options) => {
+                        writeFileSync(
+                          join(taskDemoRoot!, 'material-pi-context.json'),
+                          JSON.stringify(context, null, 2),
+                        );
+                        return syntheticAgentStream(model, context, options);
+                      }
+                    : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
+                      ? syntheticAgentStream
+                      : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (documentReviewDemo && taskDemoRoot) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      app.on('will-quit', () => taskStore.close());
+      if (taskDemoPhase !== 'document-review-read') seedDocumentReview(tasks);
+      if (taskDemoPhase === 'document-review-preview') {
+        await createWindow();
+      } else {
+        await runDocumentReviewDemo(
+          () => createWindow(false),
+          taskDemoRoot,
+          taskDemoPhase!,
+          tasks,
+          taskStore.agentHistory.load,
+        );
+        app.exit(0);
+      }
+      return;
+    }
     if (credentialUi) {
       recordCredentialUi();
       const window = await createWindow();

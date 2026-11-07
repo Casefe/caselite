@@ -3,6 +3,7 @@ const admitted = new Set(['MIT', 'Apache-2.0']);
 
 // ADR-008：仅准入本次已阅读许可的精确版本；升级或其他依赖仍须审查。
 const reviewed = new Set([
+  'json-schema@0.4.0:(AFL-2.1 OR BSD-3-Clause)',
   '@ungap/structured-clone@1.4.0:ISC',
   '@protobufjs/aspromise@1.1.2:BSD-3-Clause',
   '@protobufjs/base64@1.1.2:BSD-3-Clause',

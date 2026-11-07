@@ -226,6 +226,8 @@ export type {
   AgentResponse,
   AgentModel,
   AgentProvider,
+  ReviewRange,
+  ReviewSaved,
 } from '@caselite/contracts';
 
 export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';

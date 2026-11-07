@@ -7,6 +7,7 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 | Desktop / DEV-1557、1568 | React/DOM 19.3.1、react-pdf 11.0.0、pdfjs-dist 6.3.289 | npm 对应官方包，MIT / Apache-2.0 | 桌面与离线PDF探针；同一Forge构建。回退依赖时恢复锁版并重新打包，不更换原件 |
 | Desktop / DEV-1592、1732 | Tiptap 四包 3.32.3、Yjs 13.6.33 | Tiptap / Yjs 官方包，MIT | Y.Doc保存重启与真实编辑；不是实时协作证明。退出保留body_revisions，先验证旧快照可读，禁止以HTML覆盖正文 |
 | Desktop / DEV-1650、1652、1648 | assistant-ui 0.15.32、Pi Core / AI 1.5.0 | 官方 npm 包，MIT；传递许可见生成的许可证报告及 ADR-008 | SDK及合成Provider打包验证，真实Key另验。只有一个Loop；没有Coding Agent、Shell或Pi session。退出关闭AI，人工Task/正文继续可读，保全原Run |
+| Desktop / DEV-1788 | @ai-sdk/react 3.0.327、ai 6.0.324 | 官方 npm，Apache-2.0；json-schema 0.4.0 选 BSD-3-Clause，见 ADR-008 和随包通知 | 文档审阅唯一消费者，自定义 IPC Transport。间接 Gateway 随上游锁定。回退 UI 与锁版，保留 Yjs 修订和原本机 Run |
 | Application | contracts workspace | 自有公开入口 | 不导入驱动与Provider；退出由调用链合同验证 |
 | Desktop / DEV-1735 | @assistant-ui/react-markdown 0.14.24 | 官方 npm 包 MIT；@ungap/structured-clone 1.4.0 ISC 精确许可见 ADR-008 与随包通知 | 只读 CommonMark；关闭原始 HTML、链接导航和远程图片。回退恢复原展示，Run 原始文本保持可读；不增加正文或 Agent 内核 |
 | Contracts / DEV-1578 | Zod 4.6.7 | 官方包，MIT | 运行时输入校验；协议升级独立评估兼容 |

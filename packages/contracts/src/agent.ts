@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { matterSchema, projectProfessionalTypeSchema } from './catalog';
-import { ordinaryDateSchema } from './task';
+import { ordinaryDateSchema, taskSchema } from './task';
 
 export const agentProviderSchema = z.enum(['openai', 'deepseek']);
 export const agentModelSchema = z.enum(['gpt-4.1-mini', 'deepseek-flash', 'deepseek-v4-pro']);
@@ -11,7 +11,24 @@ export const agentProviderFor = (model: AgentModel): AgentProvider =>
 
 export const AGENT_CHANNEL = 'caselite:agent:v1';
 const projectScope = z.templateLiteral(['project:', z.string().uuid()]);
-const scope = z.union([z.literal('home'), z.string().uuid(), projectScope]);
+const documentScope = z.templateLiteral(['document:', z.string().uuid()]);
+const scope = z.union([z.literal('home'), z.string().uuid(), projectScope, documentScope]);
+const reviewRange = z.strictObject({
+  task_id: z.string().uuid(),
+  document_id: z.string().uuid(),
+  body_id: z.string().uuid(),
+  revision: z.number().int().positive(),
+  paragraph: z.number().int().min(0).max(100000),
+  from: z.number().int().min(0).max(2_000_000),
+  to: z.number().int().positive().max(2_000_000),
+  text: z.string().min(1).max(8000),
+});
+export type ReviewRange = z.infer<typeof reviewRange>;
+const reviewSaved = z.strictObject({
+  task: taskSchema,
+  state: z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000),
+});
+export type ReviewSaved = z.infer<typeof reviewSaved>;
 const projectFingerprint = z.string().regex(/^[a-f0-9]{64}$/);
 export const agentProjectFieldsSchema = z.strictObject({
   title: z.string().min(1).max(160),
@@ -55,6 +72,31 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('select_model'), model: agentModelSchema }).strict(),
   z.object({ ...base, operation: z.literal('read'), scope }).strict(),
   z.object({ ...base, operation: z.literal('preview_project'), scope: projectScope }).strict(),
+  z.strictObject({
+    ...base,
+    operation: z.literal('preview_review'),
+    scope: documentScope,
+    range: reviewRange,
+  }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('apply_review'),
+    scope: documentScope,
+    run_id: z.string().uuid(),
+    confirmed: z.literal(true),
+  }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('status_review'),
+    scope: documentScope,
+    run_id: z.string().uuid(),
+  }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('discard_review'),
+    scope: documentScope,
+    run_id: z.string().uuid(),
+  }),
   z
     .object({ ...base, operation: z.literal('copy_output'), scope, run_id: z.string().uuid() })
     .strict(),
@@ -125,6 +167,8 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
       .optional(),
     runs: z.array(agentRunSchema),
     project_preview: agentProjectPreviewSchema.optional(),
+    review_preview: z.strictObject({ id: z.string().uuid(), range: reviewRange }).optional(),
+    review_saved: reviewSaved.optional(),
   }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);
