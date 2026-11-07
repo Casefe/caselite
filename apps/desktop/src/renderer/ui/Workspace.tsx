@@ -1,3 +1,5 @@
+import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
+import { Icon } from '../shared/ui/Icon';
 import { taskPriorityNames } from './task-priority';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
@@ -12,6 +14,8 @@ export type WorkspaceView =
   | 'tasks'
   | 'projects'
   | 'finance'
+  | 'reports'
+  | 'contacts'
   | 'tools'
   | 'whiteboard'
   | 'documents'
@@ -27,116 +31,12 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
 const workspaceNavigation: typeof navigation = [
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'finance', label: '财务', icon: 'wallet' },
+  { id: 'reports', label: '报告', icon: 'board' },
+  { id: 'contacts', label: '联系人', icon: 'user' },
   { id: 'tools', label: '工具', icon: 'tool' },
   { id: 'whiteboard', label: '白板', icon: 'board' },
   { id: 'documents', label: '文档', icon: 'file' },
 ];
-export function Icon({ name, size = 18 }: { name: string; size?: number }) {
-  const paths: Record<string, ReactNode> = {
-    home: (
-      <>
-        <path d="m3 10 9-7 9 7v10H3Z" />
-        <path d="M9 20v-7h6v7" />
-      </>
-    ),
-    calendar: (
-      <>
-        <rect x="3" y="5" width="18" height="16" rx="2" />
-        <path d="M7 2v6m10-6v6M3 11h18m-13 4h1m6 0h1" />
-      </>
-    ),
-    check: (
-      <>
-        <rect x="4" y="3" width="16" height="18" rx="3" />
-        <path d="m8 12 3 3 5-6" />
-      </>
-    ),
-    folder: <path d="M3 7V5h7l2 3h9v12H3V7Z" />,
-    file: (
-      <>
-        <path d="M5 3h9l5 5v13H5Z" />
-        <path d="M14 3v6h5M8 13h8m-8 4h6" />
-      </>
-    ),
-    book: (
-      <>
-        <path d="M12 5C8 2 3 4 3 4v16s5-2 9 1c4-3 9-1 9-1V4s-5-2-9 1Z" />
-        <path d="M12 5v16" />
-      </>
-    ),
-    wallet: <path d="M20 8V5H5a2 2 0 0 0 0 4h16v11H5a2 2 0 0 1-2-2V7m18 6h-5v3h5" />,
-    tool: <path d="M14 6l4-3a5 5 0 0 1-6 8l-7 9-3-3 8-8a5 5 0 0 1 7-7" />,
-    board: <path d="M3 4h18v13H3Zm9 13v4m-4 0h8M7 12l3-4 4 5 3-3" />,
-    person: (
-      <>
-        <circle cx="12" cy="8" r="3" />
-        <path d="M5 19a7 6 0 0 1 14 0" />
-      </>
-    ),
-    search: (
-      <>
-        <circle cx="10" cy="10" r="6" />
-        <path d="m15 15 6 6" />
-      </>
-    ),
-    plus: <path d="M12 4v16M4 12h16" />,
-    panel: (
-      <>
-        <rect x="3" y="4" width="18" height="16" rx="2" />
-        <path d="M9 4v16" />
-      </>
-    ),
-    back: <path d="m10 5-7 7 7 7M3 12h18" />,
-    chevron: <path d="m9 5 7 7-7 7" />,
-    settings: (
-      <>
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" />
-      </>
-    ),
-    grid: (
-      <>
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
-      </>
-    ),
-    list: (
-      <>
-        <path d="M8 6h13M8 12h13M8 18h13M3 6h1m-1 6h1m-1 6h1" />
-      </>
-    ),
-    star: <path d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1 6.2-5.6-3-5.6 3 1-6.2L2.9 9.6l6.3-.9Z" />,
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 6v6l4 2" />
-      </>
-    ),
-    spark: <path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6ZM20 3v4m-2-2h4" />,
-    bell: (
-      <>
-        <path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5Zm5 3h4" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name] ?? paths.file}
-    </svg>
-  );
-}
 export function WorkspaceShell({
   view,
   collapsed,
@@ -279,71 +179,108 @@ export function TaskTable({
   selectedId?: string;
   onSelect(id: string): void;
 }) {
+  const titleColumn: ColumnDef<Task> = {
+    id: 'title',
+    header: documents ? '文档名称' : '任务名称',
+    cell: ({ row: { original: task } }) => (
+      <span className="task-name">
+        <Icon name={documents ? 'file' : 'check'} size={16} />
+        <small>{task.id.slice(0, 4).toUpperCase()}</small>
+        <strong
+          className="task-row-title"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(task.id);
+          }}
+        >
+          {task.title}
+        </strong>
+      </span>
+    ),
+  };
+  const columns: ColumnDef<Task>[] = documents
+    ? [
+        titleColumn,
+        { id: 'task', header: '关联任务', accessorFn: (task) => task.title },
+        {
+          id: 'revision',
+          header: '正文',
+          accessorFn: (task) => (task.body_revision ? `修订 ${task.body_revision}` : '未写正文'),
+        },
+        { accessorKey: 'updated_at', header: '最近更新' },
+      ]
+    : [
+        titleColumn,
+        {
+          id: 'priority',
+          header: '优先级',
+          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+        },
+        {
+          id: 'status',
+          header: '状态',
+          cell: ({ row: { original: task } }) => (
+            <small className="task-status-tag" data-status={task.status ?? 'todo'}>
+              {taskStatusNames[task.status ?? 'todo']}
+            </small>
+          ),
+        },
+        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
+        {
+          id: 'owner',
+          header: '负责人',
+          accessorFn: (task) =>
+            task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
+        },
+        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
+      ];
+  const table = createTable({
+    data: tasks,
+    columns,
+    getRowId: (task) => task.id,
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    state: { columnPinning: {} },
+    onStateChange: () => {},
+    renderFallbackValue: null,
+  });
   return (
     <div
-      className="task-table"
+      className={`task-table${documents ? '' : ' task-table-structured'}`}
       role="table"
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
     >
-      <div className="table-head" role="row">
-        <span>{documents ? '文档名称' : '任务名称'}</span>
-        <span>{documents ? '关联任务' : '工作目标'}</span>
-        <span>正文</span>
-        <span>最近更新</span>
-      </div>
-      {tasks.map((t) => (
+      {table.getHeaderGroups().map((group) => (
+        <div className="table-head" role="row" key={group.id}>
+          {group.headers.map((header) => (
+            <span key={header.id} role="columnheader">
+              {flexRender(header.column.columnDef.header, header.getContext())}
+            </span>
+          ))}
+        </div>
+      ))}
+      {table.getRowModel().rows.map((row) => (
         <button
           className="task-row"
           role="row"
-          key={t.id}
-          data-row-task={t.id}
-          aria-label={`选择${documents ? '文档' : '任务'}：${t.title}`}
-          aria-current={selectedId === t.id ? 'true' : undefined}
-          onClick={() => onSelect(t.id)}
-          onDoubleClick={() => onOpen(t.id)}
+          key={row.id}
+          data-row-task={row.id}
+          aria-label={`选择${documents ? '文档' : '任务'}：${row.original.title}`}
+          aria-current={selectedId === row.id ? 'true' : undefined}
+          onClick={() => onSelect(row.id)}
+          onDoubleClick={() => onOpen(row.id)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              onOpen(t.id);
+              onOpen(row.id);
             }
           }}
         >
-          <span className="task-name">
-            {!documents && (
-              <small className="task-status-tag" data-status={t.status ?? 'todo'}>
-                {taskStatusNames[t.status ?? 'todo']}
-              </small>
-            )}
-            <Icon name={documents ? 'file' : 'check'} size={16} />
-            <small>{t.id.slice(0, 4).toUpperCase()}</small>
-            <strong
-              className={documents ? undefined : 'task-row-title'}
-              onClick={
-                documents
-                  ? undefined
-                  : (event) => {
-                      event.stopPropagation();
-                      onOpen(t.id);
-                    }
-              }
-            >
-              {t.title}
-              {documents ? ' · 初稿' : ''}
-              {!documents && (
-                <small className="task-attribute-summary">
-                  {taskPriorityNames[t.priority ?? 0]} · {t.due_date ?? '无截止日期'}
-                  {t.matter_title && ` · ${t.matter_title}`}
-                </small>
-              )}
-            </strong>
-          </span>
-          <span className="row-objective">{documents ? t.title : t.objective || '尚未填写'}</span>
-          <span className="revision-badge">
-            {t.body_revision > 0 ? `修订 ${t.body_revision}` : '未写正文'}
-          </span>
-          <time>
-            {new Date(t.updated_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
-          </time>
+          {row.getVisibleCells().map((cell) => (
+            <span role="cell" key={cell.id}>
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </span>
+          ))}
         </button>
       ))}
       {tasks.length === 0 && (

@@ -1,0 +1,277 @@
+/* 工作台尺寸的唯一配置入口：页面仅负责内容与视觉，不另设栏宽。 */
+:root {
+  --workspace-navigation-width: 200px;
+  --workspace-navigation-collapsed-width: 65px;
+  --workspace-inspector-width: 300px;
+  --workspace-center-min-width: 340px;
+  --workspace-columns: minmax(var(--workspace-center-min-width), 1fr)
+    var(--workspace-inspector-width);
+}
+.workbench {
+  height: 100vh;
+  overflow: hidden;
+}
+.primary-sidebar {
+  width: var(--workspace-navigation-width);
+}
+.is-collapsed .primary-sidebar {
+  width: var(--workspace-navigation-collapsed-width);
+}
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workbench {
+  display: grid;
+  grid-template-columns: var(--workspace-navigation-width) minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+.workbench.is-collapsed {
+  grid-template-columns: var(--workspace-navigation-collapsed-width) minmax(0, 1fr);
+}
+.workspace-placeholder {
+  padding: 24px;
+  color: var(--ink);
+}
+.workspace-project-back {
+  display: flex;
+  align-items: center;
+  padding-inline: 4px;
+}
+.workspace-project-back-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.workspace-project-back-button:hover:not(:disabled) {
+  background: var(--theme-hover);
+}
+.workspace-topbar {
+  display: flex;
+  grid-column: 1 / -1;
+  background: #f5f6f7;
+  border-bottom: 1px solid #e2e6e8;
+}
+.workspace-topbar-navigation {
+  width: var(--workspace-navigation-width);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 20px;
+  background: var(--nav);
+  color: #d7e2e4;
+}
+.is-collapsed .workspace-topbar-navigation {
+  width: var(--workspace-navigation-collapsed-width);
+  justify-content: center;
+  padding: 0;
+}
+.workspace-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 18px;
+  letter-spacing: -0.6px;
+}
+.workspace-topbar-brand .brand-logo {
+  width: 28px;
+  height: 28px;
+}
+.workspace-navigation-toggle {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #c8d5d7;
+}
+.workspace-navigation-toggle:hover {
+  background: #234047;
+  color: white;
+}
+.primary-sidebar {
+  min-height: 0;
+  padding-top: 12px;
+}
+.agent-home,
+.task-layout,
+.collection-workspace,
+.project-body,
+.knowledge-view {
+  display: grid;
+  grid-template-columns: var(--workspace-columns);
+  min-width: calc(var(--workspace-center-min-width) + var(--workspace-inspector-width));
+  min-height: 0;
+  flex: 1;
+  gap: 0;
+}
+.agent-home,
+.knowledge-view {
+  background: white;
+}
+.task-detail {
+  min-height: 0;
+  flex: 1;
+}
+.agent-main,
+.task-work-area,
+.collection-main {
+  min-width: 0;
+  min-height: 0;
+}
+.agent-context,
+.task-inspector {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--line);
+  border-top: 0;
+  overflow: auto;
+}
+.agent-context > h2,
+.inspector-tabs {
+  height: 40px;
+  min-height: 40px;
+}
+.task-work-area > .document {
+  margin: 0;
+}
+@media (max-width: 1250px) {
+  :root {
+    --workspace-navigation-width: 180px;
+    --workspace-inspector-width: 250px;
+  }
+}
+
+/* 所有工作区标题行采用首页尺寸；属性与 AI 切换不会改变栏宽。 */
+.agent-topline,
+.collection-heading,
+.task-work-area > .page-topline {
+  height: 40px;
+  min-height: 40px;
+  flex-shrink: 0;
+  padding: 0 22px;
+}
+
+.model-default-control {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 18px;
+}
+.provider-detail select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+}
+
+/* 数据目录沿用首页同一列宽；表单/列表只在各自工作区内滚动。 */
+.catalog-view {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--workspace-columns);
+}
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.catalog-table th {
+  font-weight: 500;
+  color: var(--muted);
+  background: #f9fafb;
+}
+.catalog-table th,
+.catalog-table td {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.catalog-table tbody tr {
+  cursor: pointer;
+}
+.catalog-table tbody tr[aria-selected='true'] {
+  background: #f0f3fa;
+}
+.catalog-table tbody tr:hover {
+  background: #f6f7f9;
+}
+.catalog-table td:first-child svg {
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.catalog-empty {
+  padding: 40px;
+  color: var(--muted);
+  text-align: center;
+}
+.catalog-actions {
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+}
+.catalog-actions label {
+  display: block;
+  margin: 16px 0;
+  color: #647080;
+  font-size: 12px;
+}
+.project-agent-context dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 8px 0;
+}
+.project-agent-context dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.catalog-actions input,
+.catalog-actions select {
+  width: 100%;
+  display: block;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  color: var(--ink);
+}
+.catalog-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.catalog-actions button {
+  margin: 4px;
+}
+.catalog-actions .notion-editor {
+  min-height: 180px;
+  border: 1px solid var(--line);
+}
+
+.catalog-view > .project-properties {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 18px;
+  border-left: 1px solid var(--line);
+}
+.catalog-view > .project-properties .inspector-tabs {
+  margin: 0 -18px;
+}
+
+.assistant-run-status.interrupted {
+  color: #944f32;
+  background: #fff4eb;
+}

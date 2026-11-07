@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AgentModel } from '../../packages/contracts/src';
 import { createPiRuntime } from '../../apps/desktop/src/main/adapters/pi-runtime';
 
 afterEach(() => {
@@ -32,7 +33,7 @@ const sse = () =>
     { headers: { 'content-type': 'text/event-stream' } },
   );
 const run = (
-  model: 'deepseek-flash' | 'deepseek-v4-pro',
+  model: AgentModel,
   onText = (text: string) => {
     void text;
   },
@@ -167,3 +168,38 @@ describe('Installed DeepSeek Provider with synthetic HTTP (no live API)', () => 
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+it.each([
+  [
+    'glm-4.7-flash',
+    'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    { thinking: { type: 'disabled' } },
+  ],
+  ['kimi-k2.6', 'https://api.moonshot.cn/v1/chat/completions', { thinking: { type: 'disabled' } }],
+  [
+    'deepseek-ai/DeepSeek-V4-Flash',
+    'https://api.siliconflow.cn/v1/chat/completions',
+    { enable_thinking: false },
+  ],
+] as const)(
+  'routes %s only to its configured service and reads the stream',
+  async (model, endpoint, reasoning) => {
+    const fetch = vi.fn(async (...args: [unknown, RequestInit?]) => {
+      void args;
+      return sse();
+    });
+    vi.stubGlobal('fetch', fetch);
+    expect(await run(model)).toMatchObject({ status: 'succeeded' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, request] = fetch.mock.calls[0];
+    expect(String(url)).toBe(endpoint);
+    expect(request?.redirect).toBe('error');
+    expect(new Headers(request?.headers).get('authorization')).toBe('Bearer ' + key);
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      model,
+      stream: true,
+      max_tokens: 2048,
+      ...reasoning,
+    });
+  },
+);

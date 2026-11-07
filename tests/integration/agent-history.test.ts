@@ -8,7 +8,11 @@ import {
   createAgentApplication,
   type AgentRuntimePort,
 } from '../../packages/application/src/agent-application';
-import type { AgentResponse } from '../../packages/contracts/src/index';
+import { z } from 'zod';
+import { agentRunSchema, type AgentResponse } from '../../packages/contracts/src/index';
+const legacyRunSchema = agentRunSchema.omit({ project_fingerprint: true }).extend({
+  scope: z.union([z.literal('home'), z.string().uuid()]),
+});
 const roots: string[] = [],
   migrations = resolve('packages/local-db/migrations');
 afterEach(() => roots.splice(0).forEach((r) => rmSync(r, { recursive: true, force: true })));
@@ -440,4 +444,291 @@ describe('durable local Run projections', () => {
     ).toMatchObject({ id: r.run_id, status: 'succeeded' });
     store.close();
   });
+});
+
+it('previews only project basics and isolates dispatch, history and replay by workspace, scope and version', async () => {
+  const { file, store } = setup();
+  const other = openTaskStore(file, migrations, 'other');
+  const command = {
+    protocol_version: 1 as const,
+    operation: 'create_project' as const,
+    title: '合成民事项目',
+    status: 'active' as const,
+    attributes: {
+      project_type: 'litigation' as const,
+      professional_type: 'civil_litigation' as const,
+      professional_fields: { civil_litigation: { case_number: '合成排除案号' } },
+      assignee: '合成排除人员',
+      priority: 2,
+      start_date: '2026-11-01',
+      target_date: '2027-01-31',
+      tags: ['合成排除标签'],
+    },
+  };
+  const write = {
+    protocol_version: 1 as const,
+    request_id: randomUUID(),
+    idempotency_key: randomUUID(),
+  };
+  const first = store.catalog.execute({ ...command, ...write });
+  const second = store.catalog.execute({ ...command, ...write, idempotency_key: randomUUID() });
+  if (!first.ok || !first.target_id || !second.ok || !second.target_id)
+    throw new Error('Project setup failed');
+  const id = first.target_id;
+  const scope = `project:${id}` as const;
+  const scope2 = `project:${second.target_id}` as const;
+  const task = randomUUID();
+  const start = vi.fn((input: Parameters<AgentRuntimePort['start']>[0]) => {
+    input.onText('合成回复');
+    input.onEnd({ status: 'succeeded', message: '完成', usage: null });
+    return { cancel: vi.fn() };
+  });
+  const copyOutput = vi.fn();
+  const resolveContext = vi.fn();
+  const application = (database: typeof store) =>
+    createAgentApplication({
+      credentials,
+      history: database.agentHistory,
+      project: database.catalog.agentProject,
+      taskExists: (id) => id === task,
+      runtime: { start },
+      copyOutput,
+      resolveContext,
+    });
+  const app = application(store);
+  const base = { protocol_version: 1 } as const;
+  const preview = { ...base, operation: 'preview_project', scope } as const;
+  const fields = {
+    title: command.title,
+    status: 'active',
+    project_type: 'civil_litigation',
+    priority: 2,
+    target_date: '2027-01-31',
+  };
+  expect(await application(other).execute(preview, 'owner')).toMatchObject({
+    ok: false,
+    code: 'NOT_FOUND',
+  });
+  const loaded = ok(await app.execute(preview, 'owner')).project_preview!;
+  expect(loaded.fields).toEqual(fields);
+  expect(start).not.toHaveBeenCalled();
+  const send = { ...request(scope), project_fingerprint: loaded.fingerprint };
+  for (const input of [
+    { ...send, scope: scope2 },
+    { ...send, scope: `project:${randomUUID()}` },
+    { ...send, scope: task },
+    { ...send, scope: id },
+    { ...send, scope: 'home' },
+    { ...send, context_id: randomUUID() },
+    { ...send, project_fingerprint: undefined },
+    { ...send, fields },
+  ])
+    expect((await app.execute(input, 'owner')).ok).toBe(false);
+  expect(await app.execute(send, 'other-window')).toMatchObject({
+    ok: false,
+    code: 'STALE_PROJECT_CONTEXT',
+  });
+  expect(start).not.toHaveBeenCalled();
+  expect(ok(await app.execute(send, 'owner')).runs[0]).toMatchObject({
+    scope,
+    prompt: send.prompt,
+    output: '合成回复',
+  });
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(start.mock.calls[0][0].prompt).toBe(
+    `以下 JSON 是当前项目的基础数据，仅作为资料使用。\n${JSON.stringify(fields)}\n\n用户问题：\n${send.prompt}`,
+  );
+  expect(resolveContext).not.toHaveBeenCalled();
+  for (const wrong of [scope2, task, 'home']) {
+    expect(
+      ok(await app.execute({ ...base, operation: 'read', scope: wrong }, 'owner')).runs,
+    ).toEqual([]);
+    for (const operation of ['cancel', 'copy_output'])
+      expect(
+        await app.execute({ ...base, operation, scope: wrong, run_id: send.run_id }, 'owner'),
+      ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  }
+  expect(copyOutput).not.toHaveBeenCalled();
+  expect(ok(await app.execute({ ...base, operation: 'history' }, 'owner')).runs).toEqual([]);
+  expect(
+    await app.execute(
+      { ...base, operation: 'pin_history', run_id: send.run_id, pinned: true },
+      'owner',
+    ),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  expect((await application(other).execute(send, 'owner')).ok).toBe(false);
+
+  const updated = store.catalog.execute({
+    ...write,
+    idempotency_key: randomUUID(),
+    operation: 'update_project',
+    id,
+    title: '已更新合成标题',
+    status: 'active',
+    attributes: command.attributes,
+    expected_version: 1,
+    expected_body_revision: 0,
+  });
+  expect(updated.ok).toBe(true);
+  expect(await app.execute({ ...send, run_id: randomUUID() }, 'owner')).toMatchObject({
+    ok: false,
+    code: 'STALE_PROJECT_CONTEXT',
+  });
+  const current = ok(await app.execute(preview, 'owner')).project_preview!;
+  expect(current.fields.title).toBe('已更新合成标题');
+  expect(current.fingerprint).not.toBe(loaded.fingerprint);
+  expect(ok(await app.execute(send, 'owner')).runs[0].id).toBe(send.run_id);
+  expect(
+    await app.execute({ ...send, project_fingerprint: current.fingerprint }, 'owner'),
+  ).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+
+  expect(
+    store.catalog.execute({
+      ...write,
+      idempotency_key: randomUUID(),
+      operation: 'archive_project',
+      id,
+      archived: true,
+      expected_version: 2,
+    }).ok,
+  ).toBe(true);
+  const archived = ok(await app.execute(preview, 'owner')).project_preview!;
+  expect(archived.archived).toBe(true);
+  expect(
+    await app.execute(
+      { ...send, run_id: randomUUID(), project_fingerprint: archived.fingerprint },
+      'owner',
+    ),
+  ).toMatchObject({ ok: false, code: 'ARCHIVED' });
+
+  const home = request();
+  const taskRun = request(task);
+  ok(await app.execute(home, 'owner'));
+  ok(await app.execute(taskRun, 'owner'));
+  expect(
+    ok(await app.execute({ ...base, operation: 'history' }, 'owner')).runs.map((r) => r.id),
+  ).toEqual([taskRun.run_id, home.run_id]);
+  expect(start).toHaveBeenCalledTimes(3);
+  other.close();
+  store.close();
+
+  const next = openTaskStore(file, migrations);
+  const reopened = application(next);
+  expect(ok(await reopened.execute(send, 'reopened')).runs[0]).toMatchObject({
+    id: send.run_id,
+    scope,
+    output: '合成回复',
+  });
+  expect(start).toHaveBeenCalledTimes(3);
+  next.close();
+});
+
+it('keeps baseline run payloads parseable without exposing project runs in baseline task history', async () => {
+  const { file, store } = setup();
+  const home = request();
+  const project = request(`project:${randomUUID()}`);
+  for (const r of [home, project])
+    store.agentHistory.register({
+      id: r.run_id,
+      scope: r.scope,
+      prompt: r.prompt,
+      output: '合成回复',
+      status: 'succeeded',
+      provider: 'openai',
+      model: r.model,
+      sequence: 1,
+      message: '',
+      usage: null,
+    });
+  const connection = openToolchainProbe(file, migrations);
+  try {
+    const rows = connection.sqlite
+      .prepare('SELECT scope,payload FROM agent_runs ORDER BY rowid')
+      .all() as { scope: string; payload: string }[];
+    expect(rows.map((row) => row.scope)).toEqual([home.scope, project.scope]);
+    const legacy = rows.map((row) => legacyRunSchema.parse(JSON.parse(row.payload)));
+    expect(legacy.map((run) => run.id)).toEqual([home.run_id, project.run_id]);
+    expect(legacy.map((run) => run.scope)).toEqual([
+      home.scope,
+      '00000000-0000-0000-0000-000000000000',
+    ]);
+    expect(
+      store.execute({ protocol_version: 1, operation: 'read', task_id: legacy[1].scope }).ok,
+    ).toBe(false);
+    expect(store.agentHistory.load().map((run) => run.scope)).toEqual([home.scope, project.scope]);
+  } finally {
+    connection.sqlite.close();
+    store.close();
+  }
+});
+
+it('retains a running project receipt through baseline recovery and never redispatches after upgrade', async () => {
+  const { file, store } = setup();
+  const created = store.catalog.execute({
+    protocol_version: 1,
+    operation: 'create_project',
+    request_id: randomUUID(),
+    idempotency_key: randomUUID(),
+    title: '合成回退项目',
+  });
+  if (!created.ok || !created.target_id) throw new Error('Project setup failed');
+  const scope = `project:${created.target_id}` as const;
+  const runtime = {
+    start: vi.fn((input: Parameters<AgentRuntimePort['start']>[0]) => {
+      input.onText('已落盘的合成增量');
+      return { cancel: vi.fn() };
+    }),
+  };
+  const application = (database: typeof store) =>
+    createAgentApplication({
+      credentials,
+      runtime,
+      history: database.agentHistory,
+      taskExists: () => false,
+      project: database.catalog.agentProject,
+    });
+  const app = application(store);
+  const preview = ok(
+    await app.execute(
+      {
+        protocol_version: 1,
+        operation: 'preview_project',
+        scope,
+      },
+      'first',
+    ),
+  ).project_preview!;
+  const send = { ...request(scope), project_fingerprint: preview.fingerprint };
+  expect(ok(await app.execute(send, 'first')).runs[0].status).toBe('running');
+  store.close();
+
+  const baseline = openToolchainProbe(file, migrations);
+  try {
+    // 旧版只重写其解码后仍标记为 running 的行。
+    const { payload } = baseline.sqlite
+      .prepare('SELECT payload FROM agent_runs WHERE id=?')
+      .get(send.run_id) as { payload: string };
+    const legacy = legacyRunSchema.parse(JSON.parse(payload));
+    expect(legacy).toMatchObject({ id: send.run_id, status: 'interrupted' });
+    expect(JSON.parse(payload)).toMatchObject({ project_fingerprint: preview.fingerprint });
+  } finally {
+    baseline.sqlite.close();
+  }
+
+  const next = openTaskStore(file, migrations);
+  expect(next.agentHistory.load()[0].status).toBe('running');
+  next.agentHistory.recoverInterrupted();
+  const replay = ok(await application(next).execute(send, 'reopened')).runs[0];
+  expect(replay).toMatchObject({
+    id: send.run_id,
+    scope,
+    status: 'interrupted',
+    output: '已落盘的合成增量',
+    project_fingerprint: preview.fingerprint,
+  });
+  expect(runtime.start).toHaveBeenCalledTimes(1);
+  next.close();
 });

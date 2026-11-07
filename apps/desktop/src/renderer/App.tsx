@@ -1,39 +1,40 @@
-import TaskTags from './ui/TaskTags';
+import ContactsView from './features/contacts/ContactsView';
+import ReportView from './features/reports/ReportView';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { invalidateTaskPages } from './ui/task-list-query';
+import { createWorkbenchQueryClient } from './shared/data/workbench-query-client';
+import {
+  invalidateOrdinaryCatalog,
+  invalidateProjectCatalog,
+} from './shared/data/ordinary-catalog-query';
+import { Icon } from './shared/ui/Icon';
+import FinanceView from './features/finance/FinanceView';
+import TagPicker from './shared/ui/TagPicker';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useEditor } from '@tiptap/react';
-import * as Y from 'yjs';
-import type { Matter, Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
+import type { Matter, Task, TaskRequest } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
-import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
-import ProjectCatalog, { type ProjectViewState } from './projects/ProjectCatalog';
+import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
+import ProjectCatalog, { type ProjectViewState } from './features/projects/ProjectCatalog';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
 import { taskStatusNames } from './ui/task-status';
 import { taskPriorityNames } from './ui/task-priority';
 
-import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
+import SettingsView, { type SettingsSection } from './ui/SettingsView';
+import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
 import { AppearanceProvider } from './ui/Appearance';
 import RecordList, { initialTaskListState } from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
 import AgentHistory from './ui/AgentHistory';
-import {
-  DraftEditor,
-  EditorSurface,
-  emptyDraft,
-  localExtensions,
-  type RichDraft,
-} from './editors/RichEditor';
-import ActivityList from './projects/ActivityList';
-import { DiscussionFeed } from './projects/ProjectDiscussion';
+import { DraftEditor, emptyDraft, type RichDraft } from './editors/RichEditor';
+import ActivityList from './features/projects/ActivityList';
+import { DiscussionFeed } from './shared/discussion/DiscussionFeed';
 import TaskContentEditor from './editors/TaskContentEditor';
+import BodyEditor from './features/documents/BodyEditor';
+import { mutation, check } from './shared/data/taskCommand';
 
-const mutation = () => ({
-  protocol_version: 1 as const,
-  request_id: crypto.randomUUID(),
-  idempotency_key: crypto.randomUUID(),
-});
 type CreateTaskCommand = Extract<TaskRequest, { operation: 'create' }>;
 const defaultCreateProperties = {
   status: 'todo' as Task['status'],
@@ -42,147 +43,10 @@ const defaultCreateProperties = {
   tags: [] as string[],
   matter_id: '',
 };
-function check(result: TaskResponse) {
-  if (!result.ok) throw new Error(result.message);
-  return result;
-}
-
-function BodyEditor({
-  task,
-  initial,
-  onSaved,
-  onDirty,
-  disabled = false,
-}: {
-  task: Task;
-  initial: number[] | null;
-  onSaved(task: Task, state: number[]): void;
-  onDirty(dirty: boolean): void;
-  disabled?: boolean;
-}) {
-  const [doc] = useState(() => {
-    const d = new Y.Doc();
-    if (initial) Y.applyUpdate(d, Uint8Array.from(initial));
-    return d;
-  });
-  const [revision, setRevision] = useState(task.body_revision);
-  const [status, setStatus] = useState('已保存到此设备');
-  const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [hasPending, setHasPending] = useState(false);
-  const changes = useRef(0);
-  const editorReady = useRef(false);
-  const pending = useRef<{ request: TaskRequest; sequence: number } | null>(null);
-  const alive = useRef(true);
-  const editor = useEditor(
-    {
-      injectCSS: false,
-      editable: !task.document_archived_at && !disabled,
-      extensions: localExtensions(doc),
-      editorProps: {
-        attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
-      },
-      onCreate: () => {
-        editorReady.current = true;
-      },
-      onUpdate: () => {
-        if (!editorReady.current) return;
-        changes.current++;
-        setDirty(true);
-        onDirty(true);
-        setStatus('有未保存修改');
-      },
-    },
-    [doc],
-  );
-  useEffect(() => {
-    // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
-    editor?.setEditable(!task.document_archived_at && !disabled, false);
-  }, [editor, task.document_archived_at, disabled]);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      queueMicrotask(() => {
-        if (!alive.current) doc.destroy();
-      });
-    };
-  }, [doc]);
-  async function save() {
-    if (!editor || busy || disabled) return;
-    setBusy(true);
-    setStatus('正在保存…');
-    const sequence = pending.current?.sequence ?? changes.current;
-    const request: TaskRequest = pending.current?.request ?? {
-      ...mutation(),
-      operation: 'save',
-      task_id: task.id,
-      document_id: task.document_id,
-      body_id: task.body_id,
-      expected_revision: revision,
-      editor_schema: 1,
-      state: Array.from(Y.encodeStateAsUpdate(doc)),
-    };
-    pending.current = { request, sequence };
-    setHasPending(true);
-    try {
-      let result = await window.caselite.task(request);
-      if (!result.ok && result.code === 'RESULT_UNKNOWN') {
-        result = await window.caselite.task({
-          protocol_version: 1,
-          operation: 'status',
-          idempotency_key: 'idempotency_key' in request ? request.idempotency_key : '',
-        });
-        if (!result.ok) throw new Error('保存结果尚未确认，请保留输入并点击核对保存结果。');
-      }
-      const saved = check(result).tasks[0];
-      if (!alive.current) return;
-      pending.current = null;
-      setHasPending(false);
-      setRevision(saved.body_revision);
-      onSaved(saved, request.operation === 'save' ? request.state : []);
-      const unchanged = sequence === changes.current;
-      setDirty(!unchanged);
-      onDirty(!unchanged);
-      setStatus(unchanged ? '已保存到此设备' : '较早修订已保存，仍有未保存修改');
-    } catch (error) {
-      if (alive.current)
-        setStatus(error instanceof Error ? error.message : '保存失败，输入已保留。');
-    } finally {
-      if (alive.current) setBusy(false);
-    }
-  }
-  return (
-    <section className="document">
-      <div className="document-bar">
-        <span>
-          <Icon name="file" size={16} /> 内部沟通初稿 <small className="draft-badge">草稿</small>
-        </span>
-        <span>
-          修订 <b data-testid="revision">{revision}</b>
-        </span>
-      </div>
-      <EditorSurface editor={editor} mode="simple" />
-      <footer>
-        <span role="status" data-testid="save-status">
-          {task.document_archived_at ? '文档已归档 · 只读' : status}
-        </span>
-        <button
-          className="primary"
-          data-testid="save-body"
-          disabled={disabled || !!task.document_archived_at || busy || (!dirty && !hasPending)}
-          onClick={() => void save()}
-        >
-          {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
-        </button>
-      </footer>
-      <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
-    </section>
-  );
-}
 function Workbench() {
+  const queryClient = useQueryClient();
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('系统设置');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
@@ -193,6 +57,9 @@ function Workbench() {
     null,
   );
   const [taskListState, setTaskListState] = useState(initialTaskListState);
+  const [reviewDocument, setReviewDocument] = useState<string | null>(null);
+  const [reviewDock, setReviewDock] = useState<HTMLElement | null>(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
   const [detailTab, setDetailTab] = useState('内容');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
@@ -214,6 +81,7 @@ function Workbench() {
   const [reminderBlocked, setReminderBlocked] = useState(false);
   const [reminderTask, setReminderTask] = useState<string | null>(null);
   const [commentDirty, setCommentDirty] = useState(false);
+  const [financeProject, setFinanceProject] = useState('');
   const [projectDirty, setProjectDirty] = useState(false);
   const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
@@ -225,12 +93,15 @@ function Workbench() {
   const createRequest = useRef<CreateTaskCommand | null>(null);
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
+    invalidateTaskPages(queryClient);
+    void invalidateOrdinaryCatalog(queryClient);
+    void invalidateProjectCatalog(queryClient);
     const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
     if (sequence !== listReadSequence.current) return false;
     setTasks(r.tasks);
     return true;
-  }, []);
+  }, [queryClient]);
   useEffect(() => {
     void refresh()
       .catch(() => setError('任务列表读取失败，请重试；原数据没有被修改。'))
@@ -284,6 +155,7 @@ function Workbench() {
         reminderBlocked ||
         busy ||
         uncertain ||
+        reviewSaving ||
         agentPrompt.text.trim() ||
         createDirty
       ) {
@@ -303,9 +175,11 @@ function Workbench() {
     uncertain,
     createDirty,
     agentPrompt,
+    reviewSaving,
   ]);
   function canLeave() {
     if (
+      reviewSaving ||
       dirty ||
       commentDirty ||
       projectDirty ||
@@ -329,6 +203,7 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setView(next);
+    if (next === 'finance' && view !== 'finance') setFinanceProject('');
     if (next !== 'settings') setTaskReturn(null);
     if (next === 'tasks') setActive(null);
     setCreateTagDraft(false);
@@ -346,11 +221,18 @@ function Workbench() {
     setProjectOptions([]);
     setCreateProperties({ ...defaultCreateProperties, matter_id: source?.projectId ?? '' });
     setCreateSource(source);
+    setReviewDocument(null);
     setCreating(true);
     setTaskReturn(null);
     setError('');
   }
-  async function open(id: string, source: ProjectViewState | null = null, document = false) {
+  async function open(
+    id: string,
+    source: ProjectViewState | null = null,
+    document = false,
+    review = false,
+    tab = source?.documentId || document ? '成果正文' : '内容',
+  ) {
     if (!canLeave()) return;
     if (dirty) {
       setError('请先保存当前正文，再切换任务。');
@@ -377,10 +259,11 @@ function Workbench() {
         setTaskReturn(source ? { taskId: id, source } : null);
         if (source) setProjectView(source);
         setActive(task);
+        setReviewDocument(review ? task.document_id : null);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');
-        setDetailTab(source?.documentId || document ? '成果正文' : '内容');
+        setDetailTab(tab);
         setCreateTagDraft(false);
         setCreating(false);
       }
@@ -486,6 +369,8 @@ function Workbench() {
     readSequence.current++;
     setLoading(false);
     setActive(null);
+    if (reviewDocument === active?.document_id) setView('documents');
+    setReviewDocument(null);
     if (taskReturn && taskReturn.taskId === active?.id) {
       setProjectView(taskReturn.source);
       setView('projects');
@@ -505,16 +390,18 @@ function Workbench() {
     }
     void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
   };
+  const documentEntry = reviewDocument !== null && reviewDocument === active?.document_id;
+  const documentReview = documentEntry && detailTab === '成果正文';
   return (
     <ModelSettingsNavigation.Provider
       value={() => {
         if (!canLeave()) return;
-        setSettingsSection('模型');
+        setSettingsSection('models');
         navigate('settings');
       }}
     >
       <WorkspaceShell
-        view={view}
+        view={view === 'tasks' && documentEntry ? 'documents' : view}
         collapsed={collapsed}
         onCollapse={() => setCollapsed(!collapsed)}
         onNavigate={navigate}
@@ -685,7 +572,7 @@ function Workbench() {
                     ))}
                   </select>
                 </label>
-                <TaskTags
+                <TagPicker
                   tags={createProperties.tags}
                   onDraft={setCreateTagDraft}
                   suggestions={tagSuggestions}
@@ -741,6 +628,11 @@ function Workbench() {
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
             onNewTask={newTask}
+            onFinance={(projectId) => {
+              if (!canLeave()) return;
+              navigate('finance');
+              setFinanceProject(projectId);
+            }}
             onDirty={setDirty}
             onChanged={async () => {
               try {
@@ -779,7 +671,11 @@ function Workbench() {
                     <button
                       className="icon-button"
                       aria-label={
-                        taskReturn?.taskId === active.id ? '返回来源项目' : '返回任务列表'
+                        documentEntry
+                          ? '返回文档列表'
+                          : taskReturn?.taskId === active.id
+                            ? '返回来源项目'
+                            : '返回任务列表'
                       }
                       data-testid="back-to-tasks"
                       onClick={resetTask}
@@ -787,7 +683,11 @@ function Workbench() {
                       <Icon name="back" size={16} />
                     </button>
                     <button className="breadcrumb-button" onClick={resetTask}>
-                      {taskReturn?.taskId === active.id ? '来源项目' : '任务'}
+                      {documentEntry
+                        ? '文档'
+                        : taskReturn?.taskId === active.id
+                          ? '来源项目'
+                          : '任务'}
                     </button>
                     <Icon name="chevron" size={13} />
                     {active.matter_title && (
@@ -871,6 +771,9 @@ function Workbench() {
                     task={active}
                     initial={state}
                     onDirty={setDirty}
+                    reviewDock={documentReview ? reviewDock : null}
+                    reviewSaving={reviewSaving}
+                    onReviewSaving={setReviewSaving}
                     disabled={projectDirty || propertiesBlocked || reminderBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
@@ -931,23 +834,34 @@ function Workbench() {
                   </section>
                 )}
               </div>
-              <TaskInspector
-                key={active.id}
-                task={active}
-                projectDisabled={
-                  dirty || commentDirty || propertiesBlocked || reminderBlocked || busy || uncertain
-                }
-                propertiesDisabled={
-                  dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
-                }
-                reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
-                onPropertiesBlocked={setPropertiesBlocked}
-                onTaskChanged={acceptTaskProperties}
-                suggestions={tagSuggestions}
-                assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
-                onProjectDirty={setProjectDirty}
-                onProjectChanged={acceptTaskProperties}
-              />
+              {documentReview ? (
+                <aside className="task-inspector" ref={setReviewDock} aria-label="文档审阅侧栏" />
+              ) : (
+                <TaskInspector
+                  key={active.id}
+                  task={active}
+                  projectDisabled={
+                    dirty ||
+                    commentDirty ||
+                    propertiesBlocked ||
+                    reminderBlocked ||
+                    busy ||
+                    uncertain
+                  }
+                  propertiesDisabled={
+                    dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+                  }
+                  reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
+                  onPropertiesBlocked={setPropertiesBlocked}
+                  onTaskChanged={acceptTaskProperties}
+                  suggestions={tagSuggestions}
+                  assigneeSuggestions={tasks.flatMap(({ assignee }) =>
+                    assignee ? [assignee] : [],
+                  )}
+                  onProjectDirty={setProjectDirty}
+                  onProjectChanged={acceptTaskProperties}
+                />
+              )}
             </div>
           </section>
         ) : view === 'reminders' ? (
@@ -956,7 +870,7 @@ function Workbench() {
           <DocumentLibrary
             key={view}
             library={view === 'knowledge'}
-            onOpen={(id) => void open(id, null, true)}
+            onOpen={(id) => void open(id, null, true, view === 'documents')}
             onDirty={setDirty}
           />
         ) : view === 'tasks' ? (
@@ -973,17 +887,23 @@ function Workbench() {
             onPropertiesBlocked={setPropertiesBlocked}
             onTaskChanged={acceptTaskProperties}
           />
-        ) : view === 'finance' || view === 'tools' || view === 'whiteboard' ? (
+        ) : view === 'contacts' ? (
+          <ContactsView onDirty={setDirty} />
+        ) : view === 'reports' ? (
+          <ReportView
+            tasks={tasks}
+            onFinance={(id) => {
+              navigate('finance');
+              setFinanceProject(id);
+            }}
+          />
+        ) : view === 'finance' ? (
+          <FinanceView initialProject={financeProject} onDirty={setDirty} />
+        ) : view === 'tools' || view === 'whiteboard' ? (
           <section className="workspace-placeholder">
-            <h1>{{ finance: '财务', tools: '工具', whiteboard: '白板' }[view]}</h1>
+            <h1>{{ tools: '工具', whiteboard: '白板' }[view]}</h1>
             <div className="table-empty">
-              {
-                {
-                  finance: '这里还没有财务记录。',
-                  tools: '这里还没有可用工具。',
-                  whiteboard: '这里还没有白板。',
-                }[view]
-              }
+              {{ tools: '这里还没有可用工具。', whiteboard: '这里还没有白板。' }[view]}
             </div>
           </section>
         ) : view === 'settings' ? (
@@ -992,7 +912,13 @@ function Workbench() {
             onSection={setSettingsSection}
             onBack={() => {
               if (settingsReturn === 'tasks' && active)
-                void open(active.id, taskReturn?.taskId === active.id ? taskReturn.source : null);
+                void open(
+                  active.id,
+                  taskReturn?.taskId === active.id ? taskReturn.source : null,
+                  documentEntry,
+                  documentEntry,
+                  detailTab,
+                );
               else navigate(settingsReturn);
             }}
           />
@@ -1004,11 +930,14 @@ function Workbench() {
   );
 }
 export default function App() {
+  const [queryClient] = useState(createWorkbenchQueryClient);
   return new URLSearchParams(window.location.search).has('engineering') ? (
     <EngineeringApp />
   ) : (
     <AppearanceProvider>
-      <Workbench />
+      <QueryClientProvider client={queryClient}>
+        <Workbench />
+      </QueryClientProvider>
     </AppearanceProvider>
   );
 }

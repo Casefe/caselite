@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceShell } from './Workspace';
-import ProjectPreview from '../projects/ProjectPreview';
+import ProjectPreview from '../features/projects/ProjectPreview';
 afterEach(cleanup);
 describe('workspace navigation and clearly bounded project prototype', () => {
   it('routes primary objects and keeps the sidebar collapse accessible', () => {
@@ -22,7 +22,19 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     );
     expect(
       Array.from(screen.getByRole('navigation').querySelectorAll('button'), (b) => b.ariaLabel),
-    ).toEqual(['首页', '提醒', '任务', '知识库', '项目', '财务', '工具', '白板', '文档']);
+    ).toEqual([
+      '首页',
+      '提醒',
+      '任务',
+      '知识库',
+      '项目',
+      '财务',
+      '报告',
+      '联系人',
+      '工具',
+      '白板',
+      '文档',
+    ]);
     expect(screen.getByRole('group', { name: '工作区' })).toBeTruthy();
     expect(screen.getByRole('region', { name: '收藏' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '项目', exact: true }));

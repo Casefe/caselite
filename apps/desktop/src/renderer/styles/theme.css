@@ -1,0 +1,409 @@
+/* 工作台主题仅控制视觉，偏好由桌面受控接口保存。 */
+:root {
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ink: #232326;
+  --muted: #77777f;
+  --line: #e8e8eb;
+  --canvas: #f7f7f8;
+  --nav: #f3f3f4;
+  --theme-panel: #ffffff;
+  --theme-subtle: #f5f5f6;
+  --theme-hover: #ededf0;
+  --theme-secondary: #66666f;
+  --theme-accent: #5e6ad2;
+}
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --ink: #eeeeef;
+  --muted: #aaaab2;
+  --line: #36363b;
+  --canvas: #1c1c1f;
+  --nav: #18181b;
+  --theme-panel: #222225;
+  --theme-subtle: #29292e;
+  --theme-hover: #34343a;
+  --theme-secondary: #b1b1ba;
+  --theme-accent: #a0a8ff;
+}
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 13px;
+}
+h1,
+h2,
+h3 {
+  font-family: 'Inter Display', var(--font);
+}
+.primary-sidebar,
+.workspace-topbar-navigation {
+  background: var(--nav);
+  color: var(--theme-secondary);
+}
+.workspace-topbar {
+  background: var(--theme-subtle);
+  border-color: var(--line);
+}
+.workspace-topbar-brand {
+  color: var(--ink);
+}
+.workspace-navigation-toggle,
+.primary-navigation button,
+.sidebar-bottom > button,
+.sidebar-bottom .profile-settings,
+.sidebar-bottom .sidebar-draft {
+  color: var(--theme-secondary);
+}
+.workspace-navigation-toggle:hover,
+.primary-navigation button:hover,
+.sidebar-bottom > button:hover,
+.shortcuts button:hover {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.primary-navigation button[aria-current='page'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.primary-navigation button[aria-current='page']:before {
+  background: var(--theme-accent);
+}
+.sidebar-bottom,
+.sidebar-caption {
+  border-color: var(--line);
+}
+.profile-name,
+.sidebar-empty,
+.shortcuts button,
+.sidebar-caption {
+  color: var(--theme-secondary);
+}
+.agent-home,
+.knowledge-view,
+.agent-main,
+.agent-topline,
+.page-topline,
+.collection-workspace,
+.document-collection .table-head,
+.task-row,
+.page-title,
+.task-title,
+.project-tabs,
+.project-titlebar,
+.project-content,
+.document,
+.settings-content,
+.settings-page,
+.settings-heading,
+.catalog-view {
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.agent-context,
+.task-inspector,
+.settings-navigation,
+.provider-list,
+.project-properties,
+.sample-detail {
+  background: var(--theme-subtle);
+  color: var(--ink);
+}
+.agent-context,
+.task-inspector,
+.settings-heading,
+.settings-navigation,
+.document,
+.document-bar,
+.toolbar,
+.inspector-tabs,
+.task-row,
+.home-task-feed > button,
+.settings-center,
+.settings-page,
+.setting-row,
+.project-tabs,
+.page-topline,
+.agent-topline,
+.collection-heading {
+  border-color: var(--line);
+}
+.agent-start > p,
+.agent-wordmark,
+.agent-topline,
+.agent-local,
+.agent-local > span,
+.agent-context > h2,
+.agent-context-section,
+.agent-context-section h3,
+.agent-context-section > span,
+.settings-lead,
+.setting-row p,
+.settings-heading,
+.provider-detail > label,
+.provider-detail > header p,
+.provider-list small,
+.home-task-feed small,
+.home-task-feed header > span,
+.home-task-feed > p,
+.task-name small,
+.task-row time,
+.document-bar,
+.document footer,
+.caption,
+.muted,
+.assistant-footnote {
+  color: var(--theme-secondary);
+}
+.agent-context-section p,
+.agent-context-section dd,
+.settings-page h2,
+.setting-row h3,
+.home-task-feed h2,
+.home-task-feed strong,
+.inspector-content h2,
+.task-name strong,
+.task-title h1,
+.provider-detail h3,
+.tiptap,
+.agent-start h1 {
+  color: var(--ink);
+}
+button,
+input,
+textarea,
+select {
+  font-family: var(--font);
+}
+button {
+  background: var(--theme-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+button:hover {
+  background: var(--theme-hover);
+}
+input,
+textarea,
+select,
+.create-form input,
+.create-form textarea,
+.provider-detail input,
+.provider-detail select,
+.catalog-actions input,
+.catalog-actions select {
+  background: var(--theme-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.create-form,
+.provider-detail,
+.account-card,
+.home-task-feed > button,
+.project-card,
+.home-reminder-card,
+.slash-menu,
+.block-menu,
+.format-bar--floating {
+  background: var(--theme-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.agent-starters button {
+  background: var(--theme-panel);
+  color: var(--theme-secondary);
+  border-color: var(--line);
+}
+.assistant-message,
+.assistant-run-status,
+.revision-badge,
+.settings-pill,
+.provider-notice,
+.project-note,
+.project-board > section,
+.rich-editor .tiptap pre {
+  background: var(--theme-subtle);
+  color: var(--theme-secondary);
+}
+.assistant-message:nth-child(even),
+.assistant-preview pre {
+  background: var(--theme-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.assistant-preview,
+.home-notice {
+  background: var(--theme-subtle);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.settings-navigation nav button {
+  color: var(--theme-secondary);
+}
+.settings-navigation nav button[aria-current='page'],
+.provider-list > button[aria-pressed='true'],
+.collection-workspace .task-row[aria-current='true'],
+.project-row[aria-current='true'],
+.catalog-table tbody tr[aria-selected='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.catalog-table th,
+.catalog-table tbody tr:hover {
+  background: var(--theme-subtle);
+}
+.format-bar button,
+.format-bar select,
+.view-tabs button,
+.project-tabs button,
+.inspector-tabs button {
+  color: var(--theme-secondary);
+}
+.format-bar button:hover,
+.format-bar button[aria-pressed='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.view-tabs button.current,
+.project-tabs button[aria-selected='true'],
+.inspector-tabs button[aria-selected='true'] {
+  color: var(--ink);
+}
+
+.theme-setting {
+  padding: 18px 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+.theme-setting-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.theme-setting-heading h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.theme-setting-heading p {
+  margin: 0;
+  color: var(--theme-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.theme-current {
+  color: var(--theme-secondary);
+  font-size: 12px;
+}
+.theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+}
+.theme-option {
+  display: block;
+  width: 155px;
+  padding: 0;
+  border: 0;
+  text-align: left;
+  background: transparent;
+}
+.theme-option:hover {
+  background: transparent;
+}
+.theme-swatch {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  height: 80px;
+  padding: 10px;
+  border: 1px solid #dddde1;
+  border-radius: 7px;
+  background: #f7f7f8;
+}
+.theme-option[aria-pressed='true'] .theme-swatch {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+.theme-swatch > i {
+  width: 28%;
+  border-radius: 3px;
+  background: #e8e8eb;
+}
+.theme-swatch > span {
+  flex: 1;
+  padding-top: 4px;
+}
+.theme-swatch > span b,
+.theme-swatch > span i {
+  display: block;
+  height: 5px;
+  margin-bottom: 8px;
+  border-radius: 3px;
+  background: #d4d4d9;
+}
+.theme-swatch > span b {
+  width: 65%;
+  background: #8c8c96;
+}
+.theme-swatch > span i:last-child {
+  width: 75%;
+}
+.theme-swatch--dark {
+  border-color: #414147;
+  background: #222225;
+}
+.theme-swatch--dark > i {
+  background: #303036;
+}
+.theme-swatch--dark > span b {
+  background: #aaaab4;
+}
+.theme-swatch--dark > span i {
+  background: #515159;
+}
+.theme-option-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 1px 0;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink);
+}
+.theme-option-label > span {
+  color: var(--theme-accent);
+}
+.theme-error {
+  margin-top: 14px;
+  color: #b85a4b;
+  font-size: 12px;
+}
+.theme-error button {
+  margin-left: 8px;
+  padding: 4px 8px;
+}
+.home-task-empty,
+.simple-toolbar,
+.document > .caption {
+  background: var(--theme-panel);
+  border-color: var(--line);
+  color: var(--theme-secondary);
+}
+.home-reminder-card h3,
+.ai-heading h2 {
+  color: var(--ink);
+}
+.home-reminder-card p,
+.home-notice p,
+.ai-heading p,
+.ai-context,
+.assistant-model,
+.model-settings-link {
+  color: var(--theme-secondary);
+}
+.ai-context,
+.settings-pill,
+.simple-toolbar {
+  border-color: var(--line);
+}

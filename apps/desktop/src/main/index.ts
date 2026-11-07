@@ -1,3 +1,4 @@
+import { runFinanceDemo } from './finance-demo';
 import { runReminderDemo } from './reminder-demo';
 import { startReminderScheduler } from './adapters/reminder-scheduler';
 import { createReminderApplication } from '@caselite/application';
@@ -16,10 +17,19 @@ import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runProjectDemo } from './project-demo';
+import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
+import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
-import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
-import { createCatalogApplication } from '@caselite/application';
+import {
+  runAgentDemo,
+  runAgentHistoryProbe,
+  syntheticAgentStream,
+  syntheticReviewStream,
+} from './agent-demo';
+import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
+import { documentReviewStore } from './document-review-store';
+import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
@@ -33,7 +43,12 @@ import {
 } from './credential-preflight';
 import { createAgentCredentials } from './adapters/agent-credentials';
 import { registerAgentIpc } from './ipc/register-agent-ipc';
-import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
+import {
+  registerCatalogIpc,
+  registerContactsIpc,
+  registerFinanceIpc,
+  registerTaskIpc,
+} from './ipc/register-task-ipc';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -42,6 +57,7 @@ import { basename, join, resolve, sep } from 'node:path';
 
 import {
   createOfflineProbeApplication,
+  createContactsApplication,
   createSpikeApplication,
   createTaskApplication,
 } from '@caselite/application';
@@ -93,7 +109,12 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
-  if (process.env.CASELITE_TASK_DEMO === 'agent-preview') entry.searchParams.set('mock-agent', '1');
+  if (
+    process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-')
+  )
+    entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -410,7 +431,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 15
+      result.value?.migration_count !== 17
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -508,6 +529,9 @@ const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'document-review-preview',
+      'document-review-write',
+      'document-review-read',
       'credential-preflight',
       'credential-preflight-ui',
       'task-status-write',
@@ -524,6 +548,8 @@ if (taskDemoPhase) {
       'crash',
       'preview',
       'project-write',
+      'project-agent-write',
+      'project-agent-read',
       'project-read',
       'project-edit',
       'project-restore',
@@ -540,6 +566,10 @@ if (taskDemoPhase) {
       'agent-credential-read',
       'agent-crash-synthetic',
       'agent-read-synthetic',
+      'finance-write',
+      'finance-reverse',
+      'finance-read',
+      'finance-preview',
       'appearance-write',
       'appearance-read',
     ].includes(taskDemoPhase)
@@ -663,7 +693,13 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
-    registerTaskIpc(tasks);
+    const taskQueryProbe =
+      taskDemoRoot &&
+      taskDemoPhase === 'task-status-write' &&
+      process.env.CASELITE_TASK_QUERY_PROBE === '1'
+        ? createTaskQueryProbe(tasks)
+        : undefined;
+    registerTaskIpc(taskQueryProbe?.application ?? tasks);
     const reminders = createReminderApplication(taskStore.reminders);
     const reminderScheduler = startReminderScheduler(
       reminders,
@@ -671,7 +707,16 @@ app
     );
     registerReminderIpc(reminders, reminderScheduler.tick);
     app.on('will-quit', reminderScheduler.stop);
-    registerCatalogIpc(createCatalogApplication(taskStore.catalog));
+    const catalog = createCatalogApplication(taskStore.catalog);
+    const catalogQueryProbe =
+      taskDemoRoot &&
+      taskDemoPhase === 'task-status-write' &&
+      process.env.CASELITE_CATALOG_QUERY_PROBE === '1'
+        ? createCatalogQueryProbe(catalog)
+        : undefined;
+    registerCatalogIpc(catalogQueryProbe?.application ?? catalog);
+    registerFinanceIpc(createFinanceApplication(taskStore.finance));
+    registerContactsIpc(createContactsApplication(taskStore.contacts));
     const materials = createMaterialApplication({
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
@@ -695,7 +740,7 @@ app
     registerMaterialIpc(materials);
     app.on('will-quit', () => materials.close());
     // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
-    let materialDemoModel: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
+    let materialDemoModel: import('@caselite/contracts').AgentModel = 'gpt-4.1-mini';
     const materialDemoKeys = new Set(['openai', 'deepseek']);
     const credentialUi = taskDemoPhase === 'credential-preflight-ui';
     let credentialHttpAttempts = 0;
@@ -733,7 +778,12 @@ app
             );
           }
         : undefined;
+    const financeDemo = taskDemoPhase?.startsWith('finance-');
+    if (financeDemo) materialDemoKeys.clear();
+    const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
     const baseAgentCredentials =
+      documentReviewDemo ||
+      financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
@@ -809,6 +859,8 @@ app
       credentials: agentCredentials,
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
+      project: taskStore.catalog.agentProject,
+      review: documentReviewStore(taskStore, tasks),
       history: {
         ...taskStore.agentHistory,
         load() {
@@ -862,42 +914,66 @@ app
               },
             })
           : createPiRuntime(
-              credentialUi ||
-                taskDemoPhase?.startsWith('reminder') ||
-                taskDemoPhase?.startsWith('project-') ||
-                taskDemoPhase === 'task-status-write' ||
-                taskDemoPhase === 'task-status-read' ||
-                taskDemoPhase === 'agent-read' ||
-                taskDemoPhase === 'agent-credential-read' ||
-                taskDemoPhase === 'agent-read-synthetic' ||
-                taskDemoPhase === 'materials-read'
-                ? () => {
-                    if (credentialUi) {
-                      credentialRuntimeAttempts++;
-                      recordCredentialUi();
-                    }
-                    writeFileSync(
-                      join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                      'unexpected dispatch',
-                    );
-                    throw new Error('Unexpected restart dispatch');
-                  }
-                : taskDemoPhase === 'materials'
-                  ? (model, context, options) => {
+              documentReviewDemo
+                ? syntheticReviewStream
+                : financeDemo ||
+                    credentialUi ||
+                    taskDemoPhase?.startsWith('reminder') ||
+                    (taskDemoPhase?.startsWith('project-') &&
+                      taskDemoPhase !== 'project-agent-write') ||
+                    taskDemoPhase === 'task-status-write' ||
+                    taskDemoPhase === 'task-status-read' ||
+                    taskDemoPhase === 'agent-read' ||
+                    taskDemoPhase === 'agent-credential-read' ||
+                    taskDemoPhase === 'agent-read-synthetic' ||
+                    taskDemoPhase === 'materials-read'
+                  ? () => {
+                      if (credentialUi) {
+                        credentialRuntimeAttempts++;
+                        recordCredentialUi();
+                      }
                       writeFileSync(
-                        join(taskDemoRoot!, 'material-pi-context.json'),
-                        JSON.stringify(context, null, 2),
+                        join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                        'unexpected dispatch',
                       );
-                      return syntheticAgentStream(model, context, options);
+                      throw new Error('Unexpected restart dispatch');
                     }
-                  : taskDemoPhase?.startsWith('agent')
-                    ? syntheticAgentStream
-                    : undefined,
+                  : taskDemoPhase === 'materials'
+                    ? (model, context, options) => {
+                        writeFileSync(
+                          join(taskDemoRoot!, 'material-pi-context.json'),
+                          JSON.stringify(context, null, 2),
+                        );
+                        return syntheticAgentStream(model, context, options);
+                      }
+                    : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
+                      ? syntheticAgentStream
+                      : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (documentReviewDemo && taskDemoRoot) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      app.on('will-quit', () => taskStore.close());
+      if (taskDemoPhase !== 'document-review-read') seedDocumentReview(tasks);
+      if (taskDemoPhase === 'document-review-preview') {
+        await createWindow();
+      } else {
+        await runDocumentReviewDemo(
+          () => createWindow(false),
+          taskDemoRoot,
+          taskDemoPhase!,
+          tasks,
+          taskStore.agentHistory.load,
+        );
+        app.exit(0);
+      }
+      return;
+    }
     if (credentialUi) {
       recordCredentialUi();
       const window = await createWindow();
@@ -927,7 +1003,17 @@ app
       taskDemoRoot &&
       (taskDemoPhase === 'task-status-write' || taskDemoPhase === 'task-status-read')
     ) {
-      await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      if (catalogQueryProbe) {
+        await runCatalogQueryProbe(
+          () => createWindow(),
+          taskDemoRoot,
+          tasks,
+          catalog,
+          catalogQueryProbe.counts,
+        );
+      } else if (taskQueryProbe) {
+        await runTaskQueryProbe(() => createWindow(), taskDemoRoot, tasks, taskQueryProbe.counts);
+      } else await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;
     }
@@ -977,7 +1063,20 @@ app
     app.on('will-quit', () => taskStore.close());
     if (
       taskDemoRoot &&
-      (taskDemoPhase === 'project-write' ||
+      (taskDemoPhase === 'finance-write' ||
+        taskDemoPhase === 'finance-reverse' ||
+        taskDemoPhase === 'finance-read' ||
+        taskDemoPhase === 'finance-preview')
+    ) {
+      await runFinanceDemo(createWindow, taskDemoRoot, taskDemoPhase);
+      if (taskDemoPhase !== 'finance-preview') app.quit();
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'project-agent-write' ||
+        taskDemoPhase === 'project-agent-read' ||
+        taskDemoPhase === 'project-write' ||
         taskDemoPhase === 'project-read' ||
         taskDemoPhase === 'project-edit' ||
         taskDemoPhase === 'project-restore' ||

@@ -47,6 +47,7 @@ export async function runAppearanceDemo(
     if (phase === 'appearance-write') {
       await wait("document.documentElement.dataset.theme==='light'");
       await click('[data-nav=settings]');
+      await click('.settings-nav-group[aria-label=个人] button:first-of-type');
       await wait("document.querySelector('.theme-option:nth-child(2):not(:disabled)')");
       await capture('settings-light.png');
       await click('.theme-option:nth-child(2)');
@@ -111,6 +112,7 @@ export async function runAppearanceDemo(
       if (luminance(toolbarColor) >= 0.2) throw new Error('Dark editor toolbar is too bright');
       await capture('assistant-dark.png');
       await click('[data-nav=settings]');
+      await click('.settings-nav-group[aria-label=个人] button:first-of-type');
       await wait("document.querySelector('.theme-option:first-child:not(:disabled)')");
       await click('.theme-option:first-child');
       await wait(

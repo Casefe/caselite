@@ -1,4 +1,16 @@
 import {
+  CONTACTS_CHANNEL,
+  contactsResponseSchema,
+  type ContactsRequest,
+  type ContactsResponse,
+} from '@caselite/contracts';
+import {
+  FINANCE_CHANNEL,
+  financeResponseSchema,
+  type FinanceRequest,
+  type FinanceResponse,
+} from '@caselite/contracts';
+import {
   REMINDER_CHANNEL,
   reminderResponseSchema,
   type ReminderRequest,
@@ -86,7 +98,9 @@ async function invokeBusinessCommand(
     | CatalogRequest
     | AppearanceRequest
     | MaterialRequest
-    | ReminderRequest,
+    | ReminderRequest
+    | FinanceRequest
+    | ContactsRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -109,6 +123,8 @@ export type CaseLitePreloadApi = {
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
   dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
   appearance(request: AppearanceRequest): Promise<AppearanceResponse>;
+  finance(request: FinanceRequest): Promise<FinanceResponse>;
+  contacts(request: ContactsRequest): Promise<ContactsResponse>;
   catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
   task(request: TaskRequest): Promise<TaskResponse>;
@@ -169,6 +185,26 @@ export function createCaseLitePreloadApi(
         ? result.data
         : { ok: false, message: '无法确认本机主题设置，请重新读取后重试。' };
     },
+    async contacts(request) {
+      const result = contactsResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, CONTACTS_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : { ok: false, code: 'RESULT_UNKNOWN', message: '无法确认联系人结果，请核对原提交。' };
+    },
+    async finance(request) {
+      const result = financeResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, FINANCE_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认财务结果，请保留原提交并核对。',
+          };
+    },
     async catalog(request) {
       const r = catalogResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, CATALOG_CHANNEL, request),
@@ -226,6 +262,8 @@ export type {
   AgentResponse,
   AgentModel,
   AgentProvider,
+  ReviewRange,
+  ReviewSaved,
 } from '@caselite/contracts';
 
 export type { CatalogRequest, CatalogResponse, CatalogDocument, Matter } from '@caselite/contracts';
@@ -247,3 +285,7 @@ export type {
 } from '@caselite/contracts';
 
 export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/contracts';
+
+export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
+
+export type { Contact, ContactsRequest } from '@caselite/contracts';

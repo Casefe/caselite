@@ -8,7 +8,22 @@ import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { createAgentCredentials } from './adapters/agent-credentials';
 
 // 仅被已校验的临时agent演示入口注入；没有网络Provider，也不读取真实凭据。
-export const syntheticAgentStream: StreamFn = (_model, _context, options) => {
+export const syntheticAgentStream: StreamFn = (model, context, options) =>
+  syntheticTextStream(model, context, options);
+
+export const syntheticReviewStream: StreamFn = (model, context, options) =>
+  syntheticTextStream(model, context, options, [
+    '合成替换：乙方应',
+    '在验收通过后十个工作日内',
+    '支付剩余款项。',
+  ]);
+
+function syntheticTextStream(
+  _model: Parameters<StreamFn>[0],
+  _context: Parameters<StreamFn>[1],
+  options: Parameters<StreamFn>[2],
+  reviewParts?: string[],
+) {
   const stream = createAssistantMessageEventStream();
   const response: AssistantMessage = {
     role: 'assistant',
@@ -27,40 +42,49 @@ export const syntheticAgentStream: StreamFn = (_model, _context, options) => {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
   };
-  const parts = [
+  const parts = reviewParts ?? [
     '## 合成演示 · MOCK_ONLY\n\n非真实模型，以下为固定 UI 测试内容，不是材料分析。\n\n',
     '### 待核对事项\n\n- **事实**：两份演示材料的交付日期不同。\n',
     '- **矛盾**：一份写10月10日，另一份写10月12日。\n',
     '- **缺件**：缺少签收凭证，需人工核对。\n\n',
     '> 内部沟通初稿：建议先补齐签收材料，再核对时间线。',
   ];
-  if (JSON.stringify(_context.messages).includes('长文展示测试'))
+  if (!reviewParts && JSON.stringify(_context.messages).includes('长文展示测试'))
     parts[4] = Array.from(
       { length: 24 },
       (_, i) =>
         `\n\n### 展示检查 ${i + 1}\n\n这段合成文字仅验证长文滚动、Markdown 标题和底部输入位置。请逐项核对原文、日期、付款记录和缺件；此演示不证明真实模型完成分析。`,
     ).join('');
   let index = 0;
-  const timer = setInterval(() => {
-    if (options?.signal?.aborted) {
-      clearInterval(timer);
+  if (reviewParts) stream.push({ type: 'start', partial: structuredClone(response) });
+  const timer = setInterval(
+    () => {
+      if (!reviewParts && options?.signal?.aborted) {
+        clearInterval(timer);
+        stream.push({
+          type: 'error',
+          reason: 'aborted',
+          error: { ...response, stopReason: 'aborted' },
+        });
+        return;
+      }
+      const delta = parts[index++];
+      if (response.content[0].type === 'text') response.content[0].text += delta;
       stream.push({
-        type: 'error',
-        reason: 'aborted',
-        error: { ...response, stopReason: 'aborted' },
+        type: 'text_delta',
+        contentIndex: 0,
+        delta,
+        partial: structuredClone(response),
       });
-      return;
-    }
-    const delta = parts[index++];
-    if (response.content[0].type === 'text') response.content[0].text += delta;
-    stream.push({ type: 'text_delta', contentIndex: 0, delta, partial: structuredClone(response) });
-    if (index === parts.length) {
-      clearInterval(timer);
-      stream.push({ type: 'done', reason: 'stop', message: response });
-    }
-  }, 250);
+      if (index === parts.length) {
+        clearInterval(timer);
+        stream.push({ type: 'done', reason: 'stop', message: response });
+      }
+    },
+    reviewParts ? 500 : 250,
+  );
   return stream;
-};
+}
 
 export async function runAgentDemo(createWindow: () => Promise<BrowserWindow>, root: string) {
   const vault = await createAgentCredentials(root);

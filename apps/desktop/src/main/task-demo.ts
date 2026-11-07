@@ -718,7 +718,26 @@ export async function runTaskDemo(
       );
       if (
         JSON.stringify(categories) !==
-        JSON.stringify(['系统设置', '账户管理', '外观', '模型', '个性化'])
+        JSON.stringify([
+          '常规',
+          '账户',
+          '通知',
+          '工作台',
+          '安全',
+          '模型',
+          '编辑器',
+          '绘图工具',
+          '工作流',
+          'Skills',
+          '工作区',
+          '团队',
+          '成员',
+          '安全',
+          'MCP',
+          '套餐',
+          '导入导出',
+          '备份',
+        ])
       )
         throw new Error('Settings categories mismatch');
       await wait("!document.querySelector('[data-provider=openai]').disabled");
@@ -797,10 +816,10 @@ export async function runTaskDemo(
         await capture(`settings-${provider}.png`);
       }
       for (const [label, file] of [
-        ['系统设置', 'system'],
-        ['账户管理', 'account'],
-        ['外观', 'appearance'],
-        ['个性化', 'personalization'],
+        ['工作区', 'workspace'],
+        ['团队', 'account'],
+        ['常规', 'appearance'],
+        ['安全', 'privacy'],
       ]) {
         await evaluate(
           `Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent===${JSON.stringify(label)}).click()`,

@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import {
+  invalidateOrdinaryCatalog,
+  useProjectCatalog,
+} from '../shared/data/ordinary-catalog-query';
+import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CatalogDocument, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import DocumentLibrary from './DocumentLibrary';
@@ -38,7 +44,11 @@ const projection = (doc: CatalogDocument): CatalogResponse => ({
 function show(catalog: (request: CatalogRequest) => Promise<CatalogResponse>) {
   vi.stubGlobal('caselite', { catalog });
   const onDirty = vi.fn();
-  render(<DocumentLibrary onOpen={vi.fn()} onDirty={onDirty} />);
+  render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={vi.fn()} onDirty={onDirty} />
+    </QueryClientProvider>,
+  );
   return onDirty;
 }
 
@@ -113,4 +123,80 @@ it('未知时核对原键，确认后读取失败只允许重读目录', async (
     'list',
     'list',
   ]);
+});
+
+it('提交确认晚于切页时，新页面仍读回同一份目录', async () => {
+  const original = { ...entry, in_library: false };
+  const saved = { ...original, in_library: true, version: original.version + 1 };
+  let current = original;
+  let confirm: (() => void) | undefined;
+  const catalog = vi.fn(async (request: CatalogRequest): Promise<CatalogResponse> => {
+    if (request.operation === 'organize_document') {
+      return new Promise((resolve) => {
+        confirm = () => {
+          current = saved;
+          resolve(projection(saved));
+        };
+      });
+    }
+    return projection(current);
+  });
+  vi.stubGlobal('caselite', { catalog });
+  const client = createWorkbenchQueryClient();
+  const onDirty = vi.fn(),
+    onOpen = vi.fn();
+  const view = (library: boolean) => (
+    <QueryClientProvider client={client}>
+      <DocumentLibrary key={String(library)} library={library} onOpen={onOpen} onDirty={onDirty} />
+    </QueryClientProvider>
+  );
+  const projectKey = ['catalog', 'project-properties'];
+  client.setQueryData(projectKey, projection(original));
+  const { rerender } = render(view(false));
+  fireEvent.click(await screen.findByRole('button', { name: '加入知识库' }));
+  await waitFor(() => expect(confirm).toBeDefined());
+  rerender(view(true));
+  expect(screen.getByText(/知识库暂无选定文档/)).toBeTruthy();
+  confirm!();
+  expect(await screen.findByRole('button', { name: '移出知识库' })).toBeTruthy();
+  expect(client.getQueryState(projectKey)?.isInvalidated).toBe(true);
+
+  function ProjectDirectory() {
+    const read = useProjectCatalog();
+    return <p>{read.data?.documents[0]?.in_library ? '项目目录已读到新版本' : '旧版本'}</p>;
+  }
+  rerender(
+    <QueryClientProvider client={client}>
+      <ProjectDirectory />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText('项目目录已读到新版本')).toBeTruthy();
+  expect(catalog.mock.calls.map(([request]) => request.operation)).toEqual([
+    'list',
+    'organize_document',
+    'list',
+    'list',
+  ]);
+  expect(catalog.mock.calls.at(-1)?.[0]).toMatchObject({ project_properties: true });
+});
+
+it('外部提交使首次在途目录过期后，会补发读取并忽略迟到旧结果', async () => {
+  const complete: ((value: CatalogResponse) => void)[] = [];
+  const catalog = vi.fn(() => new Promise<CatalogResponse>((resolve) => complete.push(resolve)));
+  vi.stubGlobal('caselite', { catalog });
+  const client = createWorkbenchQueryClient();
+  render(
+    <QueryClientProvider client={client}>
+      <DocumentLibrary onOpen={vi.fn()} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(complete).toHaveLength(1));
+  act(() => {
+    void invalidateOrdinaryCatalog(client);
+  });
+  await waitFor(() => expect(complete).toHaveLength(2));
+  await act(async () => complete[1](projection(entry)));
+  expect(await screen.findByRole('row', { name: /合成文档/ })).toBeTruthy();
+  await act(async () => complete[0](projection({ ...entry, title: '过期目录' })));
+  expect(screen.queryByRole('row', { name: /过期目录/ })).toBeNull();
 });

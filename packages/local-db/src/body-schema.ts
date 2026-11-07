@@ -181,3 +181,43 @@ export function bodyPlainText(state: Uint8Array) {
     doc.destroy();
   }
 }
+
+// 审阅只接受顶层段落内连续文本。坐标与原文必须同时匹配权威修订。
+export function reviewBodyRange(
+  state: Uint8Array,
+  range: { paragraph: number; from: number; to: number; text: string },
+  replacement?: string,
+): Uint8Array | undefined {
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, state);
+    const block = doc.getXmlFragment('default').get(range.paragraph);
+    if (!(block instanceof Y.XmlElement) || block.nodeName !== 'paragraph' || block.length !== 1)
+      return;
+    const text = block.get(0);
+    if (!(text instanceof Y.XmlText)) return;
+    const parts = text.toDelta() as { insert: string; attributes?: Record<string, unknown> }[];
+    const original = parts.map((part) => part.insert).join('');
+    const { from, to } = range;
+    if (
+      from >= to ||
+      to > original.length ||
+      original.slice(from, to) !== range.text ||
+      !range.text.trim() ||
+      /[\p{Cc}\uD800-\uDFFF]/u.test(range.text)
+    )
+      return;
+    if (replacement !== undefined) {
+      let end = 0;
+      const first = parts.find((part) => (end += part.insert.length) > from);
+      // 删除选中区间后只插入文本，继承选区首字符的格式，选区之外的标记保持原样。
+      doc.transact(() => {
+        text.delete(from, to - from);
+        text.insert(from, replacement, first?.attributes ?? {});
+      });
+    }
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}

@@ -148,6 +148,23 @@ describe('bounded system credentials', () => {
     expect(reopened.getDefaultModel()).toBe('deepseek-flash');
     expect(existsSync(join(root, 'deepseek-credential.enc'))).toBe(false);
   });
+  it('reopens new provider credentials independently from the existing vault', async () => {
+    storage.encryptStringAsync.mockImplementation(async (key) => Buffer.from('cipher:' + key));
+    storage.decryptStringAsync.mockImplementation(async (buffer) => ({
+      result: buffer.toString().slice(7),
+      shouldReEncrypt: false,
+    }));
+    const vault = await createAgentCredentials(root);
+    for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'siliconflow'] as const)
+      await vault.set('synthetic-' + provider, provider);
+    vault.setDefaultModel('kimi-k2.6');
+    const reopened = await createAgentCredentials(root);
+    expect(reopened.getDefaultModel()).toBe('kimi-k2.6');
+    reopened.clear('kimi');
+    expect(reopened.get('kimi')).toBeUndefined();
+    for (const provider of ['openai', 'deepseek', 'glm', 'siliconflow'] as const)
+      expect(reopened.get(provider)).toBe('synthetic-' + provider);
+  });
 });
 
 it('keeps Provider dispatch blocked after a timed-out decrypt returns successfully', async () => {

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useContext } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest } from '../preload/caselite-api';
 import App from './App';
+import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
 vi.mock('@tiptap/react', () => ({ useEditor: () => null }));
 vi.mock('./ui/Appearance', () => ({
   AppearanceProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -34,7 +36,7 @@ vi.mock('./ui/Workspace', () => ({
     </>
   ),
 }));
-vi.mock('./projects/ProjectCatalog', () => ({
+vi.mock('./features/projects/ProjectCatalog', () => ({
   default: ({
     onOpen,
     initialView,
@@ -62,14 +64,22 @@ vi.mock('./ui/TaskInspector', () => ({
     </>
   ),
 }));
-vi.mock('./ui/SettingsView', async () => {
-  const React = await import('react');
+vi.mock('./ui/SettingsView', () => {
   return {
-    ModelSettingsNavigation: React.createContext(() => {}),
-    default: ({ onBack }: { onBack(): void }) => <button onClick={onBack}>关闭设置</button>,
+    default: ({ onBack, section }: { onBack(): void; section: string }) => (
+      <>
+        <h2>{section}</h2>
+        <button onClick={onBack}>关闭设置</button>
+      </>
+    ),
   };
 });
-vi.mock('./ui/AgentHome', () => ({ default: () => <div>首页</div> }));
+vi.mock('./ui/AgentHome', () => ({
+  default: function MockAgentHome() {
+    const openSettings = useContext(ModelSettingsNavigation);
+    return <button onClick={() => openSettings?.()}>首页</button>;
+  },
+}));
 vi.mock('./ui/RecordList', () => ({
   initialTaskListState: {},
   default: () => <div>全局任务列表</div>,
@@ -104,12 +114,21 @@ async function projectTask() {
   fireEvent.click(screen.getByText('项目A'));
   await screen.findByRole('button', { name: '返回来源项目' });
 }
+it('opens AI and services directly from the model shortcut and returns to home', async () => {
+  setup();
+  fireEvent.click(await screen.findByText('首页'));
+  await screen.findByRole('heading', { name: 'models' });
+  fireEvent.click(screen.getByText('关闭设置'));
+  await screen.findByText('首页');
+});
 it('keeps the source when settings rereads the same task and clears it on a global task open', async () => {
   setup();
   await projectTask();
+  fireEvent.click(screen.getByTestId('task-result-tab'));
   fireEvent.click(screen.getByText('设置入口'));
   fireEvent.click(screen.getByText('关闭设置'));
   await screen.findByRole('button', { name: '返回来源项目' });
+  expect(screen.getByTestId('task-result-tab').getAttribute('aria-selected')).toBe('true');
   fireEvent.click(screen.getByTestId('back-to-tasks'));
   await screen.findByText('项目视图P');
   fireEvent.click(screen.getByText('全局B'));

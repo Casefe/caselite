@@ -1,4 +1,12 @@
 import {
+  CONTACTS_CHANNEL,
+  contactsResponseSchema,
+  type ContactsResponse,
+} from '@caselite/contracts';
+import type { createContactsApplication } from '@caselite/application';
+import { FINANCE_CHANNEL, financeResponseSchema, type FinanceResponse } from '@caselite/contracts';
+import type { createFinanceApplication } from '@caselite/application';
+import {
   REMINDER_CHANNEL,
   reminderResponseSchema,
   type ReminderResponse,
@@ -16,6 +24,14 @@ export function registerTaskIpc(application: ReturnType<typeof createTaskApplica
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
       return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问本地任务。' };
     return taskResponseSchema.parse(application.execute(payload));
+  });
+}
+
+export function registerFinanceIpc(application: ReturnType<typeof createFinanceApplication>) {
+  ipcMain.handle(FINANCE_CHANNEL, (event, payload): FinanceResponse => {
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问本地财务。' };
+    return financeResponseSchema.parse(application.execute(payload));
   });
 }
 
@@ -37,5 +53,13 @@ export function registerReminderIpc(
     const result = reminderResponseSchema.parse(application.execute(payload));
     if (result.ok && result.receipt) changed();
     return result;
+  });
+}
+
+export function registerContactsIpc(application: ReturnType<typeof createContactsApplication>) {
+  ipcMain.handle(CONTACTS_CHANNEL, (event, payload): ContactsResponse => {
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问联系人。' };
+    return contactsResponseSchema.parse(application.execute(payload));
   });
 }

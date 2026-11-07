@@ -1,3 +1,4 @@
+import { editorProfiles } from './editor-config';
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
@@ -119,7 +120,7 @@ export default function TaskContentEditor({
       </header>
       <EditorSurface
         editor={editor}
-        mode="compact"
+        mode={editorProfiles.description.mode}
         blockActions
         disabled={disabled}
         placeholder="描述目标、事实与待处理问题…"

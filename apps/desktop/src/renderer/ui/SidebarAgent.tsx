@@ -1,60 +1,29 @@
-import AgentPanel from './AgentPanel';
-import { Icon } from './Workspace';
+import AgentPanel, { UnavailableAgentPanel } from './AgentPanel';
 
 export default function SidebarAgent({
   taskId,
+  project,
   blocked = false,
-  unavailable,
+  unavailable = '当前没有可用的关联任务。',
 }: {
   taskId?: string;
+  project?: { id: string; version: number; archived: boolean };
   blocked?: boolean;
   unavailable?: string;
 }) {
   return (
     <div className="sidebar-agent" inert={blocked}>
-      {taskId ? (
+      {project ? (
+        <AgentPanel
+          key={`project:${project.id}`}
+          scope={`project:${project.id}`}
+          variant="compact"
+          project={project}
+        />
+      ) : taskId ? (
         <AgentPanel key={taskId} scope={taskId} variant="compact" />
       ) : (
-        // 无 Task scope 时仅渲染输入区外观，不初始化 Agent 或材料控制器。
-        <section className="assistant-panel assistant-panel--compact" aria-label="AI 对话未启用">
-          <div className="assistant-compose agent-prompt">
-            <div className="material-composer">
-              <textarea
-                className="assistant-input"
-                aria-label="AI 对话输入"
-                placeholder="输入消息"
-                rows={2}
-                disabled
-              />
-              <div className="assistant-actions">
-                <div className="material-menu">
-                  <button
-                    type="button"
-                    className="material-menu-trigger"
-                    aria-label="添加文件与材料"
-                    disabled
-                  >
-                    <Icon name="plus" size={18} />
-                  </button>
-                </div>
-                <select className="home-model-select" aria-label="选择大模型" disabled>
-                  <option>选择模型</option>
-                </select>
-                <button
-                  type="button"
-                  className="primary assistant-submit"
-                  aria-label="发送"
-                  disabled
-                >
-                  发送
-                </button>
-              </div>
-            </div>
-          </div>
-          <p className="assistant-run-status" role="status">
-            {unavailable}
-          </p>
-        </section>
+        <UnavailableAgentPanel reason={unavailable} />
       )}
     </div>
   );

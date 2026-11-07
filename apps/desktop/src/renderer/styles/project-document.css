@@ -1,0 +1,483 @@
+/* 项目概述使用行内正文，格式面板按需展开。 */
+.rich-editor--compact,
+.rich-editor--compact .tiptap {
+  min-height: 64px;
+}
+.rich-editor--compact .tiptap {
+  padding: 8px 0;
+  max-width: none;
+}
+.rich-editor--compact .tiptap:focus-visible {
+  box-shadow: inset 0 -1px var(--line);
+}
+.rich-editor--compact .compact-format-toggle {
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+}
+.rich-editor--compact .format-bar {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.rich-editor--compact .selection-tools {
+  max-width: 100%;
+}
+.rich-editor--compact .format-bar button,
+.rich-editor--compact .format-bar select {
+  margin: 0;
+}
+.rich-editor--compact .format-bar select {
+  width: 85px;
+  padding: 3px 7px;
+}
+
+.task-create-properties {
+  margin: 12px 0;
+  padding: 8px 0;
+  min-width: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 8px;
+}
+.task-create-properties legend {
+  font-weight: 600;
+  font-size: 13px;
+}
+.create-form .task-create-properties label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+}
+.task-create-properties p {
+  grid-column: 1 / -1;
+}
+.create-form .task-create-properties :is(select, input),
+.task-inspector-content .task-label-section :is(select, input) {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+  color: var(--ink);
+  background: var(--theme-panel);
+  margin: 0;
+}
+.create-form-footer {
+  flex-wrap: wrap;
+}
+
+.inspector-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+  border-radius: 4px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.inspector-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.inspector-disclosure > summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.inspector-disclosure[open] > summary::after {
+  transform: rotate(45deg);
+}
+.inspector-disclosure > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.task-inspector-content > .inspector-disclosure {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.inspector-disclosure > summary:hover {
+  background: var(--active);
+}
+.inspector-content .inspector-property-list {
+  display: block;
+  margin: 0;
+}
+.inspector-property-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+}
+.inspector-property-row > .inspector-property-label {
+  color: var(--muted);
+}
+.inspector-property-row > :is(input, select, button, dd, .inspector-property-text) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 29px;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.inspector-property-row > button {
+  display: block;
+}
+.inspector-property-row > .record-id {
+  font-size: 11px;
+}
+.inspector-disclosure .inspector-property-row > select {
+  appearance: none;
+  text-overflow: ellipsis;
+}
+.inspector-disclosure .inspector-property-row > select:enabled {
+  cursor: pointer;
+}
+.inspector-property-row > :is(input, select, button):enabled:hover,
+.inspector-property-row > :is(input, select, button):focus-visible {
+  background: var(--active);
+}
+.inspector-property-row > :is(input, select, button):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.inspector-property-row > :is(input, select, button):disabled {
+  color: var(--muted);
+}
+.task-inspector-content .task-properties-editor {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.task-assignee-editor {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+.task-properties-editor .task-assignee-editor > :is(input, select) {
+  min-width: 0;
+  max-width: none;
+}
+.task-assignee-actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+.task-label-section .task-tag-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.task-inspector-content .project-inspector-section {
+  border-top: 0;
+}
+.assistant-panel--compact .assistant-viewport {
+  max-height: 280px;
+}
+.assistant-panel--compact .assistant-compose {
+  padding: 8px;
+  border-radius: 12px;
+}
+.assistant-panel--compact .assistant-compose .assistant-input {
+  padding-inline: 4px;
+  font-size: 13px;
+}
+.assistant-panel--compact .assistant-actions {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.assistant-panel--compact .assistant-model {
+  flex-wrap: wrap;
+}
+
+.task-inspector-content .project-inspector-section h3 {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+@media (max-width: 780px) {
+  .task-detail .task-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(420px, auto) auto;
+    min-width: 0;
+    overflow: auto;
+  }
+  .task-detail .task-inspector {
+    height: auto;
+    overflow: visible;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+.task-tags {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.task-tag-list,
+.task-tag-input {
+  display: flex;
+  gap: 4px;
+}
+.task-tag-list {
+  flex-wrap: wrap;
+}
+.task-tag-list:empty {
+  display: none;
+}
+.task-tag-list button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.task-tag-input input {
+  min-width: 0;
+  flex: 1;
+}
+.task-tag-input button {
+  flex-shrink: 0;
+}
+.task-row-title:hover {
+  text-decoration: underline;
+}
+.task-reminder-entry {
+  margin: 0 0 8px;
+}
+.task-reminder-entry > button {
+  border: 0;
+  background: transparent;
+  color: var(--theme-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.assistant-panel--compact .home-model-select {
+  flex: 1;
+  max-width: 100%;
+}
+
+.task-detail .task-title > div {
+  flex-wrap: wrap;
+}
+.task-detail .task-title h1 {
+  overflow-wrap: anywhere;
+}
+.task-detail .task-title .favorite-toggle {
+  flex-shrink: 0;
+  margin-inline-start: 0;
+}
+.task-detail .task-work-area {
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.task-detail .task-reminder-entry {
+  margin: 0;
+}
+.task-content-overview {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 4px 22px 24px;
+}
+.task-content-overview > * {
+  min-width: 0;
+}
+.task-content-overview .task-content-panel > header,
+.task-content-overview .task-content-panel > footer {
+  border: 0;
+  padding: 6px 0;
+  gap: 8px;
+}
+.task-content-overview .rich-editor--compact .tiptap {
+  min-height: 48px;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}
+.task-content-overview .rich-editor--compact {
+  min-height: 0;
+}
+.task-detail-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.task-detail-section > h2 {
+  font-size: 14px;
+  margin: 0;
+}
+.task-detail-section .activity-list ol {
+  max-height: 108px;
+  overflow: auto;
+  margin: 4px 0 0;
+}
+.task-detail-section .activity-list li {
+  padding: 5px 0;
+}
+.task-detail-section .activity-list :is(.caption, li p, .project-query-toolbar > span) {
+  display: none;
+}
+.task-detail-section .project-query-toolbar button {
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.task-inspector-content .task-label-section {
+  margin-top: 2px;
+}
+.task-label-section .task-tag-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+.task-label-section .task-tag-toggle:enabled {
+  cursor: pointer;
+}
+.task-label-section .task-tag-toggle:enabled:hover {
+  background: var(--active);
+}
+.task-label-section .task-tag-toggle:disabled {
+  opacity: 0.65;
+}
+.task-inspector-content [aria-label='AI 对话'].project-inspector-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.task-content-panel .rich-editor--compact .block-controls {
+  inset-inline-start: 2px;
+}
+.task-content-overview .task-content-panel .rich-editor--compact:has(.block-controls) .tiptap {
+  padding-inline-start: 58px;
+}
+@media (max-width: 780px) {
+  .task-detail[data-task-tab='content'] .task-layout {
+    grid-template-rows: max-content max-content;
+    align-content: start;
+  }
+  .task-detail[data-task-tab='content'] .task-work-area {
+    overflow: visible;
+  }
+}
+
+.document-review {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.document-review h2,
+.document-review h3,
+.document-review p {
+  margin: 0;
+}
+.document-review h2 {
+  font-size: 15px;
+}
+.document-review h3 {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.document-review label {
+  display: grid;
+  gap: 6px;
+}
+.document-review textarea {
+  width: 100%;
+  max-width: 100%;
+  resize: vertical;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+}
+.document-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.document-review-text {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+.document-review-text :is(p, del, ins) {
+  white-space: pre-wrap;
+}
+.document-review-text :is(del, ins) {
+  display: block;
+  margin-bottom: 8px;
+  padding: 6px;
+}
+.document-review-text del {
+  background: color-mix(in srgb, #d8444c 13%, transparent);
+}
+.document-review-text ins {
+  background: color-mix(in srgb, #22935e 15%, transparent);
+}
+
+.settings-navigation {
+  min-height: 0;
+}
+.settings-navigation nav {
+  min-height: 0;
+  overflow-y: auto;
+}
+.settings-nav-group {
+  display: grid;
+  gap: 2px;
+}
+.settings-nav-group > span {
+  padding: 8px 12px 2px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.settings-nav-group button {
+  text-align: left;
+  padding-block: 6px;
+}
+@media (max-width: 740px) {
+  .settings-navigation nav {
+    max-height: 170px;
+  }
+  .settings-nav-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    flex: 1 0 100%;
+  }
+}

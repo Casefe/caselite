@@ -1,5 +1,7 @@
 // DEV-1569：只约束当前生产消费者；变更版本或增加框架须重新核对消费卡和许可。
 const desktop = {
+  '@ai-sdk/react': '3.0.327',
+  ai: '6.0.324',
   '@assistant-ui/react': '0.15.32',
   '@assistant-ui/react-markdown': '0.14.24',
   '@caselite/application': 'workspace:*',
@@ -7,11 +9,13 @@ const desktop = {
   '@caselite/local-db': 'workspace:*',
   '@earendil-works/pi-agent-core': '1.5.0',
   '@earendil-works/pi-ai': '1.5.0',
-  '@tanstack/react-table': '8.21.3', // DEV-1323：仅项目文件页投影
+  '@tanstack/react-query': '5.107.1', // DEV-1800/1801/1803：本地列表读取
+  '@tanstack/react-table': '8.21.3', // DEV-1323/1803：文件与工作台列表投影
   '@tiptap/extension-collaboration': '3.32.3',
   '@tiptap/pm': '3.32.3',
   '@tiptap/react': '3.32.3',
   '@tiptap/starter-kit': '3.32.3',
+  '@xyflow/react': '12.12.1', // DEV-1802：仅项目只读关系图
   'pdfjs-dist': '6.3.289',
   react: '19.3.1',
   'react-dom': '19.3.1',

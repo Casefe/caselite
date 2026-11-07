@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AgentRequest, AgentResponse } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
+import SidebarAgent from './SidebarAgent';
 import userEvent from '@testing-library/user-event';
 vi.stubGlobal(
   'ResizeObserver',
@@ -44,6 +45,32 @@ const profile: AgentResponse = {
   providers: { openai: true, deepseek: false },
   runs: [],
 };
+it('keeps the shared composer disabled and performs no Agent or material IPC without a task', async () => {
+  const agent = vi.fn();
+  const material = vi.fn();
+  const pickPdf = vi.fn();
+  const dropPdf = vi.fn();
+  window.caselite = { agent, material, pickPdf, dropPdf } as unknown as Window['caselite'];
+
+  render(<SidebarAgent unavailable="请先选择项目任务。" />);
+  const input = screen.getByTestId('assistant-input') as HTMLTextAreaElement;
+  const attachment = screen.getByRole<HTMLButtonElement>('button', { name: '添加文件与材料' });
+  const model = screen.getByRole<HTMLSelectElement>('combobox', { name: '选择大模型' });
+  const send = screen.getByRole<HTMLButtonElement>('button', { name: '发送' });
+  for (const control of [input, attachment, model, send]) expect(control.disabled).toBe(true);
+  expect(input.closest('form')).toHaveProperty('className', 'assistant-compose agent-prompt');
+  expect(screen.getByRole('status').textContent).toBe('请先选择项目任务。');
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.submit(input.closest('form')!);
+  await userEvent.click(attachment);
+  await userEvent.click(send);
+  expect(input.value).toBe('');
+  expect(agent).not.toHaveBeenCalled();
+  expect(material).not.toHaveBeenCalled();
+  expect(pickPdf).not.toHaveBeenCalled();
+  expect(dropPdf).not.toHaveBeenCalled();
+});
+
 describe('AI submission UI lifecycle', () => {
   it('keeps disclosure outside the composer and preserves Enter, Shift+Enter and IME submission semantics', async () => {
     const agent = vi.fn(async () => profile);
@@ -391,4 +418,94 @@ it('shows a credential failure without blocking manual input or discarding reada
   expect(
     agent.mock.calls.every(([request]) => (request as AgentRequest).operation === 'read'),
   ).toBe(true);
+});
+
+it('opens a local project preview on focus, preserves scoped drafts, and sends only the displayed revision', async () => {
+  const a = { id: crypto.randomUUID(), version: 1, archived: false };
+  const b = { ...a, id: crypto.randomUUID() };
+  const firstScope = `project:${a.id}`;
+  const failed = { ok: false, code: 'UNAVAILABLE', message: '合成读取失败' } as const;
+  const fingerprint = 'a'.repeat(64);
+  let finish: ((result: AgentResponse) => void) | undefined;
+  let failFirst = true;
+  const preview = (title: string, value = fingerprint): AgentResponse => ({
+    ...profile,
+    project_preview: {
+      fields: {
+        title,
+        status: 'active',
+        project_type: 'civil_litigation',
+        priority: 2,
+        target_date: '2027-02-03',
+      },
+      fingerprint: value,
+      archived: false,
+    },
+  });
+  const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+    if (request.operation === 'preview_project') {
+      if (request.scope !== firstScope) return preview('项目乙');
+      if (failFirst) {
+        failFirst = false;
+        return failed;
+      }
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+    if (request.operation === 'start')
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '回执未知' };
+    return profile;
+  });
+  const material = vi.fn();
+  window.caselite = { agent, material } as unknown as Window['caselite'];
+  const view = render(<SidebarAgent project={a} />);
+  const input = () => screen.getByTestId('assistant-input') as HTMLTextAreaElement;
+  const send = () => screen.getByRole<HTMLButtonElement>('button', { name: '发送', exact: true });
+  expect(agent.mock.calls.some(([request]) => request.operation === 'preview_project')).toBe(false);
+  fireEvent.focus(input());
+  await screen.findByText(/合成读取失败/);
+  fireEvent.change(input(), { target: { value: '项目甲草稿' } });
+  expect(send().disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '读取项目上下文' }));
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await act(async () => finish?.(preview('项目甲')));
+  expect(await screen.findByText('民事诉讼')).toBeTruthy();
+  expect(send().disabled).toBe(false);
+  expect(screen.queryByLabelText('添加文件与材料')).toBeNull();
+
+  view.rerender(<SidebarAgent project={{ ...a, version: 2 }} />);
+  expect(send().disabled).toBe(true);
+  expect(screen.queryByText('项目甲')).toBeNull();
+  expect(input().value).toBe('项目甲草稿');
+  const oldResponse = finish;
+  view.rerender(<SidebarAgent project={b} />);
+  expect(input().value).toBe('');
+  await act(async () => oldResponse?.(preview('不应显示的迟到结果')));
+  expect(screen.queryByText('不应显示的迟到结果')).toBeNull();
+  fireEvent.focus(input());
+  expect(await screen.findByText('项目乙')).toBeTruthy();
+  fireEvent.change(input(), { target: { value: '项目乙草稿' } });
+
+  view.rerender(<SidebarAgent project={{ ...a, version: 2 }} />);
+  expect(input().value).toBe('项目甲草稿');
+  expect(send().disabled).toBe(true);
+  fireEvent.focus(input());
+  const newFingerprint = 'b'.repeat(64);
+  await act(async () => finish?.(preview('项目甲更新版', newFingerprint)));
+  await screen.findByText('项目甲更新版');
+  fireEvent.click(send());
+  const retry = await screen.findByRole('button', { name: '核对原发送（同一标识）' });
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(2),
+  );
+  const requests = agent.mock.calls.map(([r]) => r).filter((r) => r.operation === 'start');
+  expect(requests[0]).toEqual(requests[1]);
+  expect(requests[0]).toMatchObject({
+    scope: firstScope,
+    project_fingerprint: newFingerprint,
+    prompt: '项目甲草稿',
+  });
+  expect(material).not.toHaveBeenCalled();
 });

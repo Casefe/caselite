@@ -339,3 +339,93 @@ export const reminderReceipts = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
 );
+
+export const financeContracts = sqliteTable(
+  'finance_contracts',
+  {
+    projectId: text('project_id')
+      .primaryKey()
+      .notNull()
+      .references(() => matters.id),
+    number: text('number').notNull(),
+    amount: integer('amount_cents').notNull(),
+  },
+  (t) => [
+    check('finance_contract_number', sql`length(trim(${t.number})) BETWEEN 1 AND 120`),
+    check(
+      'finance_contract_amount',
+      sql`typeof(${t.amount}) = 'integer' AND ${t.amount} BETWEEN 1 AND 9007199254740991`,
+    ),
+  ],
+);
+export const financeInstallments = sqliteTable(
+  'finance_installments',
+  {
+    id: text('id').primaryKey().notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => financeContracts.projectId),
+    amount: integer('amount_cents').notNull(),
+    dueDate: text('due_date').notNull(),
+  },
+  (t) => [
+    index('finance_installment_project').on(t.projectId, t.dueDate),
+    check(
+      'finance_installment_amount',
+      sql`typeof(${t.amount}) = 'integer' AND ${t.amount} BETWEEN 1 AND 9007199254740991`,
+    ),
+    check(
+      'finance_installment_date',
+      sql`length(${t.dueDate}) = 10 AND substr(${t.dueDate},1,4) <> '0000' AND date(${t.dueDate}) IS NOT NULL AND date(${t.dueDate}) = ${t.dueDate}`,
+    ),
+  ],
+);
+export const financePayments = sqliteTable(
+  'finance_payments',
+  {
+    id: text('id').primaryKey().notNull(),
+    installmentId: text('installment_id')
+      .notNull()
+      .references(() => financeInstallments.id),
+    amount: integer('amount_cents').notNull(),
+    committedAt: text('committed_at').notNull(),
+  },
+  (t) => [
+    index('finance_payment_installment').on(t.installmentId),
+    check(
+      'finance_payment_amount',
+      sql`typeof(${t.amount}) = 'integer' AND ${t.amount} BETWEEN 1 AND 9007199254740991`,
+    ),
+  ],
+);
+export const financeReversals = sqliteTable('finance_reversals', {
+  paymentId: text('payment_id')
+    .primaryKey()
+    .notNull()
+    .references(() => financePayments.id),
+  committedAt: text('committed_at').notNull(),
+});
+export const financeReceipts = sqliteTable(
+  'finance_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => matters.id),
+    operation: text('operation').notNull(),
+    targetId: text('target_id').notNull(),
+    activityId: text('activity_id')
+      .notNull()
+      .unique()
+      .references(() => catalogActivity.id),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.key] }),
+    check(
+      'finance_receipt_operation',
+      sql`${t.operation} IN ('register_contract','record_payment','reverse_payment')`,
+    ),
+  ],
+);

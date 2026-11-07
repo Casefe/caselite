@@ -1,8 +1,10 @@
+import { createDocumentReviewReader } from './document-review-reader';
 import { createReminderStore } from './reminder-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateBody, bodyPlainText } from './body-schema';
 import {
+  type ReviewRange,
   type Task,
   type TaskRequest,
   type TaskResponse,
@@ -10,6 +12,8 @@ import {
   tagListSchema,
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
+import { createContactsStore } from './contacts-store';
+import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
@@ -34,6 +38,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       Row | undefined;
     return row ? decodeTask(row) : null;
   };
+  const review = createDocumentReviewReader(db, workspace, get);
   const objectiveState = (id: string, version: number) =>
     (
       db
@@ -48,8 +53,15 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    reviewDocumentExists: review.reviewDocumentExists,
+    reviewSaved(range: ReviewRange, receipt: string) {
+      return review.reviewSaved(range, receipt, (request) => this.execute(request));
+    },
+    reviewState: review.reviewState,
     materials: createMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),
+    finance: createFinanceStore(db, workspace),
+    contacts: createContactsStore(db, workspace),
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {

@@ -1,0 +1,18 @@
+import StarterKit from '@tiptap/starter-kit';
+import Collaboration from '@tiptap/extension-collaboration';
+import type * as Y from 'yjs';
+
+// Collaboration 管理 Yjs 撤销历史；不能同时启用 StarterKit 的 UndoRedo。
+// 每个编辑会话注入自己的 Y.Doc，不在场景配置中缓存或共享可变正文。
+export const localExtensions = (doc: Y.Doc) => [
+  StarterKit.configure({ undoRedo: false, link: false }),
+  Collaboration.configure({ document: doc }),
+];
+
+export const editorProfiles = {
+  document: { mode: 'simple' },
+  description: { mode: 'compact' },
+  comment: { mode: 'compact' },
+  draft: { mode: 'notion' },
+} as const;
+export type EditorProfile = keyof typeof editorProfiles;

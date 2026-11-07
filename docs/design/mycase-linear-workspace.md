@@ -18,7 +18,7 @@
 ## 文件与数据边界
 
 - `renderer/ui/Workspace.tsx`：一级导航、折叠、最近任务、顶栏、任务表。样式与组件归1728，导航/返回归1729。
-- `renderer/projects/ProjectPreview.tsx`：仅内存示例项目；始终显示“示例项目·不保存”。不调用存储，不把真实独立Task强行归入样例。正式项目创建/归组与五栏目Query仍由R2原Owner接线，1712不因该UI原型完成而关闭。
+- `renderer/features/projects/ProjectPreview.tsx`：仅内存示例项目；始终显示“示例项目·不保存”。不调用存储，不把真实独立Task强行归入样例。正式项目创建/归组与五栏目Query仍由R2原Owner接线，1712不因该UI原型完成而关闭。
 - `renderer/App.tsx`：实际Task/正文仍消费现有Preload/Application；首页统计来自真实Task，文档列表投影同一Document/body。任务/正文页面细化供1731/1732及1592复用，未声称完整归档、恢复或全部原型验收完成。
 - `renderer/task-workbench.css`：深色导航与清晰选中态、浅色内容区、紧凑标签/列表、稳定编辑区和本机保存反馈。只使用本机字体，无远程字体/图片。
 

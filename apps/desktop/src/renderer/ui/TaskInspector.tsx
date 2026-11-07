@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
-import TaskProjectAction from '../projects/TaskProjectAction';
+import TaskProjectAction from '../features/projects/TaskProjectAction';
 import TaskProperties from './TaskProperties';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
@@ -63,17 +63,27 @@ export default function TaskInspector({
         ) : (
           <details className="inspector-disclosure" open>
             <summary>属性</summary>
-            <dl>
-              <dt>状态</dt>
-              <dd>{taskStatusNames[task.status ?? 'todo']}</dd>
-              <dt>优先级</dt>
-              <dd>{taskPriorityNames[task.priority ?? 0]}</dd>
-              <dt>日期</dt>
-              <dd>{task.due_date ?? '未设置'}</dd>
-              <dt>负责人</dt>
-              <dd>{task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}</dd>
-              <dt>项目</dt>
-              <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</dd>
+            <dl className="inspector-property-list">
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">状态</dt>
+                <dd>{taskStatusNames[task.status ?? 'todo']}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">优先级</dt>
+                <dd>{taskPriorityNames[task.priority ?? 0]}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">日期</dt>
+                <dd>{task.due_date ?? '未设置'}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">负责人</dt>
+                <dd>{task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}</dd>
+              </div>
+              <div className="inspector-property-row">
+                <dt className="inspector-property-label">项目</dt>
+                <dd>{task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}</dd>
+              </div>
             </dl>
           </details>
         )}

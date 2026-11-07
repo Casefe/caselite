@@ -30,6 +30,7 @@ export default {
     extraResource: [
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
+      localPath('./assets/THIRD-PARTY-GRAPH-NOTICES.txt'),
       localPath('../../artifacts/native/caselite-vision'),
     ],
   },

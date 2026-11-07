@@ -1,5 +1,5 @@
+import { Icon } from '../shared/ui/Icon';
 import { useState } from 'react';
-import { Icon } from './Workspace';
 
 export default function KnowledgeView({ onHome }: { onHome(): void }) {
   const [tab, setTab] = useState<'properties' | 'ai'>('properties');
