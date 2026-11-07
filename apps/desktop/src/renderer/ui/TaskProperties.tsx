@@ -1,9 +1,11 @@
+import { PropertyRow } from '../shared/ui/PropertyRow';
+import { InspectorSection } from '../shared/ui/InspectorSection';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Task, TaskRequest } from '../../preload/caselite-api';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
-import TaskTags from './TaskTags';
+import TagPicker from '../shared/ui/TagPicker';
 
 type Command = Extract<TaskRequest, { operation: 'change_status' | 'update_attributes' }>;
 type Attributes = {
@@ -257,7 +259,7 @@ export default function TaskProperties({
   const assigneeInvalid = assigneeName.length > 80 || assigneeName.includes('\0');
   const assigneeValid = assigneeName.length > 0 && !assigneeInvalid;
   const tags = (
-    <TaskTags
+    <TagPicker
       onDemand={groupTags}
       onDraft={(value) => {
         setTagDraft(value);
@@ -271,8 +273,7 @@ export default function TaskProperties({
   );
   const properties = (
     <section className="task-properties-editor" aria-label="任务属性设置">
-      <label className={groupTags ? 'inspector-property-row' : undefined}>
-        <span className="inspector-property-label">状态</span>
+      <PropertyRow compact={groupTags} label="状态">
         <select
           aria-label="任务状态"
           value={shown.status}
@@ -285,9 +286,8 @@ export default function TaskProperties({
             </option>
           ))}
         </select>
-      </label>
-      <label className={groupTags ? 'inspector-property-row' : undefined}>
-        <span className="inspector-property-label">优先级</span>
+      </PropertyRow>
+      <PropertyRow compact={groupTags} label="优先级">
         <select
           aria-label="任务优先级"
           value={shown.priority}
@@ -300,9 +300,8 @@ export default function TaskProperties({
             </option>
           ))}
         </select>
-      </label>
-      <label className={groupTags ? 'inspector-property-row' : undefined}>
-        <span className="inspector-property-label">{groupTags ? '日期' : '普通截止日期'}</span>
+      </PropertyRow>
+      <PropertyRow compact={groupTags} label={groupTags ? '日期' : '普通截止日期'}>
         <input
           aria-label="普通截止日期"
           type="date"
@@ -332,7 +331,7 @@ export default function TaskProperties({
             }
           }}
         />
-      </label>
+      </PropertyRow>
       {(shown.due_date || date !== null) && (
         <button
           type="button"
@@ -509,10 +508,7 @@ export default function TaskProperties({
   if (!groupTags) return properties;
   return (
     <>
-      <details className="inspector-disclosure" open>
-        <summary>属性</summary>
-        {properties}
-      </details>
+      <InspectorSection title="属性">{properties}</InspectorSection>
       <section className="project-inspector-section task-label-section" aria-label="标签">
         <h3>标签</h3>
         {tags}

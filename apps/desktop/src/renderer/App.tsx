@@ -1,6 +1,6 @@
 import { Icon } from './shared/ui/Icon';
 import FinanceView from './finance/FinanceView';
-import TaskTags from './ui/TaskTags';
+import TagPicker from './shared/ui/TagPicker';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,7 +30,7 @@ import {
   type RichDraft,
 } from './editors/RichEditor';
 import ActivityList from './projects/ActivityList';
-import { DiscussionFeed } from './projects/ProjectDiscussion';
+import { DiscussionFeed } from './shared/discussion/DiscussionFeed';
 import TaskContentEditor from './editors/TaskContentEditor';
 import DocumentReview from './review/DocumentReview';
 
@@ -750,7 +750,7 @@ function Workbench() {
                     ))}
                   </select>
                 </label>
-                <TaskTags
+                <TagPicker
                   tags={createProperties.tags}
                   onDraft={setCreateTagDraft}
                   suggestions={tagSuggestions}

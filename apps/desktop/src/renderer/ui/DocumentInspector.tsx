@@ -1,7 +1,9 @@
+import { PropertyValue } from '../shared/ui/PropertyRow';
+import { InspectorSection } from '../shared/ui/InspectorSection';
 import { Icon } from '../shared/ui/Icon';
 import type { CatalogDocument, Matter } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
-import TaskTags from './TaskTags';
+import TagPicker from '../shared/ui/TagPicker';
 
 export default function DocumentInspector({
   document,
@@ -30,33 +32,24 @@ export default function DocumentInspector({
     <aside className="task-inspector" aria-label="文档属性与 AI 侧边栏">
       {document ? (
         <div className="inspector-content task-inspector-content" aria-label="文档属性">
-          <details className="inspector-disclosure" open>
-            <summary>属性</summary>
+          <InspectorSection title="属性">
             <dl className="inspector-property-list document-property-values">
-              <div className="inspector-property-row">
-                <dt className="inspector-property-label">文档版本</dt>
-                <dd>{document.body_revision}</dd>
-              </div>
-              <div className="inspector-property-row">
-                <dt className="inspector-property-label">关联项目</dt>
-                <dd>{project?.title ?? (document.matter_id ? '已归组' : '未归组')}</dd>
-              </div>
-              <div className="inspector-property-row">
-                <dt className="inspector-property-label">关联任务</dt>
-                <dd>{document.title}</dd>
-              </div>
-              <div className="inspector-property-row">
-                <dt className="inspector-property-label">文档 ID</dt>
-                <dd className="record-id">{document.id}</dd>
-              </div>
+              <PropertyValue label="文档版本">{document.body_revision}</PropertyValue>
+              <PropertyValue label="关联项目">
+                {project?.title ?? (document.matter_id ? '已归组' : '未归组')}
+              </PropertyValue>
+              <PropertyValue label="关联任务">{document.title}</PropertyValue>
+              <PropertyValue label="文档 ID" valueClassName="record-id">
+                {document.id}
+              </PropertyValue>
             </dl>
-          </details>
+          </InspectorSection>
           <section className="project-inspector-section task-label-section" aria-label="文档标签">
             <h3>标签</h3>
             {document.archived_at && !tagDraft ? (
               <p>{document.tags.join('、') || '无标签'}</p>
             ) : (
-              <TaskTags
+              <TagPicker
                 key={tagEditor}
                 tags={document.tags}
                 suggestions={suggestions}

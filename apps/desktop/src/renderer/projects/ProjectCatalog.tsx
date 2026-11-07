@@ -1,3 +1,4 @@
+import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
@@ -8,7 +9,7 @@ import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preloa
 import { DraftEditor, type RichDraft } from '../editors/RichEditor';
 
 import SidebarAgent from '../ui/SidebarAgent';
-import { useCatalog, catalogMutation } from '../ui/useCatalog';
+import { useCatalog } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';

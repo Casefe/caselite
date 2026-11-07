@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-export default function TaskTags({
+export default function TagPicker({
   tags,
   suggestions,
   disabled = false,

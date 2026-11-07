@@ -1,9 +1,10 @@
+import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
 import type { CatalogDocument } from '../../preload/caselite-api';
 
 import DocumentInspector from './DocumentInspector';
-import { useCatalog, catalogMutation } from './useCatalog';
+import { useCatalog } from './useCatalog';
 export default function DocumentLibrary({
   library = false,
   onOpen,

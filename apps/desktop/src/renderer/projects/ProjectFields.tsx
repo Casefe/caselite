@@ -1,3 +1,5 @@
+import { PropertyRow } from '../shared/ui/PropertyRow';
+import { InspectorSection } from '../shared/ui/InspectorSection';
 import { Icon } from '../shared/ui/Icon';
 import { useId, useRef, useState, type ReactNode } from 'react';
 
@@ -92,9 +94,11 @@ function ProjectPropertyRow({
 }) {
   const path = propertyIcons[icon];
   return (
-    <label className="inspector-property-row">
-      <span className="inspector-property-label project-property-label">
-        {path ? (
+    <PropertyRow
+      label={label}
+      labelClassName="project-property-label"
+      icon={
+        path ? (
           <svg
             width="15"
             height="15"
@@ -110,11 +114,11 @@ function ProjectPropertyRow({
           </svg>
         ) : (
           <Icon name={icon} size={15} />
-        )}
-        {label}
-      </span>
+        )
+      }
+    >
       {children}
-    </label>
+    </PropertyRow>
   );
 }
 export const projectStatuses = { planned: '待开始', active: '进行中', done: '已完成' };
@@ -347,20 +351,8 @@ export default function ProjectFields({
   );
   return (
     <>
-      {creating ? (
-        properties
-      ) : (
-        <details className="inspector-disclosure" open>
-          <summary>属性</summary>
-          {properties}
-        </details>
-      )}
-      <details
-        ref={professionalCard}
-        className="project-professional-card inspector-disclosure"
-        open
-      >
-        <summary>领域</summary>
+      {creating ? properties : <InspectorSection title="属性">{properties}</InspectorSection>}
+      <InspectorSection title="领域" ref={professionalCard} className="project-professional-card">
         <fieldset className="project-fields" disabled={disabled} aria-label="专业属性">
           {group ? (
             Object.entries(professionalFields[group]).map(([key, label]) => (
@@ -392,7 +384,7 @@ export default function ProjectFields({
             </small>
           )}
         </fieldset>
-      </details>
+      </InspectorSection>
     </>
   );
 }

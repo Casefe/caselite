@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 type Success = Extract<CatalogResponse, { ok: true }>;
-export const catalogMutation = <T extends object>(input: T) => ({
-  ...input,
-  protocol_version: 1 as const,
-  request_id: crypto.randomUUID(),
-  idempotency_key: crypto.randomUUID(),
-});
 export function useCatalog(projectProperties = false) {
   const [data, setData] = useState<Success | null>(null),
     [error, setError] = useState(''),
