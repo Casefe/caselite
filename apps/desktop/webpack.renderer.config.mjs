@@ -28,6 +28,11 @@ class PdfSpikeAssetsPlugin {
             [localPath('./src/renderer/projects/project-catalog.css'), 'project-catalog.css'],
             [localPath('./assets/branding/caselite-logo.png'), 'brand/caselite-logo.png'],
           ];
+          // CSS 入口的相对导入必须随同发射；file:// 与开发环境使用同一资源布局。
+          const stylesRoot = localPath('./src/renderer/styles');
+          for (const name of await readdir(stylesRoot)) {
+            if (name.endsWith('.css')) files.push([join(stylesRoot, name), `styles/${name}`]);
+          }
           for (const directory of ['cmaps', 'standard_fonts', 'wasm']) {
             for (const name of await readdir(join(pdfjsRoot, directory))) {
               files.push([join(pdfjsRoot, directory, name), `pdf-resources/${directory}/${name}`]);
