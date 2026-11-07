@@ -109,3 +109,18 @@ it('compact distinguishes a failed query from a real empty project and discards 
   expect(screen.queryByText('同名.pdf')).toBeNull();
   expect(screen.queryByText('项目还没有已登记材料，请在任务中添加 PDF。')).toBeNull();
 });
+
+it('discards previously visible files when a preview read is denied by project scope', async () => {
+  window.caselite = {
+    material: vi.fn(async (request) =>
+      request.operation === 'list_project'
+        ? { ok: true, materials: [source('private')] }
+        : { ok: false, code: 'SCOPE', message: '材料不在当前项目范围内。' },
+    ),
+  } as unknown as Window['caselite'];
+  render(<ProjectFiles projectId="p" disabled={false} />);
+  fireEvent.click(await screen.findByText('同名.pdf'));
+  await screen.findByRole('alert');
+  expect(screen.queryByText('同名.pdf')).toBeNull();
+  expect(screen.queryByRole('complementary', { name: '文件预览' })).toBeNull();
+});

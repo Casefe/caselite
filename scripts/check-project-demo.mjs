@@ -146,6 +146,8 @@ for (const name of properties
           'files-expected.json',
           'project-files.json',
           'project-files-read.json',
+          'dev-1323-complete-list.png',
+          'dev-1323-right-preview.png',
         ]
       : promotion
         ? [
