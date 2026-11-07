@@ -120,6 +120,50 @@ export async function runDocumentReviewDemo(
   const assertRunCount = (count: number) => {
     if (runs().length !== count) throw new Error('Unexpected local Run count');
   };
+  await wait("document.querySelector('[data-nav=settings]')");
+  await evaluate("document.querySelector('[data-nav=settings]').click()");
+  await wait("document.querySelector('.settings-page h2')?.textContent === '工作区'");
+  await wait(`JSON.stringify([...document.querySelectorAll('[aria-label=设置分类] button')].map(b=>b.textContent)) ===
+    JSON.stringify(['工作区','外观','AI 与服务','数据与隐私','账户与协作'])`);
+  await wait("!document.querySelector('.theme-option')");
+  if (phase === 'document-review-write') {
+    await capture('settings-workspace.png');
+    await click('数据与隐私');
+    await wait("document.querySelector('.settings-page').innerText.includes('保留原版本')");
+    await capture('settings-privacy.png');
+    await click('账户与协作');
+    await wait("document.querySelector('.settings-page').innerText.includes('尚未开放')");
+    await capture('settings-account.png');
+    await click('AI 与服务');
+    await wait("document.querySelector('[data-provider=mineru]:not(:disabled)')");
+    await capture('settings-ai.png');
+    for (const id of ['mineru', 'yuandian']) {
+      await evaluate(`document.querySelector('[data-provider=${id}]').click()`);
+      await wait(`document.querySelector('[data-provider=${id}][aria-pressed=true]').textContent.includes('待接入') &&
+        document.querySelector('.provider-detail input[type=password]').disabled &&
+        document.querySelector('.provider-actions .primary').disabled`);
+    }
+    const [width, height] = window.getContentSize();
+    window.setContentSize(640, 500);
+    await wait(`innerWidth === 640 && [...document.querySelectorAll('.settings-navigation nav button, .settings-back')]
+      .every(e => e.getBoundingClientRect().right <= innerWidth) &&
+      document.querySelector('.settings-content').scrollWidth <= document.querySelector('.settings-content').clientWidth`);
+    await capture('settings-narrow.png');
+    window.setContentSize(width, height);
+  }
+  await click('外观');
+  await wait(
+    "document.querySelectorAll('.theme-setting').length === 1 && document.querySelector('.theme-option:not(:disabled)')",
+  );
+  if (phase === 'document-review-write') {
+    await evaluate("document.querySelector('.theme-option:nth-child(2)').click()");
+  }
+  await wait(
+    "document.documentElement.dataset.theme === 'dark' && document.querySelector('.theme-option:nth-child(2)[aria-pressed=true]')",
+  );
+  await capture(`settings-appearance-${phase}.png`);
+  await click('返回工作区');
+  await wait("document.querySelector('.agent-main')");
   await open(a.document_id);
   if (phase === 'document-review-read') {
     await wait(
@@ -148,6 +192,12 @@ export async function runDocumentReviewDemo(
     );
     return;
   }
+
+  await evaluate("document.querySelector('[data-nav=settings]').click()");
+  await wait("document.querySelector('.settings-center')");
+  await click('返回工作区');
+  await wait(`${body}?.textContent.includes(${JSON.stringify(lines[0])}) && document.querySelector('.document-review textarea') &&
+    document.querySelector('[data-nav=documents][aria-current=page]')`);
 
   const emojiProbe = await evaluate(`(async () => {
     const identity = ${JSON.stringify({ task_id: a.id, document_id: a.document_id, body_id: a.body_id, revision: 1, paragraph: 1 })};

@@ -709,7 +709,7 @@ export async function runTaskDemo(
       )
         throw new Error('Credential form remains in AI panel');
       await click('[data-nav=settings]');
-      await button('模型');
+      await button('AI 与服务');
       await wait(
         "document.querySelector('[aria-label=设置中心]') && document.querySelector('[aria-label=\"OpenAI API Key\"]')",
       );
@@ -718,7 +718,7 @@ export async function runTaskDemo(
       );
       if (
         JSON.stringify(categories) !==
-        JSON.stringify(['系统设置', '账户管理', '外观', '模型', '个性化'])
+        JSON.stringify(['工作区', '外观', 'AI 与服务', '数据与隐私', '账户与协作'])
       )
         throw new Error('Settings categories mismatch');
       await wait("!document.querySelector('[data-provider=openai]').disabled");
@@ -797,10 +797,10 @@ export async function runTaskDemo(
         await capture(`settings-${provider}.png`);
       }
       for (const [label, file] of [
-        ['系统设置', 'system'],
-        ['账户管理', 'account'],
+        ['工作区', 'workspace'],
+        ['账户与协作', 'account'],
         ['外观', 'appearance'],
-        ['个性化', 'personalization'],
+        ['数据与隐私', 'privacy'],
       ]) {
         await evaluate(
           `Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent===${JSON.stringify(label)}).click()`,
@@ -811,7 +811,7 @@ export async function runTaskDemo(
         await capture(`settings-${file}.png`);
       }
       await evaluate(
-        "Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent==='模型').click()",
+        "Array.from(document.querySelectorAll('[aria-label=设置分类] button')).find(e=>e.textContent==='AI 与服务').click()",
       );
       await wait(
         "document.querySelector('[data-provider=openai]')?.textContent.includes('已保存')",

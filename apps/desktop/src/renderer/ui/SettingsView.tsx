@@ -5,7 +5,13 @@ import { Icon } from './Workspace';
 import { ThemeSetting } from './Appearance';
 
 export const ModelSettingsNavigation = createContext<(() => void) | null>(null);
-export const settingsSections = ['系统设置', '账户管理', '外观', '模型', '个性化'] as const;
+export const settingsSections = [
+  '工作区',
+  '外观',
+  'AI 与服务',
+  '数据与隐私',
+  '账户与协作',
+] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 const services = [
   {
@@ -73,7 +79,7 @@ export default function SettingsView({
               aria-current={section === name ? 'page' : undefined}
               onClick={() => onSection(name)}
             >
-              <Icon name={['settings', 'home', 'grid', 'spark', 'star'][i]} size={16} />
+              <Icon name={['home', 'grid', 'spark', 'file', 'settings'][i]} size={16} />
               {name}
             </button>
           ))}
@@ -95,21 +101,51 @@ export default function SettingsView({
         </header>
         <div className="settings-page">
           <h2>{section}</h2>
-          {section === '模型' ? (
-            <ModelSettings />
-          ) : section === '系统设置' ? (
+          {section === 'AI 与服务' ? (
             <>
-              <p className="settings-lead">管理本地工作区及数据使用方式。</p>
-              <ThemeSetting />
+              <ModelSettings />
               <SettingRow
-                title="工作方式"
-                description="任务和正文保存在此设备，无需注册。"
-                value="本地优先"
+                title="写作偏好"
+                description="自定义写作风格和默认写作偏好尚未开放。"
+                value="待开放"
+              />
+            </>
+          ) : section === '工作区' ? (
+            <>
+              <p className="settings-lead">在工作区管理日常办案事项。</p>
+              <SettingRow
+                title="任务提醒"
+                description="在对应任务中设置提醒，在侧栏「提醒」（Inbox）查看和处理。"
+                value="任务与提醒"
               />
               <SettingRow
-                title="AI 使用"
-                description="仅发送你在预览中确认的内容。配置密钥不会发起模型请求。"
-                value="发送前确认"
+                title="财务记录"
+                description="「财务」位于侧栏的工作区分组，目前显示空态。"
+                value="工作区"
+              />
+            </>
+          ) : section === '外观' ? (
+            <>
+              <p className="settings-lead">选择适合你的工作台外观。</p>
+              <ThemeSetting />
+            </>
+          ) : section === '数据与隐私' ? (
+            <>
+              <p className="settings-lead">了解材料保存位置和使用外部服务的条件。</p>
+              <SettingRow
+                title="本机保存"
+                description="任务、工作稿和导入的材料保存在此设备。"
+                value="本地保存"
+              />
+              <SettingRow
+                title="向模型发送内容"
+                description="发送前可核对本轮范围。文档单段审阅仅在你点击发送后提交选中的段落和本轮问题。"
+                value="显式发送"
+              />
+              <SettingRow
+                title="文档审阅写回"
+                description="在可编辑工作稿中，人工确认审阅候选后才保存为同一文档的新修订，保留原版本。"
+                value="人工确认"
               />
               <SettingRow
                 title="备份与恢复"
@@ -117,50 +153,21 @@ export default function SettingsView({
                 value="待接入"
               />
             </>
-          ) : section === '账户管理' ? (
+          ) : (
             <>
-              <p className="settings-lead">本地功能不依赖账号。</p>
+              <p className="settings-lead">本地功能无需登录即可使用。</p>
               <div className="account-card">
                 <span className="account-symbol">我</span>
                 <div>
                   <h3>个人本地工作区</h3>
-                  <p>当前未登录，也不需要登录。</p>
+                  <p>当前在此设备上使用 CaseLite。</p>
                 </div>
                 <span className="settings-pill">本地使用</span>
               </div>
               <SettingRow
-                title="同步与团队账户"
-                description="跨设备同步和团队协作尚未开放。模型服务的 API Key 在“模型”中单独管理。"
+                title="跨设备同步与团队协作"
+                description="跨设备同步和团队协作尚未开放。模型服务的 API Key 在「AI 与服务」管理。"
                 value="待开放"
-              />
-            </>
-          ) : section === '外观' ? (
-            <>
-              <p className="settings-lead">选择适合你的工作台外观。</p>
-              <ThemeSetting />
-              <SettingRow
-                title="布局与密度"
-                description="左侧导航、中间工作区、右侧属性与 AI；以 1920×1080 为设计基准。"
-                value="紧凑 · 三栏"
-              />
-            </>
-          ) : (
-            <>
-              <p className="settings-lead">保留你的工作方式，逐步完善个人偏好。</p>
-              <SettingRow
-                title="起草方式"
-                description="人工编辑与 AI 辅助并行；AI 回答不会自动改写正文。"
-                value="人工确认"
-              />
-              <SettingRow
-                title="写作偏好与职业资料"
-                description="自定义写作风格、职业资料及偏好保存尚未开放。"
-                value="待接入"
-              />
-              <SettingRow
-                title="收藏"
-                description="任务标题旁点星标即可收藏；当前仅在本次会话内有效。"
-                value="任务收藏"
               />
             </>
           )}

@@ -224,7 +224,7 @@ function BodyEditor({
 }
 function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('系统设置');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('工作区');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
@@ -404,6 +404,7 @@ function Workbench() {
     source: ProjectViewState | null = null,
     document = false,
     review = false,
+    tab = source?.documentId || document ? '成果正文' : '内容',
   ) {
     if (!canLeave()) return;
     if (dirty) {
@@ -435,7 +436,7 @@ function Workbench() {
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
         setView('tasks');
-        setDetailTab(source?.documentId || document ? '成果正文' : '内容');
+        setDetailTab(tab);
         setCreateTagDraft(false);
         setCreating(false);
       }
@@ -568,7 +569,7 @@ function Workbench() {
     <ModelSettingsNavigation.Provider
       value={() => {
         if (!canLeave()) return;
-        setSettingsSection('模型');
+        setSettingsSection('AI 与服务');
         navigate('settings');
       }}
     >
@@ -1073,7 +1074,13 @@ function Workbench() {
             onSection={setSettingsSection}
             onBack={() => {
               if (settingsReturn === 'tasks' && active)
-                void open(active.id, taskReturn?.taskId === active.id ? taskReturn.source : null);
+                void open(
+                  active.id,
+                  taskReturn?.taskId === active.id ? taskReturn.source : null,
+                  documentEntry,
+                  documentEntry,
+                  detailTab,
+                );
               else navigate(settingsReturn);
             }}
           />

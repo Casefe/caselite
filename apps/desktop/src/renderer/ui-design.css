@@ -3237,6 +3237,33 @@ dd {
   }
 }
 
+@media (max-width: 740px) {
+  .settings-center {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .settings-navigation {
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .settings-navigation nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .settings-navigation nav button {
+    padding: 6px 8px;
+  }
+  .settings-navigation > p,
+  .settings-nav-title {
+    display: none;
+  }
+  .settings-back {
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+}
+
 .brand {
   height: 48px;
   align-items: center;

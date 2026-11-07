@@ -449,7 +449,7 @@ export async function runAgentHistoryProbe(
       await capture('credential-home.png');
       await evaluate("document.querySelector('[data-nav=settings]').click()");
       await evaluate(
-        "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='模型')?.click()",
+        "Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='AI 与服务')?.click()",
       );
       if (unavailable)
         await wait(
