@@ -3,6 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   catalogResponseSchema,
   projectAttributesSchema,
+  legacyProjectType,
+  type ProjectProfessionalType,
+  type ProjectProfessionalFields,
   type CatalogRequest,
   type CatalogResponse,
   type Matter,
@@ -19,31 +22,53 @@ const fail = (
 ): CatalogResponse => ({ ok: false, code, message });
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
-  const projects = () =>
+  const projects = (properties: string | true | null = null) =>
     (
       db
         .prepare(
-          `SELECT m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
+          `SELECT m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,m.professional_type,CASE WHEN ? OR m.id=? THEN m.professional_fields END AS professional_fields,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
         )
-        .all(workspace) as (Omit<Matter, 'attributes'> & {
+        .all(
+          Number(properties === true),
+          typeof properties === 'string' ? properties : null,
+          workspace,
+        ) as (Omit<Matter, 'attributes'> & {
         project_type: string;
         assignee: string | null;
         priority: number;
         start_date: string | null;
         target_date: string | null;
         tags: string;
+        professional_type: ProjectProfessionalType | null;
+        professional_fields: string | null;
       })[]
-    ).map(({ project_type, assignee, priority, start_date, target_date, tags, ...project }) => ({
-      ...project,
-      attributes: projectAttributesSchema.parse({
+    ).map(
+      ({
         project_type,
         assignee,
         priority,
         start_date,
         target_date,
-        tags: JSON.parse(tags),
+        tags,
+        professional_type,
+        professional_fields,
+        ...project
+      }) => ({
+        ...project,
+        attributes: projectAttributesSchema.parse({
+          project_type: professional_type ? legacyProjectType(professional_type) : project_type,
+          ...(professional_type && professional_fields !== null ? { professional_type } : {}),
+          ...(professional_fields && professional_fields !== '{}'
+            ? { professional_fields: JSON.parse(professional_fields) }
+            : {}),
+          assignee,
+          priority,
+          start_date,
+          target_date,
+          tags: JSON.parse(tags),
+        }),
       }),
-    }));
+    );
   const insertProject = (
     target: string,
     request: Extract<CatalogRequest, { operation: 'create_project' | 'promote_task' }>,
@@ -58,7 +83,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       tags: [],
     };
     db.prepare(
-      'INSERT INTO matters(id,workspace_id,title,status,version,body_id,updated_at,project_type,assignee,priority,start_date,target_date,tags) VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?)',
+      'INSERT INTO matters(id,workspace_id,title,status,version,body_id,updated_at,project_type,assignee,priority,start_date,target_date,tags,professional_type,professional_fields) VALUES(?,?,?,?,1,?,?,?,?,?,?,?,?,?,?)',
     ).run(
       target,
       workspace,
@@ -72,6 +97,8 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       a.start_date,
       a.target_date,
       JSON.stringify([...new Set(a.tags)]),
+      request.attributes?.professional_type ?? null,
+      JSON.stringify(request.attributes?.professional_fields ?? {}),
     );
   };
   const documents = (): CatalogDocument[] =>
@@ -95,15 +122,17 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     target: string | null = null,
     receipt: string | null = null,
     state: number[] | null = null,
+    properties: string | true | null = null,
   ): Success => ({
     ok: true,
-    projects: projects(),
+    projects: projects(properties),
     documents: documents(),
     state,
     target_id: target,
     receipt,
   });
-  const getProject = (id: string) => projects().find((p) => p.id === id);
+  const getProject = (id: string, properties = false) =>
+    projects(properties ? id : null).find((p) => p.id === id);
   const scopeExists = (scope: ActivityScope) =>
     scope.type === 'project'
       ? !!getProject(scope.id)
@@ -188,7 +217,8 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           },
         };
       }
-      if (request.operation === 'list') return result();
+      if (request.operation === 'list')
+        return result(null, null, null, request.project_properties ?? null);
       if (request.operation === 'status') {
         const row = db
           .prepare('SELECT result FROM catalog_receipts WHERE workspace_id=? AND key=?')
@@ -205,7 +235,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           .get(p.body_id, p.body_revision) as { state: Buffer } | undefined;
         if (p.body_revision && !row) throw new Error('Missing project body');
         if (row) validateBody(row.state);
-        return result(p.id, null, row ? Array.from(row.state) : null);
+        return result(p.id, null, row ? Array.from(row.state) : null, p.id);
       }
       return db.transaction((): CatalogResponse => {
         const { request_id: diagnostic, ...content } = request;
@@ -298,7 +328,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           }
         } else {
           target = request.id;
-          const p = getProject(target);
+          const p = getProject(target, request.operation === 'update_project');
           if (!p) return fail('NOT_FOUND', '项目不在当前工作区。');
           if (p.version !== request.expected_version)
             return fail('CONFLICT', '项目已有更新，请重新读取。');
@@ -310,6 +340,14 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             if (p.archived_at) return fail('CONFLICT', '请先恢复项目再编辑。');
             if (p.body_revision !== request.expected_body_revision)
               return fail('CONFLICT', '说明已有新修订，输入已保留。');
+            const currentType = p.attributes?.professional_type;
+            if (
+              currentType &&
+              request.attributes &&
+              request.attributes.professional_type === undefined &&
+              request.attributes.project_type !== legacyProjectType(currentType)
+            )
+              return fail('CONFLICT', '项目已细分，请重新打开项目后更改类型。');
             if (request.state) {
               try {
                 validateBody(Uint8Array.from(request.state));
@@ -325,10 +363,14 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             // 旧请求没有属性字段时必须保留新版属性，不能按默认值回填。
             if (request.attributes) {
               const a = request.attributes;
+              // 旧请求没有细分类型时保留当前细分；旧三值列只是兼容投影。
+              const type =
+                a.professional_type === undefined ? (currentType ?? null) : a.professional_type;
               db.prepare(
-                'UPDATE matters SET project_type=?,assignee=?,priority=?,start_date=?,target_date=?,tags=? WHERE id=?',
+                'UPDATE matters SET project_type=?,professional_type=?,assignee=?,priority=?,start_date=?,target_date=?,tags=? WHERE id=?',
               ).run(
-                a.project_type,
+                type ? legacyProjectType(type) : a.project_type,
+                type,
                 a.assignee,
                 a.priority,
                 a.start_date,
@@ -336,6 +378,21 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
                 JSON.stringify([...new Set(a.tags)]),
                 target,
               );
+              if (a.professional_fields) {
+                const previous = p.attributes?.professional_fields ?? {};
+                const merged = { ...previous };
+                // 仅合并提交过的字段；切换类型或旧表单省略字段都不删除已存资料。
+                for (const key of Object.keys(
+                  a.professional_fields,
+                ) as (keyof ProjectProfessionalFields)[]) {
+                  const group = a.professional_fields[key];
+                  if (group) Object.assign(merged, { [key]: { ...previous[key], ...group } });
+                }
+                db.prepare('UPDATE matters SET professional_fields=? WHERE id=?').run(
+                  JSON.stringify(merged),
+                  target,
+                );
+              }
             }
             db.prepare(
               'UPDATE matters SET title=?,status=?,version=version+1,body_revision=?,updated_at=? WHERE id=?',
@@ -351,7 +408,16 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         db.prepare(
           'INSERT INTO catalog_activity(id,workspace_id,target_id,operation,created_at) VALUES(?,?,?,?,?)',
         ).run(randomUUID(), workspace, target, request.operation, now);
-        const response = result(target, request.idempotency_key);
+        const projectWrite =
+          request.operation === 'create_project' ||
+          request.operation === 'promote_task' ||
+          request.operation === 'update_project';
+        const response = result(
+          target,
+          request.idempotency_key,
+          null,
+          projectWrite ? target : null,
+        );
         db.prepare(
           'INSERT INTO catalog_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
         ).run(workspace, request.idempotency_key, digest, JSON.stringify(response));

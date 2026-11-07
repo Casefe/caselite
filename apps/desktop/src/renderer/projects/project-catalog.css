@@ -530,3 +530,22 @@
 .project-catalog .project-properties .project-fields select {
   margin: 0;
 }
+
+.project-professional-card {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+
+.project-professional-card > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.project-professional-card > .project-fields {
+  padding: 0 12px 10px;
+}

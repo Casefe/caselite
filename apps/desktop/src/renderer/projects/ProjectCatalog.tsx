@@ -46,7 +46,7 @@ export default function ProjectCatalog({
   onDirty(v: boolean): void;
   onChanged(): void;
 }) {
-  const c = useCatalog(),
+  const c = useCatalog(true),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
     [archived, setArchived] = useState(initialView?.archived ?? false),
     [creating, setCreating] = useState(false),

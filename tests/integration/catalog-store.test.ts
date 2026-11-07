@@ -815,3 +815,277 @@ it.each(['catalog_activity', 'catalog_receipts'])(
     store.close();
   },
 );
+
+it('upgrades a populated 0009 database without classifying old litigation or changing its receipt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'caselite-professional-ddl-'));
+  roots.push(root);
+  const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+  const oldFolder = join(root, 'old'),
+    badFolder = join(root, 'bad');
+  for (const [folder, entries] of [
+    [oldFolder, journal.entries.slice(0, 10)],
+    [badFolder, journal.entries],
+  ]) {
+    mkdirSync(join(folder, 'meta'), { recursive: true });
+    writeFileSync(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
+    for (const e of entries)
+      copyFileSync(join(migrations, e.tag + '.sql'), join(folder, e.tag + '.sql'));
+  }
+  const last = join(badFolder, journal.entries[10].tag + '.sql');
+  writeFileSync(
+    last,
+    readFileSync(last, 'utf8') +
+      '\n--> statement-breakpoint\nSELECT * FROM synthetic_missing_table;',
+  );
+  const file = join(root, 'data.sqlite'),
+    old = openToolchainProbe(file, oldFolder);
+  const id = randomUUID(),
+    body = randomUUID(),
+    state = binary('旧库保留正文');
+  const attributes = {
+    project_type: 'litigation',
+    assignee: null,
+    priority: 0,
+    start_date: null,
+    target_date: null,
+    tags: [],
+  };
+  const request = {
+    ...ids(),
+    operation: 'update_project',
+    id,
+    expected_version: 1,
+    title: '旧诉讼',
+    status: 'planned',
+    expected_body_revision: 0,
+    state,
+    attributes,
+  };
+  const { request_id, ...content } = request;
+  expect(request_id).toBeTruthy();
+  const oldProject = {
+    id,
+    title: '旧诉讼',
+    status: 'planned',
+    version: 2,
+    archived_at: null,
+    body_id: body,
+    body_revision: 1,
+    editor_schema: 1,
+    updated_at: '2026-11-07',
+    task_count: 0,
+    attributes,
+  };
+  const oldReceipt = {
+    ok: true,
+    projects: [oldProject],
+    documents: [],
+    state: null,
+    target_id: id,
+    receipt: request.idempotency_key,
+  };
+  const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+  old.sqlite
+    .prepare(
+      'INSERT INTO matters(id,workspace_id,title,status,version,body_id,body_revision,updated_at,project_type) VALUES(?,?,?,?,?,?,?,?,?)',
+    )
+    .run(
+      id,
+      'local',
+      oldProject.title,
+      oldProject.status,
+      2,
+      body,
+      1,
+      oldProject.updated_at,
+      'litigation',
+    );
+  old.sqlite.prepare('INSERT INTO body_revisions VALUES(?,?,?)').run(body, 1, Buffer.from(state));
+  old.sqlite
+    .prepare('INSERT INTO catalog_receipts VALUES(?,?,?,?)')
+    .run('local', request.idempotency_key, digest, JSON.stringify(oldReceipt));
+  old.sqlite.close();
+  expect(() => openToolchainProbe(file, badFolder)).toThrow();
+  const pre = openToolchainProbe(file, oldFolder);
+  expect(pre.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: 10,
+  });
+  expect(pre.sqlite.pragma('table_info(matters)')).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: 'professional_type' })]),
+  );
+  expect(pre.sqlite.prepare('SELECT digest,result FROM catalog_receipts').get()).toEqual({
+    digest,
+    result: JSON.stringify(oldReceipt),
+  });
+  pre.sqlite.close();
+  const next = openTaskStore(file, migrations),
+    app = createCatalogApplication(next.catalog);
+  expect(app.execute({ ...request, request_id: randomUUID() })).toEqual(oldReceipt);
+  expect(ok(app.execute({ protocol_version: 1, operation: 'read_project', id }))).toMatchObject({
+    projects: [oldProject],
+    state,
+  });
+  expect(
+    ok(app.execute({ protocol_version: 1, operation: 'list' })).projects[0].attributes,
+  ).toEqual(attributes);
+  next.close();
+});
+
+it('merges explicit professional edits, guards the original key and preserves hidden fields after reopening', () => {
+  const { store, file, app } = setup();
+  const base = {
+    project_type: 'litigation',
+    assignee: null,
+    priority: 0,
+    start_date: null,
+    target_date: null,
+    tags: [],
+  };
+  const created = ok(
+    app.execute({
+      ...ids(),
+      operation: 'create_project',
+      title: '合成专业项目',
+      attributes: {
+        ...base,
+        professional_type: 'civil_litigation',
+        professional_fields: { civil_litigation: { court: '合成法院', stage: '原阶段' } },
+      },
+    }),
+  ).projects[0];
+  const id = created.id;
+  const update = {
+    ...ids(),
+    operation: 'update_project',
+    id,
+    title: created.title,
+    status: created.status,
+    expected_version: 1,
+    expected_body_revision: 0,
+    attributes: {
+      ...base,
+      professional_type: 'criminal_litigation',
+      professional_fields: {
+        criminal_litigation: { authority: '合成机关' },
+        civil_litigation: { stage: '' },
+      },
+    },
+  };
+  for (const attributes of [
+    { ...update.attributes, project_type: 'general' },
+    { ...update.attributes, professional_type: 'other' },
+    {
+      ...update.attributes,
+      professional_fields: { criminal_litigation: { court: '字段不属于刑事' } },
+    },
+    {
+      ...update.attributes,
+      professional_fields: { criminal_litigation: { authority: '长'.repeat(241) } },
+    },
+  ])
+    expect(app.execute({ ...update, attributes })).toMatchObject({
+      ok: false,
+      code: 'INVALID_REQUEST',
+    });
+  const other = openTaskStore(file, migrations, 'other');
+  expect(createCatalogApplication(other.catalog).execute(update)).toMatchObject({
+    ok: false,
+    code: 'NOT_FOUND',
+  });
+  other.close();
+  const connection = openToolchainProbe(file, migrations);
+  expect(() =>
+    connection.sqlite.prepare("UPDATE matters SET professional_type='other' WHERE id=?").run(id),
+  ).toThrow();
+  expect(() =>
+    connection.sqlite
+      .prepare('UPDATE matters SET professional_fields=\'{"other":{}}\' WHERE id=?')
+      .run(id),
+  ).toThrow();
+  connection.sqlite.exec(
+    "CREATE TRIGGER reject_professional BEFORE INSERT ON catalog_receipts BEGIN SELECT RAISE(ABORT,'synthetic rollback'); END",
+  );
+  expect(app.execute(update)).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+  const read = { operation: 'read_project', protocol_version: 1, id };
+  const status = {
+    operation: 'status',
+    protocol_version: 1,
+    idempotency_key: update.idempotency_key,
+  };
+  expect(ok(app.execute(read)).projects[0]).toEqual(created);
+  expect(app.execute(status)).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  connection.sqlite.exec('DROP TRIGGER reject_professional');
+  const saved = ok(app.execute(update));
+  expect(app.execute(status)).toEqual(saved);
+  expect(
+    app.execute({ ...update, attributes: { ...update.attributes, priority: 1 } }),
+  ).toMatchObject({ ok: false, code: 'CONFLICT' });
+  const professional_fields = {
+    civil_litigation: { court: '合成法院', stage: '' },
+    criminal_litigation: { authority: '合成机关' },
+  };
+  expect(saved.projects[0]).toMatchObject({
+    version: 2,
+    body_revision: 0,
+    attributes: { professional_type: 'criminal_litigation', professional_fields },
+  });
+  expect(
+    connection.sqlite
+      .prepare('SELECT professional_type,professional_fields FROM matters WHERE id=?')
+      .get(id),
+  ).toMatchObject({
+    professional_type: 'criminal_litigation',
+    professional_fields: JSON.stringify(professional_fields),
+  });
+  expect(app.execute({ ...update, ...ids() })).toMatchObject({ ok: false, code: 'CONFLICT' });
+  expect(
+    ok(app.execute({ operation: 'list', protocol_version: 1 })).projects[0].attributes,
+  ).not.toHaveProperty('professional_fields');
+  expect(
+    ok(app.execute({ operation: 'list', protocol_version: 1, project_properties: true }))
+      .projects[0].attributes?.professional_fields,
+  ).toEqual(professional_fields);
+  const oldWrite = {
+    ...update,
+    ...ids(),
+    expected_version: 2,
+    attributes: { ...base, priority: 3 },
+  };
+  expect(
+    app.execute({
+      ...oldWrite,
+      attributes: { ...oldWrite.attributes, project_type: 'contract_review' },
+      state: binary('不能覆盖'),
+    }),
+  ).toMatchObject({ ok: false, code: 'CONFLICT' });
+  expect(ok(app.execute(oldWrite)).projects[0].attributes).toMatchObject({
+    professional_type: 'criminal_litigation',
+    professional_fields,
+    priority: 3,
+  });
+  ok(
+    app.execute({
+      ...ids(),
+      operation: 'archive_project',
+      id,
+      expected_version: 3,
+      archived: true,
+    }),
+  );
+  expect(app.execute({ ...update, ...ids(), expected_version: 4 })).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+  connection.sqlite.close();
+  store.close();
+  const next = openTaskStore(file, migrations);
+  expect(
+    ok(next.catalog.execute({ operation: 'read_project', protocol_version: 1, id })).projects[0],
+  ).toMatchObject({
+    id,
+    body_revision: 0,
+    archived_at: expect.any(String),
+    attributes: { professional_fields, professional_type: 'criminal_litigation' },
+  });
+  next.close();
+});

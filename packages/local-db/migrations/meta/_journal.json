@@ -71,6 +71,13 @@
       "when": 1794017107803,
       "tag": "0009_wakeful_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794019792324,
+      "tag": "0010_greedy_paibok",
+      "breakpoints": true
     }
   ]
 }

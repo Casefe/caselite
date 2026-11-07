@@ -20,7 +20,7 @@ it('preserves manual values on type changes and rejects bad date input until an 
   }
   render(<Form />);
   fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '负责人' } });
-  fireEvent.change(screen.getByLabelText('项目类型'), { target: { value: 'litigation' } });
+  fireEvent.change(screen.getByLabelText('项目类型'), { target: { value: 'civil_litigation' } });
   expect((screen.getByLabelText('项目负责人') as HTMLInputElement).value).toBe('负责人');
   const start = screen.getByLabelText('项目开始日') as HTMLInputElement,
     target = screen.getByLabelText('项目目标日') as HTMLInputElement;

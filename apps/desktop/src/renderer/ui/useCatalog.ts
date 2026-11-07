@@ -7,7 +7,7 @@ export const catalogMutation = <T extends object>(input: T) => ({
   request_id: crypto.randomUUID(),
   idempotency_key: crypto.randomUUID(),
 });
-export function useCatalog() {
+export function useCatalog(projectProperties = false) {
   const [data, setData] = useState<Success | null>(null),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false),
@@ -20,7 +20,11 @@ export function useCatalog() {
   const load = useCallback(async () => {
     const current = ++generation.current;
     try {
-      const r = await window.caselite.catalog({ operation: 'list', protocol_version: 1 });
+      const r = await window.caselite.catalog({
+        operation: 'list',
+        protocol_version: 1,
+        ...(projectProperties ? { project_properties: true as const } : {}),
+      });
       if (alive.current && current === generation.current) {
         if (r.ok) {
           setData(r);
@@ -30,7 +34,7 @@ export function useCatalog() {
     } catch {
       if (alive.current && current === generation.current) setError('无法读取本地目录，请重试。');
     }
-  }, []);
+  }, [projectProperties]);
   useEffect(() => {
     alive.current = true;
     queueMicrotask(() => void load());

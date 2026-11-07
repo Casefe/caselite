@@ -317,6 +317,12 @@ export async function runProjectDemo(
       );
       return;
     }
+    const professional = process.env.CASELITE_PROJECT_PROFESSIONAL === '1';
+    const input = async (label: string, value: string, select = false) => {
+      await evaluate(
+        `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable: ${label}');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
+      );
+    };
     if (process.env.CASELITE_PROJECT_PROPERTIES) {
       const read = async (id?: string) => {
         const r: CatalogResponse = await evaluate(
@@ -324,11 +330,6 @@ export async function runProjectDemo(
         );
         if (!r.ok) throw new Error('Cannot read project properties');
         return r;
-      };
-      const input = async (label: string, value: string, select = false) => {
-        await evaluate(
-          `(()=>{const e=document.querySelector('[aria-label="${label}"]');if(!e || e.disabled) throw new Error('Field unavailable');Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${select ? 'change' : 'input'}',{bubbles:true}));})()`,
-        );
       };
       const expectedPath = join(root, 'properties-expected.json');
       if (phase === 'project-write' && process.env.CASELITE_PROJECT_PROPERTIES !== 'preview') {
@@ -340,7 +341,42 @@ export async function runProjectDemo(
         await input('项目开始日', '2024-02-29');
         await input('项目目标日', '2024-03-01');
         await input('项目标签', '验收,合成');
-        await input('项目类型', 'litigation', true);
+        await input('项目类型', 'civil_litigation', true);
+        if (professional) {
+          await input('受理法院', '合成法院');
+          const before = await read();
+          window.show();
+          window.focus();
+          await evaluate("document.querySelector('.project-professional-card summary').focus()");
+          for (const type of ['keyDown', 'keyUp'] as const)
+            window.webContents.sendInputEvent({ type, keyCode: 'Space' });
+          await wait("!document.querySelector('.project-professional-card').open");
+          if (JSON.stringify(await read()) !== JSON.stringify(before))
+            throw new Error('Disclosure wrote project data');
+          for (const type of ['keyDown', 'keyUp'] as const)
+            window.webContents.sendInputEvent({ type, keyCode: 'Space' });
+          await wait("document.querySelector('.project-professional-card').open");
+          if (
+            (await evaluate("document.querySelector('[aria-label=受理法院]').value")) !== '合成法院'
+          )
+            throw new Error('Disclosure dropped draft');
+          for (const [value, label] of [
+            ['commercial_arbitration', '仲裁机构'],
+            ['non_litigation', '拟交付成果'],
+            ['contract_review', '审查重点'],
+            ['criminal_litigation', '办案机关'],
+          ]) {
+            await input('项目类型', value, true);
+            await wait(
+              `document.querySelector('[aria-label=${label}]') && !document.querySelector('[aria-label=受理法院]')`,
+            );
+          }
+          await input('办案机关', '合成办案机关');
+          await input('项目类型', 'civil_litigation', true);
+          await wait("document.querySelector('[aria-label=受理法院]')?.value==='合成法院'");
+          await input('项目类型', 'criminal_litigation', true);
+          await wait("document.querySelector('[aria-label=办案机关]')?.value==='合成办案机关'");
+        }
         await input('项目状态', 'active', true);
         if (
           (await evaluate("document.querySelector('[aria-label=项目负责人]').value")) !==
@@ -365,6 +401,10 @@ export async function runProjectDemo(
               '({width:innerWidth,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth})',
             );
             if (geometry.scroll > geometry.client + 1) throw new Error('Creation overflow');
+            if (professional)
+              await evaluate(
+                "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
+              );
             await capture(`properties-create-${width}-${theme}.png`);
             layouts.push({ theme, ...geometry });
           }
@@ -395,6 +435,7 @@ export async function runProjectDemo(
           throw new Error('Description not saved');
         await button('任务');
         await input('项目负责人', '合成右栏负责人');
+        if (professional) await input('程序阶段', '合成阶段');
         await input('项目优先级', '4', true);
         window.show();
         window.focus();
@@ -454,7 +495,12 @@ export async function runProjectDemo(
         if (
           saved.projects[0].body_revision !== 1 ||
           JSON.stringify(saved.state) !== JSON.stringify(original.state) ||
-          saved.projects[0].attributes?.assignee !== '合成右栏负责人'
+          saved.projects[0].attributes?.assignee !== '合成右栏负责人' ||
+          (professional &&
+            (saved.projects[0].attributes?.professional_fields?.civil_litigation?.court !==
+              '合成法院' ||
+              saved.projects[0].attributes?.professional_fields?.criminal_litigation?.stage !==
+                '合成阶段'))
         )
           throw new Error('Attribute save changed original body');
         await button('返回项目列表');
@@ -482,6 +528,10 @@ export async function runProjectDemo(
             await evaluate(
               "(()=>{const panel=document.querySelector('.project-properties');panel.scrollIntoView({block:'start'});panel.scrollTop=0;})()",
             );
+            if (professional)
+              await evaluate(
+                "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
+              );
             await capture(`properties-sidebar-${width}-${theme}.png`);
             await evaluate(
               "Array.from(document.querySelectorAll('.project-properties button')).find(e=>e.textContent.trim()==='保存项目属性').scrollIntoView({block:'center'})",
@@ -492,7 +542,7 @@ export async function runProjectDemo(
             if (layout.display !== 'grid' || !layout.columns.startsWith('72px'))
               throw new Error('Sidebar is not a compact attribute grid: ' + JSON.stringify(layout));
             const reachable = await evaluate(
-              "(()=>{const e=document.querySelector('[aria-label=项目标签]');const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height,viewportHeight:innerHeight};})()",
+              `(()=>{const e=document.querySelector('[aria-label=${professional ? '程序阶段' : '项目标签'}]');const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height,viewportHeight:innerHeight};})()`,
             );
             if (
               reachable.height <= 0 ||
@@ -538,9 +588,26 @@ export async function runProjectDemo(
         if (project.archived_at) await button('已归档');
         await button(project.title);
         await wait("document.querySelector('[aria-label=编辑项目名称]')");
+        if (professional && process.env.CASELITE_PROJECT_PROPERTIES !== 'preview') {
+          await wait("document.querySelector('[aria-label=办案机关]')?.value==='合成办案机关'");
+          await input('项目类型', 'civil_litigation', true);
+          await wait("document.querySelector('[aria-label=受理法院]')?.value==='合成法院'");
+          await evaluate(
+            "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
+          );
+          await capture('professional-reopened-civil.png');
+        }
+        if (professional)
+          await evaluate(
+            "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
+          );
         await capture('properties-reopened.png');
         if (process.env.CASELITE_PROJECT_PROPERTIES === 'preview') {
-          window.setTitle('CaseLite · 项目属性 · 同一合成工作区');
+          window.setTitle(
+            professional
+              ? 'CaseLite · 项目专业卡 · 同一合成工作区'
+              : 'CaseLite · 项目属性 · 同一合成工作区',
+          );
           await new Promise<void>((resolve) => window.once('closed', () => resolve()));
         } else
           writeFileSync(
@@ -996,6 +1063,13 @@ export async function runProjectDemo(
         if (!before.ok) throw new Error('Original Task read failed');
         await button('从任务创建项目');
         await wait("document.querySelector('dialog[open]')");
+        if (professional) {
+          await input('项目类型', 'commercial_arbitration', true);
+          await input('仲裁机构', '合成仲裁机构');
+          await evaluate(
+            "document.querySelector('.project-professional-card').scrollIntoView({block:'center'})",
+          );
+        }
         await capture('project-from-task.png');
         await button('保存项目');
         await wait("!document.querySelector('dialog[open]')");
@@ -1049,6 +1123,8 @@ export async function runProjectDemo(
         await wait(
           "Array.from(document.querySelectorAll('.project-summary-counts dd')).map(e=>e.textContent).join(',')==='1,0,1'",
         );
+        if (professional)
+          await wait("document.querySelector('[aria-label=仲裁机构]')?.value==='合成仲裁机构'");
         await capture('project-overview-summary.png');
         for (const [label, id] of [
           ['任务', 'tasks'],

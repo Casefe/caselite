@@ -1,5 +1,59 @@
 import { z } from 'zod';
 import { ordinaryDateSchema } from './task';
+export const projectProfessionalTypeSchema = z.enum([
+  'civil_litigation',
+  'criminal_litigation',
+  'commercial_arbitration',
+  'non_litigation',
+]);
+export type ProjectProfessionalType = z.infer<typeof projectProfessionalTypeSchema>;
+export function legacyProjectType(type: ProjectProfessionalType) {
+  return type === 'civil_litigation' || type === 'criminal_litigation' ? 'litigation' : 'general';
+}
+export const projectProfessionalTextLimit = 240;
+const projectText = z
+  .string()
+  .max(projectProfessionalTextLimit)
+  .refine((v) => !v.includes('\0'))
+  .optional();
+export const projectProfessionalFieldsSchema = z.strictObject({
+  civil_litigation: z
+    .strictObject({
+      case_number: projectText,
+      court: projectText,
+      cause: projectText,
+      stage: projectText,
+    })
+    .optional(),
+  criminal_litigation: z
+    .strictObject({
+      case_number: projectText,
+      authority: projectText,
+      suspected_offense: projectText,
+      stage: projectText,
+    })
+    .optional(),
+  commercial_arbitration: z
+    .strictObject({
+      case_number: projectText,
+      institution: projectText,
+      dispute: projectText,
+      stage: projectText,
+    })
+    .optional(),
+  non_litigation: z
+    .strictObject({
+      service_type: projectText,
+      topic: projectText,
+      scope: projectText,
+      deliverables: projectText,
+    })
+    .optional(),
+  contract_review: z
+    .strictObject({ contract_type: projectText, subject: projectText, review_focus: projectText })
+    .optional(),
+});
+export type ProjectProfessionalFields = z.infer<typeof projectProfessionalFieldsSchema>;
 export const projectAttributesSchema = z
   .object({
     project_type: z.enum(['general', 'litigation', 'contract_review']),
@@ -8,11 +62,14 @@ export const projectAttributesSchema = z
     start_date: ordinaryDateSchema.nullable(),
     target_date: ordinaryDateSchema.nullable(),
     tags: z.array(z.string().trim().min(1).max(40)).max(20),
+    professional_type: projectProfessionalTypeSchema.nullable().optional(),
+    professional_fields: projectProfessionalFieldsSchema.optional(),
   })
   .strict()
   .refine((a) => !a.start_date || !a.target_date || a.start_date <= a.target_date, {
     message: '目标日不能早于开始日',
-  });
+  })
+  .refine((a) => !a.professional_type || a.project_type === legacyProjectType(a.professional_type));
 export type ProjectAttributes = z.infer<typeof projectAttributesSchema>;
 const id = z.string().uuid();
 const version = z.number().int().positive();
@@ -76,7 +133,13 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       origin: z.enum(['task', 'catalog']),
     })
     .strict(),
-  z.object({ ...base, operation: z.literal('list') }).strict(),
+  z
+    .object({
+      ...base,
+      operation: z.literal('list'),
+      project_properties: z.literal(true).optional(),
+    })
+    .strict(),
   z.object({ ...base, operation: z.literal('read_project'), id }).strict(),
   z.object({ ...base, operation: z.literal('status'), idempotency_key: id }).strict(),
   z

@@ -98,6 +98,8 @@ export const matters = sqliteTable(
     title: text('title').notNull(),
     status: text('status').notNull().default('planned'),
     projectType: text('project_type').notNull().default('general'),
+    professionalType: text('professional_type'),
+    professionalFields: text('professional_fields').notNull().default('{}'),
     assignee: text('assignee'),
     priority: integer('priority').notNull().default(0),
     startDate: text('start_date'),
@@ -111,6 +113,14 @@ export const matters = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    check(
+      'project_professional_type_valid',
+      sql`${table.professionalType} IN ('civil_litigation','criminal_litigation','commercial_arbitration','non_litigation')`,
+    ),
+    check(
+      'project_professional_fields_valid',
+      sql`CASE WHEN length(CAST(${table.professionalFields} AS blob)) <= 28000 AND json_valid(${table.professionalFields}) THEN json_type(${table.professionalFields}) = 'object' AND json_remove(${table.professionalFields}, '$.civil_litigation', '$.criminal_litigation', '$.commercial_arbitration', '$.non_litigation', '$.contract_review') = '{}' AND COALESCE(json_type(${table.professionalFields}, '$.civil_litigation'), 'object') = 'object' AND COALESCE(json_type(${table.professionalFields}, '$.criminal_litigation'), 'object') = 'object' AND COALESCE(json_type(${table.professionalFields}, '$.commercial_arbitration'), 'object') = 'object' AND COALESCE(json_type(${table.professionalFields}, '$.non_litigation'), 'object') = 'object' AND COALESCE(json_type(${table.professionalFields}, '$.contract_review'), 'object') = 'object' ELSE 0 END`,
+    ),
     check(
       'project_type_valid',
       sql`${table.projectType} IN ('general','litigation','contract_review')`,

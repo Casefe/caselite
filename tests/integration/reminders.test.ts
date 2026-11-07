@@ -334,7 +334,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
     JSON.stringify(tables.map((name) => upgraded.prepare(`SELECT * FROM ${name}`).all())),
   ).toBe(snapshot);
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 10,
+    n: 11,
   });
   expect(upgraded.pragma('foreign_key_check')).toEqual([]);
   upgraded.close();
