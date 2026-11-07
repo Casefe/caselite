@@ -701,14 +701,6 @@ export default function ProjectCatalog({
             AI 助手
           </button>
         </div>
-        {side === 'properties' && p && !sourceUnavailable && (
-          <div className="project-property-heading">
-            <h3>{p.title}</h3>
-            <p>
-              {names[projectStatus(p)]} · {p.task_count} 个任务 · 版本 {p.version}
-            </p>
-          </div>
-        )}
         {side === 'ai' ? (
           <div className="project-ai-content">
             <h3>项目任务 AI</h3>
@@ -850,6 +842,7 @@ function ProjectEditor({
         }}
         label="项目概述"
         testId="project-overview-editor"
+        compact
         disabled={disabled || archived || saving}
       />
       <button

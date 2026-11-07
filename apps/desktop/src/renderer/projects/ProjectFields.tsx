@@ -210,7 +210,9 @@ export default function ProjectFields({
   return (
     <>
       <fieldset className="project-fields">
-        <legend>{creating ? '项目属性' : '编辑项目属性'}</legend>
+        <legend className={creating ? undefined : 'sr-only'}>
+          {creating ? '项目属性' : '编辑项目属性'}
+        </legend>
         <ProjectPropertyRow label="名称" icon="name">
           <input
             disabled={disabled}
@@ -331,7 +333,7 @@ export default function ProjectFields({
         <small>负责人仅作记录。目标日不计算法定期限或创建提醒；标签最多20项，每项1—40字。</small>
       </fieldset>
       <details ref={professionalCard} className="project-professional-card" open>
-        <summary>专业卡{group ? ` · ${projectTypes[group]}` : ''}</summary>
+        <summary>领域：{group ? projectTypes[group] : ''}</summary>
         <fieldset className="project-fields" disabled={disabled} aria-label="专业属性">
           {group ? (
             Object.entries(professionalFields[group]).map(([key, label]) => (

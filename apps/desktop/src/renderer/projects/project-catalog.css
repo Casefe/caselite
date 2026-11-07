@@ -484,19 +484,6 @@
   }
 }
 
-.project-catalog .project-property-heading {
-  padding: 16px 0 10px;
-}
-.project-catalog .project-property-heading h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
-  color: var(--ink);
-}
-.project-catalog .project-property-heading p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
 .project-create-dialog .project-create-content {
   padding: 8px 24px 20px;
 }

@@ -1,4 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -100,7 +107,15 @@ function blockAction(editor: Editor, action: 'up' | 'down' | 'duplicate' | 'dele
   editor.view.dispatch(tr.scrollIntoView());
   editor.commands.focus();
 }
-function FormatBar({ editor, floating = false }: { editor: Editor; floating?: boolean }) {
+function FormatBar({
+  editor,
+  floating = false,
+  marksOnly = false,
+}: {
+  editor: Editor;
+  floating?: boolean;
+  marksOnly?: boolean;
+}) {
   const active = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -144,21 +159,25 @@ function FormatBar({ editor, floating = false }: { editor: Editor; floating?: bo
           <span className="format-separator" />
         </>
       )}
-      <select
-        aria-label="段落样式"
-        value={active.heading ? `heading${active.heading}` : 'paragraph'}
-        onMouseDown={(event) => event.stopPropagation()}
-        onChange={(event) => setBlock(editor, event.target.value)}
-      >
-        <option value="paragraph">正文</option>
-        <option value="heading1">标题 1</option>
-        <option value="heading2">标题 2</option>
-        <option value="heading3">标题 3</option>
-        <option value="heading4">标题 4</option>
-        <option value="heading5">标题 5</option>
-        <option value="heading6">标题 6</option>
-      </select>
-      <span className="format-separator" />
+      {!marksOnly && (
+        <>
+          <select
+            aria-label="段落样式"
+            value={active.heading ? `heading${active.heading}` : 'paragraph'}
+            onMouseDown={(event) => event.stopPropagation()}
+            onChange={(event) => setBlock(editor, event.target.value)}
+          >
+            <option value="paragraph">正文</option>
+            <option value="heading1">标题 1</option>
+            <option value="heading2">标题 2</option>
+            <option value="heading3">标题 3</option>
+            <option value="heading4">标题 4</option>
+            <option value="heading5">标题 5</option>
+            <option value="heading6">标题 6</option>
+          </select>
+          <span className="format-separator" />
+        </>
+      )}
       <button
         type="button"
         aria-label="加粗"
@@ -245,6 +264,36 @@ function FormatBar({ editor, floating = false }: { editor: Editor; floating?: bo
   );
 }
 
+function CompactSelectionTools({ editor, from }: { editor: Editor; from: number }) {
+  const popup = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = popup.current;
+    const surface = element?.parentElement;
+    if (!element || !surface) return;
+    const position = () => {
+      if (editor.isDestroyed) return;
+      const selection = editor.view.coordsAtPos(editor.state.selection.from);
+      const bounds = surface.getBoundingClientRect();
+      const maxLeft = surface.clientWidth - element.offsetWidth;
+      element.style.left = `${Math.max(0, Math.min(selection.left - bounds.left, maxLeft))}px`;
+      const above = selection.top - bounds.top - element.offsetHeight - 4;
+      const below = selection.bottom - bounds.top + 4;
+      element.style.top = `${above < 0 && below + element.offsetHeight <= surface.clientHeight ? below : above}px`;
+    };
+    // 选区坐标和弹层尺寸随窄窗换行变化，外层滚动时它们随正文一起移动。
+    position();
+    const resize = new ResizeObserver(position);
+    resize.observe(surface);
+    resize.observe(element);
+    return () => resize.disconnect();
+  }, [editor, from]);
+  return (
+    <div className="selection-tools" ref={popup}>
+      <FormatBar editor={editor} floating marksOnly />
+    </div>
+  );
+}
+
 export function EditorSurface({
   editor,
   mode,
@@ -252,7 +301,7 @@ export function EditorSurface({
   disabled = false,
 }: {
   editor: Editor | null;
-  mode: 'notion' | 'simple';
+  mode: 'notion' | 'simple' | 'compact';
   placeholder?: string;
   disabled?: boolean;
 }) {
@@ -261,6 +310,8 @@ export function EditorSurface({
   const [index, setIndex] = useState(0);
   const [dismissed, setDismissed] = useState('');
   const [blockMenu, setBlockMenu] = useState(false);
+  const [showFormats, setShowFormats] = useState(false);
+  const [composing, setComposing] = useState(false);
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
@@ -311,6 +362,7 @@ export function EditorSurface({
       </div>
     );
   const editable = !disabled && editor.isEditable;
+  const compact = mode === 'compact';
   const slashKey = ui?.slash ? `${ui.slash.from}:${ui.slash.query}` : '';
   const choices = blocks.filter((item) =>
     `${item.label}${item.hint}${item.id}`
@@ -337,10 +389,21 @@ export function EditorSurface({
         }
       }}
       onBlurCapture={(event) => {
-        if (!(event.relatedTarget instanceof Node) || !root.current?.contains(event.relatedTarget))
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !root.current?.contains(event.relatedTarget)
+        ) {
           setBlockMenu(false);
+          if (compact) {
+            setShowFormats(false);
+            setComposing(false);
+          }
+        }
       }}
+      onCompositionStartCapture={compact ? () => setComposing(true) : undefined}
+      onCompositionEndCapture={compact ? () => setComposing(false) : undefined}
       onKeyDownCapture={(event) => {
+        if (compact && !editable) return;
         if (!editable || !editor.isEditable) {
           event.preventDefault();
           event.stopPropagation();
@@ -401,6 +464,23 @@ export function EditorSurface({
         </div>
       )}
       <EditorContent className="rich-editor-content" editor={editor} />
+      {compact && editable && (
+        <>
+          <button
+            className="compact-format-toggle"
+            type="button"
+            aria-expanded={showFormats}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setShowFormats((shown) => !shown)}
+          >
+            格式工具
+          </button>
+          {showFormats && <FormatBar editor={editor} />}
+          {!showFormats && !composing && ui?.selected && ui.focused && (
+            <CompactSelectionTools editor={editor} from={ui.from} />
+          )}
+        </>
+      )}
       {mode === 'notion' && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>
           <button
@@ -537,8 +617,12 @@ export const DraftEditor = forwardRef<
     testId?: string;
     placeholder?: string;
     disabled?: boolean;
+    compact?: boolean;
   }
->(function DraftEditor({ value, onChange, label, testId, placeholder, disabled = false }, ref) {
+>(function DraftEditor(
+  { value, onChange, label, testId, placeholder, disabled = false, compact = false },
+  ref,
+) {
   const doc = useLocalDoc(value);
   const ready = useRef(false);
   const editor = useEditor(
@@ -589,6 +673,11 @@ export const DraftEditor = forwardRef<
     [editor, disabled],
   );
   return (
-    <EditorSurface editor={editor} mode="notion" placeholder={placeholder} disabled={disabled} />
+    <EditorSurface
+      editor={editor}
+      mode={compact ? 'compact' : 'notion'}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
   );
 });

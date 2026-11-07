@@ -1320,6 +1320,48 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.project-detail-heading strong')?.textContent==='验收项目（已编辑）'",
         );
+        await wait(`document.querySelector('[data-editor-mode=compact] [aria-expanded=false]')
+          && !document.querySelector('[data-editor-mode=compact] [role=toolbar]')
+          && !document.querySelector('.project-property-heading')
+          && document.querySelector('.project-professional-card summary')?.textContent.startsWith('领域：')`);
+        app.focus({ steal: true });
+        window.focus();
+        window.webContents.focus();
+        await wait('document.hasFocus()');
+        await evaluate(`(() => {
+          const body = document.querySelector('[data-testid=project-overview-editor]');
+          body.focus();
+          window.getSelection().selectAllChildren(body.querySelector('p'));
+          document.dispatchEvent(new Event('selectionchange'));
+        })()`);
+        await wait("document.querySelector('[aria-label=选区格式] [aria-label=加粗]')");
+        const editorBounds = window.getBounds();
+        for (const [width, theme] of [
+          [1440, 'light'],
+          [640, 'dark'],
+        ] as const) {
+          window.setSize(width, 900);
+          await wait(`innerWidth === ${width}`);
+          await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+          const fits = await evaluate(`(() => {
+            const editor = document.querySelector('[data-editor-mode=compact]').getBoundingClientRect();
+            const tools = document.querySelector('[aria-label=选区格式]').getBoundingClientRect();
+            return tools.width > 0 && tools.left >= editor.left - 1 &&
+              tools.right <= Math.min(innerWidth, editor.right + 1) && tools.top >= 0;
+          })()`);
+          if (!fits) throw new Error('Selection tools overflow the project overview');
+          await capture(`overview-selection-${width}-${theme}.png`);
+        }
+        await evaluate("document.querySelector('[aria-label=选区格式] [aria-label=加粗]').click()");
+        await wait("document.querySelector('[data-testid=project-overview-editor] strong')");
+        await evaluate("document.querySelector('.compact-format-toggle').focus()");
+        await wait("document.activeElement?.matches('.compact-format-toggle')");
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+        await wait("document.querySelector('[aria-label=文档格式] [aria-label=段落样式]')");
+        await button('格式工具');
+        window.setBounds(editorBounds);
+        await evaluate("document.documentElement.dataset.theme = 'light'");
         await button('保存项目概述');
         await wait(
           "Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent.includes('说明修订 1'))",
@@ -1347,7 +1389,7 @@ export async function runProjectDemo(
           throw new Error('Archive was not persisted');
         if (
           !(await evaluate(
-            "document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[data-testid=project-overview-editor]').isContentEditable",
+            "document.querySelector('[aria-label=项目状态]').value==='archived' && !document.querySelector('[data-testid=project-overview-editor]').isContentEditable && !document.querySelector('.compact-format-toggle')",
           ))
         )
           throw new Error('Archived project remains writable');
@@ -1387,7 +1429,7 @@ export async function runProjectDemo(
           throw new Error('Project restore changed authoritative body bytes');
         if (
           !(await evaluate(
-            "document.querySelector('[data-testid=project-overview-editor]').textContent.includes('项目概述：保存与归档恢复验收。')",
+            "document.querySelector('[data-testid=project-overview-editor] strong')?.textContent.includes('项目概述：保存与归档恢复验收。')",
           ))
         )
           throw new Error('Project restore lost its saved overview');
