@@ -24,6 +24,8 @@ Renderer只通过Preload方法访问业务；仅导入Preload类型，不运行�
 
 Domain、files、独立PDF/editor包、同步服务和MCP均按实际消费者创建，不为画架构图预建空包。普通CRUD保持普通TypeScript模块；只有格式／权限／持久化和外部能力边界需要Port。开发Runner放产品仓库外，不进入Electron。
 
+Renderer 内部渐进分层：`shared/ui`、`shared/navigation`、`shared/data` 不依赖具体页面；公共讨论能力不导入项目等功能实现。`features/*` 与既有 `projects/finance/review` 间仅使用明确公开入口；当前公开跨功能入口是项目展示词汇、任务归组操作、金额格式化和文档审阅组件。规则位于 `scripts/lib/renderer-boundaries.mjs`，由已有 architecture:check 执行。旧 `ui` 仍包含业务页面，不视为全部通用组件；已禁止其导入项目表单私有实现，其余迁移按实际消费者推进。共享排版不合并各对象的保存队列或版本状态。
+
 ## 单一数据权威
 
 Task是WorkItem的稳定身份，可不归组项目。task_projects只保存关系；归组不重建Task、Document或body。项目结构化属性归SQLite，描述复用已有Yjs正文存储。Document的归档、分类、标签与收藏属于元数据；知识目录沿用同一Document，不另建可编辑知识正文。

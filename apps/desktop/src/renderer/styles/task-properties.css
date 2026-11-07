@@ -1,0 +1,294 @@
+/* 任务状态是普通工作属性，不取代正文保存或正式交付。 */
+.task-name .task-status-tag {
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.task-name .task-status-tag[data-status='done'] {
+  color: #578370;
+}
+.task-properties-editor {
+  margin: 18px 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.task-properties-editor label:not(.inspector-property-row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-properties-editor select,
+.task-properties-editor input {
+  max-width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.task-properties-editor button {
+  margin: 6px 6px 0 0;
+}
+
+.task-attribute-summary {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+.task-query-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.task-query-toolbar input,
+.task-query-toolbar select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--theme-panel);
+  color: var(--ink);
+  padding: 7px 9px;
+  min-width: 0;
+  max-width: 100%;
+}
+.task-query-toolbar > input {
+  flex: 1 1 220px;
+}
+.task-query-toolbar label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 1100px) {
+  .task-query-list.collection-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .task-query-list > .collection-main {
+    min-height: 480px;
+  }
+  .task-query-list > .task-inspector {
+    height: auto;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.task-query-list.collection-workspace {
+  min-width: 0;
+}
+.task-query-list .task-table {
+  min-width: 540px;
+}
+.task-query-list .collection-scroll {
+  overflow: auto;
+}
+
+.reminder-inbox {
+  color: var(--ink);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-panel);
+}
+.reminder-inbox > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--line);
+  gap: 16px;
+}
+.reminder-inbox > header > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reminder-inbox h1 {
+  font-size: 18px;
+  margin: 0;
+}
+.reminder-inbox > header > span {
+  font-size: 12px;
+  opacity: 0.6;
+}
+.reminder-coverage {
+  padding: 12px 28px;
+  font-size: 12px;
+  line-height: 1.7;
+  opacity: 0.7;
+  border-bottom: 1px solid var(--line);
+}
+.reminder-tabs {
+  display: flex;
+  gap: 20px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+.reminder-tabs button {
+  padding: 14px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  border-bottom: 2px solid transparent;
+}
+.reminder-tabs button[aria-pressed='true'] {
+  border-bottom-color: currentColor;
+  font-weight: 650;
+}
+.reminder-columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(240px, 0.9fr);
+  min-height: 0;
+  flex: 1;
+}
+.reminder-list,
+.reminder-detail {
+  overflow: auto;
+  min-width: 0;
+}
+.reminder-detail {
+  padding: 28px;
+  border-left: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.reminder-detail > h2 {
+  font-size: 20px;
+  margin: 14px 0 24px;
+}
+.reminder-detail > button {
+  margin: 0 8px 8px 0;
+}
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 20px 24px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.reminder-row[aria-current='true'] {
+  background: var(--theme-hover);
+}
+.reminder-row > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reminder-row strong,
+.reminder-row time,
+.reminder-row small {
+  display: block;
+}
+.reminder-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.reminder-row time {
+  font-size: 12px;
+  margin: 8px 0 4px;
+  opacity: 0.7;
+}
+.reminder-row small {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.unread-dot,
+.read-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #4c70b8;
+}
+.read-dot {
+  background: transparent;
+}
+.reminder-empty {
+  padding: 60px 24px;
+  text-align: center;
+  opacity: 0.6;
+}
+.reminder-empty h2 {
+  font-size: 15px;
+  margin-top: 20px;
+}
+.reminder-empty p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.reminder-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.reminder-editor h3 {
+  font-size: 13px;
+}
+.reminder-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 14px 0;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.reminder-editor label {
+  display: grid;
+  gap: 6px;
+}
+.reminder-editor input:not([type='checkbox']),
+.reminder-editor select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+}
+.reminder-editor .reminder-confirm {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1.7;
+}
+.reminder-editor button {
+  font-size: 12px;
+  padding: 7px 10px;
+  margin: 4px 6px 4px 0;
+}
+@media (max-width: 800px) {
+  .reminder-columns {
+    grid-template-columns: minmax(170px, 0.85fr) minmax(210px, 1fr);
+  }
+  .reminder-detail {
+    padding: 18px;
+  }
+  .reminder-row {
+    padding: 16px 12px;
+  }
+  .reminder-coverage {
+    padding: 10px 18px;
+  }
+}

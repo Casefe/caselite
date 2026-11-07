@@ -1,3 +1,4 @@
+import { projectTypes, projectStatuses } from './project-display';
 import { PropertyRow } from '../shared/ui/PropertyRow';
 import { InspectorSection } from '../shared/ui/InspectorSection';
 import { Icon } from '../shared/ui/Icon';
@@ -10,15 +11,6 @@ export type ProjectValues = {
   title: string;
   status: Matter['status'];
   attributes: ProjectAttributes;
-};
-export const projectTypes = {
-  general: '通用',
-  litigation: '诉讼（未细分）',
-  civil_litigation: '民事诉讼',
-  criminal_litigation: '刑事诉讼',
-  commercial_arbitration: '商事仲裁',
-  non_litigation: '非诉项目',
-  contract_review: '合同审查',
 };
 type ProjectType = keyof typeof projectTypes;
 const legacyTypes: Record<ProjectType, ProjectAttributes['project_type']> = {
@@ -121,7 +113,6 @@ function ProjectPropertyRow({
     </PropertyRow>
   );
 }
-export const projectStatuses = { planned: '待开始', active: '进行中', done: '已完成' };
 export function projectValues(project?: Matter): ProjectValues {
   return {
     title: project?.title ?? '',

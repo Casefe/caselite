@@ -3,6 +3,7 @@ import { builtinModules } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { imports, sourceFiles } from './lib/source-analysis.mjs';
+import { rendererBoundaryViolation } from './lib/renderer-boundaries.mjs';
 import { dependencyViolations, runtimeDependencyViolation } from './lib/dependency-admission.mjs';
 
 const builtins = new Set(builtinModules.map((name) => name.replace(/^node:/, '')));
@@ -13,6 +14,8 @@ const under = (file, folder) => file === folder || file.startsWith(`${folder}/`)
 const json = (file) => JSON.parse(readFileSync(file, 'utf8'));
 
 export function boundaryViolation(file, specifier, target, typeOnly = false) {
+  const rendererReason = rendererBoundaryViolation(file, target);
+  if (rendererReason) return rendererReason;
   const node = specifier.startsWith('node:') || builtins.has(specifier.split('/')[0]);
   const pkg = packageName(specifier);
   const renderer = file.includes('/renderer/');

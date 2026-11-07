@@ -29,7 +29,7 @@ import {
 
 import { ModelSettingsNavigation } from '../shared/navigation/ModelSettingsNavigation';
 import { agentModelLabel, agentModels, agentProviderFor } from './model-labels';
-import { projectStatuses, projectTypes } from '../projects/ProjectFields';
+import { projectStatuses, projectTypes } from '../projects/project-display';
 import type { AgentResponse } from '../../preload/caselite-api';
 import type { AgentModel, AgentRun, AgentRequest } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
