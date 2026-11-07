@@ -30,6 +30,8 @@ Renderer 内部渐进分层：`shared/ui`、`shared/navigation`、`shared/data` 
 
 Task是WorkItem的稳定身份，可不归组项目。task_projects只保存关系；归组不重建Task、Document或body。项目结构化属性归SQLite，描述复用已有Yjs正文存储。Document的归档、分类、标签与收藏属于元数据；知识目录沿用同一Document，不另建可编辑知识正文。
 
+文档审阅的确认编排在 `packages/application/src/document-review-application.ts`，通过 `DocumentReviewPort` 读取候选范围与回执，通过已有任务 Application 保存。Electron 的 `document-review-store.ts` 仅组合端口。`local-db/document-review-reader.ts` 复用任务存储连接和工作区，负责读取/校验；实际写事务仍由 `task-store.ts` 独占。此次拆分不变更进程边界、协议、持久化格式或迁移链；不把整个宿主与存储一次性重写。
+
 正文完整Yjs二进制是内容权威；HTML、JSON、纯文本和未来FTS仅是可重建投影。editor_schema、对象version、body_revision、协议版本、数据库迁移版本各有含义，state vector不等于保存回执。Body保存携带原Task／Document／body绑定、expected_revision和稳定业务幂等键。元数据、正文、回执及必要Activity优先同SQLite事务；回执未知先查询原结果，旧修订拒绝，不盲建新稿。
 
 Task内容现有实现见ADR-007：objective_state是Yjs，objective由宿主派生纯文本。它不是两份独立可写权威；但与现行02／DEV-1704的“结构化目标＋独立Document说明”仍有待原Owner对齐的表示差异。保留原二进制和格式，不在入口文档中暗改表、重定义Owner或宣称1704完成。ADR-006及首片计划中的“仅结构化objective”只描述原固定切片。
