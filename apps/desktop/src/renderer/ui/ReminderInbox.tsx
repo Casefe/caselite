@@ -1,8 +1,9 @@
+import { Icon } from '../shared/ui/Icon';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Reminder, ReminderRequest } from '../../preload/caselite-api';
 import ReminderEditor, { attemptLabel, reminderCoverage } from './ReminderEditor';
 import { confirmsReminder } from './reminder-state';
-import { Icon } from './Workspace';
+
 export default function ReminderInbox({
   onOpen,
   onBlocked,

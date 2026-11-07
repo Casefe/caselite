@@ -60,10 +60,8 @@ vi.mock('./ui/TaskInspector', () => ({
     </>
   ),
 }));
-vi.mock('./ui/SettingsView', async () => {
-  const React = await import('react');
+vi.mock('./ui/SettingsView', () => {
   return {
-    ModelSettingsNavigation: React.createContext(() => {}),
     default: ({ onBack }: { onBack(): void }) => <button onClick={onBack}>关闭设置</button>,
   };
 });

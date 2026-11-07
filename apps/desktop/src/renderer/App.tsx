@@ -1,3 +1,4 @@
+import { Icon } from './shared/ui/Icon';
 import FinanceView from './finance/FinanceView';
 import TaskTags from './ui/TaskTags';
 import ReminderEditor from './ui/ReminderEditor';
@@ -8,14 +9,15 @@ import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 import type { Matter, Task, TaskRequest, TaskResponse } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
-import { WorkspaceShell, Icon, type WorkspaceView } from './ui/Workspace';
+import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './projects/ProjectCatalog';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
 import { taskStatusNames } from './ui/task-status';
 import { taskPriorityNames } from './ui/task-priority';
 
-import SettingsView, { ModelSettingsNavigation, type SettingsSection } from './ui/SettingsView';
+import SettingsView, { type SettingsSection } from './ui/SettingsView';
+import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
 import { AppearanceProvider } from './ui/Appearance';
 import RecordList, { initialTaskListState } from './ui/RecordList';
 import AgentHome from './ui/AgentHome';

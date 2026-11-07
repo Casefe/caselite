@@ -1,6 +1,6 @@
+import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import ProjectFields, { projectValues, validProject, type ProjectValues } from './ProjectFields';
-import { Icon } from '../ui/Workspace';
 
 export default function ProjectCreateDialog({
   pending,

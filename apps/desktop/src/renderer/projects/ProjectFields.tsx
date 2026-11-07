@@ -1,5 +1,6 @@
+import { Icon } from '../shared/ui/Icon';
 import { useId, useRef, useState, type ReactNode } from 'react';
-import { Icon } from '../ui/Workspace';
+
 import type { Matter } from '../../preload/caselite-api';
 type ProjectAttributes = NonNullable<Matter['attributes']>;
 type ProjectProfessionalFields = NonNullable<ProjectAttributes['professional_fields']>;

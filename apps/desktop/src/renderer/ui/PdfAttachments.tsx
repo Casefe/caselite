@@ -1,3 +1,4 @@
+import { Icon } from '../shared/ui/Icon';
 import {
   lazy,
   Suspense,
@@ -11,7 +12,7 @@ import {
   type CSSProperties,
 } from 'react';
 import type { MaterialController } from './useMaterials';
-import { Icon } from './Workspace';
+
 const PdfReader = lazy(() => import('./PdfReader'));
 export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | null {
   if (!/\.pdf$/i.test(file.name)) return '当前仅支持 PDF，请选择 PDF 文件。';

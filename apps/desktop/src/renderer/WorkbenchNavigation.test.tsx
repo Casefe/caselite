@@ -4,7 +4,7 @@ import { useContext } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest } from '../preload/caselite-api';
 import App from './App';
-import { ModelSettingsNavigation } from './ui/SettingsView';
+import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
 vi.mock('@tiptap/react', () => ({ useEditor: () => null }));
 vi.mock('./ui/Appearance', () => ({
   AppearanceProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -64,10 +64,8 @@ vi.mock('./ui/TaskInspector', () => ({
     </>
   ),
 }));
-vi.mock('./ui/SettingsView', async () => {
-  const React = await import('react');
+vi.mock('./ui/SettingsView', () => {
   return {
-    ModelSettingsNavigation: React.createContext(() => {}),
     default: ({ onBack, section }: { onBack(): void; section: string }) => (
       <>
         <h2>{section}</h2>

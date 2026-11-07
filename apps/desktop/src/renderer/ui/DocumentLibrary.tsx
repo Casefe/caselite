@@ -1,6 +1,7 @@
+import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
 import type { CatalogDocument } from '../../preload/caselite-api';
-import { Icon } from './Workspace';
+
 import DocumentInspector from './DocumentInspector';
 import { useCatalog, catalogMutation } from './useCatalog';
 export default function DocumentLibrary({

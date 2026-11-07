@@ -1,7 +1,7 @@
+import { Icon } from '../shared/ui/Icon';
 import type { CatalogDocument, Matter } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import TaskTags from './TaskTags';
-import { Icon } from './Workspace';
 
 export default function DocumentInspector({
   document,

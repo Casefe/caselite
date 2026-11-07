@@ -1,6 +1,7 @@
+import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
-import { Icon, TaskTable } from './Workspace';
+import { TaskTable } from './Workspace';
 import TaskInspector from './TaskInspector';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';

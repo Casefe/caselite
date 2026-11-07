@@ -1,3 +1,4 @@
+import { Icon } from '../shared/ui/Icon';
 import { useMaterials } from './useMaterials';
 import type { MaterialPreview } from '../../preload/caselite-api';
 import PdfAttachments from './PdfAttachments';
@@ -25,8 +26,8 @@ import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import { Icon } from './Workspace';
-import { ModelSettingsNavigation } from './SettingsView';
+
+import { ModelSettingsNavigation } from '../shared/navigation/ModelSettingsNavigation';
 import { agentModelLabel, agentModels, agentProviderFor } from './model-labels';
 import { projectStatuses, projectTypes } from '../projects/ProjectFields';
 import type { AgentResponse } from '../../preload/caselite-api';

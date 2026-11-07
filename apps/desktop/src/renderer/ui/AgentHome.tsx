@@ -1,7 +1,8 @@
+import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 import type { AgentRun, Task } from '../../preload/caselite-api';
-import { Icon } from './Workspace';
+
 import AgentPanel from './AgentPanel';
 import BrandLogo from './BrandLogo';
 import { useCatalog } from './useCatalog';

@@ -1,6 +1,6 @@
+import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
 import type { AgentRun, Task } from '../../preload/caselite-api';
-import { Icon } from './Workspace';
 
 export default function AgentHistory({
   tasks,

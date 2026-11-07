@@ -1,3 +1,4 @@
+import { Icon } from '../shared/ui/Icon';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses } from './ProjectFields';
@@ -5,7 +6,7 @@ import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import { DraftEditor, type RichDraft } from '../editors/RichEditor';
-import { Icon } from '../ui/Workspace';
+
 import SidebarAgent from '../ui/SidebarAgent';
 import { useCatalog, catalogMutation } from '../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';

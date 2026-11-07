@@ -1,10 +1,10 @@
-import { createContext, useEffect, useRef, useState } from 'react';
+import { Icon } from '../shared/ui/Icon';
+import { useEffect, useRef, useState } from 'react';
 import { agentProviderFor, agentModelLabel, agentModels, providerNames } from './model-labels';
 import type { AgentModel, AgentProvider, AgentRequest } from '../../preload/caselite-api';
-import { Icon } from './Workspace';
+
 import { ThemeSetting } from './Appearance';
 
-export const ModelSettingsNavigation = createContext<(() => void) | null>(null);
 export const settingsGroups = [
   {
     title: '个人',
