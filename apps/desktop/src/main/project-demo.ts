@@ -869,8 +869,15 @@ export async function runProjectDemo(
       await wait("document.querySelector('.task-inspector .inspector-disclosure[open]')");
       await scrollAndCheck('.task-inspector .task-tag-toggle');
       await inspectComposer('.task-inspector .sidebar-agent .assistant-panel--compact');
+      // 项目已拥有独立scope；任务不能继承项目草稿，同任务的文档侧栏仍复用任务草稿。
+      await wait(`document.querySelector('.task-inspector ${composer}')?.value === ''`);
+      await evaluate(`(() => {
+        const input = document.querySelector('.task-inspector ${composer}');
+        input.focus();
+        document.execCommand('insertText', false, '合成任务草稿，不发送');
+      })()`);
       await wait(
-        `document.querySelector('.task-inspector ${composer}')?.value.includes('合成草稿，不发送')`,
+        `document.querySelector('.task-inspector ${composer}')?.value === '合成任务草稿，不发送'`,
       );
       await captureRenderer('inspector-return-original-task.png');
       await click('button[aria-label=返回来源项目]');
@@ -880,7 +887,7 @@ export async function runProjectDemo(
       await click(`[data-document-id="${seed.task.document_id}"]`);
       await inspectComposer('[data-collection=documents] .sidebar-agent .assistant-panel--compact');
       await wait(
-        `document.querySelector('[data-collection=documents] ${composer}')?.value.includes('合成草稿，不发送')`,
+        `document.querySelector('[data-collection=documents] ${composer}')?.value === '合成任务草稿，不发送'`,
       );
       await captureRenderer('inspector-document-ai.png');
       await click('[data-nav=home]');
@@ -1359,7 +1366,7 @@ export async function runProjectDemo(
     const professional = process.env.CASELITE_PROJECT_PROFESSIONAL === '1';
     const assertPropertyRows = async (scope: string) => {
       const layout = await evaluate(
-        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:(()=>{const s=getComputedStyle(panel.querySelector('.project-professional-card'));return s.borderTopWidth==='1px'&&s.borderRightWidth==='0px'&&s.borderBottomWidth==='0px'&&s.borderLeftWidth==='0px'&&s.boxShadow==='none';})(),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
+        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:(()=>{const card=panel.querySelector('.project-professional-card');const s=getComputedStyle(card);const divider=card.closest('.project-catalog')?'1px':'0px';return s.borderTopWidth===divider&&s.borderRightWidth==='0px'&&s.borderBottomWidth==='0px'&&s.borderLeftWidth==='0px'&&s.boxShadow==='none';})(),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
       );
       if (
         layout.rows < 7 ||
