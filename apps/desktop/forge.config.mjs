@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 import WebpackPlugin from '@electron-forge/plugin-webpack';
 import AutoUnpackNativesPlugin from '@electron-forge/plugin-auto-unpack-natives';
 import FusesPlugin from '@electron-forge/plugin-fuses';
@@ -15,13 +17,54 @@ const electronArtifactChecksums = {
 };
 
 export default {
+  // 文件提供商目录可能重建 FinderInfo；可选择本地构建目录，严格签名校验保持开启。
+  outDir: process.env.CASELITE_FORGE_OUT_DIR || undefined,
   packagerConfig: {
+    appBundleId: 'com.caselite.desktop',
     asar: true,
     download: {
       checksums: electronArtifactChecksums,
     },
     executableName: 'CaseLite',
-    extraResource: [localPath('../../packages/local-db/migrations')],
+    icon: localPath('./assets/branding/caselite.icns'),
+    extraResource: [
+      localPath('../../packages/local-db/migrations'),
+      localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
+      localPath('../../artifacts/native/caselite-vision'),
+    ],
+  },
+  hooks: {
+    generateAssets: async () => {
+      const output = localPath('../../artifacts/native');
+      execFileSync('/bin/mkdir', ['-p', output]);
+      execFileSync('/usr/bin/xcrun', [
+        'swiftc',
+        '-O',
+        localPath('./native/VisionOCR.swift'),
+        '-o',
+        join(output, 'caselite-vision'),
+      ]);
+    },
+    postPackage: async (_config, result) => {
+      // 内部安装构建须绑定实际Bundle身份/资源，避免原Electron签名令Keychain加密失败。
+      // 这只是本机adhoc签名；公开分发仍须独立Developer ID签名与公证验收。
+      if (result.platform === 'darwin')
+        for (const output of result.outputPaths) {
+          const bundle = join(output, 'CaseLite.app');
+          // 只清理刚生成的应用包元数据，不触及源码、用户资料或签名校验。
+          execFileSync('/usr/bin/xattr', ['-cr', bundle]);
+          execFileSync('/usr/bin/codesign', [
+            '--force',
+            '--deep',
+            '--sign',
+            '-',
+            '--identifier',
+            'com.caselite.desktop',
+            bundle,
+          ]);
+          execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);
+        }
+    },
   },
   makers: [{ name: '@electron-forge/maker-zip', platforms: ['darwin'] }],
   plugins: [
@@ -40,6 +83,11 @@ export default {
         config: localPath('./webpack.renderer.config.mjs'),
         nodeIntegration: false,
         entryPoints: [
+          {
+            name: 'pdf_worker',
+            html: localPath('./src/renderer/pdf-worker.html'),
+            js: localPath('./src/renderer/pdf-worker.ts'),
+          },
           {
             name: 'main_window',
             html: localPath('./src/renderer/index.html'),

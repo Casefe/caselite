@@ -7,8 +7,10 @@
     "migration:generate": "drizzle-kit generate --config=drizzle.config.ts"
   },
   "dependencies": {
+    "@caselite/contracts": "workspace:*",
     "better-sqlite3": "13.0.3",
-    "drizzle-orm": "0.45.4"
+    "drizzle-orm": "0.45.4",
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",

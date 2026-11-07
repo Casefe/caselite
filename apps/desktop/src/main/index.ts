@@ -1,11 +1,56 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
-import { randomUUID } from 'node:crypto';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { runReminderDemo } from './reminder-demo';
+import { startReminderScheduler } from './adapters/reminder-scheduler';
+import { createReminderApplication } from '@caselite/application';
+import { registerReminderIpc } from './ipc/register-task-ipc';
+import { createRealDemoRuntime, runRealAgentDemo } from './agent-real-demo';
+import {
+  realDemoId,
+  realDemoPdfHash,
+  realDemoResumeId,
+  inspectZeroDispatchResume,
+} from './agent-real-policy';
+import { runMaterialDemo } from './material-demo';
+import { createMaterialApplication } from '@caselite/application';
+import { createMaterialFiles } from './adapters/material-files';
+import { createPdfProcessor } from './adapters/pdf-processor';
+import { registerMaterialIpc } from './ipc/register-material-ipc';
+import { runTaskDemo } from './task-demo';
+import { runProjectDemo } from './project-demo';
+import { runTaskStatusDemo } from './task-status-demo';
+import { runAppearanceDemo } from './appearance-demo';
+import { runAgentDemo, runAgentHistoryProbe, syntheticAgentStream } from './agent-demo';
+import { createCatalogApplication } from '@caselite/application';
+import { createAppearanceApplication } from '@caselite/application';
+import { createAppearancePreferences } from './adapters/appearance-preferences';
+import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { createAgentApplication } from '@caselite/application';
+import { createPiRuntime } from './adapters/pi-runtime';
+import {
+  runCredentialPreflight,
+  readOnlyDemoCredentials,
+  credentialFingerprints,
+  credentialStatus,
+} from './credential-preflight';
+import { createAgentCredentials } from './adapters/agent-credentials';
+import { registerAgentIpc } from './ipc/register-agent-ipc';
+import { registerCatalogIpc, registerTaskIpc } from './ipc/register-task-ipc';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
+import { randomUUID, createHash } from 'node:crypto';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 
-import { createOfflineProbeApplication, createSpikeApplication } from '@caselite/application';
-import { openOfflineProbePort, openToolchainProbe, toolchainProbe } from '@caselite/local-db';
+import {
+  createOfflineProbeApplication,
+  createSpikeApplication,
+  createTaskApplication,
+} from '@caselite/application';
+import {
+  openOfflineProbePort,
+  openToolchainProbe,
+  toolchainProbe,
+  openTaskStore,
+} from '@caselite/local-db';
 
 import { isTrustedDesktopSender, registerApplicationIpc } from './ipc/register-application-ipc';
 
@@ -19,9 +64,12 @@ async function createWindow(
   show = true,
   pdfWorkerFault?: 'missing' | 'mismatch',
 ): Promise<BrowserWindow> {
+  // 以1080p工作区为设计基准；小屏按可用桌面缩放窗口尺寸，不缩放正文或降低像素清晰度。
+  const available = screen.getPrimaryDisplay().workAreaSize;
   const window = new BrowserWindow({
-    width: 960,
-    height: 640,
+    width: Math.min(1920, available.width),
+    height: Math.min(1080, Math.max(480, available.height - 32)),
+    useContentSize: true,
     minWidth: 640,
     minHeight: 480,
     title: 'CaseLite',
@@ -42,6 +90,10 @@ async function createWindow(
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
   const entry = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
+  if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
+    entry.searchParams.set('engineering', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'agent-preview') entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
   if (show && !window.isDestroyed()) window.show();
@@ -358,7 +410,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 1
+      result.value?.migration_count !== 15
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -448,6 +500,125 @@ function runLocalDatabaseProbe(): void {
   }
 }
 
+const defaultCredentialRoot = app.getPath('userData');
+let taskDemoRoot: string | undefined;
+let taskDemoEvidenceRoot: string | undefined;
+let realResumeAudit: ReturnType<typeof inspectZeroDispatchResume> | undefined;
+const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
+if (taskDemoPhase) {
+  if (
+    ![
+      'credential-preflight',
+      'credential-preflight-ui',
+      'task-status-write',
+      'task-status-read',
+      'reminder-write',
+      'reminder-read',
+      'reminder-preview',
+      'real-agent',
+      'real-agent-dry',
+      'write',
+      'read',
+      'materials',
+      'materials-read',
+      'crash',
+      'preview',
+      'project-write',
+      'project-read',
+      'project-edit',
+      'project-restore',
+      'project-promote',
+      'project-promote-read',
+      'project-files',
+      'project-files-read',
+      'project-activity',
+      'project-activity-read',
+      'agent',
+      'agent-preview',
+      'agent-crash',
+      'agent-read',
+      'agent-credential-read',
+      'agent-crash-synthetic',
+      'agent-read-synthetic',
+      'appearance-write',
+      'appearance-read',
+    ].includes(taskDemoPhase)
+  )
+    throw new Error('Invalid demo phase');
+  const candidate = realpathSync(process.env.CASELITE_TASK_DEMO_DIR ?? '');
+  if (
+    !candidate.startsWith(realpathSync(tmpdir()) + sep) ||
+    !basename(candidate).startsWith('caselite-task-demo-')
+  )
+    throw new Error('Demo directory must be isolated');
+  if (
+    taskDemoPhase === 'real-agent' &&
+    (candidate !== join(realpathSync(tmpdir()), 'caselite-task-demo-dev1650-real-20261106') ||
+      process.env.CASELITE_REAL_AGENT_APPROVAL !== realDemoId)
+  )
+    throw new Error('Real validation requires the fixed approved run');
+  taskDemoRoot = candidate;
+  taskDemoEvidenceRoot = candidate;
+  const resume = process.env.CASELITE_REAL_AGENT_RESUME;
+  if (
+    resume !== undefined &&
+    (resume !== realDemoResumeId || !taskDemoPhase.startsWith('real-agent'))
+  )
+    throw new Error('Invalid resume mode');
+  if (taskDemoPhase === 'real-agent' && !resume)
+    throw new Error('Real validation requires reviewed zero-dispatch resume');
+  if (resume) {
+    realResumeAudit = inspectZeroDispatchResume(candidate, taskDemoPhase === 'real-agent-dry');
+    taskDemoEvidenceRoot = realpathSync(join(candidate, realDemoResumeId));
+    if (taskDemoEvidenceRoot !== join(candidate, realDemoResumeId))
+      throw new Error('Invalid resume evidence directory');
+  }
+  if (taskDemoPhase.startsWith('real-agent'))
+    writeFileSync(
+      join(taskDemoEvidenceRoot!, 'credential-origin.json'),
+      JSON.stringify(
+        {
+          defaultUserData: defaultCredentialRoot,
+          appName: app.getName(),
+          isolatedUserData: join(candidate, 'userData'),
+          credentialAccess:
+            taskDemoPhase === 'real-agent'
+              ? 'read-only existing Main Owner'
+              : 'MOCK_ONLY no real credential access',
+        },
+        null,
+        2,
+      ),
+    );
+  const data = join(candidate, 'userData');
+  const sessionData = join(candidate, 'sessionData');
+  mkdirSync(data, { recursive: true });
+  mkdirSync(sessionData, { recursive: true });
+  app.setPath('userData', data);
+  app.setPath('sessionData', sessionData);
+}
+
+// 产品工作区只允许一个活进程；临时离线探针使用独立数据，不持有产品锁。
+const integrationPhase = process.env.CASELITE_INTEGRATION_PHASE;
+const integrationProbe = integrationPhase === 'write' || integrationPhase === 'read';
+if (integrationPhase !== undefined && !integrationProbe) app.exit(1);
+const isolatedProbe =
+  process.env.CASELITE_DB_PROBE === '1' ||
+  process.env.CASELITE_PDF_PROBE === '1' ||
+  integrationProbe;
+const ownsWorkspace = isolatedProbe || app.requestSingleInstanceLock();
+if (!ownsWorkspace) app.exit(0);
+app.on('second-instance', () => {
+  const existing = BrowserWindow.getAllWindows().find((window) =>
+    window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),
+  );
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+  }
+});
+
 app
   .whenReady()
   .then(async () => {
@@ -470,21 +641,397 @@ app
       app.exit(0);
       return;
     }
+    if (taskDemoRoot && taskDemoPhase === 'credential-preflight') {
+      // 只读正式凭据；在任何工作区/Runtime初始化前退出，不消费1650费用账本。
+      const result = await runCredentialPreflight(defaultCredentialRoot, taskDemoRoot);
+      app.exit(result.configured ? 0 : 2);
+      return;
+    }
     registerIpcSpike();
+    const taskRoot = app.getPath('userData');
+    mkdirSync(taskRoot, { recursive: true });
+    registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
+    const taskStore = openTaskStore(
+      join(taskRoot, 'caselite.sqlite'),
+      app.isPackaged
+        ? join(process.resourcesPath, 'migrations')
+        : resolve(process.cwd(), '../../packages/local-db/migrations'),
+    );
+    if (
+      realResumeAudit &&
+      (taskStore.agentHistory.load().length || taskStore.materials.list('home').length)
+    )
+      throw new Error('Original zero-dispatch database is not empty');
+    const tasks = createTaskApplication(taskStore);
+    registerTaskIpc(tasks);
+    const reminders = createReminderApplication(taskStore.reminders);
+    const reminderScheduler = startReminderScheduler(
+      reminders,
+      createHash('sha256').update(taskRoot).digest('hex').slice(0, 24),
+    );
+    registerReminderIpc(reminders, reminderScheduler.tick);
+    app.on('will-quit', reminderScheduler.stop);
+    registerCatalogIpc(createCatalogApplication(taskStore.catalog));
+    const materials = createMaterialApplication({
+      store: taskStore.materials,
+      files: createMaterialFiles(join(taskRoot, 'materials')),
+      processor: createPdfProcessor(),
+      id: randomUUID,
+      hash: (text) => createHash('sha256').update(text).digest('hex'),
+      taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+      createTask(token, name) {
+        const result = tasks.execute({
+          protocol_version: 1,
+          operation: 'create',
+          request_id: randomUUID(),
+          idempotency_key: token,
+          title: name.replace(/\.pdf$/i, '').slice(0, 200) || '材料分析',
+          objective: '',
+        });
+        if (!result.ok) throw new Error('Cannot create material task');
+        return result.tasks[0].id;
+      },
+    });
+    registerMaterialIpc(materials);
+    app.on('will-quit', () => materials.close());
+    // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
+    let materialDemoModel: 'gpt-4.1-mini' | 'deepseek-flash' | 'deepseek-v4-pro' = 'gpt-4.1-mini';
+    const materialDemoKeys = new Set(['openai', 'deepseek']);
+    const credentialUi = taskDemoPhase === 'credential-preflight-ui';
+    let credentialHttpAttempts = 0;
+    let credentialRuntimeAttempts = 0;
+    let credentialRefreshes = 0;
+    const credentialBefore = credentialUi ? credentialFingerprints(defaultCredentialRoot) : null;
+    if (credentialUi)
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+        const http = /^https?:/i.test(details.url);
+        if (http) credentialHttpAttempts++;
+        callback({ cancel: http });
+      });
+    const credentialStartedAt = Date.now();
+    const credentialStages: {
+      stage: string;
+      state: string;
+      failure?: string;
+      elapsedMs: number;
+    }[] = [];
+    const recordCredentialStage =
+      taskDemoRoot &&
+      (taskDemoPhase?.startsWith('agent') ||
+        taskDemoPhase?.startsWith('real-agent') ||
+        credentialUi)
+        ? (stage: string, state: string, failure?: string) => {
+            credentialStages.push({
+              stage,
+              state,
+              ...(failure ? { failure } : {}),
+              elapsedMs: Date.now() - credentialStartedAt,
+            });
+            writeFileSync(
+              join(taskDemoEvidenceRoot ?? taskDemoRoot!, 'credential-initialization.json'),
+              JSON.stringify(credentialStages, null, 2),
+            );
+          }
+        : undefined;
+    const baseAgentCredentials =
+      taskDemoPhase?.startsWith('reminder') ||
+      taskDemoPhase?.startsWith('project-') ||
+      taskDemoPhase?.startsWith('materials') ||
+      taskDemoPhase === 'real-agent-dry' ||
+      taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase === 'agent-crash-synthetic' ||
+      taskDemoPhase === 'agent-read-synthetic'
+        ? {
+            get: (provider = 'openai') =>
+              materialDemoKeys.has(provider) ? 'synthetic-material-demo-only' : undefined,
+            set: async (_key: string, provider = 'openai') => {
+              materialDemoKeys.add(provider);
+            },
+            clear: async (provider = 'openai') => {
+              materialDemoKeys.delete(provider);
+            },
+            getDefaultModel: () =>
+              taskDemoPhase === 'real-agent-dry' ? ('deepseek-flash' as const) : materialDemoModel,
+            setDefaultModel: async (model: typeof materialDemoModel) => {
+              materialDemoModel = model;
+            },
+          }
+        : taskDemoPhase === 'real-agent' || credentialUi
+          ? readOnlyDemoCredentials(
+              await createAgentCredentials(defaultCredentialRoot, recordCredentialStage),
+            )
+          : await createAgentCredentials(taskRoot, recordCredentialStage);
+    const recordCredentialUi = () => {
+      if (!credentialUi || !taskDemoRoot) return;
+      const after = credentialFingerprints(defaultCredentialRoot);
+      writeFileSync(
+        join(taskDemoRoot, 'credential-ui-state.json'),
+        JSON.stringify(
+          {
+            ...credentialStatus(baseAgentCredentials),
+            before: credentialBefore,
+            after,
+            unchanged: JSON.stringify(credentialBefore) === JSON.stringify(after),
+            refreshes: credentialRefreshes,
+            runtimeAttempts: credentialRuntimeAttempts,
+            providerDispatches: 0,
+            httpAttempts: credentialHttpAttempts,
+            defaultUserData: defaultCredentialRoot,
+            isolatedUserData: taskRoot,
+            elapsedMs: Date.now() - credentialStartedAt,
+          },
+          null,
+          2,
+        ),
+      );
+    };
+    const agentCredentials = credentialUi
+      ? {
+          ...baseAgentCredentials,
+          async refresh() {
+            if (!baseAgentCredentials.refresh) throw new Error('Credential refresh unavailable');
+            await baseAgentCredentials.refresh();
+            credentialRefreshes++;
+            recordCredentialUi();
+          },
+        }
+      : baseAgentCredentials;
+    if (taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
+      await agentCredentials.set('sk-synthetic-openai');
+    let historyReady = true;
+    try {
+      taskStore.agentHistory.recoverInterrupted();
+    } catch {
+      historyReady = false;
+    }
 
+    const agent = createAgentApplication({
+      credentials: agentCredentials,
+      copyOutput: (text) => clipboard.writeText(text),
+      resolveContext: materials.resolveContext,
+      history: {
+        ...taskStore.agentHistory,
+        load() {
+          if (!historyReady) throw new Error('History unavailable');
+          return taskStore.agentHistory.load();
+        },
+      },
+      runtime:
+        taskDemoRoot && taskDemoPhase?.startsWith('real-agent')
+          ? createRealDemoRuntime({
+              directory: taskDemoEvidenceRoot!,
+              budgetDirectory: taskDemoRoot,
+              resumeAudit: realResumeAudit,
+              model: agentCredentials.getDefaultModel(),
+              dry: taskDemoPhase === 'real-agent-dry',
+              runs: () => taskStore.agentHistory.load(),
+              verifySource(run) {
+                const sources = taskStore.materials.list('home');
+                const source = sources[0];
+                const preview = run.context_id
+                  ? taskStore.materials.preview(run.context_id, 'home')
+                  : undefined;
+                if (preview)
+                  writeFileSync(
+                    join(taskDemoEvidenceRoot!, 'selected-input.json'),
+                    JSON.stringify(
+                      { runId: run.id, contextId: run.context_id, source, preview },
+                      null,
+                      2,
+                    ),
+                  );
+                const attachment = run.attachments?.[0];
+                return (
+                  sources.length === 1 &&
+                  source.sha256 === realDemoPdfHash &&
+                  source.page_count === 1 &&
+                  source.pages.length === 1 &&
+                  source.status === 'ready' &&
+                  preview?.selections.length === 1 &&
+                  preview.selections[0].source_id === source.id &&
+                  preview.selections[0].derivation_id === source.derivation_id &&
+                  preview.sha256 === createHash('sha256').update(preview.payload).digest('hex') &&
+                  run.scope === 'home' &&
+                  Boolean(run.context_id) &&
+                  run.attachments?.length === 1 &&
+                  attachment?.source_id === source.id &&
+                  attachment.task_id === source.task_id &&
+                  attachment.pages.length === 1 &&
+                  attachment.pages[0] === 1
+                );
+              },
+            })
+          : createPiRuntime(
+              credentialUi ||
+                taskDemoPhase?.startsWith('reminder') ||
+                taskDemoPhase?.startsWith('project-') ||
+                taskDemoPhase === 'task-status-write' ||
+                taskDemoPhase === 'task-status-read' ||
+                taskDemoPhase === 'agent-read' ||
+                taskDemoPhase === 'agent-credential-read' ||
+                taskDemoPhase === 'agent-read-synthetic' ||
+                taskDemoPhase === 'materials-read'
+                ? () => {
+                    if (credentialUi) {
+                      credentialRuntimeAttempts++;
+                      recordCredentialUi();
+                    }
+                    writeFileSync(
+                      join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                      'unexpected dispatch',
+                    );
+                    throw new Error('Unexpected restart dispatch');
+                  }
+                : taskDemoPhase === 'materials'
+                  ? (model, context, options) => {
+                      writeFileSync(
+                        join(taskDemoRoot!, 'material-pi-context.json'),
+                        JSON.stringify(context, null, 2),
+                      );
+                      return syntheticAgentStream(model, context, options);
+                    }
+                  : taskDemoPhase?.startsWith('agent')
+                    ? syntheticAgentStream
+                    : undefined,
+            ),
+      taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+    });
+    registerAgentIpc(agent);
+    app.on('will-quit', () => agent.release());
+    if (credentialUi) {
+      recordCredentialUi();
+      const window = await createWindow();
+      window.setTitle('CaseLite · 系统凭据重读验收');
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase?.startsWith('reminder')) {
+      await runReminderDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      if (taskDemoPhase !== 'reminder-preview') app.exit(0);
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase?.startsWith('real-agent')) {
+      if (taskDemoPhase === 'real-agent-dry')
+        session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+          callback({ cancel: /^https?:/i.test(details.url) }),
+        );
+      await runRealAgentDemo(
+        () => createWindow(),
+        taskDemoEvidenceRoot!,
+        taskDemoPhase === 'real-agent-dry',
+        taskDemoRoot,
+      );
+      if (taskDemoPhase === 'real-agent-dry') app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'task-status-write' || taskDemoPhase === 'task-status-read')
+    ) {
+      await runTaskStatusDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
+    if (taskDemoPhase === 'agent-preview')
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+    if (taskDemoRoot && taskDemoPhase?.startsWith('materials')) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      await runMaterialDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      [
+        'agent-crash',
+        'agent-read',
+        'agent-credential-read',
+        'agent-crash-synthetic',
+        'agent-read-synthetic',
+      ].includes(taskDemoPhase ?? '')
+    ) {
+      await runAgentHistoryProbe(
+        () => createWindow(),
+        taskDemoRoot,
+        taskDemoPhase!.startsWith('agent-crash') ? 'agent-crash' : taskDemoPhase!,
+      );
+      app.exit(0);
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase === 'agent') {
+      await runAgentDemo(() => createWindow(), taskDemoRoot);
+      app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'appearance-write' || taskDemoPhase === 'appearance-read')
+    ) {
+      await runAppearanceDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
+    app.on('will-quit', () => taskStore.close());
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'project-write' ||
+        taskDemoPhase === 'project-read' ||
+        taskDemoPhase === 'project-edit' ||
+        taskDemoPhase === 'project-restore' ||
+        taskDemoPhase === 'project-promote' ||
+        taskDemoPhase === 'project-files' ||
+        taskDemoPhase === 'project-files-read' ||
+        taskDemoPhase === 'project-activity' ||
+        taskDemoPhase === 'project-activity-read' ||
+        taskDemoPhase === 'project-promote-read')
+    ) {
+      await runProjectDemo(
+        () => createWindow(process.env.CASELITE_PROJECT_DEMO_BACKGROUND !== '1'),
+        taskDemoRoot,
+        taskDemoPhase,
+      );
+      app.exit(0);
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      taskDemoPhase &&
+      taskDemoPhase !== 'preview' &&
+      taskDemoPhase !== 'agent-preview'
+    ) {
+      await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
+
+    if (taskDemoPhase === 'preview') {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+    }
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (
+        !BrowserWindow.getAllWindows().some((window) =>
+          window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),
+        )
+      ) {
         void createWindow().catch(reportStartupFailure);
       }
     });
 
     await createWindow();
   })
-  .catch(() => {
+  .catch((error: unknown) => {
+    if (taskDemoRoot)
+      writeFileSync(join(taskDemoEvidenceRoot ?? taskDemoRoot, 'diagnostic.txt'), String(error));
     if (
       process.env.CASELITE_DB_PROBE === '1' ||
       process.env.CASELITE_PDF_PROBE === '1' ||
-      process.env.CASELITE_INTEGRATION_PHASE
+      process.env.CASELITE_INTEGRATION_PHASE ||
+      process.env.CASELITE_TASK_DEMO
     ) {
       process.stderr.write('CaseLite packaged probe failed.\n');
       app.exit(1);

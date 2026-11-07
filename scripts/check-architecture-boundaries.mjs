@@ -3,6 +3,7 @@ import { builtinModules } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { imports, sourceFiles } from './lib/source-analysis.mjs';
+import { dependencyViolations, runtimeDependencyViolation } from './lib/dependency-admission.mjs';
 
 const builtins = new Set(builtinModules.map((name) => name.replace(/^node:/, '')));
 const packageName = (name) =>
@@ -23,6 +24,8 @@ export function boundaryViolation(file, specifier, target, typeOnly = false) {
     '@caselite/domain',
     '@caselite/local-db',
     '@caselite/files',
+    '@earendil-works/pi-agent-core',
+    '@earendil-works/pi-ai',
   ];
   if (renderer && (node || forbidden.includes(pkg) || (pkg === '@caselite/contracts' && !typeOnly)))
     return 'renderer cannot access privileged implementation';
@@ -105,6 +108,14 @@ export function analyzeArchitecture(root) {
   ]
     .filter((folder) => existsSync(resolve(root, folder, 'package.json')))
     .map((folder) => ({ folder, ...json(resolve(root, folder, 'package.json')) }));
+  const rootManifest = resolve(root, 'package.json');
+  if (!existsSync(rootManifest)) violations.push('root package.json is missing');
+  violations.push(
+    ...dependencyViolations([
+      ...(existsSync(rootManifest) ? [{ folder: '.', ...json(rootManifest) }] : []),
+      ...manifests,
+    ]),
+  );
   const workspaces = new Map(manifests.map((item) => [item.name, item]));
   const files = manifests.flatMap((item) =>
     existsSync(resolve(root, item.folder, 'src'))
@@ -150,6 +161,8 @@ export function analyzeArchitecture(root) {
         violations.push(`${name}: non-literal module loading requires review`);
         continue;
       }
+      const admission = runtimeDependencyViolation(owner, packageName(specifier));
+      if (admission) violations.push(`${name}: ${admission}`);
       const dependency = workspaces.get(packageName(specifier));
       let resolved;
       if (specifier.startsWith('.')) resolved = resolveSource(resolve(dirname(file), specifier));

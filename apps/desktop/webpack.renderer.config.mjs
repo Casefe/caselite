@@ -23,6 +23,10 @@ class PdfSpikeAssetsPlugin {
           const files = [
             [join(reactPdfRoot, 'dist/Page/TextLayer.css'), 'pdf-resources/TextLayer.css'],
             [localPath('./src/renderer/pdf-spike.css'), 'pdf-resources/spike.css'],
+            [localPath('./src/renderer/ui-design.css'), 'ui-design.css'],
+            [localPath('./src/renderer/materials.css'), 'materials.css'],
+            [localPath('./src/renderer/projects/project-catalog.css'), 'project-catalog.css'],
+            [localPath('./assets/branding/caselite-logo.png'), 'brand/caselite-logo.png'],
           ];
           for (const directory of ['cmaps', 'standard_fonts', 'wasm']) {
             for (const name of await readdir(join(pdfjsRoot, directory))) {

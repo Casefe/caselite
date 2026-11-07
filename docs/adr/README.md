@@ -19,5 +19,18 @@
 | [ADR-003](./ADR-003-structured-delta-and-yjs-document-state.md) | 架构方向已确认 | 结构化 Delta 与 Yjs 文档状态 | DEV-1570、P3 Issues |
 | [ADR-004](./ADR-004-pdf-worker-and-immutable-file-boundary.md) | 提议 | PDF Worker、附件与不可变版本 | DEV-1560、DEV-1568、DEV-1579 |
 | [ADR-005](./ADR-005-third-party-code-license-and-clean-room.md) | 已决定 | 第三方代码、许可证与 Clean-room | DEV-1559、DEV-1569 |
+| [ADR-006](./ADR-006-task-body-local-snapshots.md) | 首片实现候选 | 独立Task与本地成果正文 | 以实际测试/回执为准 |
+| [ADR-007](./ADR-007-editor-modes-and-task-description.md) | 提议 | 两种编辑器交互与任务说明富文本 | DEV-1732及当前消费者 |
+| [ADR-008](./ADR-008-assistant-ui-pi-agent.md) | 已实现增量 | assistant-ui 与 Pi Agent | DEV-1652，合成流演示 |
+| [ADR-009](./ADR-009-provider-model-selection.md) | 已决定（真实 API 待验证） | OpenAI/DeepSeek 独立凭据与显式默认模型 | DEV-1648，合成 HTTP 与打包设置回归 |
+
+| [ADR-010](./ADR-010-local-catalog-persistence.md) | 已实现增量 | 五页本地目录与Document/Matter持久化 | 空旧库迁移、原生CRUD与重启 |
+| [ADR-011](./ADR-011-local-agent-run-history.md) | 已实现增量（真实API另验） | Run本地登记、历史及中断恢复 | 原子登记、窗口/进程重开、零恢复派发 |
+| [ADR-012](./ADR-012-device-appearance-preference.md) | 提议 | 设备外观偏好与受控接口 | UI接收、独立复核及未来迁移 |
+| [ADR-013](./ADR-013-personal-daily-document.md) | 提议 | 个人每日 Document 与首页备忘录 | DEV-1689、迁移与恢复 Spike |
+
+| [ADR-014](./ADR-014-local-pdf-materials-and-ocr.md) | 已实现增量（OCR质量未验收） | 本地 PDF 导入、版本化派生与选材快照 | DEV-1733、1609、1649、1651 |
+
+| [ADR-015](./ADR-015-confirmed-local-task-reminders.md) | 提议 | 单Task人工确认时区、本机提醒与保守去重 | DEV-1686、原生通知/重启及人工接收 |
 
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。

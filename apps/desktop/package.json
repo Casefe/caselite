@@ -12,13 +12,22 @@
     "package": "electron-forge package --platform=darwin --arch=arm64"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.15.32",
+    "@assistant-ui/react-markdown": "0.14.24",
     "@caselite/application": "workspace:*",
     "@caselite/contracts": "workspace:*",
     "@caselite/local-db": "workspace:*",
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@tiptap/extension-collaboration": "3.32.3",
+    "@tiptap/pm": "3.32.3",
+    "@tiptap/react": "3.32.3",
+    "@tiptap/starter-kit": "3.32.3",
     "pdfjs-dist": "6.3.289",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-pdf": "11.0.0"
+    "react-pdf": "11.0.0",
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",

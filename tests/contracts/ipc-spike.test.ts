@@ -1,5 +1,6 @@
 import {
   IPC_CHANNELS,
+  APPEARANCE_CHANNEL,
   IPC_PROTOCOL_VERSION,
   createAnchorRequestSchema,
   createMatterRequestSchema,
@@ -102,7 +103,34 @@ describe('typed preload to main IPC Spike', () => {
       },
     }));
 
-    expect(Object.keys(api).sort()).toEqual(['createAnchor', 'createMatter', 'offlineProbe']);
+    expect(Object.keys(api).sort()).toEqual([
+      'agent',
+      'appearance',
+      'catalog',
+      'createAnchor',
+      'createMatter',
+      'dropPdf',
+      'material',
+      'offlineProbe',
+      'pickPdf',
+      'reminder',
+      'task',
+    ]);
+  });
+
+  it('routes appearance only through its fixed channel and rejects malformed responses', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      expect(channel).toBe(APPEARANCE_CHANNEL);
+      return { ok: true, theme: 'unexpected' };
+    });
+    const api = createCaseLitePreloadApi(invoke);
+    await expect(api.appearance({ protocol_version: 1, operation: 'read' })).resolves.toMatchObject(
+      { ok: false },
+    );
+    expect(invoke).toHaveBeenCalledWith(APPEARANCE_CHANNEL, {
+      protocol_version: 1,
+      operation: 'read',
+    });
   });
 
   it('uses the fixed channel and returns a validated application result', async () => {

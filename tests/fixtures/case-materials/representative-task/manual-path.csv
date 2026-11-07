@@ -1,0 +1,9 @@
+step,action,input,method,expected_or_observed,evidence_level,human_minutes,human_operator
+M01,核对允许样本、hash和版本,选材清单,独立资料核对,已实际计算hash，现有6份manifest未改；不是产品导入,ASSISTANT_DESK_CHECK,,
+M02,打开文字合同并定位主体、金额、日期和付款/验收条款,TEXT-V1物理第1页,PDFKit文本与渲染图核对,原文与G01—G05对应；律师接收待确认,ASSISTANT_DESK_CHECK,,
+M03,打开扫描补件，人工逐项阅读，不用转录源替代OCR测试,SCAN-SUP-V1物理第1页,渲染图核对,图像可读；抽取文本为空；G06—G09预期已列；产品OCR未运行,ASSISTANT_DESK_CHECK,,
+M04,对照金额及陈述来源，列缺件和未知事实,两份选中材料,人工基线方法,"120,000与100,000并列；发送不等于收悉；缺件不编造",ASSISTANT_PREPARED_PENDING_HUMAN,,
+M05,准备内部摘要和沟通初稿,expected-draft.md,助手制作参考稿,逐句附物理页/条款位置，保留矛盾和不确定,ASSISTANT_PREPARED_PENDING_HUMAN,,
+M06,在CaseLite中人工输入、保存、退出重启并重开,TASK-A＋Document/body,D1产品路径,同Task/Document/修订；未实装不能记通过,NOT_RUN,,
+M07,在CaseLite中比较人工路径与真实BYOK原始候选、记录修正与耗时,G01—G10与实际请求范围,完整R1路径,人工净操作/核对时间、模型错误与费用分列，未观察留空,NOT_RUN,,
+M08,固定快照分别导出并实际打开Word/PDF，再隔离恢复,同一snapshotId/bodyRevision,完整R1交付,同源内容与引用完整、恢复正确；不要求分页完全一致,NOT_RUN,,

@@ -1,120 +1,51 @@
-# CaseLite｜架构原则与模块边界
+# CaseLite｜架构与数据所有权
 
-- **性质**：现行 v2.2 架构方向的公开安全摘要；**不是已实现的架构审计报告**。
-- **来源**：[架构与开发约定 v2.2](https://linear.app/logixy-ai/document/caselite架构与开发约定-v22现行-d22d41990c7d)、[P3 同步/恢复合同（待验证）](https://linear.app/logixy-ai/document/caselite-p3同步协议持久化与恢复合同-v1待验证-0e3b701342ca)
-- **核对日期**：2026-10-29
+依据现行02及当前消费卡，定位见 [SOURCES](SOURCES.md)。实际模块、签名、迁移和依赖以源码及同SHA证据为准。历史P0—P4不是当前创建目录或安装服务的命令。
 
-## 1. 总体原则
-
-采用**单仓库、模块化单体、桌面本地优先**，而非为 P1—P4 建四套服务。`Electron + React + TypeScript + SQLite/Drizzle + react-pdf/PDF.js + Tiptap/Yjs` 是既定技术方向；是否已在真实仓库安装及可用，必须通过锁文件、代码、打包和测试核查。
-
-逻辑依赖方向：
+## 实际调用与装配
 
 ```text
-Renderer / UI
-  ↓ typed Preload + versioned IPC
-Application（Command / Query / Event / 授权、事务与审计）
-  ↓
-Domain（Matter、SourceVersion、Anchor、Finding、Decision…）
-  ↓ Ports
-Local DB（SQLite/Drizzle）· Files（不可变版本）· Editor/CRDT · Integrations
-
-P2 WorkRun / P3 Sync / P4 MCP 均通过受控 Application 入口进入
+Renderer → typed Preload → 固定版本IPC → Application → Port → 受控Adapter
+                                                  ↓
+                                        SQLite／平台凭据／Pi Runtime
 ```
 
-此图是**模块职责示意**，不是实际目录树。目录及 import 约束由 DEV-1558、DEV-1578 按代码冻结。Renderer、MCP 和内部 Skill 不能直接调用 Repository/任意 SQL/文件路径。
+Renderer只通过Preload方法访问业务；仅导入Preload类型，不运行时导入contracts、Node、Electron、SQLite或Provider。Main验证活窗口及主frame；Application校验strict DTO；存储和能力Owner再校验对象范围。无账号不等于信任Renderer自报身份，工作区由宿主决定。
 
-## 1.1 DEV-1558 冻结的目录职责与创建时机
-
-截至 `fbfece3`，实际已存在的程序代码只有 `apps/desktop/`：它包含 Electron `main`、`preload` 和 React `renderer` 的工程骨架。下列目录是**职责合同**，不是要求一次性创建空目录；只有有当前用户结果、公共入口和至少一项验证时才可创建。
-
-| 位置 | 职责 | 创建时机 | 不能做什么 |
-| --- | --- | --- | --- |
-| `apps/desktop/src/main/` | Electron 生命周期、composition root、受控 IPC 注册和平台适配 | 已存在；首个用例时再分出 `composition/`、`adapters/`、`ipc/` | 不放 React 页面、领域规则或任意 SQL |
-| `apps/desktop/src/preload/` | 仅向 renderer 暴露逐项、类型化的业务 API | 已存在；首个 IPC 时扩展 | 不暴露通用 `ipcRenderer`、shell、任意路径或 Node API |
-| `apps/desktop/src/renderer/` | 页面、用户交互、显示状态 | 已存在 | 不导入 Electron、Node、SQLite、文件系统、Repository 或 Provider SDK |
-| `packages/contracts/` | 跨进程/跨服务的版本化 TypeScript + Zod 合同 | DEV-1578 首个 IPC Spike | 不包含业务实现或数据库驱动 |
-| `packages/application/` | Command、Query、use case、Port、领域事件、权限/事务顺序 | DEV-1578 首个受控业务入口 | 不依赖 Electron、React、Drizzle 或网络 SDK |
-| `packages/domain/` | Matter、SourceVersion、Anchor 等纯业务规则 | P1 schema 合同确认后 | 不依赖框架、数据库、文件或网络 |
-| `packages/local-db/` | SQLite schema、迁移、Repository、事务与本地 Outbox | DEV-1567 | 不被 renderer、MCP 或 Skill 直接导入 |
-| `packages/files/` | 文件元数据、不可变版本、本地存储适配 | P1 文件需求确认后 | 不把案件文件存入仓库或 `desktop/resources` |
-| `packages/pdf/` | PDF worker、阅读器、选择与定位适配 | DEV-1568 / P1 PDF 切片 | 不作为业务真相来源或绕过 SourceVersion |
-| `packages/editor/`、`packages/crdt/` | 编辑器视图与 Yjs 文档状态 | 首个富文本用例且 DEV-1570 准入后 | 不把 Matter、任务、权限等都变成 CRDT |
-| `packages/work-runtime/`、`integrations/llm/`、`integrations/ocr/` | P2 的受控 AI/OCR 适配 | P2 首个 Provider 获批后 | 不直达 SQLite、文件或正式 Decision |
-| `apps/server/`、`packages/sync-client/`、`packages/authz/`、`infra/` | P3 单一模块化服务、同步、共享鉴权和运维 | P3 ADR/实施合同获批后 | 不预建空服务或同步 SQLite 文件 |
-| `integrations/mcp/`、`integrations/connectors/` | P4 的外部能力适配 | P4 首个真实连接器获批后 | 不绕过 Application、权限或人工确认 |
-| `tests/fixtures/` | 公开、合成且版本化的固定样本和负向夹具 | 已创建最小架构夹具；DEV-1560 再加入合同样本 | 不放真实客户资料、密钥或可识别日志 |
-
-`desktop/resources/` 将来只放图标、字体与构建静态资源，绝不放法律资料。P3 首期为一个 `apps/server` 部署单元；不建立 `api-server` 和 `collab-server` 两个空项目。
-
-首批 ADR 的索引与使用规则见 [`docs/adr/README.md`](./adr/README.md)。它们记录已决定的边界和仍待 Spike 的选择；目录或文件存在不代表对应能力已实现。
-
-## 1.2 允许依赖与禁止导入
-
-```text
-renderer → preload API → versioned contracts → main IPC → application → domain → ports
-                                                               ↓
-                                              local-db / files / pdf adapters
-
-P2 Work Runtime / P3 server + sync / P4 MCP host ────────────→ application
-```
-
-允许的方向是从外层入口进入 `application`，再由 `application` 调用纯 `domain` 和 Port；具体存储或文件实现反向实现 Port。`contracts` 可被边界两侧读取，但不得携带实现。未来同步客户端只消费变化合同，不拥有领域 Repository。
-
-| 发起方 | 明确禁止直接导入 |
+| 现有位置 | 唯一职责与真实入口 |
 | --- | --- |
-| renderer | `electron`、Node 内置模块、`better-sqlite3`、Drizzle Node Driver、`local-db`、`files`、`application` 实现、Provider SDK |
-| preload | 通用 `ipcRenderer` 转发、shell、任意文件读写、数据库连接 |
-| main / IPC | React 页面、直接接受未校验 renderer 参数、向用户回传 SQL/路径/堆栈 |
-| domain | Electron、React、Drizzle、SQLite driver、Yjs、网络 SDK |
-| MCP / Skill / Work Runtime | Repository、SQLite、任意本地路径；只能调用 Application Command/Query |
-| sync-client | React 页面或领域 Repository；不得直接同步 SQLite 文件 |
+| apps/desktop/src/renderer | React界面、Tiptap编辑、assistant-ui投影；共享布局在ui-design.css |
+| apps/desktop/src/preload | caselite-api.ts，固定task/catalog/agent与历史工程探针方法，无通用invoke／SQL／路径 |
+| apps/desktop/src/main | 生命周期、composition、受控IPC及平台Adapter；真实连接在index.ts装配 |
+| packages/contracts | TypeScript／Zod跨边界格式、错误和版本；不依赖驱动 |
+| packages/application | Task／Catalog／Agent用例与Port；不依赖React/Electron/数据库驱动或Provider SDK |
+| packages/local-db | 同一SQLite连接、Drizzle迁移、正文校验、Task／目录／Run持久化Adapter |
+| scripts与tests | 已有质量门禁、合成样本、负向与真实桌面harness；不是业务Runtime |
 
-当前可执行门禁是 `pnpm architecture:check`：它扫描实际 renderer 源码，并用 `tests/fixtures/architecture-boundaries/renderer-imports-node.ts` 证明“renderer 导入 Node”会被拒绝。它是 DEV-1559 的 CI/lint 测试体系之前的最小 Spike，不替代后续 ESLint、合同测试或安全审计。
+Domain、files、独立PDF/editor包、同步服务和MCP均按实际消费者创建，不为画架构图预建空包。普通CRUD保持普通TypeScript模块；只有格式／权限／持久化和外部能力边界需要Port。开发Runner放产品仓库外，不进入Electron。
 
-## 1.3 示例：第一个“创建 Matter”功能应改哪里
+## 单一数据权威
 
-这是边界示例，不表示 Matter 已被设计或实现。待 P1 schema 与 DEV-1578 合同确认后，一个创建 Matter 的最小改动应涉及：renderer 功能页、preload 的单一 `createMatter` 方法、contracts 的请求/响应 Zod Schema、main 的 IPC handler、application Command/use case、domain 规则、local-db 迁移/Repository，以及相应测试。
+Task是WorkItem的稳定身份，可不归组项目。task_projects只保存关系；归组不重建Task、Document或body。项目结构化属性归SQLite，描述复用已有Yjs正文存储。Document的归档、分类、标签与收藏属于元数据；知识目录沿用同一Document，不另建可编辑知识正文。
 
-它**不应**修改 PDF、Yjs、同步、LLM/OCR、MCP、服务器或任何外部连接器；也不应让 React 组件直接连接 SQLite。若需求必须跨过此边界，先新增 ADR，并在对应 Linear Issue 中获批。
+正文完整Yjs二进制是内容权威；HTML、JSON、纯文本和未来FTS仅是可重建投影。editor_schema、对象version、body_revision、协议版本、数据库迁移版本各有含义，state vector不等于保存回执。Body保存携带原Task／Document／body绑定、expected_revision和稳定业务幂等键。元数据、正文、回执及必要Activity优先同SQLite事务；回执未知先查询原结果，旧修订拒绝，不盲建新稿。
 
-## 2. 本地数据与法律原文
+Task内容现有实现见ADR-007：objective_state是Yjs，objective由宿主派生纯文本。它不是两份独立可写权威；但与现行02／DEV-1704的“结构化目标＋独立Document说明”仍有待原Owner对齐的表示差异。保留原二进制和格式，不在入口文档中暗改表、重定义Owner或宣称1704完成。ADR-006及首片计划中的“仅结构化objective”只描述原固定切片。
 
-- 个人未共享数据以本地 SQLite 和受控文件版本为工作来源；跨进程写入需事务、一致的边界与恢复策略。
-- 本地 Source/SourceVersion、Asset/AssetVersion 和 Anchor 必须有稳定身份；文件位置可以变，原件与 OCR 派生文本不可混淆。
-- 文件哈希可用于校验内容一致性，不足以证明来源真实性、授权或法律适用性。
-- 法律审核状态与存储/同步状态分离；来源升级保留旧版本、旧 Anchor、旧正式交付，只对有依赖的结论提示复核。
-- 富文本技术方向为 Tiptap/ProseMirror + Yjs。**首个仅含 PDF 的切片可延后安装**，但首次真实富文本切片应一起验证 Y.Doc 本地权威、持久化、备份与恢复，不能先建一套冲突的 HTML/JSON 权威。
+原件尚待文件消费者接入：AssetVersion固定字节／hash／ready，SourceVersion登记业务范围，Anchor固定来源版本与位置，Annotation备注和SourceRef消费公共能力。原件不可由正文、OCR、外部应用或新来源版本覆盖。跨文件系统和SQLite才使用有恢复检查点的提交，不将Y.Doc内存事务冒充磁盘保存。当前不预建云Outbox。
 
-## 3. P2：本地 WorkRun / BYOK
+## Agent 与外部能力
 
-- Context、Tool 和 Skill 通过 Application 使用经过授权的 Matter/Source 数据。
-- 单个 WorkRun 记录输入版本、Provider/模型、Skill/工具、预算、用量、候选与失败；未知提交状态需对账，不能盲重试造成重复费用。
-- Key 使用系统安全凭据接口；普通 SQLite、日志、Prompt 记录、同步和版本控制不存储 Key 明文。
-- Provider 与 Skill 的**详细 schema 仍待 DEV-1580 确认**，不得从本文推测现成 API。
+assistant-ui只投影业务Run；Application持有Run身份／范围／顺序，SQLite保留历史。Pi Core通过唯一RuntimeAdapter执行；pi-ai显式注册OpenAI／DeepSeek Provider，不引入Coding Agent默认工具、Shell、SQL或第二Pi session真源。
 
-## 4. P3：混合本地优先同步方向
+当前运行只发送明确确认的输入文本；选定来源／对话修订的完整Manifest与候选接受由各消费卡接入。Provider Key由系统safeStorage加密并放宿主数据目录，不返回Renderer，不写普通业务表／日志。取消不保证远端撤销或零费用；中断Run保留partial且重启不自动付费重放。真实Key/API、预算和法律质量必须另验。
 
-三条数据平面各自确定一致性和恢复方式：
+MCP只能包装Application授权入口；只读查询、候选写回及人工接受分开。同步须经原选型入口和E2EE合同准入，结构化命令、Yjs和不可变附件各守唯一Owner，不能直接同步SQLite文件。服务器、Hocuspocus、Redis、向量库和第二Runtime当前均不因方向确定而安装。
 
-| 数据平面 | 当前设计方向 | 不变量 |
-| --- | --- | --- |
-| 结构化对象 | SQLite Outbox + `mutation_id` + Delta/Snapshot；共享后 PostgreSQL 云端权威接纳和序列 | 幂等、重放、游标恢复；Pending 不可静默丢弃 |
-| 富文本 | Yjs Update/Snapshot，Hocuspocus 候选服务，PostgreSQL 持久化 ACK | 数据库提交前不能称“已持久保存云端”；Yjs 合并不是律师审核 |
-| 附件 | 不可变 asset_version + 对象存储 + 哈希/ready | 版本不覆盖、上传失败可恢复，ready 前不可当作可交付 |
+## 验证与长期变更
 
-WebSocket 是通知/实时传输而非唯一恢复来源；Redis 仅作为未来可丢失的在线状态/广播优化，**首期不强制安装**。共享授权、撤权、不同客户端确认和故障矩阵需按 P3 设计/Spike 验证。上述是已选架构方向，**不等于真实上线**。
+`pnpm architecture:check`扫描真实导入、公共入口、循环、空包与生产依赖准入；安全基线验证Electron隔离、Fuses、CSP及凭据/日志保护。静态扫描不能证明任意恶意脚本安全；真实sender/frame拒绝、事务/旧库、保存/失败、进程终止和重启另有对应测试。
 
-## 5. P4：MCP 与外部连接
+SQLite／迁移、正文恢复、原件／Anchor、密钥／权限、长期协议、关键依赖及构建门禁改动须ADR和必要独立技术复核。当前保存保证仅覆盖已确认修订的已验证故障模型，不承诺未保存键入、断电、介质损毁或设备灭失。数据回退保留旧库与Yjs二进制，禁止旧程序降级覆盖。
 
-MCP Client/Server 只包装已定义的 Application 业务入口；先验证一个真实知识源和一个外部客户端。读工具与候选写入分离，要求对象级授权、分页限额、来源版本/位置和人工确认；不暴露 SQL、任意磁盘路径、命令执行或未经审核的正式 Decision。
-
-## 6. 变更门槛与 ADR
-
-改变以下任一长期不变量应先有 ADR＋必要 Spike：进程/权限边界、稳定 ID 与存储格式、SQLite 迁移、Yjs 权威、共享 Delta/Checkpoint、附件不可变状态、云服务/外发与供应商锁定。采用 `docs/adr/TEMPLATE.md`，技术选择完成前只能标为“提议”，不能当已通过。
-
-## 7. 后续事实来源
-
-- 需求与设计：Linear Resources/Issues，见 `docs/SOURCES.md`。
-- **实际实现**：代码、TypeScript/Zod 合同、Drizzle 迁移、`package.json`/锁文件、CI 与真实测试。
-- 两者矛盾应停止推测并报告；不能为了匹配文档而静默破坏已存用户数据。
+ADR入口为 [adr/README.md](adr/README.md)，模板为 [ADR_TEMPLATE.md](adr/ADR_TEMPLATE.md)。源码、实时合同和证据不一致时明确差异及Owner，不据文档改写事实或删除数据。
