@@ -46,6 +46,7 @@ import { startReminderScheduler } from './reminder-scheduler';
 import type { Reminder } from '@caselite/contracts';
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   host.made = [];
   host.history = [];
   host.windows = [];
@@ -82,6 +83,8 @@ it('records failed OS events separately, invalidates an old notification and rec
   expect(host.resume).toBeUndefined();
 });
 it('restores only its workspace history and closes stale plans without clearing another workspace', async () => {
+  // 该用例明确模拟macOS历史API，在Linux测试机也验证同一命名空间边界。
+  vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
   const own = Object.assign(new EventEmitter(), {
       id: 'caselite-reminder:mine:r:1',
       close: vi.fn(),
