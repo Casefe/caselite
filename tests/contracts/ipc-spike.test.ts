@@ -2,6 +2,7 @@ import {
   IPC_CHANNELS,
   APPEARANCE_CHANNEL,
   FINANCE_CHANNEL,
+  CONTACTS_CHANNEL,
   IPC_PROTOCOL_VERSION,
   createAnchorRequestSchema,
   createMatterRequestSchema,
@@ -108,6 +109,7 @@ describe('typed preload to main IPC Spike', () => {
       'agent',
       'appearance',
       'catalog',
+      'contacts',
       'createAnchor',
       'createMatter',
       'dropPdf',
@@ -118,6 +120,17 @@ describe('typed preload to main IPC Spike', () => {
       'reminder',
       'task',
     ]);
+  });
+
+  it('uses the fixed contacts channel and rejects malformed replies', async () => {
+    const request = { operation: 'list', protocol_version: 1 } as const;
+    const invoke = vi.fn(async () => ({ ok: true, contacts: 'invalid', receipt: null }));
+    const api = createCaseLitePreloadApi(invoke);
+    await expect(api.contacts(request)).resolves.toMatchObject({
+      ok: false,
+      code: 'RESULT_UNKNOWN',
+    });
+    expect(invoke).toHaveBeenCalledExactlyOnceWith(CONTACTS_CHANNEL, request);
   });
 
   it('routes appearance only through its fixed channel and rejects malformed responses', async () => {
