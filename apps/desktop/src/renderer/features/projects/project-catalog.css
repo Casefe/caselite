@@ -786,3 +786,10 @@
 .project-relationship-graph .project-graph-document {
   background: var(--active);
 }
+
+.project-deliverables-scroll {
+  overflow-x: auto;
+}
+.project-deliverables-table {
+  min-width: 580px;
+}

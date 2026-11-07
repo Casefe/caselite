@@ -17,6 +17,7 @@ import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
+import ProjectDeliverables from './ProjectDeliverables';
 import ProjectDiscussion from './ProjectDiscussion';
 const ProjectRelationshipGraph = lazy(() => import('./ProjectRelationshipGraph'));
 const names = { ...projectStatuses, archived: '已归档' };
@@ -281,15 +282,13 @@ export default function ProjectCatalog({
   const openActivityProject = (id: string) => {
     if (!blocked) void read(id);
   };
-  const documentLinks = (draftsOnly: boolean) => {
+  const documentLinks = () => {
     if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
     if (!documents) return <p role="status">正在读取项目文档…</p>;
-    const rows = draftsOnly ? documents.filter((doc) => doc.body_revision > 0) : documents;
-    if (!rows.length)
-      return <p>{draftsOnly ? '还没有已保存的交付草稿。' : '还没有可编辑文档。'}</p>;
+    if (!documents.length) return <p>还没有可编辑文档。</p>;
     return (
       <ul className="project-document-list">
-        {rows.map((doc) => (
+        {documents.map((doc) => (
           <li key={doc.id}>
             <button
               disabled={blocked}
@@ -299,7 +298,6 @@ export default function ProjectCatalog({
             >
               {doc.title}
             </button>
-            {draftsOnly && <span>已保存 · 修订 {doc.body_revision}</span>}
           </li>
         ))}
       </ul>
@@ -689,7 +687,7 @@ export default function ProjectCatalog({
                     </section>
                     <section aria-labelledby="project-documents-heading">
                       <h3 id="project-documents-heading">可编辑文档</h3>
-                      {documentLinks(false)}
+                      {documentLinks()}
                     </section>
                   </>
                 )}
@@ -728,11 +726,13 @@ export default function ProjectCatalog({
               >
                 <h2>交付物</h2>
                 {section === 'deliverables' && (
-                  <>
-                    <h3>交付草稿</h3>
-                    {documentLinks(true)}
-                    <p>草稿沿用任务成果正文。正式交付视图尚未接入。</p>
-                  </>
+                  <ProjectDeliverables
+                    documents={documents}
+                    tasks={members}
+                    readError={c.error}
+                    disabled={blocked}
+                    onOpen={openTask}
+                  />
                 )}
               </section>
               <section
