@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { CatalogRequest, Matter, Task } from '../../preload/caselite-api';
+import type { CatalogRequest, Matter, Task } from '../../../preload/caselite-api';
 import { useState } from 'react';
 import ProjectCatalog, { type ProjectViewState } from './ProjectCatalog';
-vi.mock('../editors/RichEditor', () => ({
+vi.mock('../../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   DraftEditor: () => <div />,
 }));

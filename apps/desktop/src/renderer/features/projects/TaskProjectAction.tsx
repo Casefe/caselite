@@ -1,7 +1,7 @@
-import { catalogMutation } from '../shared/data/catalogMutation';
+import { catalogMutation } from '../../shared/data/catalogMutation';
 import { useEffect, useRef, useState } from 'react';
-import type { Task } from '../../preload/caselite-api';
-import { useCatalog } from '../ui/useCatalog';
+import type { Task } from '../../../preload/caselite-api';
+import { useCatalog } from '../../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 
 export default function TaskProjectAction({

@@ -6,7 +6,7 @@ import type {
   CatalogResponse,
   Task,
   TaskResponse,
-} from '../../preload/caselite-api';
+} from '../../../preload/caselite-api';
 import TaskProjectAction from './TaskProjectAction';
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {

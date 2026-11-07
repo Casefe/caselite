@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ActivityEvent, ActivityScope } from '../../preload/caselite-api';
+import type { ActivityEvent, ActivityScope } from '../../../preload/caselite-api';
 const actions: Record<string, string> = {
   create: '创建任务',
   update: '修改任务',

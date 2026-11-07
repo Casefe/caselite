@@ -1,7 +1,7 @@
-import { Icon } from '../shared/ui/Icon';
+import { Icon } from '../../shared/ui/Icon';
 import { useState } from 'react';
 
-import { DraftEditor, emptyDraft, type RichDraft } from '../editors/RichEditor';
+import { DraftEditor, emptyDraft, type RichDraft } from '../../editors/RichEditor';
 const projects = [
   {
     id: 'sample-contract',

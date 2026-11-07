@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import type { CatalogResponse, Matter } from '../../preload/caselite-api';
+import type { CatalogResponse, Matter } from '../../../preload/caselite-api';
 import ProjectFields, { projectValues, validProject, type ProjectValues } from './ProjectFields';
 
 type Commit = (project: Matter | null) => void;

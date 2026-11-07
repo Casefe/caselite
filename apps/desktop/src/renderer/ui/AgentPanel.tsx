@@ -27,7 +27,7 @@ import {
 
 import { ModelSettingsNavigation } from '../shared/navigation/ModelSettingsNavigation';
 import { agentModelLabel, agentModels, agentProviderFor } from './model-labels';
-import { projectStatuses, projectTypes } from '../projects/project-display';
+import { projectStatuses, projectTypes } from '../features/projects/project-display';
 import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 

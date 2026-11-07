@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import type { CatalogRequest } from '../../preload/caselite-api';
-import { draftDoc } from '../editors/RichEditor';
+import type { CatalogRequest } from '../../../preload/caselite-api';
+import { draftDoc } from '../../editors/RichEditor';
 import ProjectDiscussion from './ProjectDiscussion';
 
 afterEach(cleanup);

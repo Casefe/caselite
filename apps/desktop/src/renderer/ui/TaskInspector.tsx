@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
-import TaskProjectAction from '../projects/TaskProjectAction';
+import TaskProjectAction from '../features/projects/TaskProjectAction';
 import TaskProperties from './TaskProperties';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';

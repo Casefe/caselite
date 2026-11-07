@@ -22,9 +22,9 @@
 - 页面决定属性栏放在哪里、显示哪个对象、何时允许操作。窄窗沿用各页面的滚动布局，值列可以收缩，长只读值换行。文档与知识库可向右滚动至属性栏。
 - [共享属性样式](../../apps/desktop/src/renderer/ui-design.css) 使用 `inspector-disclosure`、`inspector-property-row` 和 `inspector-property-label`。属性与领域区使用原生 `details/summary`，项目创建表单复用属性行。紧凑行用固定标签列和弹性值列，平时无边框。只读项保留 `dl/dt/dd` 语义。
 - 使用语义主题变量 `--ink`、`--muted`、`--active` 和 `--line` 表达值、标签、悬停和分隔线。Tab 焦点用可见轮廓，原生折叠支持键盘开关，禁用值以弱化文字呈现。正在保存、失败和恢复提示由对应表单提供。
-- [项目属性与领域](../../apps/desktop/src/renderer/projects/ProjectFields.tsx) 复用于新建、从任务提升和项目侧栏。[项目保存](../../apps/desktop/src/renderer/projects/ProjectPropertyEditor.tsx) 保留属性确认与归档职责。[任务属性](../../apps/desktop/src/renderer/ui/TaskProperties.tsx) 保留状态、日期、负责人和标签保存，[任务归组](../../apps/desktop/src/renderer/projects/TaskProjectAction.tsx) 继续管理所属项目。[文档与知识库属性](../../apps/desktop/src/renderer/ui/DocumentInspector.tsx) 展示只读属性，由 [文档目录](../../apps/desktop/src/renderer/ui/DocumentLibrary.tsx) 管理文档标签保存。
+- [项目属性与领域](../../apps/desktop/src/renderer/features/projects/ProjectFields.tsx) 复用于新建、从任务提升和项目侧栏。[项目保存](../../apps/desktop/src/renderer/features/projects/ProjectPropertyEditor.tsx) 保留属性确认与归档职责。[任务属性](../../apps/desktop/src/renderer/ui/TaskProperties.tsx) 保留状态、日期、负责人和标签保存，[任务归组](../../apps/desktop/src/renderer/features/projects/TaskProjectAction.tsx) 继续管理所属项目。[文档与知识库属性](../../apps/desktop/src/renderer/ui/DocumentInspector.tsx) 展示只读属性，由 [文档目录](../../apps/desktop/src/renderer/ui/DocumentLibrary.tsx) 管理文档标签保存。
 
-现有回归入口包括 [项目属性](../../apps/desktop/src/renderer/projects/ProjectFields.test.tsx)、[任务属性](../../apps/desktop/src/renderer/ui/TaskProperties.test.tsx)、[任务归组](../../apps/desktop/src/renderer/projects/TaskProjectAction.test.tsx)、[文档与知识库](../../apps/desktop/src/renderer/ui/DocumentLibrary.test.tsx) 和 [隔离 Electron 探针](../../apps/desktop/src/main/project-demo.ts)。
+现有回归入口包括 [项目属性](../../apps/desktop/src/renderer/features/projects/ProjectFields.test.tsx)、[任务属性](../../apps/desktop/src/renderer/ui/TaskProperties.test.tsx)、[任务归组](../../apps/desktop/src/renderer/features/projects/TaskProjectAction.test.tsx)、[文档与知识库](../../apps/desktop/src/renderer/ui/DocumentLibrary.test.tsx) 和 [隔离 Electron 探针](../../apps/desktop/src/main/project-demo.ts)。
 
 任务字段专题中的团队权限、自定义字段等候选，以及起草专题中须由各自 Issue 接线的选材、来源和交付步骤，按对应合同和运行证据判定。属性栏的共享外观只覆盖本节所列页面。
 

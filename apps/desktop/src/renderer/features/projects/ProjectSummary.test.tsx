@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CatalogDocument, Matter, Task } from '../../preload/caselite-api';
+import type { CatalogDocument, Matter, Task } from '../../../preload/caselite-api';
 import ProjectSummary from './ProjectSummary';
 afterEach(cleanup);
 beforeEach(() => {

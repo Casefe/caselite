@@ -25,7 +25,10 @@ class PdfSpikeAssetsPlugin {
             [localPath('./src/renderer/pdf-spike.css'), 'pdf-resources/spike.css'],
             [localPath('./src/renderer/ui-design.css'), 'ui-design.css'],
             [localPath('./src/renderer/materials.css'), 'materials.css'],
-            [localPath('./src/renderer/projects/project-catalog.css'), 'project-catalog.css'],
+            [
+              localPath('./src/renderer/features/projects/project-catalog.css'),
+              'project-catalog.css',
+            ],
             [localPath('./assets/branding/caselite-logo.png'), 'brand/caselite-logo.png'],
           ];
           // CSS 入口的相对导入必须随同发射；file:// 与开发环境使用同一资源布局。

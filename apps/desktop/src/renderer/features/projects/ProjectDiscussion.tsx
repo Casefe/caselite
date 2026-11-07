@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DiscussionFeed } from '../shared/discussion/DiscussionFeed';
+import { DiscussionFeed } from '../../shared/discussion/DiscussionFeed';
 
 export default function ProjectDiscussion({
   projectId,

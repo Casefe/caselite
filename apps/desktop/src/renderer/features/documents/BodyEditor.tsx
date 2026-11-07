@@ -7,7 +7,7 @@ import type { Task, TaskRequest } from '../../../preload/caselite-api';
 import { Icon } from '../../shared/ui/Icon';
 import { mutation, check } from '../../shared/data/taskCommand';
 import { EditorSurface, localExtensions } from '../../editors/RichEditor';
-import DocumentReview from '../../review/DocumentReview';
+import DocumentReview from './review/DocumentReview';
 
 export default function BodyEditor({
   task,

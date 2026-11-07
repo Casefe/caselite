@@ -36,7 +36,7 @@ vi.mock('./ui/Workspace', () => ({
     </>
   ),
 }));
-vi.mock('./projects/ProjectCatalog', () => ({
+vi.mock('./features/projects/ProjectCatalog', () => ({
   default: ({
     onOpen,
     initialView,

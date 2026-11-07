@@ -1,6 +1,11 @@
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentModel, AgentRun, ReviewRange, ReviewSaved } from '../../preload/caselite-api';
+import type {
+  AgentModel,
+  AgentRun,
+  ReviewRange,
+  ReviewSaved,
+} from '../../../../preload/caselite-api';
 import type { Editor } from '@tiptap/react';
 import { documentReviewTransport, type DocumentScope } from './document-review-transport';
 

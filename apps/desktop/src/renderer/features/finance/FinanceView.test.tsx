@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { FinanceRequest, FinanceResponse, Matter } from '../../preload/caselite-api';
+import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import FinanceView from './FinanceView';
 import { formatCents, parseCents } from './money';
 

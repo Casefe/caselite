@@ -24,7 +24,37 @@ Renderer只通过Preload方法访问业务；仅导入Preload类型，不运行�
 
 Domain、files、独立PDF/editor包、同步服务和MCP均按实际消费者创建，不为画架构图预建空包。普通CRUD保持普通TypeScript模块；只有格式／权限／持久化和外部能力边界需要Port。开发Runner放产品仓库外，不进入Electron。
 
-Renderer 内部渐进分层：`shared/ui`、`shared/navigation`、`shared/data` 不依赖具体页面；公共讨论能力不导入项目等功能实现。`features/*` 与既有 `projects/finance/review` 间仅使用明确公开入口；当前公开跨功能入口是项目展示词汇、任务归组操作、金额格式化和文档审阅组件。规则位于 `scripts/lib/renderer-boundaries.mjs`，由已有 architecture:check 执行。旧 `ui` 仍包含业务页面，不视为全部通用组件；已禁止其导入项目表单私有实现，其余迁移按实际消费者推进。共享排版不合并各对象的保存队列或版本状态。
+## Renderer 目录与边界
+
+```text
+apps/desktop/src/renderer/
+  App.tsx                       工作台装配
+  features/
+    projects/                   项目视图、字段、评论与项目样式
+    finance/                    财务视图与金额展示
+    documents/
+      BodyEditor.tsx            正文页面
+      review/                   审阅侧栏与流式 transport
+    agent/                      Run 控制器与消息投影
+  editors/                      Tiptap 配置、草稿状态与编辑器组件
+  shared/                       基础 UI、讨论、导航上下文与数据帮助函数
+  styles/                       全局层叠样式
+  ui/                           工作台及尚未迁移的业务界面
+```
+
+`shared/ui`、`shared/navigation`、`shared/data` 不依赖具体页面。跨功能引用仅使用明确公开入口，目前是项目展示词汇、任务归组操作、金额格式化和文档审阅组件。审阅 transport 保持审阅模块私有，正文页面只依赖审阅组件。规则由 `scripts/lib/renderer-boundaries.mjs` 执行。项目样式随项目代码维护，构建继续把它发布为 `project-catalog.css`。旧 `ui` 内的业务组件按实际职责逐步迁移，共享布局不合并各对象的保存队列或版本状态。
+
+## 当前技术栈
+
+| 层级 | 仓库采用 |
+| --- | --- |
+| 桌面与界面 | Electron 45.1.0、React 19.3.1、TypeScript 6.0.3、CSS |
+| 构建与开发 | Node.js 24.22.2、pnpm 11.0.9 workspace、Electron Forge 8.0.1、Webpack 5.112.2 |
+| 业务边界 | TypeScript Application 用例与 Port、Zod 4.6.7 校验、版本化 Preload/IPC |
+| 本地存储 | SQLite（better-sqlite3 13.0.3）、Drizzle ORM 0.45.4 及 SQL 迁移 |
+| 文档与材料 | Tiptap 3.32.3、ProseMirror、Yjs 13.6.33，React-PDF 11.0.0、PDF.js 6.3.289 与 macOS Vision 本地 OCR |
+| AI | assistant-ui 0.15.32 渲染通用 Agent，AI SDK 6.0.324 与 @ai-sdk/react 3.0.327 提供审阅流式界面，Pi Agent Core / pi-ai 1.5.0 在宿主运行 |
+| 质量检查 | Vitest 5.0.5、ESLint、Prettier、架构和安全脚本及打包 Electron 探针。Playwright 已声明为开发依赖，Electron 自动化当前延期 |
 
 ## 单一数据权威
 
@@ -40,7 +70,7 @@ Task内容现有实现见ADR-007：objective_state是Yjs，objective由宿主派
 
 ## Agent 与外部能力
 
-assistant-ui只投影业务Run；Application持有Run身份／范围／顺序，SQLite保留历史。Pi Core通过唯一RuntimeAdapter执行；pi-ai显式注册OpenAI／DeepSeek Provider，不引入Coding Agent默认工具、Shell、SQL或第二Pi session真源。
+assistant-ui 投影通用 Agent 的业务 Run，文档审阅的 AI SDK transport 将同一业务 Run 映射成流式消息。Application 持有 Run 身份、范围与顺序，SQLite 保留历史。宿主通过唯一 Pi Runtime Adapter 执行，pi-ai 负责 Provider 调用。运行时工具权限仍按既有约束执行，不引入 Coding Agent 默认工具、Shell、SQL 或第二套 Pi session 真源。
 
 当前运行只发送明确确认的输入文本；选定来源／对话修订的完整Manifest与候选接受由各消费卡接入。Provider Key由系统safeStorage加密并放宿主数据目录，不返回Renderer，不写普通业务表／日志。取消不保证远端撤销或零费用；中断Run保留partial且重启不自动付费重放。真实Key/API、预算和法律质量必须另验。
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import type { Material } from '../../preload/caselite-api';
-const PdfReader = lazy(() => import('../ui/PdfReader'));
+import type { Material } from '../../../preload/caselite-api';
+const PdfReader = lazy(() => import('../../ui/PdfReader'));
 const states: Record<Material['status'], string> = {
   imported: '原件已保存',
   processing: '提取中',

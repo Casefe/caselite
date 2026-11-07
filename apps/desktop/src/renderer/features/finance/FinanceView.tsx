@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
-import type { FinanceRequest, FinanceResponse, Matter } from '../../preload/caselite-api';
+import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import { formatCents, parseCents } from './money';
 
 type Detail = Extract<FinanceResponse, { kind: 'ledger' }>;

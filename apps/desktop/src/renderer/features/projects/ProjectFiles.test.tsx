@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { MaterialResponse } from '../../preload/caselite-api';
+import type { MaterialResponse } from '../../../preload/caselite-api';
 import ProjectFiles from './ProjectFiles';
-vi.mock('../ui/PdfReader', () => ({
+vi.mock('../../ui/PdfReader', () => ({
   default: ({ name }: { name: string }) => <div>固定原件：{name}</div>,
 }));
 afterEach(cleanup);

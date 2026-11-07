@@ -1,15 +1,15 @@
-import { catalogMutation } from '../shared/data/catalogMutation';
-import { Icon } from '../shared/ui/Icon';
+import { catalogMutation } from '../../shared/data/catalogMutation';
+import { Icon } from '../../shared/ui/Icon';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
-import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
+import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
 
-import SidebarAgent from '../ui/SidebarAgent';
-import { useCatalog } from '../ui/useCatalog';
+import SidebarAgent from '../../ui/SidebarAgent';
+import { useCatalog } from '../../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
 import ProjectFiles from './ProjectFiles';

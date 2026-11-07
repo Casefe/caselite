@@ -1,6 +1,6 @@
 import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
-import type { CatalogDocument, Matter, Task } from '../../preload/caselite-api';
+import type { CatalogDocument, Matter, Task } from '../../../preload/caselite-api';
 
 export default function ProjectSummary({
   project,

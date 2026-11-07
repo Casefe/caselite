@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceShell } from './Workspace';
-import ProjectPreview from '../projects/ProjectPreview';
+import ProjectPreview from '../features/projects/ProjectPreview';
 afterEach(cleanup);
 describe('workspace navigation and clearly bounded project prototype', () => {
   it('routes primary objects and keeps the sidebar collapse accessible', () => {

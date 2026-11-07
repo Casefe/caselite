@@ -1,5 +1,5 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from 'ai';
-import type { AgentModel, AgentRequest, AgentRun } from '../../preload/caselite-api';
+import type { AgentModel, AgentRequest, AgentRun } from '../../../../preload/caselite-api';
 
 export type DocumentScope = `document:${string}`;
 export type ReviewSend = { id: string; model: AgentModel };

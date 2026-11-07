@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { Matter } from '../../preload/caselite-api';
-import { DraftEditor, type RichDraft } from '../editors/RichEditor';
+import type { Matter } from '../../../preload/caselite-api';
+import { DraftEditor, type RichDraft } from '../../editors/RichEditor';
 
 export default function ProjectEditor({
   data,

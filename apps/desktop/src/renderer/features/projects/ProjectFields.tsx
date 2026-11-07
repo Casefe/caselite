@@ -1,10 +1,10 @@
 import { projectTypes, projectStatuses } from './project-display';
-import { PropertyRow } from '../shared/ui/PropertyRow';
-import { InspectorSection } from '../shared/ui/InspectorSection';
-import { Icon } from '../shared/ui/Icon';
+import { PropertyRow } from '../../shared/ui/PropertyRow';
+import { InspectorSection } from '../../shared/ui/InspectorSection';
+import { Icon } from '../../shared/ui/Icon';
 import { useId, useRef, useState, type ReactNode } from 'react';
 
-import type { Matter } from '../../preload/caselite-api';
+import type { Matter } from '../../../preload/caselite-api';
 type ProjectAttributes = NonNullable<Matter['attributes']>;
 type ProjectProfessionalFields = NonNullable<ProjectAttributes['professional_fields']>;
 export type ProjectValues = {
