@@ -30,6 +30,10 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
     expect(collapse).toHaveBeenCalledOnce();
     expect(screen.getByText('谭律师')).toBeTruthy();
+    expect(screen.getByText('Pro')).toBeTruthy();
+    expect(document.querySelector('img.profile-avatar')?.getAttribute('src')).toMatch(
+      /^data:image\/svg\+xml,/,
+    );
     expect(
       screen
         .getByRole('banner', { name: '工作台顶部栏' })

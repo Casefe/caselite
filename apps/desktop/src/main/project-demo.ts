@@ -173,8 +173,8 @@ export async function runProjectDemo(
           return [...document.querySelectorAll('#primary-navigation button')].map(b=>b.ariaLabel).join(',')==='首页,提醒,任务,知识库,项目,财务,工具,白板,文档'
             && labels('.project-section-tabs button')==='概述,任务,文件,可视化,交付物,活动'
             && labels('.project-properties .project-fields > label > .project-property-label').startsWith('状态,优先级,负责人,日期,标签,名称,项目类型')
-            && document.querySelector('[data-nav=settings]').textContent==='谭律师'
-            && document.querySelector('[data-nav=settings] .profile-avatar svg')
+            && document.querySelector('[data-nav=settings]').textContent.replace(/\\s/g,'')==='谭律师Pro'
+            && document.querySelector('[data-nav=settings] img.profile-avatar')?.naturalWidth>0
             && Math.abs((fold.top+fold.bottom)-(back.top+back.bottom))<=2 && back.left>=fold.right && back.left-fold.right<=32
             && title.right<=create.left && create.right<=innerWidth;
         })()`);
@@ -196,6 +196,180 @@ export async function runProjectDemo(
         join(root, 'workspace-navigation-result.json'),
         JSON.stringify(
           { status: 'PASS_REAL', isolation, projectTitle: title, providerDispatches: 0 },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    const densityMode = process.env.CASELITE_PROJECT_DENSITY_TEST;
+    if (densityMode === '1' || densityMode === 'read') {
+      const seed = JSON.parse(readFileSync(join(root, 'promotion-expected.json'), 'utf8'));
+      const taskId = seed.task.id;
+      const title = '独立任务转项目验收';
+      const click = async (selector: string) => {
+        const el = `document.querySelector(${JSON.stringify(selector)})`;
+        await wait(`${el} && !${el}.disabled`);
+        await evaluate(`${el}.click()`);
+      };
+      const sidebar = '.project-properties';
+      const activity = `${sidebar} .activity-list`;
+      const composer = '[data-testid=assistant-input]';
+      const scrollAndCheck = async (selector: string) => {
+        const el = `document.querySelector(${JSON.stringify(selector)})`;
+        await wait(el);
+        await evaluate(`${el}.scrollIntoView({block:'center',inline:'nearest'})`);
+        await wait(`(()=>{const e=${el};const r=e.getBoundingClientRect();
+          return r.width>0 && r.height>0 && r.left>=0 && r.right<=innerWidth &&
+            e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));})()`);
+      };
+      await button(title);
+      await wait(`document.querySelector('${activity} [data-activity-id]') &&
+        getComputedStyle(document.querySelector('${sidebar} .project-professional-card')).borderTopWidth==='1px' &&
+        !document.querySelector('${sidebar}').textContent.includes('负责人仅作记录')`);
+      if (densityMode === 'read') {
+        const saved = JSON.parse(readFileSync(join(root, 'inspector-density-result.json'), 'utf8'));
+        const id = JSON.stringify(saved.lastActivityId);
+        await wait(
+          `Array.from(document.querySelectorAll('${activity} [data-activity-id]')).some(e=>e.dataset.activityId===${id})`,
+        );
+        await click('#project-tab-activity');
+        await wait(`Array.from(document.querySelectorAll('#project-panel-activity [data-activity-id]')).some(e=>e.dataset.activityId===${id}) &&
+          document.querySelector('#project-panel-activity .project-discussion')`);
+        await capture('inspector-activity-reopened.png');
+        assertNoRuns();
+        return;
+      }
+      const oldEvent = await evaluate(
+        `document.querySelector('${activity} [data-activity-id]').dataset.activityId`,
+      );
+      const currentPriority = await evaluate(
+        "document.querySelector('[aria-label=项目优先级]').value",
+      );
+      await select('项目优先级', currentPriority === '2' ? '1' : '2');
+      await wait(`document.querySelector('${activity} [data-activity-id]')?.dataset.activityId!==${JSON.stringify(oldEvent)} &&
+        document.querySelector('${activity} [data-activity-id] strong')?.textContent==='更新项目'`);
+      for (const [theme, width, height] of [
+        ['light', 1440, 900],
+        ['dark', 1440, 900],
+        ['dark', 640, 480],
+        ['light', 640, 480],
+      ] as const) {
+        window.setContentSize(width, height);
+        await wait(`innerWidth===${width} && innerHeight===${height}`);
+        await click('[data-nav=settings]');
+        await button('外观');
+        await click(`.theme-option:has(.theme-swatch--${theme})`);
+        await wait(`document.documentElement.dataset.theme==='${theme}'`);
+        await button('返回工作区');
+        await button(title);
+        await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
+        await wait(`document.querySelector('.project-ai-content > select').value==='' &&
+          !document.querySelector('${composer}') && document.querySelector('.profile-avatar').naturalWidth>0 &&
+          document.querySelector('.profile-pro').textContent==='Pro' &&
+          document.querySelector('.primary-navigation button').getBoundingClientRect().height===30`);
+        await scrollAndCheck(`${activity} li button`);
+        await capture(`inspector-activity-${theme}-${width}.png`);
+        await select('项目 AI 任务', taskId);
+        await scrollAndCheck(composer);
+        await scrollAndCheck('.project-ai-content button[aria-label=发送]');
+        await scrollAndCheck(composer);
+        await capture(`inspector-ai-${theme}-${width}.png`);
+        await click('.workspace-navigation-toggle');
+        await wait(
+          "document.querySelector('.workspace-navigation-toggle[aria-expanded=false]') && !document.querySelector('.profile-pro')",
+        );
+        await scrollAndCheck(composer);
+        await capture(`inspector-collapsed-${theme}-${width}.png`);
+        await click('.workspace-navigation-toggle');
+      }
+      const editComposer = async () => {
+        await scrollAndCheck(composer);
+        await evaluate(
+          `(()=>{const e=document.querySelector('${composer}');e.focus();document.execCommand('insertText',false,'合成草稿，不发送');})()`,
+        );
+        await wait(
+          `document.querySelector('${composer}').textContent.includes('合成草稿，不发送')`,
+        );
+      };
+      await editComposer();
+      await projectTab('tasks');
+      await button('移出项目');
+      await wait(
+        `!document.querySelector('${composer}') && document.querySelector('.project-ai-content').textContent.includes('暂无')`,
+      );
+      await wait(
+        `!Array.from(document.querySelectorAll('${activity} li button')).some(e=>e.textContent.includes('任务'))`,
+      );
+      await select('归入已有任务', taskId);
+      await button('归入项目');
+      await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
+      await wait(
+        `document.querySelector('.project-ai-content > select').value==='' && !document.querySelector('${composer}')`,
+      );
+      await select('项目 AI 任务', taskId);
+      await wait(`document.querySelector('${composer}')?.textContent.includes('合成草稿，不发送')`);
+      await wait(
+        `Array.from(document.querySelectorAll('${activity} li button')).some(e=>e.textContent.includes('任务'))`,
+      );
+      await evaluate(
+        `Array.from(document.querySelectorAll('${activity} li button')).find(e=>e.textContent.includes('任务')).click()`,
+      );
+      await wait(
+        "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
+      );
+      await capture('inspector-return-original-task.png');
+      await click('button[aria-label=返回来源项目]');
+      await wait("document.querySelector('#project-panel-tasks:not([hidden])')");
+      await click('.workspace-project-back-button');
+      await button('创建项目');
+      await wait("document.querySelector('dialog[open] input')===document.activeElement");
+      await evaluate(`(()=>{
+        const input=document.activeElement;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'合成无任务项目');
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      })()`);
+      await click('dialog[open] button[type=submit]');
+      await wait(`document.querySelector('.project-catalog-heading h1')?.textContent==='合成无任务项目' &&
+        document.querySelector('.project-ai-content')?.textContent.includes('暂无') && !document.querySelector('${composer}')`);
+      await click('.workspace-project-back-button');
+      await button(title);
+      await wait("document.querySelector('.project-ai-content > select')?.options.length===2");
+      await select('项目 AI 任务', taskId);
+      await wait(`document.querySelector('${composer}')?.textContent.includes('合成草稿，不发送')`);
+      await select('项目状态', 'archived');
+      await wait(
+        `document.querySelector('.project-ai-content')?.textContent.includes('已归档') && !document.querySelector('${composer}')`,
+      );
+      await select('项目状态', 'restore');
+      await wait(
+        `document.querySelector('.project-ai-content > select')?.value==='' && !document.querySelector('${composer}')`,
+      );
+      await wait(
+        `document.querySelector('${activity} [data-activity-id] strong')?.textContent==='切换项目归档状态'`,
+      );
+      const lastActivityId = await evaluate(
+        `document.querySelector('${activity} [data-activity-id]').dataset.activityId`,
+      );
+      assertNoRuns();
+      writeFileSync(
+        join(root, 'inspector-density-result.json'),
+        JSON.stringify(
+          {
+            status: 'PASS_REAL',
+            isolation,
+            taskId,
+            lastActivityId,
+            providerDispatches: 0,
+            checks: [
+              'commit-refresh',
+              'wide-and-short-hit-test',
+              'theme-and-profile',
+              'membership-and-draft',
+              'activity-return',
+              'project-switch-and-archive',
+            ],
+          },
           null,
           2,
         ),
@@ -1294,7 +1468,7 @@ export async function runProjectDemo(
         )
           throw new Error('Recovery duplicated or lost committed activity');
         await wait(
-          "Array.from(document.querySelectorAll('.project-summary [data-activity-id] strong')).some(e=>e.textContent==='保存项目概述')",
+          "Array.from(document.querySelectorAll('.project-summary [data-activity-id] strong')).some(e=>e.textContent==='更新项目')",
         );
         writeFileSync(join(root, 'activity-expected.json'), JSON.stringify(after, null, 2));
       } else {

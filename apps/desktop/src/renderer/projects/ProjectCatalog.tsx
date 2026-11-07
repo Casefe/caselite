@@ -36,6 +36,54 @@ export type ProjectViewState = {
   returnTaskId: string;
   documentId?: string;
 };
+function ProjectConversation({
+  project,
+  members,
+  blocked,
+}: {
+  project: Matter;
+  members: Task[];
+  blocked: boolean;
+}) {
+  const [selectedTask, setSelectedTask] = useState('');
+  const available = project.archived_at ? [] : members.filter((task) => !task.document_archived_at);
+  const task = available.find((item) => item.id === selectedTask);
+  // 移出或归档后取消选择；原草稿仍由 AgentPanel 保存在原任务范围内。
+  if (selectedTask && !task) setSelectedTask('');
+
+  return (
+    <section className="project-inspector-section project-ai-content" aria-label="AI 对话">
+      <h3>AI 对话</h3>
+      {project.archived_at ? (
+        <p>项目已归档，无法开始对话。</p>
+      ) : available.length === 0 ? (
+        <p>此项目暂无可用于对话的任务。</p>
+      ) : (
+        <>
+          <select
+            aria-label="项目 AI 任务"
+            disabled={blocked}
+            value={task?.id ?? ''}
+            onChange={(event) => setSelectedTask(event.target.value)}
+          >
+            <option value="">选择项目任务</option>
+            {available.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+          {task && (
+            <div inert={blocked}>
+              <AgentPanel key={task.id} scope={task.id} />
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function ProjectCatalog({
   tasks,
   onOpen,
@@ -51,7 +99,7 @@ export default function ProjectCatalog({
   backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
   onDirty(v: boolean): void;
-  onChanged(): void;
+  onChanged(): void | Promise<boolean>;
 }) {
   const c = useCatalog(true),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
@@ -65,12 +113,11 @@ export default function ProjectCatalog({
     [propertyDirty, setPropertyDirty] = useState(false),
     [acknowledged, setAcknowledged] = useState<Record<string, Matter>>({}),
     [assigning, setAssigning] = useState('');
+  const [taskScopeUnavailable, setTaskScopeUnavailable] = useState(false);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
   const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
-  const [side, setSide] = useState('properties'),
-    [aiTask, setAiTask] = useState('');
   const [query, setQuery] = useState(initialView?.query ?? '');
   const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
@@ -135,6 +182,12 @@ export default function ProjectCatalog({
       : (list.find((x) => x.id === selected) ??
         (propertyDirty ? projects.find((x) => x.id === selected) : undefined) ??
         list[0]);
+  const members = tasks.filter((task) => task.matter_id === p?.id);
+  const activityRevision = JSON.stringify([
+    p?.version,
+    p?.task_count,
+    members.map((task) => [task.id, task.version]),
+  ]);
   useEffect(() => {
     onDirty(dirty || creating || reading || c.pending || c.unknown);
     return () => onDirty(false);
@@ -262,6 +315,9 @@ export default function ProjectCatalog({
     if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
   };
   const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
+  const openActivityProject = (id: string) => {
+    if (!blocked) void read(id);
+  };
   const documentLinks = (draftsOnly: boolean) => {
     if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
     if (!documents) return <p role="status">正在读取项目文档…</p>;
@@ -288,8 +344,14 @@ export default function ProjectCatalog({
   };
   const command = (input: CatalogRequest, done?: (r: CatalogSuccess) => void | Promise<void>) =>
     c.execute(input, async (r) => {
-      onChanged();
+      const refreshed = onChanged();
       await done?.(r);
+      if (input.operation === 'assign_task') {
+        // 归组提交后须等待 Task 列表确认新范围。读取失败时关闭 AI 入口。
+        setTaskScopeUnavailable((await refreshed) === false);
+      } else if (taskScopeUnavailable && (await refreshed) === true) {
+        setTaskScopeUnavailable(false);
+      }
     });
   const handleBodyResult = (result: CatalogResponse | null) => {
     if (result?.ok) return;
@@ -702,11 +764,10 @@ export default function ProjectCatalog({
                     <ActivityList
                       key={editor.project.id}
                       scope={{ type: 'project', id: editor.project.id }}
-                      disabled={navigationPending || reading || dirty || c.pending || c.unknown}
+                      refresh={activityRevision}
+                      disabled={blocked}
                       onTask={openTask}
-                      onProject={(id) => {
-                        if (!blocked) void read(id);
-                      }}
+                      onProject={openActivityProject}
                     />
                     <ProjectDiscussion
                       key={`activity-discussion:${editor.project.id}`}
@@ -802,98 +863,88 @@ export default function ProjectCatalog({
         </div>
         <footer className="collection-footer">真实本地项目 · 仅此设备</footer>
       </div>
-      <aside className="project-properties">
-        <div className="inspector-tabs" role="tablist" aria-label="项目辅助栏">
-          <button
-            role="tab"
-            disabled={dirty || reading || creating || c.pending || c.unknown}
-            aria-selected={side === 'properties'}
-            onClick={() => setSide('properties')}
-          >
-            属性
-          </button>
-          <button
-            disabled={dirty || reading || creating || c.pending || c.unknown}
-            role="tab"
-            aria-selected={side === 'ai'}
-            onClick={() => setSide('ai')}
-          >
-            AI 助手
-          </button>
-        </div>
-        {side === 'ai' ? (
-          <div className="project-ai-content">
-            <h3>项目任务 AI</h3>
-            <p>选择本项目中的任务，在其原有范围内工作。</p>
-            <select
-              aria-label="项目 AI 任务"
-              value={tasks.some((t) => t.id === aiTask && t.matter_id === p?.id) ? aiTask : ''}
-              onChange={(e) => setAiTask(e.target.value)}
-            >
-              <option value="">选择项目任务</option>
-              {tasks
-                .filter((t) => t.matter_id === p?.id)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-            </select>
-            {tasks.some((t) => t.id === aiTask && t.matter_id === p?.id) && (
-              <AgentPanel key={aiTask} scope={aiTask} />
+      <aside className="project-properties" aria-label="项目辅助栏">
+        <h2 className="project-inspector-heading">属性</h2>
+        {p && !sourceUnavailable ? (
+          <>
+            <ProjectPropertyEditor
+              key={p.id}
+              project={p}
+              sidebar={!editor}
+              pending={c.pending}
+              disabled={
+                navigationPending ||
+                reading ||
+                creating ||
+                bodyCommand ||
+                discussionDirty ||
+                (!propertyDirty && (c.pending || c.unknown))
+              }
+              unknown={c.unknown && !bodyCommand}
+              bodyDirty={bodyDirty}
+              onDirty={(value, lifecycle = false) => {
+                setLifecycleDraft(value && lifecycle);
+                if (value) setSelected(p.id);
+                setPropertyDirty(value);
+              }}
+              onReload={c.load}
+              onRetry={c.retry}
+              onSave={(base, values, onCommitted) =>
+                command(
+                  catalogMutation({
+                    operation: 'update_project' as const,
+                    id: base.id,
+                    expected_version: base.version,
+                    expected_body_revision: base.body_revision,
+                    ...values,
+                  }),
+                  (r) => onCommitted(acknowledge(r, base)),
+                )
+              }
+              onArchive={(base, archived, onCommitted) =>
+                command(
+                  catalogMutation({
+                    operation: 'archive_project' as const,
+                    id: base.id,
+                    expected_version: base.version,
+                    archived,
+                  }),
+                  (r) => {
+                    const confirmed = acknowledge(r, base);
+                    if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
+                    onCommitted(confirmed);
+                  },
+                )
+              }
+            />
+            {editor && (
+              <section className="project-inspector-section" aria-label="活动">
+                <h3>活动</h3>
+                <ActivityList
+                  key={p.id}
+                  scope={{ type: 'project', id: p.id }}
+                  refresh={activityRevision}
+                  disabled={blocked}
+                  onTask={openTask}
+                  onProject={openActivityProject}
+                  compact
+                />
+              </section>
             )}
-          </div>
-        ) : p && !sourceUnavailable ? (
-          <ProjectPropertyEditor
-            key={p.id}
-            project={p}
-            sidebar={!editor}
-            pending={c.pending}
-            disabled={
-              navigationPending ||
-              reading ||
-              creating ||
-              bodyCommand ||
-              discussionDirty ||
-              (!propertyDirty && (c.pending || c.unknown))
-            }
-            unknown={c.unknown && !bodyCommand}
-            bodyDirty={bodyDirty}
-            onDirty={(value, lifecycle = false) => {
-              setLifecycleDraft(value && lifecycle);
-              if (value) setSelected(p.id);
-              setPropertyDirty(value);
-            }}
-            onReload={c.load}
-            onRetry={c.retry}
-            onSave={(base, values, onCommitted) =>
-              command(
-                catalogMutation({
-                  operation: 'update_project' as const,
-                  id: base.id,
-                  expected_version: base.version,
-                  expected_body_revision: base.body_revision,
-                  ...values,
-                }),
-                (r) => onCommitted(acknowledge(r, base)),
-              )
-            }
-            onArchive={(base, archived, onCommitted) =>
-              command(
-                catalogMutation({
-                  operation: 'archive_project' as const,
-                  id: base.id,
-                  expected_version: base.version,
-                  archived,
-                }),
-                (r) => {
-                  const confirmed = acknowledge(r, base);
-                  if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
-                  onCommitted(confirmed);
-                },
-              )
-            }
-          />
+            {taskScopeUnavailable ? (
+              <section className="project-inspector-section" aria-label="AI 对话">
+                <h3>AI 对话</h3>
+                <p role="status">无法确认当前项目任务，请重新打开项目。</p>
+              </section>
+            ) : (
+              <ProjectConversation
+                key={`ai:${p.id}`}
+                project={p}
+                members={members}
+                blocked={blocked}
+              />
+            )}
+          </>
         ) : (
           <p>选择项目查看实际属性。</p>
         )}

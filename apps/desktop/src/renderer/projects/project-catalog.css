@@ -589,3 +589,47 @@
 .project-document-list span {
   font-size: 12px;
 }
+
+.project-catalog .project-professional-card {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.project-inspector-heading {
+  margin: 14px 0 8px;
+  font-size: 13px;
+}
+.project-inspector-section {
+  margin: 12px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.project-properties .project-inspector-section > h3 {
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+.project-inspector-section
+  .activity-list--compact
+  :is(.caption, li p, .project-query-toolbar > span) {
+  display: none;
+}
+.project-inspector-section .activity-list ol {
+  margin: 0;
+}
+.project-inspector-section .activity-list li {
+  padding: 6px 0;
+}
+.project-inspector-section .activity-list time {
+  display: block;
+  margin-top: 2px;
+}
+.project-inspector-section .activity-list button {
+  margin: 2px 0;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.project-ai-content > select {
+  width: 100%;
+}
+.project-ai-content .assistant-compose {
+  padding: 8px;
+}

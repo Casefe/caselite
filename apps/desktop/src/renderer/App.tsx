@@ -201,7 +201,9 @@ function Workbench() {
   const refresh = useCallback(async () => {
     const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
-    if (sequence === listReadSequence.current) setTasks(r.tasks);
+    if (sequence !== listReadSequence.current) return false;
+    setTasks(r.tasks);
+    return true;
   }, []);
   useEffect(() => {
     void refresh()
@@ -502,9 +504,14 @@ function Workbench() {
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
             onDirty={setDirty}
-            onChanged={() =>
-              void refresh().catch(() => setError('数据已保存，任务列表刷新失败，请重新读取。'))
-            }
+            onChanged={async () => {
+              try {
+                return await refresh();
+              } catch {
+                setError('数据已保存，任务列表刷新失败，请重新读取。');
+                return false;
+              }
+            }}
           />
         ) : view === 'home' ? (
           <AgentHome

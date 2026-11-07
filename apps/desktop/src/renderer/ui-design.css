@@ -98,7 +98,7 @@ h3 {
   color: #c8d5d7;
   display: flex;
   flex-direction: column;
-  padding: 16px 8px 12px;
+  padding: 10px 8px 8px;
   transition: width 0.15s;
 }
 .brand {
@@ -132,13 +132,13 @@ h3 {
 }
 .sidebar-nav-group {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 .sidebar-nav-group + .sidebar-nav-group {
-  margin-top: 10px;
+  margin-top: 7px;
 }
 .sidebar-nav-group .sidebar-caption {
-  margin: 4px 0;
+  margin: 2px 0;
 }
 .primary-navigation {
   flex-shrink: 0;
@@ -152,7 +152,8 @@ h3 {
   justify-content: flex-start;
   text-align: left;
   color: #c8d5d7;
-  padding: 8px 12px;
+  min-height: 30px;
+  padding: 5px 10px;
   border-radius: 5px;
   width: 100%;
   font-size: 13px;
@@ -188,7 +189,7 @@ h3 {
   margin-left: 4px;
 }
 .shortcuts {
-  margin-top: 25px;
+  margin-top: 12px;
   padding: 0 6px;
   min-height: 0;
   overflow: auto;
@@ -264,7 +265,7 @@ h3 {
 }
 .is-collapsed .primary-navigation button,
 .is-collapsed .sidebar-bottom > button {
-  padding: 12px;
+  padding: 5px;
   justify-content: center;
 }
 .primary {
@@ -3274,8 +3275,8 @@ dd {
   width: 100%;
   background: transparent;
   color: #d7e2e4;
-  padding: 12px 8px 0;
-  margin-top: 8px;
+  padding: 6px 8px;
+  margin-top: 4px;
   border: 0;
   border-top: 1px solid #304b50;
   border-radius: 0;
@@ -3284,26 +3285,30 @@ dd {
   text-align: left;
 }
 .profile-avatar {
-  height: 32px;
-  width: 32px;
+  display: block;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #607579;
+  object-fit: cover;
+  border: 1px solid var(--line);
   border-radius: 50%;
-  background: #385358;
-  color: #d7e3e4;
-  font-size: 12px;
 }
 .profile-name {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
 }
 .profile-name strong {
-  display: block;
   font-size: 12px;
   font-weight: 500;
+}
+.profile-pro {
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
 }
 .profile-settings[aria-current='page'] .profile-avatar {
   border-color: #c4d4d8;
@@ -3572,9 +3577,6 @@ dd {
 }
 .catalog-view > .project-properties .inspector-tabs {
   margin: 0 -18px;
-}
-.project-ai-content {
-  padding-top: 20px;
 }
 
 .assistant-run-status.interrupted {

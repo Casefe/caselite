@@ -10,7 +10,7 @@ const actions: Record<string, string> = {
   promote_task: '从任务创建项目',
   assign_task: '调整项目归组',
   assign_project: '调整项目归组',
-  update_project: '保存项目概述',
+  update_project: '更新项目',
   archive_project: '切换项目归档状态',
   archive_document: '切换文档归档状态',
   organize_document: '整理文档',
@@ -21,10 +21,12 @@ export default function ActivityList({
   onTask,
   onProject,
   compact = false,
+  refresh,
 }: {
   scope: ActivityScope;
   disabled?: boolean;
   compact?: boolean;
+  refresh?: string;
   onTask(id: string): void;
   onProject?(id: string): void;
 }) {
@@ -77,7 +79,7 @@ export default function ActivityList({
       active = false;
       guard.current++;
     };
-  }, [load]);
+  }, [load, refresh]);
   const open = async (event: ActivityEvent) => {
     if (navigationBlocked.current) return;
     const sequence = ++epoch.current;
@@ -111,7 +113,10 @@ export default function ActivityList({
     }
   };
   return (
-    <section className="activity-list" aria-label="真实业务活动">
+    <section
+      className={compact ? 'activity-list activity-list--compact' : 'activity-list'}
+      aria-label="真实业务活动"
+    >
       <div className="project-query-toolbar">
         <span>已提交的本地动作</span>
         <button disabled={busy || disabled} onClick={() => void load(0)}>

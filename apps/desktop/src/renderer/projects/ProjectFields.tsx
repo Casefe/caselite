@@ -341,7 +341,6 @@ export default function ProjectFields({
         </ProjectPropertyRow>
         {!creating && nameRow}
         {!creating && typeRow}
-        <small>负责人仅作记录。目标日不计算法定期限或创建提醒；标签最多20项，每项1—40字。</small>
       </fieldset>
       <details ref={professionalCard} className="project-professional-card" open>
         <summary>领域：{group ? projectTypes[group] : ''}</summary>

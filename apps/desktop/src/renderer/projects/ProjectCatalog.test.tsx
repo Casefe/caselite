@@ -60,9 +60,9 @@ const response = (
   target_id: target,
   receipt: null,
 });
-function show() {
+function show(tasks: Task[] = []) {
   const changed = vi.fn();
-  render(<ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={changed} />);
+  render(<ProjectCatalog tasks={tasks} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={changed} />);
   return changed;
 }
 describe('durable project UI receipts and target identity', () => {
@@ -106,9 +106,9 @@ describe('durable project UI receipts and target identity', () => {
     await waitFor(() =>
       expect(requests.some((r) => r.operation === 'read_project' && r.id === b.id)).toBe(true),
     );
-    expect(requests.every((r) => r.operation === 'list' || r.operation === 'read_project')).toBe(
-      true,
-    );
+    expect(
+      requests.every((r) => ['list', 'read_project', 'list_activity'].includes(r.operation)),
+    ).toBe(true);
   });
   it('keeps one project across tabs, exposes unavailable sections and protects an unsaved overview', async () => {
     const p = project();
@@ -156,7 +156,14 @@ describe('durable project UI receipts and target identity', () => {
     const requests = catalog.mock.calls.map(([request]) => request);
     expect(
       requests.filter((r) => r.operation !== 'list_discussion').map((r) => r.operation),
-    ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list_activity']);
+    ).toEqual([
+      'list',
+      'read_project',
+      'list_activity',
+      'list_activity',
+      'list_activity',
+      'list_activity',
+    ]);
     expect(requests.filter((r) => r.operation === 'list_discussion').map((r) => r.scope)).toEqual([
       { kind: 'project_comment', project_id: p.id },
       { kind: 'update', project_id: p.id },
@@ -417,7 +424,8 @@ it.each(['编辑项目名称', '项目概述'])(
     } as unknown as Window['caselite'];
     render(<ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
-    fireEvent.click(await screen.findByRole('button', { name: /打开当前项目/ }));
+    const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
+    fireEvent.click(await within(sidebar).findByRole('button', { name: /打开当前项目/ }));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText(label), { target: { value: '未保存草稿' } });
     const before = catalog.mock.calls.filter(([r]) => r.operation === 'read_project').length;
@@ -468,13 +476,12 @@ it('edits list properties without opening detail and keeps drafts during filteri
       return { ...response([p], p.id), receipt: writes[0]?.idempotency_key ?? null };
     }),
   } as unknown as Window['caselite'];
-  show();
+  show([{ id: crypto.randomUUID(), title: '合成项目任务', matter_id: p.id } as Task]);
   await screen.findByLabelText('侧栏项目名称');
   fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '合成负责人' } });
   for (const name of ['搜索项目', '筛选项目状态', '项目排序'])
     expect((screen.getByLabelText(name) as HTMLInputElement).disabled).toBe(true);
-  expect((screen.getByRole('tab', { name: 'AI 助手' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('tab', { name: 'AI 助手' }));
+  expect((screen.getByLabelText('项目 AI 任务') as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByLabelText('项目负责人') as HTMLInputElement).value).toBe('合成负责人');
   expect(screen.queryByText('返回项目列表')).toBeNull();
   const name = screen.getByLabelText('项目负责人');
@@ -484,8 +491,7 @@ it('edits list properties without opening detail and keeps drafts during filteri
   expect(writes).toHaveLength(0);
   fireEvent.compositionEnd(name);
   await screen.findByText('核对原属性提交');
-  expect((screen.getByRole('tab', { name: 'AI 助手' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('tab', { name: 'AI 助手' }));
+  expect((screen.getByLabelText('项目 AI 任务') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(await screen.findByText('核对原属性提交'));
   await waitFor(() =>
     expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(false),

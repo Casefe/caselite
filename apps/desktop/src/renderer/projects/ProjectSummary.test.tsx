@@ -128,7 +128,7 @@ it('refreshes compact queries after project save and task membership changes', a
   await screen.findByText('还没有可显示的成功活动。');
   saved = true;
   view.rerender(<ProjectSummary {...props} project={{ ...props.project, version: 2 }} />);
-  await screen.findByText('保存项目概述');
+  await screen.findByText('更新项目');
   assigned = true;
   const member = { id: 't', matter_id: 'A', title: '任务', version: 1 } as Task;
   view.rerender(

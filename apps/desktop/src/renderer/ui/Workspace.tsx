@@ -4,6 +4,8 @@ import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
 import { taskStatusNames } from './task-status';
 
+const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
+
 export type WorkspaceView =
   | 'home'
   | 'reminders'
@@ -251,12 +253,10 @@ export function WorkspaceShell({
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => onNavigate('settings')}
           >
-            <span className="profile-avatar">
-              <Icon name="person" />
-            </span>
+            <img className="profile-avatar" src={profileAvatar} alt="" />
             {!collapsed && (
               <span className="profile-name">
-                <strong>谭律师</strong>
+                <strong>谭律师</strong> <small className="profile-pro">Pro</small>
               </span>
             )}
           </button>
