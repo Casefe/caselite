@@ -65,3 +65,27 @@ it('does not navigate or alter sorting while a project save is unresolved', () =
   fireEvent.click(screen.getByRole('button', { name: '按项目名称排序' }));
   Object.values(actions).forEach((action) => expect(action).not.toHaveBeenCalled());
 });
+
+it('keeps each project identity and keyboard navigation across status groups', () => {
+  const active = { ...projects[1], status: 'active' } satisfies Matter;
+  const onOpen = vi.fn();
+  render(
+    <ProjectList
+      projects={[active, projects[0]]}
+      columns={projectListDefaults}
+      groupByStatus
+      disabled={false}
+      order="status"
+      onOrder={vi.fn()}
+      onSelect={vi.fn()}
+      onOpen={onOpen}
+      onPreview={vi.fn()}
+    />,
+  );
+  const rows = screen.getAllByRole('row').filter((row) => row.hasAttribute('data-project-id'));
+  expect(rows.map((row) => row.getAttribute('data-project-id'))).toEqual(['0', '1']);
+  fireEvent.keyDown(rows[0], { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(rows[1]);
+  fireEvent.keyDown(rows[1], { key: 'Enter' });
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(active);
+});
