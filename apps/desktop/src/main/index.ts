@@ -16,6 +16,7 @@ import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
+import { runTypographyDemo } from './typography-demo';
 import { runProjectDemo } from './project-demo';
 import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
@@ -547,6 +548,7 @@ if (taskDemoPhase) {
       'materials-read',
       'crash',
       'preview',
+      'typography',
       'project-write',
       'project-agent-write',
       'project-agent-read',
@@ -789,6 +791,7 @@ app
       taskDemoPhase?.startsWith('materials') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase === 'typography' ||
       taskDemoPhase === 'agent-crash-synthetic' ||
       taskDemoPhase === 'agent-read-synthetic'
         ? {
@@ -917,6 +920,7 @@ app
               documentReviewDemo
                 ? syntheticReviewStream
                 : financeDemo ||
+                    taskDemoPhase === 'typography' ||
                     credentialUi ||
                     taskDemoPhase?.startsWith('reminder') ||
                     (taskDemoPhase?.startsWith('project-') &&
@@ -954,6 +958,17 @@ app
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase === 'typography') {
+      try {
+        await runTypographyDemo(() => createWindow(false), taskDemoRoot, tasks);
+      } finally {
+        agent.release();
+        materials.close();
+        taskStore.close();
+      }
+      app.exit(0);
+      return;
+    }
     if (documentReviewDemo && taskDemoRoot) {
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),

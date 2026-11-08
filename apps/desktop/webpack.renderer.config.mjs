@@ -31,6 +31,18 @@ class PdfSpikeAssetsPlugin {
               'project-catalog.css',
             ],
             [localPath('./assets/branding/caselite-logo.png'), 'brand/caselite-logo.png'],
+            [
+              localPath('./assets/fonts/source-han-serif/SourceHanSerifSC-VF.otf.woff2'),
+              'fonts/SourceHanSerifSC-VF.otf.woff2',
+            ],
+            [
+              localPath('./assets/fonts/source-han-serif/LICENSE.txt'),
+              'fonts/LICENSE-source-han-serif.txt',
+            ],
+            [localPath('./assets/fonts/jigmo/Jigmo2.woff2'), 'fonts/Jigmo2.woff2'],
+            [localPath('./assets/fonts/jigmo/LICENSE.txt'), 'fonts/LICENSE-jigmo.txt'],
+            [localPath('./assets/fonts/jigmo/README.txt'), 'fonts/README-jigmo.txt'],
+            [localPath('./assets/fonts/jigmo/THANKS.txt'), 'fonts/THANKS-jigmo.txt'],
           ];
           // CSS 入口的相对导入必须随同发射；file:// 与开发环境使用同一资源布局。
           const stylesRoot = localPath('./src/renderer/styles');

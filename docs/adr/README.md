@@ -40,3 +40,5 @@
 当前 ADR 的来源是 DEV-1558 与现行 v2.2 Linear Resources；实际版本、代码位置和测试结果必须以仓库、锁文件和 CI 为准。
 
 - [ADR-018](./ADR-018-read-only-project-graph.md) 项目关系图只读投影，DEV-1802。
+
+- [ADR-023](./ADR-023-local-document-font.md) 本地思源宋体、系统界面字体与同源字体 CSP，DEV-1624 字体增量。
