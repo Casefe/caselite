@@ -162,18 +162,36 @@ export function WorkspaceShell({
     </main>
   );
 }
+export const taskOptionalColumns = {
+  project: '关联项目',
+  owner: '负责人',
+  'due-date': '截止日期',
+} as const;
+export type TaskOptionalColumn = keyof typeof taskOptionalColumns;
+
+const taskColumnWidths: Record<string, string> = {
+  priority: '16px',
+  status: '16px',
+  title: 'minmax(90px, 1fr)',
+  project: 'minmax(58px, 16%)',
+  owner: 'minmax(48px, 12%)',
+  'due-date': 'max-content',
+};
+
 export function TaskTable({
   tasks,
   onOpen,
   documents = false,
   selectedId,
   onSelect,
+  hiddenColumns = [],
 }: {
   tasks: Task[];
   onOpen(id: string): void;
   documents?: boolean;
   selectedId?: string;
   onSelect?(id: string): void;
+  hiddenColumns?: TaskOptionalColumn[];
 }) {
   const titleColumn: ColumnDef<Task> = {
     id: 'title',
@@ -221,18 +239,26 @@ export function TaskTable({
           cell: ({ row }) => <StatusGlyph status={row.original.status ?? 'todo'} />,
         },
         titleColumn,
-        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
+        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
         {
           id: 'owner',
           header: '负责人',
           accessorFn: (task) =>
             task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
         },
-        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
+        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
       ];
+  const visible = columns.filter((column) => !hiddenColumns.some((hidden) => hidden === column.id));
+  const rowStyle = documents
+    ? undefined
+    : {
+        gridTemplateColumns: visible
+          .map((column) => taskColumnWidths[column.id ?? 'title'])
+          .join(' '),
+      };
   const table = createTable({
     data: tasks,
-    columns,
+    columns: visible,
     getRowId: (task) => task.id,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
@@ -247,7 +273,7 @@ export function TaskTable({
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
     >
       {table.getHeaderGroups().map((group) => (
-        <div className="table-head" role="row" key={group.id}>
+        <div className="table-head" role="row" key={group.id} style={rowStyle}>
           {group.headers.map((header) => (
             <span key={header.id} role="columnheader" data-column={header.column.id}>
               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -258,6 +284,7 @@ export function TaskTable({
       {table.getRowModel().rows.map((row) => (
         <button
           className="task-row"
+          style={rowStyle}
           role="row"
           key={row.id}
           data-row-task={row.id}

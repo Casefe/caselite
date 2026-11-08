@@ -2,13 +2,20 @@ import TaskListSummary from '../features/tasks/TaskListSummary';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
-import { TaskTable } from './Workspace';
+import { TaskTable, taskOptionalColumns, type TaskOptionalColumn } from './Workspace';
 import TaskInspector from './TaskInspector';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
 import { useTaskPage } from './task-list-query';
 
-export type TaskListState = { query: TaskListQuery; selected: string | null; scroll: number };
+export type TaskListState = {
+  query: TaskListQuery;
+  selected: string | null;
+  scroll: number;
+  groupByStatus?: boolean;
+  hiddenColumns?: TaskOptionalColumn[];
+};
+const optionalColumns = Object.entries(taskOptionalColumns) as [TaskOptionalColumn, string][];
 export const initialTaskListState: TaskListState = {
   query: {
     scope: { type: 'workspace' },
@@ -73,6 +80,16 @@ export default function RecordList({
     !propertiesBlocked &&
     (taskPage.isPending || taskPage.isFetching || (!taskPage.isError && outOfRange));
   const rows = taskPage.isError ? [] : (data?.rows ?? []);
+  const grouped = viewState.groupByStatus && rows.length > 0;
+  const groups = grouped
+    ? Object.entries(taskStatusNames)
+        .map(([status, label]) => ({
+          label,
+          rows: rows.filter((task) => (task.status ?? 'todo') === status),
+        }))
+        .filter((group) => group.rows.length > 0)
+    : [{ label: '', rows }];
+  const hiddenColumns = viewState.hiddenColumns ?? [];
   const total = loading || taskPage.isError ? 0 : (data?.page.total ?? 0);
   const more = data?.page.has_more ?? false;
   const error = taskPage.error?.message ?? '';
@@ -180,6 +197,43 @@ export default function RecordList({
           >
             <Icon name="filter" size={16} />
           </button>
+          <details className="task-display-options">
+            <summary aria-label="任务显示设置">显示设置</summary>
+            <fieldset disabled={propertiesBlocked}>
+              <legend>当前列表</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={viewState.groupByStatus ?? false}
+                  onChange={(event) =>
+                    onViewState({
+                      ...viewState,
+                      groupByStatus: event.target.checked,
+                      scroll: 0,
+                    })
+                  }
+                />
+                按状态分组（当前页）
+              </label>
+              {optionalColumns.map(([id, label]) => (
+                <label key={id}>
+                  <input
+                    type="checkbox"
+                    checked={!hiddenColumns.includes(id)}
+                    onChange={(event) =>
+                      onViewState({
+                        ...viewState,
+                        hiddenColumns: event.target.checked
+                          ? hiddenColumns.filter((column) => column !== id)
+                          : [...hiddenColumns, id],
+                      })
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          </details>
           <button
             type="button"
             className="task-list-preview-toggle"
@@ -365,19 +419,32 @@ export default function RecordList({
           {loading ? (
             <p role="status">正在读取任务…</p>
           ) : (
-            <TaskTable
-              tasks={rows}
-              documents={false}
-              selectedId={previewOpen ? selected?.id : (viewState.selected ?? undefined)}
-              onSelect={
-                previewOpen
-                  ? (id) => {
-                      if (!propertiesBlocked) onViewState({ ...viewState, selected: id });
-                    }
-                  : undefined
-              }
-              onOpen={openTask}
-            />
+            groups.map((group) => (
+              <section
+                key={group.label}
+                className="task-display-group"
+                aria-label={group.label || undefined}
+              >
+                {group.label && (
+                  <h2>
+                    {group.label} <span>{group.rows.length}</span>
+                  </h2>
+                )}
+                <TaskTable
+                  tasks={group.rows}
+                  hiddenColumns={hiddenColumns}
+                  selectedId={previewOpen ? selected?.id : (viewState.selected ?? undefined)}
+                  onSelect={
+                    previewOpen
+                      ? (id) => {
+                          if (!propertiesBlocked) onViewState({ ...viewState, selected: id });
+                        }
+                      : undefined
+                  }
+                  onOpen={openTask}
+                />
+              </section>
+            ))
           )}
         </div>
         <footer className="collection-footer">

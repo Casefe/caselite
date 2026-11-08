@@ -332,3 +332,21 @@ it('keeps a task tag draft when an earlier refresh completes during editing', as
   await act(async () => finish!(result([])));
   expect(screen.getByDisplayValue('未保存草稿')).toBeTruthy();
 });
+
+it('groups the loaded page, keeps display changes local, and opens the original task', async () => {
+  const pending = task('待办样例');
+  const complete = { ...task('已办样例'), status: 'done' } satisfies Task;
+  const request = vi.fn(async () => result([complete, pending]));
+  const { changed } = show(request);
+  const pendingRow = await screen.findByRole('row', { name: '选择任务：待办样例' });
+  expect(pendingRow).toBeDefined();
+  fireEvent.click(screen.getByLabelText('任务显示设置'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '按状态分组（当前页）' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '负责人' }));
+  expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2);
+  expect(screen.queryByRole('columnheader', { name: '负责人' })).toBeNull();
+  expect(request).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(screen.getByRole('row', { name: '选择任务：已办样例' }), { key: 'Enter' });
+  expect(changed.mock.lastCall?.[0].selected).toBe(complete.id);
+  expect(screen.getByRole('button', { name: '返回列表' })).toBeDefined();
+});
