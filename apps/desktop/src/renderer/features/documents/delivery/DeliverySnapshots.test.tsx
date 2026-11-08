@@ -130,7 +130,11 @@ it('does not resubmit an acknowledged snapshot when refresh fails; explicit reco
   expect(screen.getByRole('button', { name: '导出此版本 Word' }).hasAttribute('disabled')).toBe(
     false,
   );
-  expect(screen.getByRole('button', { name: 'PDF' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'PDF' }).hasAttribute('disabled')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+  expect(screen.getByRole('button', { name: '导出此版本 PDF' }).hasAttribute('disabled')).toBe(
+    false,
+  );
 });
 
 it('checks an unknown result by original key and only retries the exact request after no receipt', async () => {

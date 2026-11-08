@@ -1,6 +1,7 @@
 import { runFinanceDemo } from './finance-demo';
 import { createDeliveryExportApplication } from '@caselite/application';
 import { createDeliveryExportFiles } from './adapters/delivery-export-files';
+import { generateSnapshotPdf } from './adapters/pdf-export-processor';
 import { generateSnapshotWord } from './adapters/word-export-processor';
 import { runReminderDemo } from './reminder-demo';
 import { startReminderScheduler } from './adapters/reminder-scheduler';
@@ -725,10 +726,24 @@ app
       createDeliveryExportApplication({
         task: taskQueryProbe?.application ?? tasks,
         store: taskStore.deliveryExports,
-        files: createDeliveryExportFiles(join(taskRoot, 'delivery-exports'), (path) =>
-          shell.openPath(path),
+        files: createDeliveryExportFiles(
+          join(taskRoot, 'delivery-exports'),
+          (path) => shell.openPath(path),
+          async (row) => {
+            const result = await dialog.showSaveDialog({
+              title: '另存交付副本',
+              buttonLabel: '保存副本',
+              defaultPath: join(app.getPath('documents'), `CaseLite-草稿-${row.id}.${row.format}`),
+              filters: [{ name: row.format === 'pdf' ? 'PDF' : 'Word', extensions: [row.format] }],
+              properties: ['createDirectory'],
+            });
+            return result.canceled ? null : (result.filePath ?? null);
+          },
         ),
-        render: generateSnapshotWord,
+        render: (snapshot, state, format, signal) =>
+          format === 'pdf'
+            ? generateSnapshotPdf(snapshot, state, signal)
+            : generateSnapshotWord(snapshot, state, signal),
         hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
       }),
     );

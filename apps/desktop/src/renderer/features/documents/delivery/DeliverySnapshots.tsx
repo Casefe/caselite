@@ -9,7 +9,7 @@ import type {
 import { DraftEditor } from '../../../editors/RichEditor';
 import { mutation } from '../../../shared/data/taskCommand';
 import DeliveryVersions, { type DeliveryResult } from './DeliveryVersions';
-import { useSnapshotWord } from './useSnapshotWord';
+import { useSnapshotExport } from './useSnapshotExport';
 
 type Create = Extract<TaskRequest, { operation: 'create_snapshot' }>;
 type Phase = 'idle' | 'verify' | 'retry';
@@ -30,6 +30,7 @@ export default function DeliverySnapshots({
   onBack(): void;
   onBusy(value: boolean): void;
 }) {
+  const [format, setFormat] = useState<'Word' | 'PDF'>('Word');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [committed, setCommitted] = useState<DeliverySnapshot | null>(null);
   const [writing, setWriting] = useState(false);
@@ -82,7 +83,7 @@ export default function DeliverySnapshots({
     selectedId && versions.some((row) => row.id === selectedId)
       ? selectedId
       : (versions[0]?.id ?? null);
-  const word = useSnapshotWord(task, currentId);
+  const word = useSnapshotExport(task, currentId, format === 'PDF' ? 'pdf' : 'docx');
   useEffect(() => {
     onBusy(writing || phase === 'verify' || word.busy);
   }, [writing, phase, word.busy, onBusy]);
@@ -286,10 +287,11 @@ export default function DeliverySnapshots({
         onCreate={(note) => submit('create', note)}
         onBack={onBack}
         exportAvailable={!fixedRead.isError && !!fixedRead.data}
-        wordOnly
+        format={format}
+        onFormatChange={setFormat}
         exportControls={word.controls}
-        onExport={(_id, format) => {
-          if (format === 'Word') void word.start();
+        onExport={() => {
+          void word.start();
         }}
         preview={
           fixedRead.isFetching ||

@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { open, mkdir, lstat, realpath, copyFile, link, unlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, relative, extname } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DeliveryExport } from '@caselite/contracts';
 import type { DeliveryExportFilesPort } from '@caselite/application';
@@ -8,6 +8,7 @@ import type { DeliveryExportFilesPort } from '@caselite/application';
 export function createDeliveryExportFiles(
   directory: string,
   openPath: (path: string) => Promise<string>,
+  choosePath?: (row: DeliveryExport) => Promise<string | null>,
 ): DeliveryExportFilesPort {
   const root = resolve(directory);
   async function folder(name: string) {
@@ -69,9 +70,49 @@ export function createDeliveryExportFiles(
     }
   }
   async function location(row: DeliveryExport) {
-    return join(await folder('fixed'), `${id(row)}.docx`);
+    return join(await folder('fixed'), `${id(row)}.${row.format}`);
   }
   return {
+    async save(row) {
+      const source = await location(row);
+      if (!(await checked(source, row)) || !choosePath)
+        throw new Error('Missing export or save dialog');
+      const target = await choosePath(row);
+      if (!target) return false;
+      if (extname(target).toLowerCase() !== '.' + row.format) throw new Error('Wrong extension');
+      const parent = await realpath(dirname(target));
+      const protectedRoot = await realpath(dirname(root));
+      const under = relative(protectedRoot, parent);
+      if (
+        under === '' ||
+        (!under.startsWith('..' + '/') && under !== '..' && !under.startsWith('/'))
+      )
+        throw new Error('Protected output target');
+      if (parent !== resolve(dirname(target))) throw new Error('Linked target folder');
+      // 最终目标只用排他写入，不接受对话框的同名覆盖；失败只清理本次创建的副本。
+      let created = false;
+      try {
+        await copyFile(source, target, constants.COPYFILE_EXCL);
+        created = true;
+        if (!(await checked(target, row))) throw new Error('Copy validation failed');
+        const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+        try {
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        const directory = await open(parent, constants.O_RDONLY);
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+        }
+        return true;
+      } catch (error) {
+        if (created) await unlink(target);
+        throw error;
+      }
+    },
     async verify(row) {
       return checked(await location(row), row);
     },
@@ -111,7 +152,10 @@ export function createDeliveryExportFiles(
     async open(row) {
       const source = await location(row);
       if (!(await checked(source, row))) throw new Error('Missing fixed export');
-      const work = join(await folder('working'), `Word草稿-${id(row)}.docx`);
+      const work = join(
+        await folder('working'),
+        `${row.format === 'pdf' ? 'PDF' : 'Word'}草稿-${id(row)}.${row.format}`,
+      );
       try {
         await copyFile(source, work, constants.COPYFILE_EXCL);
       } catch (error) {

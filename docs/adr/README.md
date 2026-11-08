@@ -46,3 +46,5 @@
 - [ADR-023](./ADR-023-fixed-delivery-snapshots.md) 固定交付快照、原键回执和读取兼容，DEV-1628。
 
 - [ADR-024](./ADR-024-local-snapshot-word-export.md) 固定快照Word、受管产物与独立工作副本，DEV-1816。
+
+- [ADR-025](./ADR-025-fixed-snapshot-pdf-export.md) 同快照PDF、隔离打印、格式兼容与副本另存，DEV-1629。

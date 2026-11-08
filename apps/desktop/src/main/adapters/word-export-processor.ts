@@ -5,8 +5,10 @@ import type { DeliverySnapshot } from '@caselite/contracts';
 export function generateSnapshotWord(
   snapshot: DeliverySnapshot,
   state: number[],
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('Export cancelled'));
     const worker = new Worker(
       join(
         __dirname.includes('app.asar') ? process.resourcesPath : __dirname,
@@ -20,6 +22,7 @@ export function generateSnapshotWord(
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', stop);
       void worker.terminate();
       if (bytes instanceof Uint8Array && bytes.length && bytes.length <= 20_000_000) resolve(bytes);
       else
@@ -31,6 +34,8 @@ export function generateSnapshotWord(
           ),
         );
     }
+    const stop = () => finish();
+    signal?.addEventListener('abort', stop, { once: true });
     worker.once('message', finish);
     worker.once('error', () => finish());
     worker.once('exit', () => finish());

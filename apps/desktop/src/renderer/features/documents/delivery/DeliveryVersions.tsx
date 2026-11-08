@@ -32,6 +32,8 @@ export default function DeliveryVersions({
   onMore,
   wordOnly = false,
   exportControls,
+  format: controlledFormat,
+  onFormatChange,
 }: {
   versions: DeliveryVersion[];
   selectedId: string | null;
@@ -51,9 +53,12 @@ export default function DeliveryVersions({
   onMore?(): void;
   wordOnly?: boolean;
   exportControls?: ReactNode;
+  format?: DeliveryFormat;
+  onFormatChange?(format: DeliveryFormat): void;
 }) {
   const [note, setNote] = useState('');
-  const [format, setFormat] = useState<DeliveryFormat>('Word');
+  const [localFormat, setFormat] = useState<DeliveryFormat>('Word');
+  const format = controlledFormat ?? localFormat;
   const [showPreview, setShowPreview] = useState(false);
   const selected = versions.find((item) => item.id === selectedId);
   const [creating, setCreating] = useState(false);
@@ -175,7 +180,10 @@ export default function DeliveryVersions({
                       key={value}
                       aria-pressed={format === value}
                       disabled={busy || (wordOnly && value === 'PDF')}
-                      onClick={() => setFormat(value)}
+                      onClick={() => {
+                        setFormat(value);
+                        onFormatChange?.(value);
+                      }}
                     >
                       {value}
                     </button>

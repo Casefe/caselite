@@ -293,4 +293,4 @@ export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
 export type { Contact, ContactsRequest } from '@caselite/contracts';
 export type { DeliverySnapshot } from '@caselite/contracts';
-export type { DeliveryExport } from '@caselite/contracts';
+export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';

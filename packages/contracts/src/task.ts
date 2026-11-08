@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { deliverySnapshotSchema } from './delivery-snapshot';
-import { deliveryExportSchema } from './delivery-export';
+import { deliveryExportSchema, deliveryFormatSchema } from './delivery-export';
 
 export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
@@ -59,7 +59,29 @@ export const taskSchema = z.object({
 export const taskQuerySchema = z.discriminatedUnion('operation', [
   z
     .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('save_export'),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      snapshot_id: taskIdSchema,
+      export_id: taskIdSchema,
+      format: deliveryFormatSchema,
+    })
+    .strict(),
+  z
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('cancel_export'),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      snapshot_id: taskIdSchema,
+      idempotency_key: taskIdSchema,
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal('read_export'),
+      format: deliveryFormatSchema.optional(),
       protocol_version: z.literal(1),
       task_id: taskIdSchema,
       document_id: taskIdSchema,
@@ -69,6 +91,7 @@ export const taskQuerySchema = z.discriminatedUnion('operation', [
   z
     .object({
       operation: z.literal('open_export'),
+      format: deliveryFormatSchema.optional(),
       protocol_version: z.literal(1),
       task_id: taskIdSchema,
       document_id: taskIdSchema,
@@ -126,7 +149,7 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
       task_id: taskIdSchema,
       document_id: taskIdSchema,
       snapshot_id: taskIdSchema,
-      format: z.literal('docx'),
+      format: deliveryFormatSchema,
     })
     .strict(),
   z
@@ -217,6 +240,7 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     exports: z.array(deliveryExportSchema).max(1).optional(),
     export_created: z.boolean().optional(),
     export_opened: z.boolean().optional(),
+    export_saved: z.boolean().optional(),
     objective_state: richState.nullable().optional(),
     page: z
       .object({
@@ -229,6 +253,7 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(false),
     code: z.enum([
+      'CANCELLED',
       'INVALID_REQUEST',
       'FORBIDDEN',
       'NOT_FOUND',

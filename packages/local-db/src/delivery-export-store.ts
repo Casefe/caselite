@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import {
   deliveryExportSchema,
+  deliveryConverters,
+  type DeliveryExportFormat,
   taskResponseSchema,
   type DeliveryExport,
   type TaskRequest,
@@ -9,19 +11,21 @@ import {
 } from '@caselite/contracts';
 
 type Request = Extract<TaskRequest, { operation: 'export_snapshot' }>;
-const converter = 'docx-9.15.3-v1';
 const columns = 'id,snapshot_id,format,converter,status,sha256,bytes,created_at';
 const digest = ({ request_id, ...content }: Request) => {
   void request_id;
   return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 };
 export function createDeliveryExportStore(db: Database.Database, workspace: string) {
-  const read = (snapshot: string): DeliveryExport | undefined => {
+  const read = (
+    snapshot: string,
+    format: DeliveryExportFormat = 'docx',
+  ): DeliveryExport | undefined => {
     const row = db
       .prepare(
-        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND converter=? AND format='docx'`,
+        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND converter=? AND format=?`,
       )
-      .get(workspace, snapshot, converter);
+      .get(workspace, snapshot, deliveryConverters[format], format);
     return row ? deliveryExportSchema.parse(row) : undefined;
   };
   return {
@@ -40,13 +44,13 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
             (intent && intent.digest !== digest(request))
           )
             throw new Error('IDEMPOTENCY_CONFLICT');
-          let row = read(request.snapshot_id);
+          let row = read(request.snapshot_id, request.format);
           if (!row) {
             row = {
               id: randomUUID(),
               snapshot_id: request.snapshot_id,
-              format: 'docx',
-              converter,
+              format: request.format,
+              converter: deliveryConverters[request.format],
               status: 'pending',
               sha256: null,
               bytes: null,
@@ -97,7 +101,7 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
             if (old.digest !== digest(request)) throw new Error('IDEMPOTENCY_CONFLICT');
             return taskResponseSchema.parse(JSON.parse(old.result));
           }
-          const current = read(row.snapshot_id);
+          const current = read(row.snapshot_id, row.format);
           if (
             !current ||
             current.id !== row.id ||

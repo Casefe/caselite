@@ -19,7 +19,7 @@ it('allows only scoped snapshot Word requests; renderer cannot submit body, path
     { html: '<p>x</p>' },
     { actor: 'admin' },
     { sha256: 'a'.repeat(64) },
-    { format: 'pdf' },
+    { format: 'rtf' },
     { converter: 'other' },
   ])
     expect(taskRequestSchema.safeParse({ ...command, ...extra }).success).toBe(false);

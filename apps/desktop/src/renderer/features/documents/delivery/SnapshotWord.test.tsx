@@ -175,3 +175,65 @@ it('allows ending a known failed attempt without deleting pending artifacts and 
     false,
   );
 });
+
+it('binds the chosen PDF format to its own record and preserves Word when switching back', async () => {
+  const pdf: DeliveryExport = {
+    ...artifact,
+    id: uuid(6),
+    format: 'pdf',
+    converter: 'electron-45.1.0-pdf-v1',
+  };
+  let generated = false;
+  const { fn } = mount(async (r) => {
+    if (r.operation === 'read_export')
+      return ok({ exports: r.format === 'pdf' ? (generated ? [pdf] : []) : [artifact] });
+    if (r.operation === 'export_snapshot') {
+      generated = true;
+      return ok({ exports: [pdf], receipt: r.idempotency_key, export_created: true });
+    }
+    return normal(r);
+  });
+  await screen.findByRole('button', { name: '打开Word工作副本' });
+  fireEvent.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+  const button = await screen.findByRole('button', { name: '导出此版本 PDF' });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+  await screen.findByRole('button', { name: '打开PDF工作副本' });
+  expect(
+    fn.mock.calls.filter(([r]) => r.operation === 'export_snapshot').map(([r]) => r),
+  ).toMatchObject([{ format: 'pdf', snapshot_id: snapshot.id }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Word', exact: true }));
+  await screen.findByRole('button', { name: '打开Word工作副本' });
+  expect(screen.queryByRole('button', { name: '打开PDF工作副本' })).toBeNull();
+});
+
+it('sends a scoped cancellation while PDF is generating and unlocks after the cancelled reply', async () => {
+  let finish!: (response: TaskResponse) => void;
+  const { fn, onBusy } = mount(async (r) => {
+    if (r.operation === 'read_export') return ok({ exports: [] });
+    if (r.operation === 'export_snapshot')
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    if (r.operation === 'cancel_export') {
+      const response = fail('CANCELLED');
+      finish(response);
+      return response;
+    }
+    return normal(r);
+  });
+  await screen.findByRole('button', { name: '导出此版本 Word' });
+  fireEvent.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+  const button = await screen.findByRole('button', { name: '导出此版本 PDF' });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+  fireEvent.click(await screen.findByRole('button', { name: '取消PDF生成' }));
+  await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false));
+  const original = fn.mock.calls.map(([r]) => r).find((r) => r.operation === 'export_snapshot')!;
+  expect(fn.mock.calls.map(([r]) => r).find((r) => r.operation === 'cancel_export')).toMatchObject({
+    task_id: task.id,
+    document_id: task.document_id,
+    snapshot_id: snapshot.id,
+    idempotency_key: 'idempotency_key' in original ? original.idempotency_key : '',
+  });
+});

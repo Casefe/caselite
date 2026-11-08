@@ -234,6 +234,10 @@ it('serializes double-click/new-key requests and rejects altered original keys o
   expect(s.render).toHaveBeenCalledTimes(1);
   expect(await s.app.execute({ ...r, format: 'pdf' })).toMatchObject({
     ok: false,
+    code: 'CONFLICT',
+  });
+  expect(await s.app.execute({ ...r, format: 'rtf' })).toMatchObject({
+    ok: false,
     code: 'INVALID_REQUEST',
   });
   expect(await s.app.execute({ ...r, task_id: randomUUID() })).toMatchObject({
