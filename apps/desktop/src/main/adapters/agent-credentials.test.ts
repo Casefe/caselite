@@ -36,6 +36,7 @@ beforeEach(() => {
     .mockResolvedValue({ result: 'synthetic-key', shouldReEncrypt: false });
 });
 afterEach(() => {
+  expect(vi.getTimerCount()).toBe(0);
   Object.defineProperty(process, 'platform', platform);
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
@@ -67,7 +68,7 @@ describe('bounded system credentials', () => {
     storage.isAsyncEncryptionAvailable.mockReturnValue(late.promise);
     const stages = vi.fn();
     const opening = createAgentCredentials(root, stages);
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(30_000);
     const vault = await opening;
     late.resolve(true);
     await vi.advanceTimersByTimeAsync(1);
@@ -115,7 +116,7 @@ describe('bounded system credentials', () => {
     storage.isAsyncEncryptionAvailable.mockReturnValue(late.promise);
     const saving = vault.set('synthetic-key');
     const rejected = expect(saving).rejects.toThrow('System credential unavailable');
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(30_000);
     await rejected;
     late.resolve(true);
     await vi.advanceTimersByTimeAsync(1);
@@ -223,7 +224,7 @@ it('re-reads system storage only when explicitly requested after an initializati
   const late = pending<boolean>();
   storage.isAsyncEncryptionAvailable.mockReturnValueOnce(late.promise);
   const opening = createAgentCredentials(root);
-  await vi.advanceTimersByTimeAsync(3000);
+  await vi.advanceTimersByTimeAsync(30_000);
   const vault = await opening;
   late.resolve(true);
   await vi.advanceTimersByTimeAsync(0);
@@ -275,3 +276,125 @@ it('does not let an earlier encryption overwrite a later explicit clear', async 
   expect(vault.get()).toBeUndefined();
   expect(existsSync(file())).toBe(false);
 });
+
+function windowInitialization() {
+  const ready = pending<void>();
+  const done = pending<void>();
+  const onSettled = vi.fn(() => done.resolve());
+  return { ready, done, onSettled, options: { afterWindowReady: ready.promise, onSettled } };
+}
+
+it('keeps stored credentials unavailable without native access until the window is ready', async () => {
+  writeFileSync(file(), ciphertext);
+  const init = windowInitialization();
+  const vault = await createAgentCredentials(root, undefined, init.options);
+  for (let n = 0; n < 3; n++) expect(() => vault.get()).toThrow('Credential unavailable');
+  expect(storage.isAsyncEncryptionAvailable).not.toHaveBeenCalled();
+  init.ready.resolve();
+  await init.done.promise;
+  expect(vault.get()).toBe('synthetic-key');
+  expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(1);
+  expect(init.onSettled).toHaveBeenCalledTimes(1);
+  expect(readFileSync(file())).toEqual(ciphertext);
+});
+
+it('accepts a slow cold initialization once while keeping credentials unavailable until it succeeds', async () => {
+  writeFileSync(file(), ciphertext);
+  const init = windowInitialization();
+  const slow = pending<boolean>();
+  storage.isAsyncEncryptionAvailable.mockReturnValue(slow.promise);
+  const vault = await createAgentCredentials(root, undefined, init.options);
+  init.ready.resolve();
+  await vi.advanceTimersByTimeAsync(12_000);
+  expect(() => vault.get()).toThrow('Credential unavailable');
+  expect(init.onSettled).not.toHaveBeenCalled();
+  expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(1);
+  expect(storage.decryptStringAsync).not.toHaveBeenCalled();
+  slow.resolve(true);
+  await init.done.promise;
+  expect(vault.get()).toBe('synthetic-key');
+  expect(storage.decryptStringAsync).toHaveBeenCalledTimes(1);
+  expect(readFileSync(file())).toEqual(ciphertext);
+});
+
+it('preserves ciphertext and never initializes storage when the window fails to load', async () => {
+  writeFileSync(file(), ciphertext);
+  const init = windowInitialization();
+  const vault = await createAgentCredentials(root, undefined, init.options);
+  init.ready.reject(new Error('synthetic window load failure'));
+  await init.done.promise;
+  expect(() => vault.get()).toThrow('Credential unavailable');
+  expect(storage.isAsyncEncryptionAvailable).not.toHaveBeenCalled();
+  expect(readFileSync(file())).toEqual(ciphertext);
+});
+
+it('bounds background initialization to thirty seconds and ignores late native success', async () => {
+  writeFileSync(file(), ciphertext);
+  const init = windowInitialization();
+  const late = pending<boolean>();
+  storage.isAsyncEncryptionAvailable.mockReturnValue(late.promise);
+  const vault = await createAgentCredentials(root, undefined, init.options);
+  init.ready.resolve();
+  await vi.advanceTimersByTimeAsync(30_000);
+  await init.done.promise;
+  late.resolve(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(() => vault.get()).toThrow('Credential unavailable');
+  expect(storage.decryptStringAsync).not.toHaveBeenCalled();
+  expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(1);
+  expect(init.onSettled).toHaveBeenCalledTimes(1);
+  expect(readFileSync(file())).toEqual(ciphertext);
+});
+
+it.each(['save', 'clear', 'refresh'] as const)(
+  'does not start a queued initial read after an explicit %s',
+  async (action) => {
+    writeFileSync(file(), ciphertext);
+    const init = windowInitialization();
+    const vault = await createAgentCredentials(root, undefined, init.options);
+    if (action === 'save') await vault.set('new-synthetic-key');
+    if (action === 'clear') vault.clear();
+    if (action === 'refresh') await vault.refresh!();
+    const calls = storage.isAsyncEncryptionAvailable.mock.calls.length;
+    init.ready.resolve();
+    await init.done.promise;
+    expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(calls);
+    expect(vault.get()).toBe(
+      action === 'clear' ? undefined : action === 'save' ? 'new-synthetic-key' : 'synthetic-key',
+    );
+  },
+);
+
+it('preserves a model selection made before the queued initial read', async () => {
+  writeFileSync(file(), ciphertext);
+  const init = windowInitialization();
+  const vault = await createAgentCredentials(root, undefined, init.options);
+  vault.setDefaultModel('deepseek-flash');
+  init.ready.resolve();
+  await init.done.promise;
+  expect(vault.get()).toBe('synthetic-key');
+  expect(vault.getDefaultModel()).toBe('deepseek-flash');
+});
+
+it.each(['availability', 'decrypt'] as const)(
+  'does not cancel an active credential read when choosing a model during %s',
+  async (stage) => {
+    writeFileSync(file(), ciphertext);
+    const init = windowInitialization();
+    const availability = pending<boolean>();
+    const decrypt = pending<{ result: string; shouldReEncrypt: boolean }>();
+    if (stage === 'availability')
+      storage.isAsyncEncryptionAvailable.mockReturnValue(availability.promise);
+    else storage.decryptStringAsync.mockReturnValue(decrypt.promise);
+    const vault = await createAgentCredentials(root, undefined, init.options);
+    init.ready.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    vault.setDefaultModel('deepseek-flash');
+    if (stage === 'availability') availability.resolve(true);
+    else decrypt.resolve({ result: 'synthetic-key', shouldReEncrypt: false });
+    await init.done.promise;
+    expect(vault.get()).toBe('synthetic-key');
+    expect(vault.getDefaultModel()).toBe('deepseek-flash');
+    expect(readFileSync(file())).toEqual(ciphertext);
+  },
+);

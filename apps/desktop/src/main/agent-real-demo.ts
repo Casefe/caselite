@@ -145,11 +145,13 @@ export async function runRealAgentDemo(
   directory: string,
   dry: boolean,
   fixtureDirectory = directory,
+  initialCredentialRead: Promise<void> = Promise.resolve(),
 ) {
   const file = join(fixtureDirectory, 'caselite-agent-mock.pdf');
   if (hash(readFileSync(file)) !== realDemoPdfHash)
     throw new Error('Synthetic fixture hash mismatch');
   const window = await create();
+  await initialCredentialRead;
   const evaluate = (code: string) => window.webContents.executeJavaScript(code);
   const stage = (name: string) =>
     writeFileSync(

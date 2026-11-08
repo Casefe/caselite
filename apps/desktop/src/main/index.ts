@@ -118,6 +118,7 @@ async function createWindow(
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
+  credentialWindowLoaded();
   if (show && !window.isDestroyed()) window.show();
   return window;
 }
@@ -523,6 +524,10 @@ function runLocalDatabaseProbe(): void {
 }
 
 const defaultCredentialRoot = app.getPath('userData');
+let credentialWindowLoaded: () => void;
+const credentialWindowReady = new Promise<void>((resolve) => {
+  credentialWindowLoaded = resolve;
+});
 let taskDemoRoot: string | undefined;
 let taskDemoEvidenceRoot: string | undefined;
 let realResumeAudit: ReturnType<typeof inspectZeroDispatchResume> | undefined;
@@ -783,6 +788,17 @@ app
     const financeDemo = taskDemoPhase?.startsWith('finance-');
     if (financeDemo) materialDemoKeys.clear();
     const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
+    let initialCredentialRead = Promise.resolve();
+    const openSystemCredentials = async (root: string) => {
+      let settled!: () => void;
+      initialCredentialRead = new Promise<void>((resolve) => {
+        settled = resolve;
+      });
+      return createAgentCredentials(root, recordCredentialStage, {
+        afterWindowReady: credentialWindowReady,
+        onSettled: settled,
+      });
+    };
     const baseAgentCredentials =
       documentReviewDemo ||
       financeDemo ||
@@ -810,10 +826,8 @@ app
             },
           }
         : taskDemoPhase === 'real-agent' || credentialUi
-          ? readOnlyDemoCredentials(
-              await createAgentCredentials(defaultCredentialRoot, recordCredentialStage),
-            )
-          : await createAgentCredentials(taskRoot, recordCredentialStage);
+          ? readOnlyDemoCredentials(await openSystemCredentials(defaultCredentialRoot))
+          : await openSystemCredentials(taskRoot);
     const recordCredentialUi = () => {
       if (!credentialUi || !taskDemoRoot) return;
       const after = credentialFingerprints(defaultCredentialRoot);
@@ -990,8 +1004,9 @@ app
       return;
     }
     if (credentialUi) {
-      recordCredentialUi();
       const window = await createWindow();
+      await initialCredentialRead;
+      recordCredentialUi();
       window.setTitle('CaseLite · 系统凭据重读验收');
       return;
     }
@@ -1010,6 +1025,7 @@ app
         taskDemoEvidenceRoot!,
         taskDemoPhase === 'real-agent-dry',
         taskDemoRoot,
+        initialCredentialRead,
       );
       if (taskDemoPhase === 'real-agent-dry') app.exit(0);
       return;
