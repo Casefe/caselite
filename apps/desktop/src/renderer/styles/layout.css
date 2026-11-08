@@ -275,3 +275,37 @@
   color: #944f32;
   background: #fff4eb;
 }
+
+/* Linear 桌面实测值只应用于任务与项目工作台。 */
+:is(.task-query-list, .task-detail, .project-catalog) {
+  --workbench-header-height: 48px;
+  --workbench-tab-height: 30px;
+  --workbench-row-height: 48px;
+  --workbench-toolbar-inset: 10px;
+}
+:is(.task-query-list, .project-catalog) .collection-heading {
+  height: var(--workbench-header-height);
+  min-height: var(--workbench-header-height);
+  padding-inline: 20px;
+}
+
+.workbench-filter-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--workbench-tab-height);
+  height: var(--workbench-tab-height);
+  margin-inline-start: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--theme-subtle);
+  color: var(--muted);
+}
+.workbench-filter-toggle:is(:hover, [aria-expanded='true']) {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+:is(.task-query-toolbar, .project-list-controls)[hidden] {
+  display: none;
+}

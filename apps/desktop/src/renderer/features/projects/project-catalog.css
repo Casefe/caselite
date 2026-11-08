@@ -933,15 +933,31 @@
 .project-catalog-heading > .work-list-create {
   margin-inline-start: auto;
 }
+.project-catalog[data-project-view='list']:not([data-layout='three-column']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.project-catalog > .project-properties[hidden] {
+  display: none;
+}
+.project-list-stages .project-list-inspector-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--workbench-tab-height);
+  padding-inline: 0;
+}
 .project-catalog .project-list-stages {
-  margin-block: 8px 0;
+  align-items: center;
+  min-height: var(--workbench-header-height);
+  margin: 0 var(--workbench-toolbar-inset);
 }
 .project-catalog .project-list-stages button,
 .project-catalog .project-section-tabs button {
+  min-height: var(--workbench-tab-height);
+  padding-block: 4px;
   background: var(--theme-subtle);
   color: var(--muted);
 }
-.project-catalog .project-list-stages button[aria-pressed='true'],
+.project-catalog .project-list-stages button:is([aria-pressed='true'], [aria-expanded='true']),
 .project-catalog .project-section-tabs button[aria-selected='true'] {
   background: var(--theme-hover);
   color: var(--ink);
@@ -950,7 +966,8 @@
   position: sticky;
   inset-block-start: 0;
   z-index: 2;
-  padding-inline: 16px;
+  min-height: var(--workbench-header-height);
+  padding: 8px var(--workbench-toolbar-inset);
   background: var(--theme-panel);
 }
 .project-catalog .project-list-table {
@@ -960,8 +977,14 @@
   padding-inline: 10px;
 }
 .project-catalog .project-list-table th:first-child {
-  width: 31%;
+  width: 42%;
   min-width: 220px;
+}
+.project-catalog .project-list-table :is(th, td):first-child {
+  padding-inline-start: clamp(16px, 3.3vw, 48px);
+}
+.project-catalog .project-list-table td {
+  height: var(--workbench-row-height);
 }
 .project-catalog :is(.project-list-table, .project-task-table) th {
   background: transparent;
@@ -983,17 +1006,20 @@
   overflow-wrap: anywhere;
 }
 
-.project-catalog :is(#project-panel-overview, .project-activity-panel) {
-  --project-detail-gutter: clamp(16px, 3.4vw, 46px);
+.project-catalog #project-panel-overview {
+  --project-detail-gutter: clamp(20px, 3.65vw, 54px);
 }
 .project-catalog .project-overview-intro {
-  padding: 28px var(--project-detail-gutter) 12px;
+  padding: clamp(32px, 4.8vw, 70px) var(--project-detail-gutter) 16px;
+}
+.project-catalog .project-overview-intro h2 {
+  font-size: clamp(22px, 2.5vw, 26px);
 }
 .project-overview-icon {
   display: inline-grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   margin-block-end: 3px;
   border-radius: 10px;
   background: var(--theme-subtle);
@@ -1023,9 +1049,9 @@
   justify-content: center;
   gap: 8px;
   width: 100%;
-  min-height: 44px;
+  min-height: 72px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 11px;
   background: transparent;
   color: var(--muted);
 }
@@ -1035,16 +1061,17 @@
 }
 .project-catalog .project-activity-panel:not([hidden]) {
   align-items: stretch;
-  padding: 22px var(--project-detail-gutter);
+  padding: clamp(24px, 3.25vw, 48px) 18px;
 }
 .project-activity-panel .project-discussion.project-record-panel {
   width: 100%;
   padding: 0;
 }
 .project-activity-panel .project-discussion-compose {
+  min-height: 188px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--theme-subtle);
 }
 .project-activity-panel .project-discussion-compose .tiptap {
@@ -1057,7 +1084,7 @@
 .project-task-panel:not([hidden]) {
   align-items: stretch;
   gap: 9px;
-  padding: 8px 16px 20px;
+  padding: 0 var(--workbench-toolbar-inset) 20px;
 }
 .project-task-heading {
   display: flex;
@@ -1105,7 +1132,34 @@
   gap: 8px;
 }
 .project-task-table tbody tr {
-  height: 39px;
+  height: var(--workbench-row-height);
+}
+.project-catalog .project-task-table .project-task-group {
+  height: 40px;
+  background: var(--theme-subtle);
+}
+.project-catalog .project-task-table .project-task-group th {
+  padding: 0;
+  border: 0;
+}
+.project-task-group button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 15px;
+  text-align: start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+.project-task-group button[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+.project-task-group small {
+  color: var(--muted);
 }
 .project-task-table td:last-child button {
   white-space: nowrap;

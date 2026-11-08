@@ -296,10 +296,8 @@
 .task-query-list:not([data-layout='three-column']) {
   grid-template-columns: minmax(0, 1fr);
 }
-.task-query-list .task-list-preview-toggle {
-  margin-inline-start: auto;
-}
 .task-query-list [data-testid='new-task'] {
+  margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -354,12 +352,27 @@
   background: var(--theme-hover);
 }
 
+.task-list-viewbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--workbench-header-height);
+  padding: 8px var(--workbench-toolbar-inset);
+}
 .task-query-list .task-view-switcher {
-  padding-block: 8px 4px;
+  padding: 0;
+}
+.task-query-list .task-list-preview-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--workbench-tab-height);
+  padding: 0;
+  flex-shrink: 0;
 }
 .task-query-list .task-view-switcher button,
 .task-query-list .task-list-preview-toggle {
-  min-height: 28px;
+  min-height: var(--workbench-tab-height);
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--theme-subtle);
@@ -380,7 +393,7 @@
 }
 .task-query-list .task-table-structured {
   min-width: 0;
-  padding: 4px 10px 12px;
+  padding: 0 var(--workbench-toolbar-inset) 12px;
 }
 .task-query-list .task-table-structured .table-head {
   position: absolute;
@@ -394,8 +407,8 @@
 .task-query-list .task-table-structured .task-row {
   grid-template-columns: 16px 16px minmax(90px, 1fr) minmax(58px, 16%) minmax(48px, 12%) max-content;
   gap: 10px;
-  min-height: 39px;
-  padding-inline: 10px;
+  min-height: var(--workbench-row-height);
+  padding-inline: clamp(14px, 2.6vw, 38px) 18px;
   border: 0;
   border-radius: 7px;
   box-shadow: none;

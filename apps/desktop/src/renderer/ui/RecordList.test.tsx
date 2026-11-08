@@ -97,6 +97,10 @@ it('invalidates query A before B and never displays its late rows or count under
       }),
   );
   await waitFor(() => expect(pending).toHaveLength(1));
+  const filter = screen.getByRole('button', { name: '筛选任务' });
+  expect(filter.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(filter);
+  expect(filter.getAttribute('aria-expanded')).toBe('true');
   fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '乙' } });
   await waitFor(() => expect(pending).toHaveLength(2));
   await act(async () => pending[1].finish(result([b])));
@@ -257,6 +261,7 @@ it('keeps the project assignment guard until a confirmed write can be read back'
       <Host />
     </QueryClientProvider>,
   );
+  fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
   fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
   await waitFor(() => expect(field.disabled).toBe(false));

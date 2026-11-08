@@ -484,11 +484,12 @@
 
 /* 任务详情页头横跨正文和辅助栏，保留既有窄窗上下排列。 */
 .task-detail {
-  --task-detail-gutter: clamp(20px, 4vw, 54px);
+  --task-detail-gutter: clamp(20px, 4.2vw, 62px);
 }
 .task-detail > .task-detail-topline {
-  height: 42px;
-  padding-inline: 16px;
+  height: var(--workbench-header-height);
+  min-height: var(--workbench-header-height);
+  padding-inline: 20px;
   gap: 10px;
   color: var(--muted);
   font-size: 12px;
@@ -511,7 +512,7 @@
   padding: 22px var(--task-detail-gutter) 12px;
 }
 .task-detail .task-title h1 {
-  font-size: clamp(22px, 2.5vw, 30px);
+  font-size: clamp(22px, 2.5vw, 26px);
   line-height: 1.24;
 }
 .task-detail .task-content-overview {
@@ -527,7 +528,8 @@
   padding: 4px 12px;
 }
 .task-detail .task-detail-section.project-discussion > .project-discussion-compose {
-  padding: 8px 12px;
+  min-height: 92px;
+  padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--theme-subtle);

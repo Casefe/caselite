@@ -50,6 +50,7 @@ export default function RecordList({
 }) {
   const propertiesBlocked = propertyEditBlocked || projectDirty;
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [projects, setProjects] = useState<Matter[]>([]);
   const [catalogError, setCatalogError] = useState(''),
     [retry, setRetry] = useState(0);
@@ -144,6 +145,41 @@ export default function RecordList({
           <Icon name="check" size={18} />
           <h1>任务</h1>
           <span className="collection-total">{loading ? '…' : total}</span>
+          <button className="work-list-create" data-testid="new-task" onClick={onNew}>
+            <Icon name="plus" size={15} />
+            新建任务
+          </button>
+        </div>
+        <div className="task-list-viewbar">
+          <div className="task-view-switcher" role="group" aria-label="任务视图">
+            {(
+              [
+                ['all', '全部任务'],
+                ['created', '我创建的'],
+                ['subscribed', '我订阅的'],
+              ] as const
+            ).map(([view, label]) => (
+              <button
+                key={view}
+                type="button"
+                aria-pressed={(q.view ?? 'all') === view}
+                disabled={propertiesBlocked}
+                onClick={() => change({ view, sort: 'updated' })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="workbench-filter-toggle"
+            aria-label="筛选任务"
+            aria-controls="task-list-filters"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            <Icon name="filter" size={16} />
+          </button>
           <button
             type="button"
             className="task-list-preview-toggle"
@@ -154,31 +190,8 @@ export default function RecordList({
           >
             <Icon name="panel" size={16} />
           </button>
-          <button className="work-list-create" data-testid="new-task" onClick={onNew}>
-            <Icon name="plus" size={15} />
-            新建任务
-          </button>
         </div>
-        <div className="task-view-switcher" role="group" aria-label="任务视图">
-          {(
-            [
-              ['all', '全部任务'],
-              ['created', '我创建的'],
-              ['subscribed', '我订阅的'],
-            ] as const
-          ).map(([view, label]) => (
-            <button
-              key={view}
-              type="button"
-              aria-pressed={(q.view ?? 'all') === view}
-              disabled={propertiesBlocked}
-              onClick={() => change({ view, sort: 'updated' })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="task-query-toolbar">
+        <div className="task-query-toolbar" id="task-list-filters" hidden={!filtersOpen}>
           <input
             aria-label="搜索任务"
             placeholder="搜索任务标题或说明…"
@@ -355,7 +368,7 @@ export default function RecordList({
             <TaskTable
               tasks={rows}
               documents={false}
-              selectedId={selected?.id}
+              selectedId={previewOpen ? selected?.id : (viewState.selected ?? undefined)}
               onSelect={
                 previewOpen
                   ? (id) => {

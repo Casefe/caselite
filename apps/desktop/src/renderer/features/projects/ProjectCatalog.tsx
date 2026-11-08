@@ -4,6 +4,7 @@ import ReadTable from '../../shared/ui/ReadTable';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
 import { PriorityGlyph, StatusGlyph } from '../../ui/TaskListGlyph';
+import { taskStatusNames } from '../../ui/task-status';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
@@ -24,6 +25,7 @@ import ProjectPlanning from './ProjectPlanning';
 const ProjectRelationshipGraph = lazy(() => import('./ProjectRelationshipGraph'));
 const names = { ...projectStatuses, archived: '已归档' };
 const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
+const projectTaskStatuses = ['in_progress', 'todo', 'done', 'canceled'] as const;
 type CatalogSuccess = Extract<CatalogResponse, { ok: true }>;
 const sections = {
   overview: '概述',
@@ -82,6 +84,9 @@ export default function ProjectCatalog({
     [propertyDirty, setPropertyDirty] = useState(false),
     [acknowledged, setAcknowledged] = useState<Record<string, Matter>>({}),
     [assigning, setAssigning] = useState('');
+  const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<Record<string, boolean>>({});
+  const [listInspectorOpen, setListInspectorOpen] = useState(false);
+  const [listFiltersOpen, setListFiltersOpen] = useState(false);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
@@ -368,7 +373,7 @@ export default function ProjectCatalog({
       aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
       data-project-view={editor ? section : 'list'}
-      data-layout="three-column"
+      data-layout={editor || listInspectorOpen ? 'three-column' : undefined}
       data-testid="project-catalog"
     >
       <div className="collection-main">
@@ -431,10 +436,63 @@ export default function ProjectCatalog({
                 清除筛选
               </button>
             )}
+            <button
+              type="button"
+              className="workbench-filter-toggle"
+              aria-label="筛选项目"
+              aria-controls="project-list-filters"
+              aria-expanded={listFiltersOpen}
+              onClick={() => setListFiltersOpen((open) => !open)}
+            >
+              <Icon name="filter" size={16} />
+            </button>
+            <details
+              className="project-display-menu"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector('summary')?.focus();
+                }
+              }}
+            >
+              <summary>
+                <Icon name="list" size={15} /> 显示
+              </summary>
+              <div>
+                <p>显示属性 · 本次会话</p>
+                {Object.entries({ status: '状态', tasks: '任务', updated: '更新时间' }).map(
+                  ([id, label]) => (
+                    <label key={id}>
+                      <input
+                        type="checkbox"
+                        checked={columns[id as keyof typeof columns]}
+                        onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ),
+                )}
+              </div>
+            </details>
+            <button
+              className="project-list-inspector-toggle"
+              type="button"
+              aria-label="项目预览"
+              aria-expanded={listInspectorOpen}
+              disabled={blocked}
+              onClick={() => setListInspectorOpen((open) => !open)}
+            >
+              <Icon name="panel" size={16} />
+            </button>
           </div>
         )}
         {!editor && (
-          <div className="project-list-controls" aria-label="项目列表选项">
+          <div
+            className="project-list-controls"
+            id="project-list-filters"
+            aria-label="项目列表选项"
+            hidden={!listFiltersOpen}
+          >
             <label className="project-list-search">
               <Icon name="search" size={15} />
               <input
@@ -501,34 +559,6 @@ export default function ProjectCatalog({
               <option value="title">名称</option>
               <option value="status">状态</option>
             </select>
-            <details
-              className="project-display-menu"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.currentTarget.open = false;
-                  event.currentTarget.querySelector('summary')?.focus();
-                }
-              }}
-            >
-              <summary>
-                <Icon name="list" size={15} /> 显示
-              </summary>
-              <div>
-                <p>显示属性 · 本次会话</p>
-                {Object.entries({ status: '状态', tasks: '任务', updated: '更新时间' }).map(
-                  ([id, label]) => (
-                    <label key={id}>
-                      <input
-                        type="checkbox"
-                        checked={columns[id as keyof typeof columns]}
-                        onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                      />
-                      {label}
-                    </label>
-                  ),
-                )}
-              </div>
-            </details>
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}
@@ -759,58 +789,89 @@ export default function ProjectCatalog({
                           )}
                         </tr>
                       </thead>
-                      <tbody>
-                        {members.map((task) => (
-                          <tr key={task.id} onClick={() => openTask(task.id)}>
-                            <td>
-                              <PriorityGlyph priority={task.priority ?? 0} />
-                            </td>
-                            <td>
-                              <StatusGlyph status={task.status ?? 'todo'} />
-                            </td>
-                            <td>
-                              <button
-                                className="project-title-link"
-                                disabled={blocked}
-                                data-project-task={task.id}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openTask(task.id);
-                                }}
-                              >
-                                {task.title}
-                              </button>
-                            </td>
-                            <td>
-                              {task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}
-                            </td>
-                            <td>
-                              {task.due_date && (
-                                <time dateTime={task.due_date}>{task.due_date}</time>
-                              )}
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                disabled={blocked || !!p?.archived_at}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void command(
-                                    catalogMutation({
-                                      operation: 'assign_task' as const,
-                                      task_id: task.id,
-                                      expected_version: task.version,
-                                      matter_id: null,
-                                    }),
-                                  );
-                                }}
-                              >
-                                移出项目
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
+                      {projectTaskStatuses.map((status) => {
+                        const group = members.filter((task) => (task.status ?? 'todo') === status);
+                        if (!group.length) return null;
+                        const key = `${editor.project.id}:${status}`;
+                        const expanded = !collapsedTaskGroups[key];
+                        return (
+                          <tbody key={status} aria-label={taskStatusNames[status]}>
+                            <tr className="project-task-group">
+                              <th scope="rowgroup" colSpan={6}>
+                                <button
+                                  type="button"
+                                  aria-expanded={expanded}
+                                  onClick={() =>
+                                    setCollapsedTaskGroups((previous) => ({
+                                      ...previous,
+                                      [key]: expanded,
+                                    }))
+                                  }
+                                >
+                                  <Icon name="chevron" size={12} />
+                                  <span aria-hidden="true">
+                                    <StatusGlyph status={status} />
+                                  </span>
+                                  {taskStatusNames[status]} <small>{group.length}</small>
+                                </button>
+                              </th>
+                            </tr>
+                            {expanded &&
+                              group.map((task) => (
+                                <tr key={task.id} onClick={() => openTask(task.id)}>
+                                  <td>
+                                    <PriorityGlyph priority={task.priority ?? 0} />
+                                  </td>
+                                  <td>
+                                    <StatusGlyph status={task.status ?? 'todo'} />
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="project-title-link"
+                                      disabled={blocked}
+                                      data-project-task={task.id}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openTask(task.id);
+                                      }}
+                                    >
+                                      {task.title}
+                                    </button>
+                                  </td>
+                                  <td>
+                                    {task.assignee === undefined
+                                      ? '本人'
+                                      : (task.assignee ?? '未分配')}
+                                  </td>
+                                  <td>
+                                    {task.due_date && (
+                                      <time dateTime={task.due_date}>{task.due_date}</time>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      disabled={blocked || !!p?.archived_at}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void command(
+                                          catalogMutation({
+                                            operation: 'assign_task' as const,
+                                            task_id: task.id,
+                                            expected_version: task.version,
+                                            matter_id: null,
+                                          }),
+                                        );
+                                      }}
+                                    >
+                                      移出项目
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        );
+                      })}
                     </table>
                   </div>
                 )}
@@ -941,7 +1002,7 @@ export default function ProjectCatalog({
                 aria-labelledby="project-tab-activity"
                 className="project-record-panel project-activity-panel"
               >
-                <h2>活动</h2>
+                <h2 className="sr-only">活动</h2>
                 {section === 'activity' && (
                   <>
                     <ProjectDiscussion
@@ -1101,7 +1162,11 @@ export default function ProjectCatalog({
         </div>
         <footer className="collection-footer">真实本地项目 · 仅此设备</footer>
       </div>
-      <aside className="project-properties" aria-label="项目辅助栏">
+      <aside
+        className="project-properties"
+        aria-label="项目辅助栏"
+        hidden={!editor && !listInspectorOpen}
+      >
         {p && !sourceUnavailable ? (
           <>
             <ProjectPropertyEditor
