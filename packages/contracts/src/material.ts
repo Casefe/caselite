@@ -103,6 +103,14 @@ export const materialRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('discard'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('read'), source_id: id }).strict(),
   z.object({ ...base, operation: z.literal('save_original'), source_id: id }).strict(),
+  z
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('save_project_original'),
+      project_id: id,
+      source_id: id,
+    })
+    .strict(),
   z.object({ ...base, operation: z.literal('docx_semantic_preview'), source_id: id }).strict(),
   z
     .object({

@@ -22,6 +22,7 @@ export default function DocumentLibrary({
   const [selected, setSelected] = useState<string | null>(null),
     [filter, setFilter] = useState('active');
   const [text, setText] = useState('');
+  const [page, setPage] = useState(0);
   const [group, setGroup] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [sort, setSort] = useState('updated');
@@ -58,10 +59,16 @@ export default function DocumentLibrary({
         ? a.title.localeCompare(b.title, 'zh-CN') || a.id.localeCompare(b.id)
         : b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id),
     );
+  const pages = Math.max(1, Math.ceil(docs.length / 20));
+  const selectedIndex = selected === null ? -1 : docs.findIndex((doc) => doc.id === selected);
+  const currentPage =
+    selectedIndex >= 0 ? Math.floor(selectedIndex / 20) : Math.min(page, pages - 1);
+  const visible = docs.slice(currentPage * 20, (currentPage + 1) * 20);
   const d =
-    docs.find((x) => x.id === selected) ??
-    (blocked ? c.data?.documents.find((x) => x.id === selected) : undefined) ??
-    docs[0];
+    selected === null
+      ? visible[0]
+      : (docs[selectedIndex] ??
+        (dirty ? allDocuments.find((doc) => doc.id === selected) : undefined));
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -131,6 +138,8 @@ export default function DocumentLibrary({
                 onClick={() => {
                   setFilter(value);
                   setSelected(null);
+                  setPage(0);
+                  setPreview(false);
                 }}
               >
                 {label}
@@ -154,6 +163,8 @@ export default function DocumentLibrary({
               onChange={(event) => {
                 setText(event.target.value);
                 setSelected(null);
+                setPage(0);
+                setPreview(false);
               }}
             />
             <select
@@ -163,6 +174,8 @@ export default function DocumentLibrary({
               onChange={(event) => {
                 setGroup(event.target.value);
                 setSelected(null);
+                setPage(0);
+                setPreview(false);
               }}
             >
               <option value="">所有文件夹</option>
@@ -177,6 +190,8 @@ export default function DocumentLibrary({
               onChange={(event) => {
                 setProjectFilter(event.target.value);
                 setSelected(null);
+                setPage(0);
+                setPreview(false);
               }}
             >
               <option value="">所有项目</option>
@@ -207,11 +222,38 @@ export default function DocumentLibrary({
             核对原提交
           </button>
         )}
+        {pages > 1 && (
+          <nav className="view-toolbar" aria-label="文档分页">
+            <button
+              disabled={blocked || currentPage === 0}
+              onClick={() => {
+                setPage(currentPage - 1);
+                setSelected(null);
+                setPreview(false);
+              }}
+            >
+              上一页
+            </button>
+            <span>
+              第 {currentPage + 1} / {pages} 页 · 共 {docs.length} 份
+            </span>
+            <button
+              disabled={blocked || currentPage + 1 === pages}
+              onClick={() => {
+                setPage(currentPage + 1);
+                setSelected(null);
+                setPreview(false);
+              }}
+            >
+              下一页
+            </button>
+          </nav>
+        )}
         <div className="collection-scroll">
           <ReadTable
             label={library ? '知识库列表' : '文档列表'}
             className={library ? 'catalog-table' : 'catalog-table document-directory-table'}
-            data={docs}
+            data={visible}
             getRowId={(doc) => doc.id}
             groupBy={
               library

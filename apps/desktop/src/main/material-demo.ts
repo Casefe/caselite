@@ -230,7 +230,7 @@ export async function runMaterialDemo(
       );
       return;
     }
-    if (phase === 'materials-docx') {
+    if (phase === 'materials-docx' || phase === 'materials-docx-lists') {
       stage = 'docx-import';
       await drop('中文合同.docx');
       await waitFor(
@@ -330,6 +330,49 @@ export async function runMaterialDemo(
           2,
         ),
       );
+      if (phase === 'materials-docx-lists') {
+        stage = 'docx-directory';
+        const projectId = await evaluate(`(async()=>{
+          const mutation=()=>({protocol_version:1,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID()});
+          for(let i=1;i<=25;i++){const r=await window.caselite.task({...mutation(),operation:'create',title:'合成分页合同'+String(i).padStart(2,'0'),objective:''});if(!r.ok)throw new Error('Seed task failed');}
+          const p=await window.caselite.catalog({...mutation(),operation:'create_project',title:'合成Word原件项目'});if(!p.ok)throw new Error('Seed project failed');
+          const t=await window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(item.task_id)}});
+          const r=await window.caselite.catalog({...mutation(),operation:'assign_task',task_id:${JSON.stringify(item.task_id)},expected_version:t.tasks[0].version,matter_id:p.target_id});if(!r.ok)throw new Error('Assign failed');return p.target_id;
+        })()`);
+        await evaluate("document.querySelector('[data-nav=documents]').click()");
+        await waitFor("document.querySelectorAll('[data-document-id]').length===20");
+        await click('下一页');
+        await waitFor("document.querySelectorAll('[data-document-id]').length===6");
+        await capture('08-document-pagination');
+        await evaluate("document.querySelector('[data-nav=projects]').click()");
+        await waitFor("Boolean(document.querySelector('.project-title-link'))");
+        await click('合成Word原件项目');
+        await waitFor("Boolean(document.querySelector('[aria-label=编辑项目名称]'))");
+        await click('文件');
+        await waitFor(`Boolean(document.querySelector('[data-source-id="${item.id}"]'))`);
+        await evaluate(
+          `document.querySelector('[data-source-id="${item.id}"] .project-file-name').click()`,
+        );
+        await waitFor("Boolean(document.querySelector('.material-docx-reader'))");
+        await capture('09-project-word-original');
+        const original = await evaluate(
+          `window.caselite.material({protocol_version:1,operation:'read_project',project_id:${JSON.stringify(projectId)},source_id:${JSON.stringify(item.id)}})`,
+        );
+        if (
+          !original.ok ||
+          createHash('sha256').update(Buffer.from(original.data)).digest('hex') !== hash
+        )
+          throw new Error('Project original mismatch');
+        writeFileSync(
+          join(directory, 'lists-result.json'),
+          JSON.stringify({
+            projectId,
+            pagination: [20, 6],
+            originalSha256: hash,
+            sourceId: item.id,
+          }),
+        );
+      }
       return;
     }
     stage = 'drop-text';

@@ -184,7 +184,7 @@ it('refreshes same-version task counts and compact PDF projection after assignin
   renderProject(<Container />);
   fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
   await screen.findByLabelText('编辑项目名称');
-  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
+  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF 或 Word。');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   fireEvent.change(screen.getByLabelText('归入已有任务'), { target: { value: task.id } });
   fireEvent.click(screen.getByText('归入项目'));
@@ -203,7 +203,7 @@ it('refreshes same-version task counts and compact PDF projection after assignin
     expect((screen.getByRole('tab', { name: '概述' }) as HTMLButtonElement).disabled).toBe(false),
   );
   fireEvent.click(screen.getByRole('tab', { name: '概述' }));
-  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
+  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF 或 Word。');
   expect(screen.queryByText('归入原件.pdf')).toBeNull();
   expect(screen.getByText('项目任务', { selector: 'dt' }).nextElementSibling?.textContent).toBe(
     '0',

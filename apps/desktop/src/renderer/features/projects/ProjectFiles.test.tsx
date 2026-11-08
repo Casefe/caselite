@@ -107,7 +107,7 @@ it('compact distinguishes a failed query from a real empty project and discards 
     finish({ ok: true, materials: [source('old-source')] });
   });
   expect(screen.queryByText('同名.pdf')).toBeNull();
-  expect(screen.queryByText('项目还没有已登记材料，请在任务中添加 PDF。')).toBeNull();
+  expect(screen.queryByText('项目还没有已登记材料，请在任务中添加 PDF 或 Word。')).toBeNull();
 });
 
 it('discards previously visible files when a preview read is denied by project scope', async () => {
@@ -123,4 +123,44 @@ it('discards previously visible files when a preview read is denied by project s
   await screen.findByRole('alert');
   expect(screen.queryByText('同名.pdf')).toBeNull();
   expect(screen.queryByRole('complementary', { name: '文件预览' })).toBeNull();
+});
+
+it('reads Word from its exact project source and keeps copy authorization in the project scope', async () => {
+  const docx = {
+    ...source('word'),
+    name: '中文合同.docx',
+    pages: [
+      {
+        page: 1,
+        text: '付款期限十日',
+        origin: 'docx_text' as const,
+        docx_review: { revisions: true, comments: true },
+      },
+    ],
+  };
+  const material = vi.fn(async (r) =>
+    r.operation === 'save_project_original'
+      ? { ok: false, code: 'SCOPE', message: '材料已移出当前项目' }
+      : {
+          ok: true,
+          materials: [docx],
+          ...(r.operation === 'read_project' ? { data: new Uint8Array([80, 75]) } : {}),
+        },
+  );
+  window.caselite = { material } as unknown as Window['caselite'];
+  render(<ProjectFiles projectId="p" disabled={false} />);
+  fireEvent.click(await screen.findByText('中文合同.docx'));
+  await screen.findByText('固定原件已校验 · 以下为提取正文');
+  expect(screen.getByText(/原件含修订和批注/)).toBeTruthy();
+  expect(screen.getByText(/提取段 1 · 付款期限十日/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '保存原件副本' }));
+  await screen.findByText('材料已移出当前项目');
+  expect(screen.queryByLabelText('Word 固定原件')).toBeNull();
+  expect(screen.queryByText('中文合同.docx')).toBeNull();
+  expect(material.mock.calls.at(-1)?.[0]).toEqual({
+    protocol_version: 1,
+    operation: 'save_project_original',
+    project_id: 'p',
+    source_id: 'word',
+  });
 });

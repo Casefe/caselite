@@ -207,6 +207,8 @@ export function createMaterialApplication(ports: {
       const parsed = materialRequestSchema.safeParse(input);
       if (!parsed.success) return fail('INVALID_REQUEST', '材料请求无效。');
       const r = parsed.data;
+      if (r.operation === 'save_project_original' || r.operation === 'save_original')
+        return fail('INVALID_REQUEST', '原件另存须通过桌面受控保存入口。');
       if (r.operation === 'list_project' || r.operation === 'read_project') {
         try {
           const sources = store.projectSources(r.project_id);

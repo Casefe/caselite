@@ -168,7 +168,8 @@ export function createCaseLitePreloadApi(
     material: (request) =>
       materialResult(
         (request.operation === 'preview' && request.automatic) ||
-          request.operation === 'save_original'
+          request.operation === 'save_original' ||
+          request.operation === 'save_project_original'
           ? invoke(MATERIAL_CHANNEL, request)
           : invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request),
       ),

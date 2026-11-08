@@ -1,3 +1,4 @@
+import { DocxOriginalReader } from './DocxOriginalReader';
 import { DocxDraftPreview } from './DocxDraftPreview';
 import { Icon } from '../shared/ui/Icon';
 import {
@@ -75,7 +76,6 @@ export default function PdfAttachments({
   const readingId = c.reading?.id;
   const readingDocx = c.reading && isDocx(c.reading.name) ? c.reading : null;
   const docxMaterial = c.items.find((item) => item.id === readingId) ?? readingDocx?.material;
-  const docxReview = docxMaterial?.pages[0]?.docx_review;
   const closeMenu = (restoreFocus = false) => {
     setLayer('closed');
     if (restoreFocus) trigger.current?.focus();
@@ -530,34 +530,22 @@ export default function PdfAttachments({
                 </div>
               ))}
           {readingDocx && (
-            <section aria-label="Word 固定原件" className="material-docx-reader">
-              <header className="material-reader-tools">
-                <strong>{readingDocx.name}</strong>
-                <button
-                  type="button"
-                  onClick={() => void c.saveOriginal(readingDocx.id, readingDocx.task)}
-                >
-                  保存原件副本
-                </button>
-                <button type="button" onClick={c.clearReading}>
-                  收起阅读
-                </button>
-              </header>
-              <p>固定原件已校验 · 以下为提取正文</p>
+            <DocxOriginalReader
+              name={readingDocx.name}
+              material={docxMaterial}
+              onSaveOriginal={() => void c.saveOriginal(readingDocx.id, readingDocx.task)}
+              onClose={c.clearReading}
+              selection={
+                readingDocx.id in c.selected
+                  ? {
+                      pages: c.sections.get(readingDocx.id) ?? [],
+                      disabled,
+                      toggle: (page) => c.toggleSection(readingDocx.id, page),
+                    }
+                  : undefined
+              }
+            >
               {c.copyError && <p role="alert">{c.copyError}</p>}
-              <small>SHA-256 {docxMaterial?.sha256}</small>
-              {(docxReview?.revisions || docxReview?.comments) && (
-                <p role="status">
-                  原件含{docxReview.revisions ? '修订' : ''}
-                  {docxReview.revisions && docxReview.comments ? '和' : ''}
-                  {docxReview.comments ? '批注' : ''}
-                  。下方正文可能省略删除文字和审阅意见，请核对原件。
-                </p>
-              )}
-              {docxMaterial?.status === 'processing' && <p>正在本地提取文字…</p>}
-              {docxMaterial?.status === 'failed' && (
-                <p role="alert">提取未完成，仍可保存原件副本。</p>
-              )}
               {docxMaterial && docxMaterial.status !== 'ready' && (
                 <button
                   type="button"
@@ -578,22 +566,7 @@ export default function PdfAttachments({
                   scope={readingDocx.task}
                 />
               )}
-              {docxMaterial?.pages.map((page) => (
-                <label key={page.page}>
-                  {readingDocx.id in c.selected && (
-                    <input
-                      type="checkbox"
-                      disabled={disabled}
-                      checked={c.sections.get(readingDocx.id)?.includes(page.page) ?? false}
-                      onChange={() => c.toggleSection(readingDocx.id, page.page)}
-                    />
-                  )}
-                  <span>
-                    提取段 {page.page} · {page.text}
-                  </span>
-                </label>
-              ))}
-            </section>
+            </DocxOriginalReader>
           )}
           {c.reading && !readingDocx && (
             <Suspense fallback={<p>正在加载阅读器…</p>}>

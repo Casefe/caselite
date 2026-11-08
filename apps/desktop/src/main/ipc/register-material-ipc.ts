@@ -17,23 +17,48 @@ export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplica
   ipcMain.handle(MATERIAL_CHANNEL, async (event, input: unknown) => {
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
     const request = materialRequestSchema.safeParse(input);
-    if (request.success && request.data.operation === 'save_original') {
-      const read = { ...request.data, operation: 'read' as const };
-      const first = await app.execute(read);
-      const source = first.ok && first.materials.find((item) => item.id === read.source_id);
-      if (!source || materialKind(source.name) !== 'docx') return denied;
+    if (
+      request.success &&
+      (request.data.operation === 'save_original' ||
+        request.data.operation === 'save_project_original')
+    ) {
+      const read =
+        request.data.operation === 'save_project_original'
+          ? { ...request.data, operation: 'read_project' as const }
+          : { ...request.data, operation: 'read' as const };
+      if (selecting) return { ok: false, code: 'BUSY', message: '请先完成当前文件选择。' };
+      selecting = true;
       try {
+        const first = await app.execute(read);
+        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!first.ok) return first;
+        const source = first.materials.find((item) => item.id === read.source_id);
+        if (!source || materialKind(source.name) !== 'docx') return denied;
         const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
           defaultPath: source.name,
           filters: [{ name: 'Word 原件副本', extensions: ['docx'] }],
         });
         if (choice.canceled || !choice.filePath) return { ok: true, materials: [] };
+        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
         const current = await app.execute(read);
-        if (!current.ok || !current.data) return denied;
+        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!current.ok) return current;
+        if (
+          !current.data ||
+          !current.materials.some(
+            (item) =>
+              item.id === source.id &&
+              item.asset_version_id === source.asset_version_id &&
+              item.sha256 === source.sha256,
+          )
+        )
+          return denied;
         await writeFile(choice.filePath, current.data, { flag: 'wx', mode: 0o600 });
         return { ok: true, materials: current.materials };
       } catch {
         return { ok: false, code: 'COPY_FAILED', message: '未保存原件副本，请选一个新文件名。' };
+      } finally {
+        selecting = false;
       }
     }
     return materialResponseSchema.parse(await app.execute(input));

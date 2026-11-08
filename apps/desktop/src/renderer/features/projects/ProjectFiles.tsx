@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { Material } from '../../../preload/caselite-api';
 import { ProjectFileExample, ProjectFileTable } from './ProjectFileTable';
+import { DocxOriginalReader } from '../../ui/DocxOriginalReader';
+import { isDocx } from '../../ui/useMaterials';
 const PdfReader = lazy(() => import('../../ui/PdfReader'));
 const states: Record<Material['status'], string> = {
   imported: '原件已保存',
@@ -59,7 +61,7 @@ export default function ProjectFiles({
           setError(r.message);
           return;
         }
-        setData(r.materials.filter((material) => /\.pdf$/i.test(material.name)));
+        setData(r.materials);
         if (source && r.data) {
           setSelected(r.materials.find((material) => material.id === source.id) ?? null);
           setBytes(r.data);
@@ -103,18 +105,48 @@ export default function ProjectFiles({
     setSelected(null);
     setError('');
   };
-  const reader = selected && bytes && (
-    <Suspense fallback={<p>正在打开阅读器…</p>}>
-      <PdfReader
-        key={selected.id}
-        bytes={bytes}
+  const reader =
+    selected &&
+    bytes &&
+    (isDocx(selected.name) ? (
+      <DocxOriginalReader
         name={selected.name}
-        textPages={selected.pages}
+        material={selected}
         onClose={closePreview}
-        {...(!compact && { initialWidth: 320 })}
+        onSaveOriginal={() => {
+          const request = epoch.current;
+          void window.caselite
+            .material({
+              protocol_version: 1,
+              operation: 'save_project_original',
+              project_id: projectId,
+              source_id: selected.id,
+            })
+            .then((result) => {
+              if (request !== epoch.current || result.ok) return;
+              if (result.code === 'SCOPE') {
+                closePreview();
+                setData(null);
+              }
+              setError(result.message);
+            })
+            .catch(() => {
+              if (request === epoch.current) setError('未保存原件副本，请重试。');
+            });
+        }}
       />
-    </Suspense>
-  );
+    ) : (
+      <Suspense fallback={<p>正在打开阅读器…</p>}>
+        <PdfReader
+          key={selected.id}
+          bytes={bytes}
+          name={selected.name}
+          textPages={selected.pages}
+          onClose={closePreview}
+          {...(!compact && { initialWidth: 320 })}
+        />
+      </Suspense>
+    ));
   if (example && !compact)
     return (
       <div className="project-files">
@@ -181,7 +213,7 @@ export default function ProjectFiles({
         </button>
       )}
       {compact && <p className="caption">按本地登记顺序展示最近三份，不代表文件修改时间。</p>}
-      <p className="caption">PDF · 仅本项目任务的受管原件 · 处理状态不影响已保存字节</p>
+      <p className="caption">PDF / Word · 仅本项目任务的受管原件 · 处理状态不影响已保存字节</p>
       {busy && <p role="status">正在读取文件…</p>}
       {error && (
         <div role="alert">
@@ -195,7 +227,7 @@ export default function ProjectFiles({
       {data && !(error && !data.length) && (
         <>
           {compact ? (
-            <ul aria-label="最近登记的PDF">
+            <ul aria-label="最近登记的材料">
               {data
                 .slice(-3)
                 .reverse()
@@ -205,7 +237,8 @@ export default function ProjectFiles({
                       {m.name}
                     </button>
                     <small>
-                      {states[m.status]} · {m.page_count} 页 · 固定版本 {m.id.slice(0, 8)}
+                      {states[m.status]} · {m.page_count} {isDocx(m.name) ? '个提取段' : '页'} ·
+                      固定版本 {m.id.slice(0, 8)}
                     </small>
                   </li>
                 ))}
@@ -235,7 +268,8 @@ export default function ProjectFiles({
                   {busy && <p role="status">正在读取原件…</p>}
                   {bytes && (
                     <div className="project-file-preview-meta">
-                      PDF · {states[selected.status]} · {selected.page_count} 页 ·{' '}
+                      {isDocx(selected.name) ? 'Word' : 'PDF'} · {states[selected.status]} ·{' '}
+                      {selected.page_count} {isDocx(selected.name) ? '个提取段' : '页'} ·{' '}
                       {Math.ceil(selected.bytes / 1024)} KB · 固定版本{' '}
                       <code title={selected.id}>{selected.id.slice(0, 8)}</code>
                     </div>
@@ -249,7 +283,7 @@ export default function ProjectFiles({
             <p>
               {data.length
                 ? '没有符合筛选条件的文件。'
-                : '项目还没有已登记材料，请在任务中添加 PDF。'}
+                : '项目还没有已登记材料，请在任务中添加 PDF 或 Word。'}
             </p>
           )}
           {!compact && (

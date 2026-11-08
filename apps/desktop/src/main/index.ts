@@ -549,6 +549,7 @@ if (taskDemoPhase) {
       'materials',
       'materials-read',
       'materials-docx',
+      'materials-docx-lists',
       'materials-docx-preview',
       'materials-docx-reopen',
       'crash',
