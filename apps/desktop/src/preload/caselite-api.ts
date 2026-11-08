@@ -325,4 +325,5 @@ export type {
   LocalPreferenceValues,
   LocalPreferencesRequest,
   LocalPreferencesResponse,
+  WorkspaceLocations,
 } from '@caselite/contracts';

@@ -2,6 +2,7 @@ import { Icon } from '../shared/ui/Icon';
 import { ThemeSetting } from './Appearance';
 import ModelSettings from './ModelSettings';
 import PersonalSettings from './PersonalSettings';
+import { useLocalPreferences } from '../shared/data/LocalPreferences';
 import { settingsGroups, information, type SettingsSection } from './settings-sections';
 export { settingsGroups, type SettingsSection } from './settings-sections';
 
@@ -14,6 +15,7 @@ export default function SettingsView({
   onSection(section: SettingsSection): void;
   onBack(): void;
 }) {
+  const { locations, pending } = useLocalPreferences();
   const group = settingsGroups.find(({ items }) => items.some(([id]) => id === section))!;
   const label = group.items.find(([id]) => id === section)![1];
   return (
@@ -62,6 +64,20 @@ export default function SettingsView({
           {section === 'general' && <ThemeSetting />}
           {section === 'account' && <PersonalSettings />}
           {section === 'general' && <PersonalSettings preferencesOnly />}
+          {section === 'general' && (
+            <div className="settings-locations">
+              <SettingRow
+                title="数据库位置"
+                description="当前使用的数据库文件；这里只读显示，不迁移数据。"
+                value={locations?.database_file ?? (pending ? '正在读取…' : '暂无法读取')}
+              />
+              <SettingRow
+                title="输出文件夹位置"
+                description="固定交付产物的受管目录；另存副本时可逐次选择位置。"
+                value={locations?.output_directory ?? (pending ? '正在读取…' : '暂无法读取')}
+              />
+            </div>
+          )}
           {information[section]?.map(([title, description, value]) => (
             <SettingRow key={title} title={title} description={description} value={value} />
           ))}

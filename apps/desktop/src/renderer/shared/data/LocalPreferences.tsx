@@ -4,6 +4,7 @@ import type {
   LocalPreferenceValues,
   LocalPreferencesRequest,
   LocalPreferencesResponse,
+  WorkspaceLocations,
 } from '../../../preload/caselite-api';
 import { mutation } from './taskCommand';
 type Write = Extract<LocalPreferencesRequest, { operation: 'set' }>;
@@ -23,6 +24,7 @@ export const initialLocalPreferences: LocalPreferences = {
 const initial = fields(initialLocalPreferences);
 const Context = createContext({
   preferences: initialLocalPreferences,
+  locations: null as WorkspaceLocations | null,
   draft: initial,
   dirty: false,
   pending: true,
@@ -43,6 +45,7 @@ export const useLocalPreferences = () => useContext(Context);
 export function LocalPreferencesProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(initialLocalPreferences),
     [draft, setDraft] = useState(initial);
+  const [locations, setLocations] = useState<WorkspaceLocations | null>(null);
   const [pending, setPending] = useState(true),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -73,8 +76,10 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
       .preferences({ protocol_version: 1, operation: 'read' })
       .then((r) => {
         if (!alive) return;
-        if (r.ok) accept(r.preferences);
-        else setError(r.message);
+        if (r.ok) {
+          accept(r.preferences);
+          setLocations(r.locations ?? null);
+        } else setError(r.message);
       })
       .catch(() => {
         if (alive) setError('无法读取本地资料，请重试。');
@@ -120,6 +125,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
           if (mounted.current) {
             if (latest.ok) {
               accept(latest.preferences);
+              setLocations(latest.locations ?? null);
               setNotice('个人资料与偏好已保存到此工作区。');
             } else setNotice('已保存；最新资料刷新失败，可重新读取，不必再次保存。');
           }
@@ -178,6 +184,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
       const r = await window.caselite.preferences({ protocol_version: 1, operation: 'read' });
       if (!mounted.current) return;
       if (r.ok) {
+        setLocations(r.locations ?? null);
         if (edited) setPreferences(r.preferences);
         else accept(r.preferences);
         setError('');
@@ -198,6 +205,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     <Context.Provider
       value={{
         preferences,
+        locations,
         draft,
         dirty: JSON.stringify(draft) !== JSON.stringify(fields(preferences)),
         pending,

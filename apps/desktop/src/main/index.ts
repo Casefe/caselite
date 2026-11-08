@@ -718,7 +718,12 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
-    registerLocalPreferencesIpc(createLocalPreferencesApplication(taskStore.localPreferences));
+    registerLocalPreferencesIpc(
+      createLocalPreferencesApplication(taskStore.localPreferences, {
+        database_file: join(taskRoot, 'caselite.sqlite'),
+        output_directory: join(taskRoot, 'delivery-exports'),
+      }),
+    );
     const taskQueryProbe =
       taskDemoRoot &&
       taskDemoPhase === 'task-status-write' &&

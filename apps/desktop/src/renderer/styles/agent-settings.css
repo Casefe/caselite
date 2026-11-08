@@ -87,6 +87,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.settings-locations .settings-pill {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 65%;
+  text-align: right;
+  user-select: text;
+}
 .profile-initial {
   display: inline-flex;
   align-items: center;

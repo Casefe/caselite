@@ -32,6 +32,12 @@ export const defaultLocalPreferences = localPreferencesSchema.parse({
   show_word_count: false,
   version: 0,
 });
+export const workspaceLocationsSchema = z
+  .object({
+    database_file: z.string().min(1).max(4096),
+    output_directory: z.string().min(1).max(4096),
+  })
+  .strict();
 export const localPreferencesRequestSchema = z.discriminatedUnion('operation', [
   z.object({ protocol_version: z.literal(1), operation: z.literal('read') }).strict(),
   z
@@ -58,6 +64,7 @@ export const localPreferencesResponseSchema = z.discriminatedUnion('ok', [
       ok: z.literal(true),
       preferences: localPreferencesSchema,
       receipt: z.string().uuid().nullable(),
+      locations: workspaceLocationsSchema.optional(),
     })
     .strict(),
   z
@@ -80,3 +87,4 @@ export type LocalPreferenceValues = z.infer<typeof localPreferenceValuesSchema>;
 export type LocalPreferences = z.infer<typeof localPreferencesSchema>;
 export type LocalPreferencesRequest = z.infer<typeof localPreferencesRequestSchema>;
 export type LocalPreferencesResponse = z.infer<typeof localPreferencesResponseSchema>;
+export type WorkspaceLocations = z.infer<typeof workspaceLocationsSchema>;
