@@ -44,16 +44,18 @@ export default function ProjectDiscussion({
         publicationFields={activity && updateHealth ? { health: updateHealth } : undefined}
         publicationOptions={
           activity
-            ? (locked) => (
+            ? (locked, setOptionsDirty) => (
                 <label className="project-health-control">
                   健康度
                   <select
                     aria-label="更新健康度"
                     disabled={locked}
                     value={updateHealth}
-                    onChange={(event) =>
-                      setSelectedHealth(event.target.value as typeof updateHealth)
-                    }
+                    onChange={(event) => {
+                      const next = event.target.value as typeof updateHealth;
+                      setSelectedHealth(next);
+                      setOptionsDirty(Boolean(next && next !== health));
+                    }}
                   >
                     <option value="">{health ? '沿用当前健康度' : '未评估'}</option>
                     {Object.entries(projectHealthNames).map(([value, name]) => (
@@ -67,6 +69,7 @@ export default function ProjectDiscussion({
             : undefined
         }
         onPublished={activity ? onPublished : undefined}
+        onResetOptions={activity ? () => setSelectedHealth(null) : undefined}
         {...props}
       >
         {activity

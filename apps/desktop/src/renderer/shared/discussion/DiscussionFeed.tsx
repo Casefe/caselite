@@ -26,6 +26,7 @@ export function DiscussionFeed({
   publicationOptions,
   publicationFields,
   onPublished,
+  onResetOptions,
 }: {
   scope: DiscussionScope;
   archived: boolean;
@@ -33,12 +34,14 @@ export function DiscussionFeed({
   compose: boolean;
   onDirty(value: boolean): void;
   refresh?: string | null;
-  publicationOptions?: (disabled: boolean) => React.ReactNode;
+  publicationOptions?: (disabled: boolean, onDirty: (value: boolean) => void) => React.ReactNode;
   publicationFields?: Pick<Publication, 'health'>;
   onPublished?(): void;
+  onResetOptions?(): void;
   children?: (entry: DiscussionEntry, reading: boolean) => React.ReactNode;
 }) {
   const [draft, setDraft] = useState(emptyDraft);
+  const [optionsDirty, setOptionsDirty] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [page, setPage] = useState<{
     entries: DiscussionEntry[];
@@ -103,6 +106,8 @@ export function DiscussionFeed({
 
   function resetDraft() {
     setDraft(emptyDraft());
+    setOptionsDirty(false);
+    onResetOptions?.();
     setEpoch((n) => n + 1);
     onDirty(false);
   }
@@ -170,7 +175,10 @@ export function DiscussionFeed({
             composing.current = false;
           }}
         >
-          {publicationOptions?.(editorDisabled)}
+          {publicationOptions?.(editorDisabled, (value) => {
+            setOptionsDirty(value);
+            onDirty(value || Boolean(draft.state));
+          })}
           <DraftEditor
             key={epoch}
             label={label}
@@ -202,7 +210,7 @@ export function DiscussionFeed({
           >
             发布{label}
           </button>
-          {draft.state && !unknown && (
+          {(draft.state || optionsDirty) && !unknown && (
             <button
               type="button"
               disabled={disabled || pending}
