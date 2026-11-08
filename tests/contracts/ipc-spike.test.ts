@@ -311,4 +311,44 @@ describe('typed preload to main IPC Spike', () => {
       expect(JSON.stringify(result)).not.toMatch(/SQLITE|client-case\.db|secret-value/);
     }
   });
+
+  it('waits for a native save dialog while ordinary task commands retain their deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (value: unknown) => void;
+      const invoke = vi.fn(
+        () =>
+          new Promise<unknown>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const api = createCaseLitePreloadApi(invoke);
+      const id = '55555555-5555-4555-8555-555555555555';
+      let settled = false;
+      const saving = api
+        .task({
+          protocol_version: 1,
+          operation: 'save_export',
+          task_id: id,
+          document_id: id,
+          snapshot_id: id,
+          export_id: id,
+          format: 'pdf',
+        })
+        .then((value) => {
+          settled = true;
+          return value;
+        });
+      const finishDialog = finish;
+      const ordinary = api.task({ protocol_version: 1, operation: 'read', task_id: id });
+      await vi.advanceTimersByTimeAsync(IPC_COMMAND_TIMEOUT_MS * 2);
+      expect(settled).toBe(false);
+      expect(await ordinary).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+      finishDialog({ ok: true, tasks: [], state: null, receipt: null, export_saved: false });
+      expect(await saving).toMatchObject({ ok: true, export_saved: false });
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -39,6 +39,7 @@ import {
   type AgentRequest,
   type AgentResponse,
   TASK_CHANNEL,
+  taskRequestSchema,
   taskResponseSchema,
   type TaskRequest,
   type TaskResponse,
@@ -229,9 +230,14 @@ export function createCaseLitePreloadApi(
           };
     },
     async task(request) {
-      const result = taskResponseSchema.safeParse(
-        await invokeBusinessCommand(invoke, TASK_CHANNEL, request),
-      );
+      // 原生另存为等待人工选择，不受短业务命令的15秒预算限制；宿主仍校验对象权限和目标路径。
+      // 只放行通过严格协议校验的另存为请求，普通保存继续保留超时与未知回执保护。
+      const parsed = taskRequestSchema.safeParse(request);
+      const call =
+        parsed.success && parsed.data.operation === 'save_export'
+          ? invoke(TASK_CHANNEL, parsed.data).catch(() => internalFailure())
+          : invokeBusinessCommand(invoke, TASK_CHANNEL, request);
+      const result = taskResponseSchema.safeParse(await call);
       return result.success
         ? result.data
         : {
