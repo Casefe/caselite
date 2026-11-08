@@ -2,7 +2,7 @@ import { agentMessages } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
-import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
+import { AssistantMarkdown } from '../features/agent/AssistantMarkdown';
 import {
   createContext,
   forwardRef,
@@ -32,19 +32,6 @@ import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
-function MarkdownText() {
-  return (
-    <MarkdownTextPrimitive
-      className="assistant-markdown"
-      skipHtml
-      components={{
-        // 模型链接和图片仅作文字展示，不能触发联网或被当成已核验来源。
-        a: ({ children }) => <span title="模型提供的链接，未经核验">{children}</span>,
-        img: ({ alt }) => <span>{alt ? `[图片：${alt}]` : '[模型图片未加载]'}</span>,
-      }}
-    />
-  );
-}
 function Message() {
   const attachments = useAuiState(
     (state) => state.message.metadata.custom?.attachments,
@@ -60,6 +47,9 @@ function Message() {
       <header className="assistant-message-heading">
         <strong>{role === 'user' ? '你' : 'CaseLite'}</strong>
         {role === 'assistant' && <span>{run ? agentModelLabel(run.model) : 'AI 辅助'}</span>}
+        {role === 'assistant' && run?.status === 'running' && (
+          <span className="assistant-generating">正在生成</span>
+        )}
       </header>
       {attachments?.length ? (
         <div className="message-attachments">
@@ -79,7 +69,7 @@ function Message() {
         </div>
       ) : null}
       <MessagePrimitive.Parts
-        components={role === 'assistant' ? { Text: MarkdownText } : undefined}
+        components={role === 'assistant' ? { Text: AssistantMarkdown } : undefined}
       />
       {role === 'assistant' && run && run.status !== 'running' && (
         <footer className="assistant-message-footer">

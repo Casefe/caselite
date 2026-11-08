@@ -76,6 +76,7 @@
   flex-shrink: 0;
 }
 .assistant-message {
+  min-width: 0;
   padding: 16px 0;
   margin: 0;
   border: 0;
@@ -114,6 +115,20 @@
   color: var(--theme-secondary);
   font-size: 10px;
 }
+.assistant-message-heading .assistant-generating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11px;
+}
+.assistant-generating::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
 .assistant-message-footer {
   display: flex;
   align-items: center;
@@ -124,25 +139,70 @@
   font-size: 11px;
 }
 .assistant-markdown {
+  min-width: 0;
+  max-width: 78ch;
+  font-size: 14px;
   line-height: 1.85;
   overflow-wrap: anywhere;
 }
 .assistant-markdown p {
-  margin: 8px 0;
+  margin: 0 0 14px;
 }
 .assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
-  margin: 18px 0 8px;
+  margin: 24px 0 10px;
   font-size: 15px;
   line-height: 1.5;
+  font-weight: 600;
+}
+.assistant-markdown h1 {
+  font-size: 24px;
+  letter-spacing: -0.025em;
+}
+.assistant-markdown h2 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}
+.assistant-markdown h3 {
+  font-size: 17px;
+}
+.assistant-markdown > :first-child {
+  margin-top: 0;
+}
+.assistant-markdown > :last-child {
+  margin-bottom: 0;
 }
 .assistant-markdown :is(ul, ol) {
+  margin: 10px 0 16px;
   padding-left: 24px;
 }
+.assistant-markdown li + li {
+  margin-top: 5px;
+}
+.assistant-markdown li > p {
+  margin-bottom: 6px;
+}
 .assistant-markdown blockquote {
-  border-left: 2px solid var(--line);
+  border-left: 3px solid var(--line);
   padding-left: 12px;
   margin: 12px 0;
   color: var(--theme-secondary);
+}
+.assistant-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+.assistant-code-heading {
+  padding: 6px 12px;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: var(--theme-subtle);
+  color: var(--theme-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .assistant-markdown pre {
   max-width: 100%;
@@ -151,10 +211,58 @@
   background: var(--theme-subtle);
   border: 1px solid var(--line);
   border-radius: 6px;
+  margin: 0 0 16px;
+}
+.assistant-code-heading + pre {
+  border-radius: 0 0 6px 6px;
 }
 .assistant-markdown code {
-  white-space: pre-wrap;
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
+}
+.assistant-markdown :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--theme-subtle);
+}
+.assistant-markdown pre code {
+  white-space: pre;
+  overflow-wrap: normal;
+  line-height: 1.7;
+}
+.assistant-table-scroll {
+  max-width: 100%;
+  margin: 16px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.assistant-table-scroll:focus-visible {
+  outline: 2px solid var(--theme-secondary);
+  outline-offset: 2px;
+}
+.assistant-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.assistant-table-scroll :is(th, td) {
+  min-width: 100px;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.assistant-table-scroll th {
+  background: var(--theme-subtle);
+  font-weight: 600;
+}
+.assistant-table-scroll tr:last-child td {
+  border-bottom: 0;
+}
+.home-conversation .assistant-markdown {
+  font-size: 15px;
 }
 .assistant-scroll-bottom {
   display: block;
