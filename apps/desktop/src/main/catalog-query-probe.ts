@@ -127,10 +127,12 @@ export async function runCatalogQueryProbe(
   await wait(row('knowledge'));
   await click('收藏文档');
   await wait(button('取消收藏'));
+  // 收藏列属于知识库视图；文档目录按用户要求的六列显示，不以已删除的列判断缓存。
+  await wait(`${row('knowledge')}?.textContent.includes('★')`);
   await nav('finance');
   await wait(finance);
   await nav('documents');
-  await wait(`${row('documents')}?.textContent.includes('★') && ${button('移出知识库')}`);
+  await wait(`${row('documents')} && ${button('取消收藏')} && ${button('移出知识库')}`);
   if (counts.write - afterVisits.write !== 2) throw new Error('Unexpected repeated document write');
   writeFileSync(
     join(root, 'catalog-query-result.json'),
