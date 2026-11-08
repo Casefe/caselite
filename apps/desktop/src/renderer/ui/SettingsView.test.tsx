@@ -59,7 +59,7 @@ describe('central model settings', () => {
     window.caselite = { agent } as unknown as Window['caselite'];
     show();
     await waitFor(() => expect(screen.getAllByText('未配置').length).toBeGreaterThan(0));
-    for (const name of ['MinerU OCR', '元典']) {
+    for (const name of ['MinerU OCR', 'PaddleOCR', '元典', '北大法宝', '企查查']) {
       fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }));
       expect((screen.getByLabelText(`${name} API Key`) as HTMLInputElement).disabled).toBe(true);
       expect((screen.getByText('保存 Key') as HTMLButtonElement).disabled).toBe(true);

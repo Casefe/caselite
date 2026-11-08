@@ -38,9 +38,25 @@
   border: 0;
   justify-content: flex-start;
   background: none;
-  padding: 10px 12px;
+  padding: 6px 12px;
   font-size: 12px;
   color: #69717d;
+}
+.settings-nav-group {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.settings-nav-group > span {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #89919c;
+}
+.settings-profile-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  margin-top: 14px;
 }
 .settings-navigation nav button[aria-current='page'] {
   background: #eaeef4;
@@ -94,7 +110,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 24px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--line);
 }
 .setting-row h3 {
