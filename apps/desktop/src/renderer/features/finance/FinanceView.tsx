@@ -522,11 +522,38 @@ export default function FinanceView({
   const projects = read.data?.projects;
   const error = read.error;
   const [selected, setSelected] = useState(initialProject);
+  const [search, setSearch] = useState('');
+  const [ledgerFilter, setLedgerFilter] = useState('all');
   const [blocked, setBlocked] = useState(false);
   const project = projects?.find((item) => item.id === selected);
+  const keyword = search.trim().toLocaleLowerCase();
+  const matches = (projects ?? []).filter((item) => {
+    const registered = item.outstanding_cents != null;
+    return (
+      item.title.toLocaleLowerCase().includes(keyword) &&
+      (ledgerFilter === 'all' || registered === (ledgerFilter === 'registered'))
+    );
+  });
+  const registered = matches.filter((item) => item.outstanding_cents != null);
+  const outstanding = registered.reduce(
+    (sum, item) => sum + BigInt(item.outstanding_cents ?? 0),
+    0n,
+  );
   return (
     <section className="workspace-placeholder finance-view">
-      <h1>财务</h1>
+      <header className="finance-workbench-heading">
+        <div>
+          <h1>财务</h1>
+          <p>查询项目待收款，打开账本登记合同、收款和冲销。</p>
+        </div>
+        <button
+          type="button"
+          disabled={blocked || read.isFetching}
+          onClick={() => void read.load().catch(() => {})}
+        >
+          刷新项目
+        </button>
+      </header>
       {error && (
         <p role="alert">
           {error}{' '}
@@ -556,8 +583,61 @@ export default function FinanceView({
         </label>
       )}
       {!!projects?.length && (
+        <section className="finance-overview" aria-label="财务项目筛选">
+          <div className="finance-filters">
+            <label>
+              搜索财务项目
+              <input
+                type="search"
+                value={search}
+                disabled={blocked}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="项目名称…"
+              />
+            </label>
+            <label>
+              建账状态
+              <select
+                value={ledgerFilter}
+                disabled={blocked}
+                onChange={(event) => setLedgerFilter(event.target.value)}
+              >
+                <option value="all">全部</option>
+                <option value="registered">已建账</option>
+                <option value="unregistered">未建账</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={blocked || (!search && ledgerFilter === 'all')}
+              onClick={() => {
+                setSearch('');
+                setLedgerFilter('all');
+              }}
+            >
+              清除筛选
+            </button>
+          </div>
+          <dl className="finance-totals" aria-label="筛选结果总览">
+            <div>
+              <dt>匹配项目</dt>
+              <dd>{matches.length}</dd>
+            </div>
+            <div>
+              <dt>已建账</dt>
+              <dd>{registered.length}</dd>
+            </div>
+            <div>
+              <dt>待收款合计（元）</dt>
+              <dd>{formatCents(registered.length ? outstanding : null)}</dd>
+            </div>
+          </dl>
+          {matches.length === 0 && <p>没有符合筛选条件的项目。</p>}
+        </section>
+      )}
+      {matches.length > 0 && (
         <ReadTable
-          data={projects}
+          data={matches}
           getRowId={(item) => item.id}
           label="财务项目列表"
           rowProps={(item) => ({ 'aria-selected': item.id === project?.id })}

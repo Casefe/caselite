@@ -537,6 +537,49 @@
   padding-bottom: 2rem;
   overflow: auto;
 }
+.finance-workbench-heading,
+.finance-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.finance-workbench-heading {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.finance-workbench-heading h1 {
+  margin: 0;
+}
+.finance-workbench-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.finance-overview {
+  margin: 12px 0;
+}
+.finance-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.finance-totals > div {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--theme-subtle);
+}
+.finance-totals dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.finance-totals dd {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 .finance-view fieldset,
 .finance-summary {
   display: flex;
