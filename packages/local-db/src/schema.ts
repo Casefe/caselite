@@ -30,6 +30,7 @@ export const taskItems = sqliteTable(
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
     assignee: text('assignee').default('本人'),
+    subscribed: integer('subscribed', { mode: 'boolean' }).notNull().default(false),
     tags: text('tags', { mode: 'json' })
       .$type<string[]>()
       .notNull()
@@ -38,6 +39,7 @@ export const taskItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    check('task_subscribed_valid', sql`${table.subscribed} IN (0, 1)`),
     check(
       'task_assignee_valid',
       sql`${table.assignee} IS NULL OR (typeof(${table.assignee}) = 'text' AND instr(${table.assignee}, char(0)) = 0 AND length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
@@ -92,14 +94,20 @@ export const taskReceipts = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
 );
-export const taskActivity = sqliteTable('task_activity', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id')
-    .notNull()
-    .references(() => taskItems.id),
-  operation: text('operation').notNull(),
-  createdAt: text('created_at').notNull(),
-});
+export const taskActivity = sqliteTable(
+  'task_activity',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    operation: text('operation').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('task_activity_created_scope').on(table.taskId, table.operation, table.createdAt),
+  ],
+);
 
 export const taskObjectiveRevisions = sqliteTable(
   'task_objective_revisions',

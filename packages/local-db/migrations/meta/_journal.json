@@ -120,6 +120,13 @@
       "when": 1794063000000,
       "tag": "0016_local_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794064000000,
+      "tag": "0017_task_subscription",
+      "breakpoints": true
     }
   ]
 }

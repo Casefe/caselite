@@ -4,6 +4,8 @@ const actions: Record<string, string> = {
   create: '创建任务',
   update: '修改任务',
   change_status: '修改任务状态',
+  subscribe_task: '订阅任务',
+  unsubscribe_task: '取消订阅任务',
   update_attributes: '修改任务属性',
   save: '保存正文',
   create_project: '创建项目',

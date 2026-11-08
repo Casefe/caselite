@@ -40,7 +40,7 @@ export default function RecordList({
   tasks: Task[];
   viewState: TaskListState;
   onViewState(value: TaskListState): void;
-  onOpen(id: string): void;
+  onOpen(id: string, navigation?: TaskListQuery): void;
   onNew(): void;
   propertiesBlocked: boolean;
   onPropertiesBlocked(value: boolean): void;
@@ -126,7 +126,7 @@ export default function RecordList({
       selected: id,
       scroll: scroll.current?.scrollTop ?? viewState.scroll,
     });
-    onOpen(id);
+    onOpen(id, rows.some((task) => task.id === id) ? q : undefined);
   };
   const listed = rows.find((t) => t.id === viewState.selected) ?? rows[0] ?? null;
   const selected = tasks.find((t) => t.id === listed?.id && t.version > listed.version) ?? listed;
@@ -158,6 +158,25 @@ export default function RecordList({
             <Icon name="plus" size={15} />
             新建任务
           </button>
+        </div>
+        <div className="task-view-switcher" role="group" aria-label="任务视图">
+          {(
+            [
+              ['all', '全部任务'],
+              ['created', '我创建的'],
+              ['subscribed', '我订阅的'],
+            ] as const
+          ).map(([view, label]) => (
+            <button
+              key={view}
+              type="button"
+              aria-pressed={(q.view ?? 'all') === view}
+              disabled={propertiesBlocked}
+              onClick={() => change({ view, sort: 'updated' })}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className="task-query-toolbar">
           <input
@@ -287,7 +306,7 @@ export default function RecordList({
             value={q.sort}
             onChange={(e) => change({ sort: e.target.value as TaskListQuery['sort'] })}
           >
-            <option value="updated">最近更新</option>
+            <option value="updated">{q.view === 'created' ? '最近创建' : '最近更新'}</option>
             <option value="title">标题</option>
             <option value="priority">优先级</option>
             <option value="due_date">截止日期</option>

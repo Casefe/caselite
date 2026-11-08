@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -113,6 +113,22 @@ it('queries the current workspace and explicit project with Chinese combined fil
   expect(last.page?.has_more).toBe(false);
   expect([...first.tasks, ...second.tasks, ...last.tasks].map((t) => t.id)).toEqual(ids.sort());
   expect(list({ offset: 60 }).tasks).toEqual([]);
+  const atBoundary = ok(
+    app.execute({
+      operation: 'read',
+      protocol_version: 1,
+      task_id: first.tasks[19].id,
+      navigation: query,
+    }),
+  );
+  expect(atBoundary.navigation).toEqual({
+    index: 19,
+    total: 45,
+    previous: first.tasks[18].id,
+    next: second.tasks[0].id,
+  });
+  expect(list({ view: 'created' }).page?.total).toBe(45);
+  expect(list({ view: 'subscribed' }).page?.total).toBe(45);
   const combination = {
     scope: { type: 'project' as const, id: project.target_id! },
     text: '说明关键词',
@@ -152,6 +168,40 @@ it('queries the current workspace and explicit project with Chinese combined fil
       activity: db.prepare('SELECT * FROM task_activity ORDER BY id').all(),
     }),
   ).toBe(before);
+  const unsubscribed = first.tasks[0];
+  const subscription = {
+    ...identity(),
+    operation: 'set_subscription' as const,
+    task_id: unsubscribed.id,
+    expected_subscribed: true,
+    subscribed: false,
+  };
+  expect(otherApp.execute(subscription)).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  const changed = ok(app.execute(subscription));
+  expect(changed.tasks[0]).toMatchObject({
+    id: unsubscribed.id,
+    subscribed: false,
+    version: unsubscribed.version,
+    body_revision: unsubscribed.body_revision,
+    updated_at: unsubscribed.updated_at,
+  });
+  expect(app.execute(subscription)).toEqual(changed);
+  expect(app.execute({ ...subscription, ...identity() })).toMatchObject({
+    ok: false,
+    code: 'CONFLICT',
+  });
+  expect(list({ view: 'created' }).page?.total).toBe(45);
+  expect(list({ view: 'subscribed' }).page?.total).toBe(44);
+  expect(
+    ok(
+      app.execute({
+        operation: 'read',
+        protocol_version: 1,
+        task_id: unsubscribed.id,
+        navigation: { ...query, view: 'subscribed' },
+      }),
+    ).navigation,
+  ).toBeUndefined();
   db.close();
   other.close();
   store.close();
@@ -165,5 +215,103 @@ it('queries the current workspace and explicit project with Chinese combined fil
       }),
     ).tasks,
   ).toHaveLength(2);
+  expect(
+    ok(
+      reopened.execute({
+        operation: 'read',
+        protocol_version: 1,
+        task_id: unsubscribed.id,
+      }),
+    ).tasks[0].subscribed,
+  ).toBe(false);
+  expect(
+    ok(
+      reopened.execute({
+        operation: 'status',
+        protocol_version: 1,
+        idempotency_key: subscription.idempotency_key,
+      }),
+    ),
+  ).toEqual(changed);
   reopened.close();
+});
+
+it('upgrades an existing task and rolls back a subscription when its activity fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'caselite-subscription-upgrade-'));
+  roots.push(dir);
+  const oldMigrations = join(dir, 'old-migrations');
+  const file = join(dir, 'db.sqlite');
+  mkdirSync(join(oldMigrations, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+  journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 16);
+  for (const entry of journal.entries)
+    copyFileSync(join(migrations, entry.tag + '.sql'), join(oldMigrations, entry.tag + '.sql'));
+  writeFileSync(join(oldMigrations, 'meta/_journal.json'), JSON.stringify(journal));
+  const old = openToolchainProbe(file, oldMigrations).sqlite;
+  const task = {
+    id: randomUUID(),
+    document_id: randomUUID(),
+    body_id: randomUUID(),
+    title: '合成旧任务',
+    objective: '',
+    version: 1,
+    matter_id: null,
+    body_revision: 0,
+    editor_schema: 1,
+    updated_at: '2026-11-01T00:00:00.000Z',
+  };
+  const receipt = randomUUID();
+  old
+    .prepare(
+      'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,?,?)',
+    )
+    .run(task.id, 'local', task.title, task.objective, task.version, task.updated_at);
+  old
+    .prepare(
+      'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
+    )
+    .run(task.document_id, task.id, task.body_id);
+  old
+    .prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)')
+    .run(
+      'local',
+      receipt,
+      'legacy',
+      JSON.stringify({ ok: true, tasks: [task], state: null, receipt }),
+    );
+  old.close();
+
+  const store = openTaskStore(file, migrations);
+  const app = createTaskApplication(store);
+  const raw = openToolchainProbe(file, migrations).sqlite;
+  const read = () =>
+    ok(app.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0];
+  expect(read()).toMatchObject({ id: task.id, body_id: task.body_id, subscribed: false });
+  expect(
+    ok(app.execute({ operation: 'status', protocol_version: 1, idempotency_key: receipt })).tasks[0]
+      .subscribed,
+  ).toBeUndefined();
+  raw.exec(
+    "CREATE TRIGGER reject_subscribe BEFORE INSERT ON task_activity WHEN NEW.operation='subscribe_task' BEGIN SELECT RAISE(ABORT, 'synthetic activity failure'); END",
+  );
+  const request = {
+    ...identity(),
+    operation: 'set_subscription',
+    task_id: task.id,
+    expected_subscribed: false,
+    subscribed: true,
+  };
+  expect(app.execute(request)).toMatchObject({ ok: false, code: 'WRITE_FAILED' });
+  expect(read().subscribed).toBe(false);
+  expect(
+    app.execute({
+      operation: 'status',
+      protocol_version: 1,
+      idempotency_key: request.idempotency_key,
+    }),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  raw.exec('DROP TRIGGER reject_subscribe');
+  expect(ok(app.execute(request)).tasks[0].subscribed).toBe(true);
+  raw.close();
+  store.close();
 });

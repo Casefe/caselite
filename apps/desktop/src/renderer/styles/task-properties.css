@@ -304,3 +304,26 @@
   align-items: center;
   gap: 5px;
 }
+
+.task-view-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px 0;
+}
+.task-view-switcher button {
+  border-radius: 999px;
+}
+.task-view-switcher button[aria-pressed='true'] {
+  background: var(--theme-panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.task-adjacent {
+  gap: 4px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+.task-adjacent span {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
