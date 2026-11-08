@@ -803,81 +803,79 @@ function Workbench() {
             data-active-task={active.id}
             data-task-tab={detailTab === '内容' ? 'content' : undefined}
           >
+            <div className="page-topline task-detail-topline">
+              <div>
+                <button
+                  className="icon-button"
+                  aria-label={
+                    documentEntry
+                      ? '返回文档列表'
+                      : taskReturn?.taskId === active.id
+                        ? '返回来源项目'
+                        : '返回任务列表'
+                  }
+                  data-testid="back-to-tasks"
+                  onClick={resetTask}
+                >
+                  <Icon name="back" size={16} />
+                </button>
+                <button className="breadcrumb-button" onClick={resetTask}>
+                  {documentEntry ? '文档' : taskReturn?.taskId === active.id ? '来源项目' : '任务'}
+                </button>
+                <Icon name="chevron" size={13} />
+                {active.matter_title && (
+                  <>
+                    <span data-testid="task-project-context">{active.matter_title}</span>
+                    <Icon name="chevron" size={13} />
+                  </>
+                )}
+                <span className="task-breadcrumb-title" title={active.title}>
+                  {active.title}
+                </span>
+                <button
+                  type="button"
+                  className="favorite-toggle"
+                  data-testid="toggle-favorite"
+                  aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
+                  aria-pressed={favorites.includes(active.id)}
+                  onClick={() =>
+                    setFavorites((ids) =>
+                      ids.includes(active.id)
+                        ? ids.filter((id) => id !== active.id)
+                        : [...ids, active.id],
+                    )
+                  }
+                >
+                  <Icon name="star" size={15} />
+                </button>
+              </div>
+              {taskPosition && (
+                <div className="task-adjacent" role="group" aria-label="任务列表顺序">
+                  <span>
+                    {taskPosition.index + 1} / {taskPosition.total}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="上一项"
+                    disabled={!taskPosition.previous}
+                    onClick={() => openAdjacent(taskPosition.previous)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="下一项"
+                    disabled={!taskPosition.next}
+                    onClick={() => openAdjacent(taskPosition.next)}
+                  >
+                    ↓
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="task-layout">
               <div className="task-work-area" aria-label="阅读与编辑工作区">
-                <div className="page-topline">
-                  <div>
-                    <button
-                      className="icon-button"
-                      aria-label={
-                        documentEntry
-                          ? '返回文档列表'
-                          : taskReturn?.taskId === active.id
-                            ? '返回来源项目'
-                            : '返回任务列表'
-                      }
-                      data-testid="back-to-tasks"
-                      onClick={resetTask}
-                    >
-                      <Icon name="back" size={16} />
-                    </button>
-                    <button className="breadcrumb-button" onClick={resetTask}>
-                      {documentEntry
-                        ? '文档'
-                        : taskReturn?.taskId === active.id
-                          ? '来源项目'
-                          : '任务'}
-                    </button>
-                    <Icon name="chevron" size={13} />
-                    {active.matter_title && (
-                      <>
-                        <span data-testid="task-project-context">{active.matter_title}</span>
-                        <Icon name="chevron" size={13} />
-                      </>
-                    )}
-                    <span>{active.title}</span>
-                    <button
-                      type="button"
-                      className="favorite-toggle"
-                      data-testid="toggle-favorite"
-                      aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
-                      aria-pressed={favorites.includes(active.id)}
-                      onClick={() =>
-                        setFavorites((ids) =>
-                          ids.includes(active.id)
-                            ? ids.filter((id) => id !== active.id)
-                            : [...ids, active.id],
-                        )
-                      }
-                    >
-                      <Icon name="star" size={15} />
-                    </button>
-                  </div>
-                  {taskPosition && (
-                    <div className="task-adjacent" role="group" aria-label="任务列表顺序">
-                      <span>
-                        {taskPosition.index + 1} / {taskPosition.total}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label="上一项"
-                        disabled={!taskPosition.previous}
-                        onClick={() => openAdjacent(taskPosition.previous)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="下一项"
-                        disabled={!taskPosition.next}
-                        onClick={() => openAdjacent(taskPosition.next)}
-                      >
-                        ↓
-                      </button>
-                    </div>
-                  )}
-                </div>
-
                 <div className="task-reminder-entry">
                   <button
                     type="button"

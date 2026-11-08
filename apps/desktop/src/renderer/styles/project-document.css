@@ -481,3 +481,54 @@
     flex: 1 0 100%;
   }
 }
+
+/* 任务详情页头横跨正文和辅助栏，保留既有窄窗上下排列。 */
+.task-detail {
+  --task-detail-gutter: clamp(20px, 4vw, 54px);
+}
+.task-detail > .task-detail-topline {
+  height: 42px;
+  padding-inline: 16px;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-detail-topline > div:first-child {
+  min-width: 0;
+}
+.task-detail-topline > div:first-child > :not(span) {
+  flex-shrink: 0;
+}
+.task-detail-topline > div:first-child > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-breadcrumb-title {
+  color: var(--ink);
+}
+.task-detail .task-work-area > .task-title {
+  padding: 22px var(--task-detail-gutter) 12px;
+}
+.task-detail .task-title h1 {
+  font-size: clamp(22px, 2.5vw, 30px);
+  line-height: 1.24;
+}
+.task-detail .task-content-overview {
+  padding-inline: var(--task-detail-gutter);
+  gap: 18px;
+}
+.task-detail .task-content-overview .task-content-panel .rich-editor--compact .tiptap {
+  min-height: 76px;
+}
+.task-detail .task-reminder-entry:not(:has([aria-expanded='true'])) {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+}
+.task-detail .task-detail-section.project-discussion > .project-discussion-compose {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--theme-subtle);
+}

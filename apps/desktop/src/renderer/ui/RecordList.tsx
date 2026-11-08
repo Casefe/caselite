@@ -154,7 +154,7 @@ export default function RecordList({
           >
             <Icon name="panel" size={16} />
           </button>
-          <button data-testid="new-task" onClick={onNew}>
+          <button className="work-list-create" data-testid="new-task" onClick={onNew}>
             <Icon name="plus" size={15} />
             新建任务
           </button>

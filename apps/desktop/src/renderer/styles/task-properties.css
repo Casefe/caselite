@@ -327,3 +327,99 @@
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
+
+.work-list-glyph {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--theme-secondary);
+}
+.work-list-glyph[data-priority='1'] {
+  color: #d57072;
+}
+.work-list-glyph[data-status='in_progress'] {
+  color: #369873;
+}
+.work-list-glyph[data-status='done'] {
+  color: var(--theme-accent);
+}
+.work-list-create {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.work-list-create:enabled:hover {
+  border-color: var(--line);
+  background: var(--theme-hover);
+}
+
+.task-query-list .task-view-switcher {
+  padding-block: 8px 4px;
+}
+.task-query-list .task-view-switcher button,
+.task-query-list .task-list-preview-toggle {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--theme-subtle);
+  color: var(--muted);
+}
+.task-query-list .task-view-switcher button[aria-pressed='true'],
+.task-query-list .task-list-preview-toggle[aria-expanded='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.task-query-list .task-query-toolbar {
+  padding-block: 5px 8px;
+}
+.task-query-list .task-query-toolbar :is(input, select) {
+  border-color: var(--line);
+  border-radius: 7px;
+  background: var(--theme-panel);
+}
+.task-query-list .task-table-structured {
+  min-width: 0;
+  padding: 4px 10px 12px;
+}
+.task-query-list .task-table-structured .table-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.task-query-list .task-table-structured .task-row {
+  grid-template-columns: 16px 16px minmax(90px, 1fr) minmax(58px, 16%) minmax(48px, 12%) max-content;
+  gap: 10px;
+  min-height: 39px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: none;
+  text-align: start;
+}
+.task-query-list .task-table-structured .task-row > span {
+  grid-row: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-query-list .task-table-structured .task-row [data-column='project'] {
+  grid-column: 4;
+  color: var(--muted);
+}
+.task-query-list .task-table-structured .task-row [data-column='owner'] {
+  grid-column: 5;
+  color: var(--muted);
+}
+.task-query-list .task-table-structured .task-row [data-column='due-date'] {
+  grid-column: 6;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.task-query-list .task-table-structured .task-row:is(:hover, [aria-current='true']) {
+  background: var(--theme-hover);
+}

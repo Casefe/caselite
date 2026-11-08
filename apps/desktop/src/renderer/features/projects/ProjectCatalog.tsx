@@ -3,8 +3,7 @@ import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
-import { taskStatusNames } from '../../ui/task-status';
-import { taskPriorityNames } from '../../ui/task-priority';
+import { PriorityGlyph, StatusGlyph } from '../../ui/TaskListGlyph';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
@@ -368,6 +367,7 @@ export default function ProjectCatalog({
       inert={navigationPending}
       aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
+      data-project-view={editor ? section : 'list'}
       data-layout="three-column"
       data-testid="project-catalog"
     >
@@ -375,13 +375,64 @@ export default function ProjectCatalog({
         {backSlot && createPortal(backButton, backSlot)}
         <div className="collection-heading project-catalog-heading">
           {!backSlot && backButton}
-          {!editor && <Icon name="folder" size={18} />}
+          <Icon name="folder" size={16} />
           <h1>{editor ? (p ?? editor.project).title : '项目'}</h1>
           {!editor && <span>{list.length}</span>}
-          <button className="primary" disabled={blocked} onClick={() => setCreating(true)}>
-            创建项目
+          <button className="work-list-create" disabled={blocked} onClick={() => setCreating(true)}>
+            <Icon name="plus" size={15} /> 创建项目
           </button>
         </div>
+        {!editor && (
+          <div className="project-list-stages" aria-label="项目阶段">
+            <button
+              type="button"
+              aria-pressed={statusFilter === 'all'}
+              disabled={blocked}
+              onClick={() => {
+                setSelected(null);
+                setStatusFilter('all');
+              }}
+            >
+              未归档
+            </button>
+            {(
+              [
+                ['active', '开放'],
+                ['planned', '待开案'],
+                ['done', '已结案'],
+              ] as const
+            ).map(([status, label]) => (
+              <button
+                type="button"
+                key={status}
+                aria-pressed={statusFilter === status}
+                disabled={blocked}
+                onClick={() => {
+                  setSelected(null);
+                  setStatusFilter(statusFilter === status ? 'all' : status);
+                }}
+              >
+                {label}{' '}
+                <span>{projects.filter((item) => projectStatus(item) === status).length}</span>
+              </button>
+            ))}
+            {(query || statusFilter !== 'all' || ownerFilter || typeFilter) && (
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => {
+                  setQuery('');
+                  setStatusFilter('all');
+                  setOwnerFilter('');
+                  setTypeFilter('');
+                  setSelected(null);
+                }}
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+        )}
         {!editor && (
           <div className="project-list-controls" aria-label="项目列表选项">
             <label className="project-list-search">
@@ -480,46 +531,6 @@ export default function ProjectCatalog({
             </details>
           </div>
         )}
-        {!editor && (
-          <div className="project-list-stages" aria-label="项目阶段">
-            {(
-              [
-                ['active', '开放'],
-                ['planned', '待开案'],
-                ['done', '已结案'],
-              ] as const
-            ).map(([status, label]) => (
-              <button
-                type="button"
-                key={status}
-                aria-pressed={statusFilter === status}
-                disabled={blocked}
-                onClick={() => {
-                  setSelected(null);
-                  setStatusFilter(statusFilter === status ? 'all' : status);
-                }}
-              >
-                {label}{' '}
-                <span>{projects.filter((item) => projectStatus(item) === status).length}</span>
-              </button>
-            ))}
-            {(query || statusFilter !== 'all' || ownerFilter || typeFilter) && (
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => {
-                  setQuery('');
-                  setStatusFilter('all');
-                  setOwnerFilter('');
-                  setTypeFilter('');
-                  setSelected(null);
-                }}
-              >
-                清除筛选
-              </button>
-            )}
-          </div>
-        )}
         {readError && <p role="alert">{readError}</p>}
         {sourceUnavailable && (
           <div role="alert">
@@ -595,16 +606,30 @@ export default function ProjectCatalog({
               >
                 {section === 'overview' && (
                   <div className="project-overview-intro">
-                    <Icon name="folder" size={24} />
+                    <span className="project-overview-icon">
+                      <Icon name="folder" size={26} />
+                    </span>
                     <h2>{(p ?? editor.project).title}</h2>
-                    {p?.health && (
-                      <span className="project-health" data-health={p.health}>
-                        {projectHealthNames[p.health]}
+                    <div className="project-overview-meta" aria-label="项目概览属性">
+                      <span
+                        className={`project-status-label is-${projectStatus(p ?? editor.project)}`}
+                      >
+                        <i aria-hidden="true" />
+                        {names[projectStatus(p ?? editor.project)]}
                       </span>
-                    )}
-                    <button type="button" disabled={blocked} onClick={() => setSection('activity')}>
-                      {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
-                    </button>
+                      <PriorityGlyph priority={(p ?? editor.project).attributes?.priority ?? 0} />
+                      {(p ?? editor.project).attributes?.assignee && (
+                        <span>
+                          <Icon name="person" size={15} />
+                          {(p ?? editor.project).attributes?.assignee}
+                        </span>
+                      )}
+                      {p?.health && (
+                        <span className="project-health" data-health={p.health}>
+                          {projectHealthNames[p.health]}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
                 {section === 'overview' && (
@@ -619,6 +644,19 @@ export default function ProjectCatalog({
                       if (!blocked) void read(id);
                     }}
                   />
+                )}
+                {section === 'overview' && (
+                  <div className="project-update-action">
+                    <button
+                      className="project-update-entry"
+                      type="button"
+                      disabled={blocked}
+                      onClick={() => setSection('activity')}
+                    >
+                      <Icon name="plus" size={15} />
+                      {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
+                    </button>
+                  </div>
                 )}
                 <ProjectEditor
                   key={editor.project.id + ':' + editor.epoch}
@@ -690,18 +728,23 @@ export default function ProjectCatalog({
                 role="tabpanel"
                 id="project-panel-tasks"
                 aria-labelledby="project-tab-tasks"
-                className="project-record-panel"
+                className="project-record-panel project-task-panel"
               >
-                <h2>项目任务</h2>
-                {onNewTask && p && !p.archived_at && (
-                  <button
-                    type="button"
-                    disabled={blocked}
-                    onClick={() => onNewTask(sourceView(''))}
-                  >
-                    新建任务
-                  </button>
-                )}
+                <div className="project-task-heading">
+                  <h2>
+                    项目任务 <small>{members.length}</small>
+                  </h2>
+                  {onNewTask && p && !p.archived_at && (
+                    <button
+                      className="work-list-create"
+                      type="button"
+                      disabled={blocked}
+                      onClick={() => onNewTask(sourceView(''))}
+                    >
+                      <Icon name="plus" size={15} /> 新建任务
+                    </button>
+                  )}
+                </div>
                 {!!members.length && (
                   <div className="project-task-table-scroll">
                     <table className="catalog-table project-task-table" aria-label="项目任务列表">
@@ -719,11 +762,11 @@ export default function ProjectCatalog({
                       <tbody>
                         {members.map((task) => (
                           <tr key={task.id} onClick={() => openTask(task.id)}>
-                            <td>{taskPriorityNames[task.priority ?? 0]}</td>
                             <td>
-                              <span className="task-status-tag" data-status={task.status ?? 'todo'}>
-                                {taskStatusNames[task.status ?? 'todo']}
-                              </span>
+                              <PriorityGlyph priority={task.priority ?? 0} />
+                            </td>
+                            <td>
+                              <StatusGlyph status={task.status ?? 'todo'} />
                             </td>
                             <td>
                               <button
@@ -741,7 +784,11 @@ export default function ProjectCatalog({
                             <td>
                               {task.assignee === undefined ? '本人' : (task.assignee ?? '未分配')}
                             </td>
-                            <td>{task.due_date}</td>
+                            <td>
+                              {task.due_date && (
+                                <time dateTime={task.due_date}>{task.due_date}</time>
+                              )}
+                            </td>
                             <td>
                               <button
                                 type="button"
@@ -768,7 +815,7 @@ export default function ProjectCatalog({
                   </div>
                 )}
                 {!p?.archived_at && (
-                  <>
+                  <div className="project-task-assignment">
                     <label>
                       归入已有任务
                       <select
@@ -805,7 +852,7 @@ export default function ProjectCatalog({
                     >
                       归入项目
                     </button>
-                  </>
+                  </div>
                 )}
                 <p className="caption">归组保留任务、正文和历史身份。</p>
                 {!members.length && (
@@ -892,7 +939,7 @@ export default function ProjectCatalog({
                 role="tabpanel"
                 id="project-panel-activity"
                 aria-labelledby="project-tab-activity"
-                className="project-record-panel"
+                className="project-record-panel project-activity-panel"
               >
                 <h2>活动</h2>
                 {section === 'activity' && (
@@ -956,11 +1003,6 @@ export default function ProjectCatalog({
                     ),
                   },
                   {
-                    id: 'priority',
-                    header: '优先级',
-                    accessorFn: (project) => taskPriorityNames[project.attributes?.priority ?? 0],
-                  },
-                  {
                     id: 'health',
                     header: '健康度',
                     cell: ({ row: { original } }) => (
@@ -969,6 +1011,46 @@ export default function ProjectCatalog({
                       </span>
                     ),
                   },
+                  {
+                    id: 'priority',
+                    header: '优先级',
+                    cell: ({ row }) => (
+                      <PriorityGlyph priority={row.original.attributes?.priority ?? 0} />
+                    ),
+                  },
+                  {
+                    id: 'owner',
+                    header: '负责人',
+                    accessorFn: (project) => project.attributes?.assignee ?? '—',
+                  },
+                  ...(columns.updated
+                    ? ([
+                        {
+                          id: 'updated',
+                          header: '更新时间',
+                          cell: ({ row: { original: project } }) => (
+                            <time dateTime={project.updated_at}>
+                              {new Date(project.updated_at).toLocaleDateString()}
+                            </time>
+                          ),
+                        },
+                      ] satisfies ColumnDef<Matter>[])
+                    : []),
+                  ...(columns.tasks ? [{ accessorKey: 'task_count', header: '任务' }] : []),
+                  ...(columns.status
+                    ? ([
+                        {
+                          id: 'status',
+                          header: '状态',
+                          cell: ({ row: { original: project } }) => (
+                            <span className={`project-status-label is-${projectStatus(project)}`}>
+                              <i />
+                              {names[projectStatus(project)]}
+                            </span>
+                          ),
+                        },
+                      ] satisfies ColumnDef<Matter>[])
+                    : []),
                   { id: 'client', header: '客户', cell: () => null },
                   {
                     id: 'domain',
@@ -981,11 +1063,6 @@ export default function ProjectCatalog({
                   },
                   { id: 'next-date', header: '下一关键日期', cell: () => null },
                   { id: 'risk', header: '风险／异常', cell: () => null },
-                  {
-                    id: 'owner',
-                    header: '负责人',
-                    accessorFn: (project) => project.attributes?.assignee ?? '—',
-                  },
                   {
                     id: 'balance',
                     header: '余额（元）',
@@ -1008,34 +1085,6 @@ export default function ProjectCatalog({
                         formatCents(project.outstanding_cents)
                       ),
                   },
-                  ...(columns.status
-                    ? ([
-                        {
-                          id: 'status',
-                          header: '状态',
-                          cell: ({ row: { original: project } }) => (
-                            <span className={`project-status-label is-${projectStatus(project)}`}>
-                              <i />
-                              {names[projectStatus(project)]}
-                            </span>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
-                  ...(columns.tasks ? [{ accessorKey: 'task_count', header: '任务' }] : []),
-                  ...(columns.updated
-                    ? ([
-                        {
-                          id: 'updated',
-                          header: '更新时间',
-                          cell: ({ row: { original: project } }) => (
-                            <time dateTime={project.updated_at}>
-                              {new Date(project.updated_at).toLocaleDateString()}
-                            </time>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
                 ]}
               />
               {!list.length && (

@@ -1,10 +1,9 @@
+import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
-import { taskPriorityNames } from './task-priority';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
-import { taskStatusNames } from './task-status';
 
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
@@ -181,8 +180,12 @@ export function TaskTable({
     header: documents ? '文档名称' : '任务名称',
     cell: ({ row: { original: task } }) => (
       <span className="task-name">
-        <Icon name={documents ? 'file' : 'check'} size={16} />
-        <small>{task.id.slice(0, 4).toUpperCase()}</small>
+        {documents && (
+          <>
+            <Icon name="file" size={16} />
+            <small>{task.id.slice(0, 4).toUpperCase()}</small>
+          </>
+        )}
         <strong
           className="task-row-title"
           onClick={(event) => {
@@ -207,21 +210,17 @@ export function TaskTable({
         { accessorKey: 'updated_at', header: '最近更新' },
       ]
     : [
-        titleColumn,
         {
           id: 'priority',
           header: '优先级',
-          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+          cell: ({ row }) => <PriorityGlyph priority={row.original.priority ?? 0} />,
         },
         {
           id: 'status',
           header: '状态',
-          cell: ({ row: { original: task } }) => (
-            <small className="task-status-tag" data-status={task.status ?? 'todo'}>
-              {taskStatusNames[task.status ?? 'todo']}
-            </small>
-          ),
+          cell: ({ row }) => <StatusGlyph status={row.original.status ?? 'todo'} />,
         },
+        titleColumn,
         { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
         {
           id: 'owner',
@@ -250,7 +249,7 @@ export function TaskTable({
       {table.getHeaderGroups().map((group) => (
         <div className="table-head" role="row" key={group.id}>
           {group.headers.map((header) => (
-            <span key={header.id} role="columnheader">
+            <span key={header.id} role="columnheader" data-column={header.column.id}>
               {flexRender(header.column.columnDef.header, header.getContext())}
             </span>
           ))}
@@ -274,7 +273,7 @@ export function TaskTable({
           }}
         >
           {row.getVisibleCells().map((cell) => (
-            <span role="cell" key={cell.id}>
+            <span role="cell" key={cell.id} data-column={cell.column.id}>
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </span>
           ))}
