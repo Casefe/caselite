@@ -1,10 +1,9 @@
 import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
-import { taskPriorityNames } from './task-priority';
+import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
-import { taskStatusNames } from './task-status';
 
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
@@ -163,18 +162,36 @@ export function WorkspaceShell({
     </main>
   );
 }
+export const taskOptionalColumns = {
+  project: '关联项目',
+  owner: '负责人',
+  'due-date': '截止日期',
+} as const;
+export type TaskOptionalColumn = keyof typeof taskOptionalColumns;
+
+const taskColumnWidths: Record<string, string> = {
+  priority: '16px',
+  status: '16px',
+  title: 'minmax(90px, 1fr)',
+  project: 'minmax(58px, 16%)',
+  owner: 'minmax(48px, 12%)',
+  'due-date': 'max-content',
+};
+
 export function TaskTable({
   tasks,
   onOpen,
   documents = false,
   selectedId,
   onSelect,
+  hiddenColumns = [],
 }: {
   tasks: Task[];
   onOpen(id: string): void;
   documents?: boolean;
   selectedId?: string;
   onSelect(id: string): void;
+  hiddenColumns?: TaskOptionalColumn[];
 }) {
   const titleColumn: ColumnDef<Task> = {
     id: 'title',
@@ -207,33 +224,37 @@ export function TaskTable({
         { accessorKey: 'updated_at', header: '最近更新' },
       ]
     : [
-        titleColumn,
         {
           id: 'priority',
           header: '优先级',
-          accessorFn: (task) => taskPriorityNames[task.priority ?? 0],
+          cell: ({ row }) => <PriorityGlyph priority={row.original.priority ?? 0} />,
         },
         {
           id: 'status',
           header: '状态',
-          cell: ({ row: { original: task } }) => (
-            <small className="task-status-tag" data-status={task.status ?? 'todo'}>
-              {taskStatusNames[task.status ?? 'todo']}
-            </small>
-          ),
+          cell: ({ row }) => <StatusGlyph status={row.original.status ?? 'todo'} />,
         },
-        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
+        titleColumn,
+        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
         {
           id: 'owner',
           header: '负责人',
           accessorFn: (task) =>
             task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
         },
-        { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
+        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
       ];
+  const visible = columns.filter((column) => !hiddenColumns.some((hidden) => hidden === column.id));
+  const rowStyle = documents
+    ? undefined
+    : {
+        gridTemplateColumns: visible
+          .map((column) => taskColumnWidths[column.id ?? 'title'])
+          .join(' '),
+      };
   const table = createTable({
     data: tasks,
-    columns,
+    columns: visible,
     getRowId: (task) => task.id,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
@@ -248,7 +269,7 @@ export function TaskTable({
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
     >
       {table.getHeaderGroups().map((group) => (
-        <div className="table-head" role="row" key={group.id}>
+        <div className="table-head" role="row" key={group.id} style={rowStyle}>
           {group.headers.map((header) => (
             <span key={header.id} role="columnheader">
               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -259,6 +280,7 @@ export function TaskTable({
       {table.getRowModel().rows.map((row) => (
         <button
           className="task-row"
+          style={rowStyle}
           role="row"
           key={row.id}
           data-row-task={row.id}
@@ -274,7 +296,7 @@ export function TaskTable({
           }}
         >
           {row.getVisibleCells().map((cell) => (
-            <span role="cell" key={cell.id}>
+            <span role="cell" key={cell.id} data-column={cell.column.id}>
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </span>
           ))}
