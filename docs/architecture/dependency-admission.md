@@ -21,3 +21,5 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 升级时先在隔离副本验证开发态和实际打包产物、模块入口、正文与Run旧数据；失败保留证据，恢复已验证锁版后复检。同样的模型或UI供应商名称不保证跨版本兼容。不得复制AGPL/EE源代码来绕过许可审查。
 
 DEV-1802 项目只读关系图在 Renderer 按需加载 `@xyflow/react@12.12.1`。使用 MIT 发布包及本地样式，详见 [ADR-018](../adr/ADR-018-read-only-project-graph.md)。
+
+DEV-1812 的成果正文使用 MIT 发布包 `@tiptap/extension-table@3.32.3`，与现有 Tiptap 同版。读取依赖必须随表格兼容基线保留。停用写入时仍能打开已保存表格，见 [ADR-022](../adr/ADR-022-document-table-rollback.md)。

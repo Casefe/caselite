@@ -33,6 +33,11 @@ export default function BodyEditor({
     if (initial) Y.applyUpdate(d, Uint8Array.from(initial));
     return d;
   });
+  const tableReadOnly = !doc
+    .getXmlFragment('default')
+    .createTreeWalker((node) => node instanceof Y.XmlElement && node.nodeName === 'table')
+    .next().done;
+  const readOnly = !!task.document_archived_at || disabled || tableReadOnly;
   const [revision, setRevision] = useState(task.body_revision);
   const [status, setStatus] = useState('已保存到此设备');
   const [busy, setBusy] = useState(false);
@@ -46,8 +51,8 @@ export default function BodyEditor({
   const editor = useEditor(
     {
       injectCSS: false,
-      editable: !task.document_archived_at && !disabled,
-      extensions: localExtensions(doc),
+      editable: !readOnly,
+      extensions: localExtensions(doc, tableReadOnly),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
       },
@@ -66,8 +71,8 @@ export default function BodyEditor({
   );
   useEffect(() => {
     // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
-    editor?.setEditable(!task.document_archived_at && !disabled && !reviewSaving, false);
-  }, [editor, task.document_archived_at, disabled, reviewSaving]);
+    editor?.setEditable(!readOnly && !reviewSaving, false);
+  }, [editor, readOnly, reviewSaving]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -78,7 +83,7 @@ export default function BodyEditor({
     };
   }, [doc]);
   async function save() {
-    if (!editor || busy || disabled || reviewSaving) return;
+    if (!editor || busy || readOnly || reviewSaving) return;
     setBusy(true);
     setStatus('正在保存…');
     const sequence = pending.current?.sequence ?? changes.current;
@@ -134,18 +139,16 @@ export default function BodyEditor({
       <EditorSurface editor={editor} mode={editorProfiles.document.mode} />
       <footer>
         <span role="status" data-testid="save-status">
-          {task.document_archived_at ? '文档已归档 · 只读' : status}
+          {task.document_archived_at
+            ? '文档已归档 · 只读'
+            : tableReadOnly
+              ? '表格正文 · 只读'
+              : status}
         </span>
         <button
           className="primary"
           data-testid="save-body"
-          disabled={
-            disabled ||
-            reviewSaving ||
-            !!task.document_archived_at ||
-            busy ||
-            (!dirty && !hasPending)
-          }
+          disabled={readOnly || reviewSaving || busy || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
@@ -163,7 +166,7 @@ export default function BodyEditor({
               body_id: task.body_id,
               revision,
             }}
-            blocked={disabled || !!task.document_archived_at || dirty || busy || hasPending}
+            blocked={readOnly || dirty || busy || hasPending}
             onApplyBusy={onReviewSaving}
             onSaved={({ task: saved, state }) => {
               reviewHydrating.current = true;

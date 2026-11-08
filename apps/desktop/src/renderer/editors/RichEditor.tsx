@@ -594,9 +594,20 @@ export const DraftEditor = forwardRef<
     disabled?: boolean;
     compact?: boolean;
     profile?: EditorProfile;
+    readTables?: boolean;
   }
 >(function DraftEditor(
-  { value, onChange, label, testId, placeholder, disabled = false, compact = false, profile },
+  {
+    value,
+    onChange,
+    label,
+    testId,
+    placeholder,
+    disabled = false,
+    compact = false,
+    profile,
+    readTables = false,
+  },
   ref,
 ) {
   const doc = useLocalDoc(value);
@@ -604,7 +615,7 @@ export const DraftEditor = forwardRef<
   const editor = useEditor(
     {
       injectCSS: false,
-      extensions: localExtensions(doc),
+      extensions: localExtensions(doc, readTables && disabled),
       editable: !disabled,
       editorProps: {
         attributes: {

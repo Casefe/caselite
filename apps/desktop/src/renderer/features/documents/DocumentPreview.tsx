@@ -36,7 +36,13 @@ export default function DocumentPreview({ document }: { document: CatalogDocumen
   if (!read.data.state) return <p>此文档尚无已保存的正文。</p>;
   return (
     <Suspense fallback={<p role="status">正在载入预览…</p>}>
-      <PreviewEditor value={read.data} label="文档正文预览" disabled onChange={ignoreEdit} />
+      <PreviewEditor
+        value={read.data}
+        label="文档正文预览"
+        disabled
+        readTables
+        onChange={ignoreEdit}
+      />
     </Suspense>
   );
 }

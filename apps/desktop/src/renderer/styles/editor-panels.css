@@ -542,3 +542,26 @@
 .ai-inspector .assistant-panel {
   margin-top: 12px;
 }
+
+/* 单元格选择沿用 ProseMirror 状态，视觉提示不能成为第二选区真源。 */
+.tiptap td,
+.tiptap th {
+  position: relative;
+}
+.tiptap .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(83, 120, 170, 0.18);
+  z-index: 1;
+}
+.tiptap table {
+  border-collapse: collapse;
+}
+.tiptap td,
+.tiptap th {
+  border: 1px solid var(--border, #c9cdd3);
+  padding: 5px 9px;
+  min-width: 28px;
+}

@@ -8,6 +8,7 @@ const blocks = new Set([
   'orderedList',
   'codeBlock',
   'horizontalRule',
+  'table',
 ]);
 const marks = new Set(['bold', 'italic', 'strike', 'code', 'underline']);
 // @tiptap/y-tiptap 3.0.12为块转换/移动保留相对位置迁移；仅接受default的已知辅助根。
@@ -75,8 +76,69 @@ function validatePositions(doc: Y.Doc) {
     }
   }
 }
-// 当前本地正文仅接受已启用StarterKit节点；未知结构拒绝写回，避免编辑器自动修复时静默删内容。
-export function validateBody(state: Uint8Array) {
+// 表格必须是完整矩形；拒绝重叠、越界和空洞，避免重开时编辑器自动修复并丢失内容。
+function validateTable(table: Y.XmlElement) {
+  const rows = table.toArray();
+  if (!rows.length || rows.length > 200) throw new Error('Invalid table height');
+  const grid: boolean[][] = Array.from({ length: rows.length }, () => []);
+  let width = 0;
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y];
+    if (!(row instanceof Y.XmlElement) || row.nodeName !== 'tableRow')
+      throw new Error('Invalid table row');
+    let x = 0;
+    for (const cell of row.toArray()) {
+      if (!(cell instanceof Y.XmlElement)) throw new Error('Invalid table cell');
+      while (grid[y][x]) x++;
+      const attrs = cell.getAttributes() as Record<string, unknown>;
+      if (
+        attrs.align !== undefined &&
+        attrs.align !== null &&
+        !['left', 'right', 'center', 'justify'].includes(attrs.align as string)
+      )
+        throw new Error('Invalid cell alignment');
+      const colspan = attrs.colspan ?? 1,
+        rowspan = attrs.rowspan ?? 1;
+      if (
+        !Number.isSafeInteger(colspan) ||
+        !Number.isSafeInteger(rowspan) ||
+        (colspan as number) < 1 ||
+        (rowspan as number) < 1 ||
+        x + (colspan as number) > 100 ||
+        y + (rowspan as number) > rows.length
+      )
+        throw new Error('Invalid table span');
+      if (
+        attrs.colwidth !== undefined &&
+        attrs.colwidth !== null &&
+        (!Array.isArray(attrs.colwidth) ||
+          attrs.colwidth.length !== colspan ||
+          !attrs.colwidth.every(
+            (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 10000,
+          ))
+      )
+        throw new Error('Invalid column widths');
+      for (let dy = 0; dy < (rowspan as number); dy++)
+        for (let dx = 0; dx < (colspan as number); dx++) {
+          if (grid[y + dy][x + dx]) throw new Error('Overlapping table cells');
+          grid[y + dy][x + dx] = true;
+        }
+      x += colspan as number;
+      width = Math.max(width, x);
+    }
+  }
+  if (
+    !width ||
+    grid.some(
+      (row) =>
+        row.length !== width || Array.from({ length: width }, (_, x) => row[x]).some((v) => !v),
+    )
+  )
+    throw new Error('Incomplete table grid');
+}
+
+// 仅任务成果正文允许表格，其他富文本消费者保持原节点范围。
+export function validateBody(state: Uint8Array, allowTables = false) {
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, state);
@@ -86,6 +148,7 @@ export function validateBody(state: Uint8Array) {
     const root = doc.getXmlFragment('default');
     if (root._map.size) throw new Error('Invalid body root container');
     let count = 0;
+    let hasTable = false;
     function visit(node: Y.XmlElement | Y.XmlText, parent: string, depth: number) {
       if (++count > 100000 || depth > 40) throw new Error('Body too complex');
       if (node instanceof Y.XmlText) {
@@ -105,11 +168,15 @@ export function validateBody(state: Uint8Array) {
           ? blocks.has(name)
           : parent === 'bulletList' || parent === 'orderedList'
             ? name === 'listItem'
-            : parent === 'listItem'
+            : parent === 'listItem' || parent === 'tableCell' || parent === 'tableHeader'
               ? blocks.has(name)
-              : ['paragraph', 'heading'].includes(parent)
-                ? name === 'hardBreak'
-                : false;
+              : parent === 'table'
+                ? name === 'tableRow'
+                : parent === 'tableRow'
+                  ? name === 'tableCell' || name === 'tableHeader'
+                  : ['paragraph', 'heading'].includes(parent)
+                    ? name === 'hardBreak'
+                    : false;
       if (!allowed) throw new Error('Unsupported node');
       const attrs = node.getAttributes();
       const allowedAttrs =
@@ -119,7 +186,9 @@ export function validateBody(state: Uint8Array) {
             ? ['start', 'type']
             : name === 'codeBlock'
               ? ['language']
-              : [];
+              : name === 'tableCell' || name === 'tableHeader'
+                ? ['colspan', 'rowspan', 'colwidth', 'align']
+                : [];
       if (Object.keys(attrs).some((key) => !allowedAttrs.includes(key)))
         throw new Error('Unsupported node attribute');
       if (
@@ -130,6 +199,13 @@ export function validateBody(state: Uint8Array) {
         throw new Error('Invalid heading');
       if (name === 'listItem' && (node.toArray()[0] as Y.XmlElement)?.nodeName !== 'paragraph')
         throw new Error('Invalid list item');
+      if (name === 'table') {
+        if (!allowTables) throw new Error('Table is outside the supported body scope');
+        validateTable(node);
+        hasTable = true;
+      }
+      if ((name === 'tableCell' || name === 'tableHeader') && !node.length)
+        throw new Error('Empty table cell');
       for (const child of node.toArray()) {
         if (!(child instanceof Y.XmlElement) && !(child instanceof Y.XmlText))
           throw new Error('Unsupported child');
@@ -140,6 +216,7 @@ export function validateBody(state: Uint8Array) {
       if (!(child instanceof Y.XmlElement)) throw new Error('Invalid top-level body');
       visit(child, 'default', 0);
     }
+    return hasTable;
   } finally {
     doc.destroy();
   }

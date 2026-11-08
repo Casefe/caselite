@@ -42,7 +42,7 @@ export function createDocumentReviewReader(
         .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
         .get(task.body_id, task.body_revision) as { state: Buffer } | undefined;
       if (!row) throw new Error('Missing review revision');
-      validateBody(row.state);
+      validateBody(row.state, true);
       return { task, state: Array.from(row.state) };
     },
     reviewState(range: ReviewRange, replacement?: string) {
@@ -60,7 +60,7 @@ export function createDocumentReviewReader(
         .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
         .get(task.body_id, range.revision) as { state: Buffer } | undefined;
       if (!row) return;
-      validateBody(row.state);
+      validateBody(row.state, true);
       return reviewBodyRange(row.state, range, replacement);
     },
   };
