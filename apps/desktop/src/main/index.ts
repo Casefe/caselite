@@ -5,7 +5,8 @@ import { createReminderApplication } from '@caselite/application';
 import { registerReminderIpc } from './ipc/register-task-ipc';
 import { createRealDemoRuntime, runRealAgentDemo } from './agent-real-demo';
 import {
-  realDemoId,
+  validateRealDemoLaunch,
+  type RealDemoAuthorization,
   realDemoPdfHash,
   realDemoResumeId,
   inspectZeroDispatchResume,
@@ -110,6 +111,8 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'credential-preflight-ui')
+    entry.searchParams.set('audit-agent', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
@@ -528,6 +531,7 @@ let credentialWindowLoaded: () => void;
 const credentialWindowReady = new Promise<void>((resolve) => {
   credentialWindowLoaded = resolve;
 });
+let realDemoAuthorization: RealDemoAuthorization | undefined;
 let taskDemoRoot: string | undefined;
 let taskDemoEvidenceRoot: string | undefined;
 let realResumeAudit: ReturnType<typeof inspectZeroDispatchResume> | undefined;
@@ -588,12 +592,13 @@ if (taskDemoPhase) {
     !basename(candidate).startsWith('caselite-task-demo-')
   )
     throw new Error('Demo directory must be isolated');
-  if (
-    taskDemoPhase === 'real-agent' &&
-    (candidate !== join(realpathSync(tmpdir()), 'caselite-task-demo-dev1650-real-20261106') ||
-      process.env.CASELITE_REAL_AGENT_APPROVAL !== realDemoId)
-  )
-    throw new Error('Real validation requires the fixed approved run');
+  if (taskDemoPhase === 'real-agent')
+    realDemoAuthorization = validateRealDemoLaunch({
+      directory: candidate,
+      temporaryRoot: realpathSync(tmpdir()),
+      approval: process.env.CASELITE_REAL_AGENT_APPROVAL,
+      resume: process.env.CASELITE_REAL_AGENT_RESUME,
+    });
   taskDemoRoot = candidate;
   taskDemoEvidenceRoot = candidate;
   const resume = process.env.CASELITE_REAL_AGENT_RESUME;
@@ -602,10 +607,12 @@ if (taskDemoPhase) {
     (resume !== realDemoResumeId || !taskDemoPhase.startsWith('real-agent'))
   )
     throw new Error('Invalid resume mode');
-  if (taskDemoPhase === 'real-agent' && !resume)
-    throw new Error('Real validation requires reviewed zero-dispatch resume');
   if (resume) {
-    realResumeAudit = inspectZeroDispatchResume(candidate, taskDemoPhase === 'real-agent-dry');
+    realResumeAudit = inspectZeroDispatchResume(
+      candidate,
+      taskDemoPhase === 'real-agent-dry',
+      realDemoAuthorization,
+    );
     taskDemoEvidenceRoot = realpathSync(join(candidate, realDemoResumeId));
     if (taskDemoEvidenceRoot !== join(candidate, realDemoResumeId))
       throw new Error('Invalid resume evidence directory');
@@ -891,6 +898,7 @@ app
               directory: taskDemoEvidenceRoot!,
               budgetDirectory: taskDemoRoot,
               resumeAudit: realResumeAudit,
+              authorization: realDemoAuthorization,
               model: agentCredentials.getDefaultModel(),
               dry: taskDemoPhase === 'real-agent-dry',
               runs: () => taskStore.agentHistory.load(),

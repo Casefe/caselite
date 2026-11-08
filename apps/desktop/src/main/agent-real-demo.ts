@@ -17,6 +17,7 @@ import {
   realDemoPrompts,
   selectedCredentialReady,
   type inspectZeroDispatchResume,
+  type RealDemoAuthorization,
 } from './agent-real-policy';
 
 const hash = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
@@ -24,6 +25,7 @@ export function createRealDemoRuntime(options: {
   directory: string;
   budgetDirectory?: string;
   resumeAudit?: ReturnType<typeof inspectZeroDispatchResume>;
+  authorization?: RealDemoAuthorization;
   model: AgentModel;
   dry: boolean;
   runs(): AgentRun[];
@@ -79,6 +81,7 @@ export function createRealDemoRuntime(options: {
     budget ??= createRealDemoBudget(
       options.budgetDirectory ?? options.directory,
       options.resumeAudit ? { audit: options.resumeAudit } : undefined,
+      options.authorization,
     );
     dispatchIndex = budget.reserve(run.id, model.id, run.prompt);
     if (options.dry) return syntheticAgentStream(model, context, streamOptions);

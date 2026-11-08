@@ -10,6 +10,8 @@ import {
   realDemoId,
   inspectZeroDispatchResume,
   selectedCredentialReady,
+  validateRealDemoLaunch,
+  realDemoFreshId,
 } from './agent-real-policy';
 const directories: string[] = [];
 const directory = () => {
@@ -68,6 +70,56 @@ it('allows exactly two ordered authorized inputs and rejects a third or substitu
   budget.reserve('two', 'gpt-4.1-mini', realDemoPrompts[1]);
   budget.settle(2, { status: 'succeeded' });
   expect(() => budget.reserve('three', 'gpt-4.1-mini', realDemoPrompts[0])).toThrow();
+});
+
+it('binds each real authorization to its fixed directory and resume policy', () => {
+  const temporaryRoot = directory();
+  const fresh = {
+    temporaryRoot,
+    directory: join(temporaryRoot, 'caselite-task-demo-dev1650-real-20261109'),
+    approval: realDemoFreshId,
+    resume: undefined,
+  };
+  expect(validateRealDemoLaunch(fresh)).toBe(realDemoFreshId);
+  expect(() => validateRealDemoLaunch({ ...fresh, approval: realDemoId })).toThrow();
+  expect(() => validateRealDemoLaunch({ ...fresh, directory: temporaryRoot })).toThrow();
+  expect(validateRealDemoLaunch({ ...fresh, resume: 'resume-1' })).toBe(realDemoFreshId);
+  expect(() => validateRealDemoLaunch({ ...fresh, resume: 'resume-2' })).toThrow();
+  const old = {
+    ...fresh,
+    directory: join(temporaryRoot, 'caselite-task-demo-dev1650-real-20261106'),
+    approval: realDemoId,
+    resume: 'resume-1',
+  };
+  expect(validateRealDemoLaunch(old)).toBe(realDemoId);
+  expect(() => validateRealDemoLaunch({ ...old, resume: undefined })).toThrow();
+  expect(() => validateRealDemoLaunch({ ...old, approval: realDemoFreshId })).toThrow();
+});
+
+it('keeps the new authorization separate, model-pinned and spent after restart or failure', () => {
+  const old = directory();
+  const original = createRealDemoBudget(old);
+  original.reserve('old-one', 'deepseek-flash', realDemoPrompts[0]);
+  const seal = readFileSync(join(old, 'dispatch-1.json'));
+  const root = directory();
+  const budget = createRealDemoBudget(root, undefined, realDemoFreshId);
+  expect(() => budget.reserve('wrong-model', 'gpt-4.1-mini', realDemoPrompts[0])).toThrow();
+  budget.reserve('new-one', 'deepseek-flash', realDemoPrompts[0]);
+  expect(JSON.parse(readFileSync(join(root, 'dispatch-1.json'), 'utf8')).id).toBe(realDemoFreshId);
+  expect(() => createRealDemoBudget(root, undefined, realDemoFreshId)).toThrow();
+  expect(() => budget.reserve('no-receipt', 'deepseek-flash', realDemoPrompts[1])).toThrow();
+  budget.settle(1, { status: 'failed' });
+  expect(() => budget.reserve('after-failure', 'deepseek-flash', realDemoPrompts[1])).toThrow();
+  expect(readFileSync(join(old, 'dispatch-1.json'))).toEqual(seal);
+});
+
+it('does not permit more than two calls under the new authorization', () => {
+  const budget = createRealDemoBudget(directory(), undefined, realDemoFreshId);
+  budget.reserve('one', 'deepseek-flash', realDemoPrompts[0]);
+  budget.settle(1, { status: 'succeeded' });
+  budget.reserve('two', 'deepseek-flash', realDemoPrompts[1]);
+  budget.settle(2, { status: 'succeeded' });
+  expect(() => budget.reserve('three', 'deepseek-flash', realDemoPrompts[0])).toThrow();
 });
 
 it('forwards explicit read-only refresh without forwarding writes or changing budgets', async () => {
@@ -268,4 +320,54 @@ it('uses only the selected Provider status and keeps the model fixed', () => {
     }),
   ).toBe(false);
   expect(selectedCredentialReady({ model: 'gpt-4.1-mini', configured: true })).toBe(false);
+});
+
+function freshResumeFixture(root: string) {
+  const fixture = resumeFixture(root);
+  fixture.approval.authorizationId = realDemoFreshId;
+  delete fixture.approval.originalFiles['validation-started.json'];
+  rmSync(join(root, 'validation-started.json'));
+  writeFileSync(
+    join(root, 'build-manifest.json'),
+    JSON.stringify({ authorizationId: realDemoFreshId }),
+  );
+  fixture.approval.originalFiles['build-manifest.json'] = fixture.hash('build-manifest.json');
+  fixture.save();
+  return fixture;
+}
+
+it('resumes the new zero-dispatch failure once in the same budget without overwriting its evidence', () => {
+  const root = directory();
+  freshResumeFixture(root);
+  const before = readFileSync(join(root, 'validation-result.json'));
+  expect(() => inspectZeroDispatchResume(root)).toThrow();
+  const audit = inspectZeroDispatchResume(root, false, realDemoFreshId);
+  expect(() => createRealDemoBudget(root, { audit })).toThrow();
+  const budget = createRealDemoBudget(root, { audit }, realDemoFreshId);
+  expect(() => inspectZeroDispatchResume(root, false, realDemoFreshId)).toThrow();
+  expect(() => createRealDemoBudget(root, { audit }, realDemoFreshId)).toThrow();
+  budget.reserve('one', 'deepseek-flash', realDemoPrompts[0]);
+  expect(JSON.parse(readFileSync(join(root, 'dispatch-1.json'), 'utf8')).id).toBe(realDemoFreshId);
+  expect(readFileSync(join(root, 'validation-result.json'))).toEqual(before);
+});
+
+it.each(['dispatch-1.json', 'receipt-1.json', 'http-1.json', 'context-1.json'])(
+  'rejects the new resume with any prior or ambiguous attempt: %s',
+  (name) => {
+    const root = directory();
+    freshResumeFixture(root);
+    writeFileSync(join(root, name), 'synthetic unknown attempt');
+    expect(() => inspectZeroDispatchResume(root, false, realDemoFreshId)).toThrow();
+  },
+);
+
+it('rejects new resume on changed source evidence or nonzero database state', () => {
+  const root = directory();
+  const fixture = freshResumeFixture(root);
+  writeFileSync(join(root, 'failure-ui.txt'), 'changed');
+  expect(() => inspectZeroDispatchResume(root, false, realDemoFreshId)).toThrow();
+  fixture.approval.originalFiles['failure-ui.txt'] = fixture.hash('failure-ui.txt');
+  fixture.approval.databaseCounts.agent_runs = 1;
+  fixture.save();
+  expect(() => inspectZeroDispatchResume(root, false, realDemoFreshId)).toThrow();
 });

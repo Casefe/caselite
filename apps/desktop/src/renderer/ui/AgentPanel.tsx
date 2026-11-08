@@ -248,13 +248,14 @@ export default function AgentPanel({
   });
   const openSettings = useContext(ModelSettingsNavigation);
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
+  const readOnlyPreview = new URLSearchParams(window.location.search).has('audit-agent');
   const messages = agentMessages(runs);
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning: Boolean(active),
     convertMessage: (message) => message,
     onNew: async () => {
-      await send();
+      if (!readOnlyPreview) await send();
     },
     onCancel: async () => {
       if (active)
@@ -352,6 +353,11 @@ export default function AgentPanel({
           {mockPreview && (
             <p className="assistant-run-status" role="status">
               MOCK_ONLY · 离线演示 · 不调用真实模型，固定输出只验证界面流程。
+            </p>
+          )}
+          {readOnlyPreview && (
+            <p className="assistant-run-status" role="status">
+              AI 验收记录（只读）· 可查看回答、复制和打开附件；此入口不发送新请求。
             </p>
           )}
           {!homeComposer && (
@@ -456,35 +462,42 @@ export default function AgentPanel({
               )}
             </div>
           )}
-          <ComposerFrame
-            compact={homeComposer}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send();
-            }}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-          >
-            {project ? (
-              <div className="material-composer">
-                {composer}
-                <div className="assistant-actions">{actions}</div>
-              </div>
-            ) : (
-              <PdfAttachments
-                controller={materials}
-                showSavedMaterials={scope !== 'home'}
-                disabled={pending || unknown || Boolean(active)}
-                actions={actions}
-              >
-                {composer}
-              </PdfAttachments>
-            )}
-          </ComposerFrame>
+          {readOnlyPreview && materials.reading && (
+            <PdfAttachments controller={materials} disabled>
+              {null}
+            </PdfAttachments>
+          )}
+          {!readOnlyPreview && (
+            <ComposerFrame
+              compact={homeComposer}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+            >
+              {project ? (
+                <div className="material-composer">
+                  {composer}
+                  <div className="assistant-actions">{actions}</div>
+                </div>
+              ) : (
+                <PdfAttachments
+                  controller={materials}
+                  showSavedMaterials={scope !== 'home'}
+                  disabled={pending || unknown || Boolean(active)}
+                  actions={actions}
+                >
+                  {composer}
+                </PdfAttachments>
+              )}
+            </ComposerFrame>
+          )}
           {scope !== 'home' && variant !== 'compact' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。
