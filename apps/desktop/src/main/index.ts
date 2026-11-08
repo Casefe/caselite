@@ -550,6 +550,7 @@ if (taskDemoPhase) {
       'materials-read',
       'materials-docx',
       'materials-docx-lists',
+      'materials-docx-recovery',
       'materials-docx-preview',
       'materials-docx-reopen',
       'crash',

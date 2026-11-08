@@ -23,6 +23,7 @@ export const syntheticDocxStream: StreamFn = (model, context, options) => {
   return syntheticTextStream(model, context, options, [
     '合成演示 · 模拟模型实际收到的材料\n\n',
     material,
+    ...(input.includes('取消恢复测试') ? Array<string>(8).fill('') : []),
   ]);
 };
 

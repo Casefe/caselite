@@ -313,7 +313,9 @@ export default function PdfAttachments({
                         ? c.sections.get(item.id)?.length
                           ? `已选 ${c.sections.get(item.id)!.length} 段`
                           : '打开并选择段落'
-                        : `${item.page_count} 页 · 本次发送`}
+                        : c.sections.has(item.id)
+                          ? `第 ${c.sections.get(item.id)!.join('、')} 页 · 本次发送`
+                          : `${item.page_count} 页 · 本次发送`}
                     </small>
                   </span>
                 </button>

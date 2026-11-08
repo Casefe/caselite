@@ -5,6 +5,7 @@ import type {
   MaterialRequest,
   MaterialPreview,
   AgentModel,
+  AgentRun,
 } from '../../preload/caselite-api';
 
 // 这里只存输入框选择，原件与版本始终由 Application/SQLite 拥有。
@@ -178,6 +179,39 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
     uploadingName: draft.name,
     error: draft.error,
     selected: Object.fromEntries([...draft.ids].map((id) => [id, ''])),
+    async prepareRecovery(attachments: NonNullable<AgentRun['attachments']>) {
+      const empty = () => !draft.ids.size && !draft.upload && !draft.staged && !draft.importError;
+      if (!empty()) throw new Error('请先处理当前附件，再恢复上轮输入。');
+      if (attachments.length && !available) throw new Error('当前范围不能恢复附件。');
+      const result = available ? await command({ operation: 'list' }) : undefined;
+      if (result?.staged) throw new Error('请先处理当前附件，再恢复上轮输入。');
+      const restored = new Map<string, number[]>();
+      for (const attachment of attachments) {
+        const item = result?.materials.find((value) => value.id === attachment.source_id);
+        if (
+          !item ||
+          item.task_id !== attachment.task_id ||
+          !item.page_count ||
+          restored.has(item.id) ||
+          !attachment.pages.length ||
+          attachment.pages.some(
+            (page) => !Number.isInteger(page) || page < 1 || page > item.page_count!,
+          )
+        )
+          throw new Error('上轮附件或选段已不可用；未恢复，请重新核对材料。');
+        restored.set(item.id, [...new Set(attachment.pages)]);
+      }
+      return () => {
+        // 读取期间用户可能新增附件；只恢复原固定来源和原选段，不覆盖新选择。
+        if (!alive.current || !empty()) throw new Error('输入已变化，未恢复上轮附件。');
+        for (const [id, pages] of restored) {
+          draft.ids.add(id);
+          draft.sections.set(id, pages);
+        }
+        draft.error = '';
+        render();
+      };
+    },
     clearReading() {
       setReading(null);
       setCopyError('');
@@ -348,7 +382,9 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       const selected = ids.map((id) => {
         const item = result.materials.find((material) => material.id === id);
         if (!item || !item.page_count) throw new Error('附件尚不可用，本轮未发送。');
-        const pages = isDocx(item.name) ? draft.sections.get(id) : pageRange('', item.page_count);
+        const pages =
+          draft.sections.get(id) ??
+          (isDocx(item.name) ? undefined : pageRange('', item.page_count));
         if (!pages?.length) throw new Error('请先打开 Word 附件并选择本轮使用的段落。');
         return { source_id: id, pages };
       });

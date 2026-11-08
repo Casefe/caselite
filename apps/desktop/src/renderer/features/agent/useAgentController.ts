@@ -60,6 +60,7 @@ export function useAgentController({
   const [error, setError] = useState('');
   const [credentialUnavailable, setCredentialUnavailable] = useState(false);
   const [pending, setPending] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [unknown, setUnknown] = useState(() => submissions.has(scope));
   const composing = useRef(false),
     sending = useRef(false),
@@ -70,9 +71,9 @@ export function useAgentController({
   useEffect(() => {
     onConversationChange?.(runs.length > 0);
   }, [onConversationChange, runs.length]);
-  const current = useRef({ draft, setDraft, materials });
+  const current = useRef({ draft, setDraft, materials, scope });
   useLayoutEffect(() => {
-    current.current = { draft, setDraft, materials };
+    current.current = { draft, setDraft, materials, scope };
   });
   const acknowledge = (request: Extract<AgentRequest, { operation: 'start' }>) => {
     if (submissions.get(scope)?.run_id !== request.run_id) return;
@@ -273,6 +274,43 @@ export function useAgentController({
     setError('已取消发送，附件和输入保留。');
     void materials.cancelPreparation().catch(() => {});
   };
+  const restoreRun = async (run: AgentRun) => {
+    if (
+      composing.current ||
+      sending.current ||
+      active ||
+      submissions.has(scope) ||
+      run.scope !== scope ||
+      !['failed', 'cancelled', 'interrupted'].includes(run.status) ||
+      current.current.draft.text.trim()
+    )
+      return;
+    sending.current = true;
+    setRestoring(true);
+    setError('');
+    const revision = draftRevisions.get(scope);
+    try {
+      if (run.context_id && !run.attachments?.length)
+        throw new Error('上轮附件或选段已不可用；未恢复，请重新核对材料。');
+      const restore = await materials.prepareRecovery(run.attachments ?? []);
+      if (!alive.current || current.current.scope !== scope) return;
+      if (
+        composing.current ||
+        draftRevisions.get(scope) !== revision ||
+        current.current.draft.text.trim()
+      )
+        throw new Error('输入已变化，未覆盖当前内容。');
+      restore();
+      current.current.setDraft({ text: run.prompt, state: null });
+      // 恢复的是输入，不复用历史授权或 context_id；发送仍走当轮预览校验。
+      if (project) void loadProjectPreview();
+    } catch (error) {
+      if (alive.current) setError(error instanceof Error ? error.message : '上轮输入未恢复。');
+    } finally {
+      sending.current = false;
+      if (alive.current) setRestoring(false);
+    }
+  };
   return {
     materials,
     projectLoading,
@@ -288,6 +326,8 @@ export function useAgentController({
     error,
     credentialUnavailable,
     pending,
+    restoring,
+    restoreRun,
     unknown,
     composing,
     active,

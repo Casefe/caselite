@@ -230,7 +230,11 @@ export async function runMaterialDemo(
       );
       return;
     }
-    if (phase === 'materials-docx' || phase === 'materials-docx-lists') {
+    if (
+      phase === 'materials-docx' ||
+      phase === 'materials-docx-lists' ||
+      phase === 'materials-docx-recovery'
+    ) {
       stage = 'docx-import';
       await drop('中文合同.docx');
       await waitFor(
@@ -259,10 +263,40 @@ export async function runMaterialDemo(
       if (firstDraft.revision !== 1) throw new Error('Unexpected initial revision');
       await click('收起阅读');
       stage = 'docx-send';
+      const prompt =
+        phase === 'materials-docx-recovery'
+          ? '取消恢复测试：仅核对选中段的付款期限。'
+          : '仅核对选中段的付款期限。';
       await evaluate(
-        "document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,'仅核对选中段的付款期限。')",
+        `document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,${JSON.stringify(prompt)})`,
       );
       await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+      if (phase === 'materials-docx-recovery') {
+        stage = 'docx-cancel-restore';
+        await waitFor("Boolean(document.querySelector('button[aria-label=停止生成]'))");
+        await evaluate("document.querySelector('button[aria-label=停止生成]').click()");
+        await waitFor("Boolean(document.querySelector('.assistant-run-status.cancelled'))");
+        await click('恢复上轮要求与原选段');
+        await waitFor(
+          `document.querySelector('[data-testid=agent-input]')?.value===${JSON.stringify(prompt)}`,
+        );
+        const state = await evaluate(
+          "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
+        );
+        if (!state.ok || state.runs.length !== 1 || state.runs[0].status !== 'cancelled')
+          throw new Error('Restore dispatched a new run');
+        await capture('07-restored-input');
+        writeFileSync(
+          join(directory, 'composer-recovery.json'),
+          JSON.stringify({
+            cancelled: true,
+            restoredPrompt: true,
+            noAutomaticRetry: true,
+            attachments: state.runs[0].attachments,
+          }),
+        );
+        await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+      }
       await waitFor(
         "Boolean(document.querySelector('.assistant-run-status.succeeded') && document.querySelector('.message-attachments button'))",
       );
@@ -275,7 +309,7 @@ export async function runMaterialDemo(
       )
         throw new Error('Unexpected provider input');
       await waitFor(
-        "Boolean(document.querySelector('.assistant-message--assistant')?.textContent.includes('付款期限：新期限十日'))",
+        "[...document.querySelectorAll('.assistant-message--assistant')].some(node => node.textContent.includes('付款期限：新期限十日'))",
       );
       await capture('03-docx-model-input');
       stage = 'docx-original';

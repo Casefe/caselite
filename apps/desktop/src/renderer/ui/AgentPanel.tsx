@@ -242,6 +242,8 @@ export default function AgentPanel({
     error,
     credentialUnavailable,
     pending,
+    restoring,
+    restoreRun,
     unknown,
     composing: composingRef,
     active,
@@ -427,10 +429,17 @@ export default function AgentPanel({
               <button
                 type="button"
                 className="assistant-refill"
-                disabled={pending || Boolean(draft.text.trim())}
-                onClick={() => setDraft({ text: latest.prompt, state: null })}
+                disabled={
+                  pending ||
+                  restoring ||
+                  Boolean(draft.text.trim()) ||
+                  Object.keys(materials.selected).length > 0 ||
+                  materials.busy ||
+                  Boolean(materials.staged)
+                }
+                onClick={() => void restoreRun(latest)}
               >
-                重新填写上次要求 · 附件请重新添加
+                {restoring ? '正在核对上轮材料…' : '恢复上轮要求与原选段'}
               </button>
             )}
           {project && (

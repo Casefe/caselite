@@ -314,3 +314,159 @@ it('retries a restored original with its original operation and target, without 
   expect(material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(false);
   expect(screen.queryByLabelText('待发送附件')).toBeNull();
 });
+
+it.each(['failed', 'cancelled', 'interrupted'] as const)(
+  'restores %s input with exactly the old PDF pages and obtains fresh send authorization',
+  async (status) => {
+    const scope = crypto.randomUUID();
+    const run: AgentRun = {
+      id: crypto.randomUUID(),
+      scope,
+      model: 'gpt-4.1-mini',
+      provider: 'openai',
+      prompt: '仅核对第二页',
+      output: '',
+      status,
+      sequence: 1,
+      message: '已停止',
+      usage: null,
+      attachments: [{ source_id: file.id, task_id: file.task_id, name: file.name, pages: [2] }],
+    };
+    const material = vi.fn(async (request) => ({
+      ok: true,
+      materials: [
+        {
+          ...file,
+          status:
+            status === 'cancelled'
+              ? 'needs_ocr'
+              : status === 'interrupted'
+                ? 'interrupted'
+                : 'ready',
+          page_count: 3,
+        },
+      ],
+      ...(request.operation === 'preview' ? { preview: context } : {}),
+    }));
+    const agent = vi.fn(async () => ({
+      ok: true,
+      configured: true,
+      model: 'gpt-4.1-mini',
+      providers: { openai: true },
+      runs: [run],
+    }));
+    window.caselite = { material, agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope={scope} />);
+    fireEvent.click(await screen.findByRole('button', { name: '恢复上轮要求与原选段' }));
+    const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+    await waitFor(() => expect(input.value).toBe(run.prompt));
+    expect(screen.getByLabelText('待发送附件').textContent).toContain(file.name);
+    expect(screen.getByLabelText('待发送附件').textContent).toContain('第 2 页 · 本次发送');
+    expect(
+      agent.mock.calls.some(
+        (args) => (args as unknown as [AgentRequest])[0]?.operation === 'start',
+      ),
+    ).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() =>
+      expect(material.mock.calls.some(([r]) => r.operation === 'preview')).toBe(true),
+    );
+    expect(material.mock.calls.find(([r]) => r.operation === 'preview')?.[0].selected).toEqual([
+      { source_id: file.id, pages: [2] },
+    ]);
+    await waitFor(() =>
+      expect(
+        agent.mock.calls.some(
+          (args) => (args as unknown as [AgentRequest])[0]?.operation === 'start',
+        ),
+      ).toBe(true),
+    );
+  },
+);
+it('does not overwrite text typed while old attachment authorization is being read', async () => {
+  const scope = crypto.randomUUID();
+  const run: AgentRun = {
+    id: crypto.randomUUID(),
+    scope,
+    model: 'gpt-4.1-mini',
+    provider: 'openai',
+    prompt: '旧要求',
+    output: '',
+    status: 'failed',
+    sequence: 1,
+    message: '失败',
+    usage: null,
+    attachments: [{ source_id: file.id, task_id: file.task_id, name: file.name, pages: [1] }],
+  };
+  let delayed = false;
+  let finish!: (value: MaterialResponse) => void;
+  const material = vi.fn(async () =>
+    delayed
+      ? new Promise<MaterialResponse>((resolve) => {
+          finish = resolve;
+        })
+      : ({ ok: true, materials: [] } as MaterialResponse),
+  );
+  window.caselite = {
+    material,
+    agent: vi.fn(async () => ({
+      ok: true,
+      configured: true,
+      model: 'gpt-4.1-mini',
+      providers: { openai: true },
+      runs: [run],
+    })),
+  } as unknown as Window['caselite'];
+  render(<AgentPanel scope={scope} />);
+  const restore = await screen.findByRole('button', { name: '恢复上轮要求与原选段' });
+  delayed = true;
+  fireEvent.click(restore);
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '新要求' } });
+  await act(async () => finish({ ok: true, materials: [{ ...file, status: 'ready' }] }));
+  expect(input.value).toBe('新要求');
+  expect(await screen.findByText('输入已变化，未覆盖当前内容。')).toBeTruthy();
+  expect(screen.queryByLabelText('待发送附件')).toBeNull();
+});
+it.each(['moved attachment', 'legacy run without a manifest'])(
+  'refuses to restore %s',
+  async (reason) => {
+    const scope = crypto.randomUUID();
+    const run: AgentRun = {
+      id: crypto.randomUUID(),
+      scope,
+      model: 'gpt-4.1-mini',
+      provider: 'openai',
+      prompt: '旧要求',
+      output: '',
+      status: 'cancelled',
+      sequence: 1,
+      message: '停止',
+      usage: null,
+      ...(reason === 'moved attachment'
+        ? {
+            attachments: [
+              { source_id: file.id, task_id: file.task_id, name: file.name, pages: [1] },
+            ],
+          }
+        : { context_id: crypto.randomUUID() }),
+    };
+    window.caselite = {
+      material: vi.fn(async () => ({ ok: true, materials: [] })),
+      agent: vi.fn(async () => ({
+        ok: true,
+        configured: true,
+        model: 'gpt-4.1-mini',
+        providers: { openai: true },
+        runs: [run],
+      })),
+    } as unknown as Window['caselite'];
+    render(<AgentPanel scope={scope} />);
+    fireEvent.click(await screen.findByRole('button', { name: '恢复上轮要求与原选段' }));
+    expect(
+      await screen.findByText('上轮附件或选段已不可用；未恢复，请重新核对材料。'),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByLabelText('待发送附件')).toBeNull();
+  },
+);

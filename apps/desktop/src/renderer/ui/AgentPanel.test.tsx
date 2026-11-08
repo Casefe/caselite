@@ -179,11 +179,13 @@ describe('AI submission UI lifecycle', () => {
     }));
     window.caselite = { agent } as unknown as Window['caselite'];
     render(<AgentPanel scope="13131313-1313-4313-8313-131313131313" />);
-    const refill = await screen.findByRole('button', { name: '重新填写上次要求 · 附件请重新添加' });
+    const refill = await screen.findByRole('button', { name: '恢复上轮要求与原选段' });
     expect(screen.getByText('部分结果')).toBeTruthy();
     fireEvent.click(refill);
-    expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe(
-      '上次工作要求',
+    await waitFor(() =>
+      expect((screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement).value).toBe(
+        '上次工作要求',
+      ),
     );
     expect(agent.mock.calls).toHaveLength(1);
     expect((refill as HTMLButtonElement).disabled).toBe(true);
