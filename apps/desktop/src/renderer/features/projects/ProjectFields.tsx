@@ -1,4 +1,5 @@
 import { projectTypes, projectStatuses } from './project-display';
+import PropertySelect from '../../shared/ui/PropertySelect';
 import { PropertyRow } from '../../shared/ui/PropertyRow';
 import { InspectorSection } from '../../shared/ui/InspectorSection';
 import { Icon } from '../../shared/ui/Icon';
@@ -218,7 +219,7 @@ export default function ProjectFields({
   );
   const typeRow = (
     <ProjectPropertyRow label="项目类型" icon="folder">
-      <select
+      <PropertySelect
         disabled={disabled}
         aria-label="项目类型"
         value={type}
@@ -231,7 +232,7 @@ export default function ProjectFields({
               {label}
             </option>
           ))}
-      </select>
+      </PropertySelect>
     </ProjectPropertyRow>
   );
   const assigneeRow = (
@@ -255,7 +256,7 @@ export default function ProjectFields({
         {creating && nameRow}
         {creating && typeRow}
         <ProjectPropertyRow label="状态" icon="status">
-          <select
+          <PropertySelect
             disabled={archive ? archive.disabled : disabled}
             aria-label="项目状态"
             value={archive?.archived ? 'archived' : value.status}
@@ -277,11 +278,11 @@ export default function ProjectFields({
               </option>
             )}
             {archive?.archived && <option value="restore">恢复项目</option>}
-          </select>
+          </PropertySelect>
         </ProjectPropertyRow>
         {creating && assigneeRow}
         <ProjectPropertyRow label="优先级" icon="priority">
-          <select
+          <PropertySelect
             disabled={disabled}
             aria-label="项目优先级"
             value={a.priority}
@@ -292,7 +293,7 @@ export default function ProjectFields({
                 {label}
               </option>
             ))}
-          </select>
+          </PropertySelect>
         </ProjectPropertyRow>
         {!creating && assigneeRow}
         <ProjectPropertyRow label="日期" icon="calendar">

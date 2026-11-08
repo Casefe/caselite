@@ -109,7 +109,7 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '  不存在  ' } });
     await screen.findByText('没有匹配的项目。');
     fireEvent.click(screen.getByText('清除筛选'));
-    expect(within(table).getAllByRole('button')).toHaveLength(2);
+    expect(table.querySelectorAll('tbody .project-title-link')).toHaveLength(2);
     const display = screen.getByText('显示').closest('summary')!;
     fireEvent.click(display);
     expect(display.parentElement!.hasAttribute('open')).toBe(true);

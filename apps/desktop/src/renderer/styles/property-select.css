@@ -1,0 +1,65 @@
+.property-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.property-select > select {
+  appearance: none;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 4px 22px 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.property-select:has(.property-select-icon) > select {
+  padding-inline-start: 30px;
+}
+.property-select-icon {
+  position: absolute;
+  inset-inline-start: 8px;
+  display: inline-flex;
+  pointer-events: none;
+}
+.property-select-caret {
+  position: absolute;
+  inset-inline-end: 6px;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0;
+  pointer-events: none;
+}
+.property-select:not([data-disabled]):hover,
+.property-select:focus-within {
+  background: var(--theme-hover);
+}
+.property-select:hover .property-select-caret,
+.property-select:focus-within .property-select-caret {
+  opacity: 1;
+}
+.property-select > select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.property-select[data-disabled] {
+  opacity: 0.55;
+}
+.property-select > select:disabled {
+  cursor: default;
+}
