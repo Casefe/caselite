@@ -135,7 +135,50 @@ const discussionEntry = z.strictObject({
 const discussionCursor = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export type DiscussionScope = z.infer<typeof discussionScope>;
 export type DiscussionEntry = z.infer<typeof discussionEntry>;
+const milestoneTitle = z
+  .string()
+  .trim()
+  .min(1)
+  .max(160)
+  .refine((v) => !v.includes('\0'));
+const milestoneFields = { title: milestoneTitle, target_date: ordinaryDateSchema.nullable() };
+const milestoneSchema = z.strictObject({
+  id,
+  ...milestoneFields,
+  version,
+  archived_at: z.iso.datetime().nullable(),
+  total: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative(),
+});
+const projectPlanSchema = z.strictObject({
+  milestones: z.array(milestoneSchema),
+  assignments: z.array(z.strictObject({ task_id: id, milestone_id: id })),
+});
 export const catalogRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({ ...base, operation: z.literal('read_project_plan'), project_id: id }),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('create_milestone'),
+    project_id: id,
+    ...milestoneFields,
+  }),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('update_milestone'),
+    project_id: id,
+    milestone_id: id,
+    expected_version: version,
+    ...milestoneFields,
+    archived: z.boolean(),
+  }),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('assign_milestone'),
+    project_id: id,
+    task_id: id,
+    expected_version: version,
+    milestone_id: id.nullable(),
+  }),
   z.strictObject({
     ...base,
     operation: z.literal('list_discussion'),
@@ -265,6 +308,7 @@ export const catalogResponseSchema = z.discriminatedUnion('ok', [
         read_only: z.boolean().optional(),
       })
       .optional(),
+    project_plan: projectPlanSchema.optional(),
     activity: z.array(activityEventSchema).optional(),
     activity_has_more: z.boolean().optional(),
     activity_target: z

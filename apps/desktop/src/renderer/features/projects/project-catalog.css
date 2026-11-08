@@ -870,3 +870,62 @@
 .project-health[data-health='off_track']::before {
   color: #bd585b;
 }
+
+.project-planning {
+  display: grid;
+  gap: 12px;
+  margin-block: 14px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--line);
+}
+.project-planning p {
+  margin: 6px 0;
+  color: var(--muted);
+}
+.project-planning progress {
+  width: 100%;
+}
+.project-progress-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+.project-progress-counts div {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.project-progress-counts dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+.project-milestone-row,
+.project-milestone-form {
+  display: grid;
+  gap: 5px;
+  padding-block: 7px;
+}
+.project-milestone-row + .project-milestone-row {
+  border-block-start: 1px solid var(--line);
+}
+.project-milestone-row small {
+  color: var(--muted);
+}
+.project-milestone-form label {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  gap: 5px;
+  align-items: center;
+}
+.project-milestone-form input,
+.project-milestone-form select {
+  width: 100%;
+  min-width: 0;
+}
+.project-milestone-row button + button,
+.project-milestone-form button + button {
+  margin-inline-start: 5px;
+}

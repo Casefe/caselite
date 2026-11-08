@@ -236,14 +236,60 @@ export const taskComment = sqliteTable(
     check('task_comment_fixed_revision', sql`${table.bodyRevision} = 1`),
   ],
 );
-export const taskProjects = sqliteTable('task_projects', {
-  taskId: text('task_id')
-    .primaryKey()
-    .references(() => taskItems.id),
-  matterId: text('matter_id')
-    .notNull()
-    .references(() => matters.id),
-});
+export const taskProjects = sqliteTable(
+  'task_projects',
+  {
+    taskId: text('task_id')
+      .primaryKey()
+      .references(() => taskItems.id),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+  },
+  (table) => [unique('task_projects_task_matter').on(table.taskId, table.matterId)],
+);
+export const projectMilestones = sqliteTable(
+  'project_milestones',
+  {
+    id: text('id').primaryKey().notNull(),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+    title: text('title').notNull(),
+    targetDate: text('target_date'),
+    version: integer('version').notNull().default(1),
+    createdAt: text('created_at').notNull(),
+    archivedAt: text('archived_at'),
+  },
+  (table) => [
+    unique().on(table.id, table.matterId),
+    index('project_milestones_matter').on(table.matterId, table.targetDate),
+    check(
+      'milestone_title_valid',
+      sql`length(trim(${table.title})) BETWEEN 1 AND 160 AND instr(${table.title}, char(0)) = 0`,
+    ),
+    check('milestone_version_valid', sql`${table.version} > 0`),
+  ],
+);
+export const taskMilestones = sqliteTable(
+  'task_milestones',
+  {
+    taskId: text('task_id').primaryKey().notNull(),
+    matterId: text('matter_id').notNull(),
+    milestoneId: text('milestone_id').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.taskId, table.matterId],
+      foreignColumns: [taskProjects.taskId, taskProjects.matterId],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.milestoneId, table.matterId],
+      foreignColumns: [projectMilestones.id, projectMilestones.matterId],
+    }),
+    index('task_milestones_milestone').on(table.milestoneId),
+  ],
+);
 export const catalogReceipts = sqliteTable(
   'catalog_receipts',
   {

@@ -135,9 +135,11 @@ describe('durable project UI receipts and target identity', () => {
     const catalog = vi.fn(async (request: CatalogRequest) =>
       request.operation === 'list_activity'
         ? { ...response([p], p.id), activity: [], activity_has_more: false }
-        : request.operation === 'list_discussion'
-          ? { ...response([], null), discussion: { entries: [], next: null } }
-          : response([p], p.id),
+        : request.operation === 'read_project_plan'
+          ? { ...response([], null), project_plan: { milestones: [], assignments: [] } }
+          : request.operation === 'list_discussion'
+            ? { ...response([], null), discussion: { entries: [], next: null } }
+            : response([p], p.id),
     );
     window.caselite = { catalog } as unknown as Window['caselite'];
     renderProject(
@@ -177,8 +179,13 @@ describe('durable project UI receipts and target identity', () => {
     await screen.findByText('暂无项目评论。');
     const requests = catalog.mock.calls.map(([request]) => request);
     expect(
-      requests.filter((r) => r.operation !== 'list_discussion').map((r) => r.operation),
+      requests
+        .filter((r) => r.operation !== 'list_discussion' && r.operation !== 'read_project_plan')
+        .map((r) => r.operation),
     ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list_activity']);
+    expect(requests.filter((r) => r.operation === 'read_project_plan')).toEqual([
+      { operation: 'read_project_plan', protocol_version: 1, project_id: p.id },
+    ]);
     expect(requests.filter((r) => r.operation === 'list_discussion').map((r) => r.scope)).toEqual([
       { kind: 'project_comment', project_id: p.id },
       { kind: 'update', project_id: p.id },

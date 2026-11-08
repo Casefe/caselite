@@ -21,6 +21,7 @@ import ProjectFiles from './ProjectFiles';
 import ActivityList from './ActivityList';
 import ProjectDeliverables from './ProjectDeliverables';
 import ProjectDiscussion from './ProjectDiscussion';
+import ProjectPlanning from './ProjectPlanning';
 const ProjectRelationshipGraph = lazy(() => import('./ProjectRelationshipGraph'));
 const names = { ...projectStatuses, archived: '已归档' };
 const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
@@ -114,9 +115,16 @@ export default function ProjectCatalog({
   }, []);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const [discussionDirty, setDiscussionDirty] = useState(false);
-  const dirty = bodyDirty || propertyDirty || discussionDirty;
+  const [planningDirty, setPlanningDirty] = useState(false);
+  const dirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
   const discussionDisabled =
-    navigationPending || reading || bodyDirty || propertyDirty || c.pending || c.unknown;
+    navigationPending ||
+    reading ||
+    bodyDirty ||
+    propertyDirty ||
+    planningDirty ||
+    c.pending ||
+    c.unknown;
   const projects = Object.values({
     ...acknowledged,
     ...Object.fromEntries(
@@ -323,7 +331,8 @@ export default function ProjectCatalog({
     c.execute(input, async (r) => {
       const refreshed = onChanged();
       await done?.(r);
-      if (input.operation === 'assign_task') await refreshed;
+      if (input.operation === 'assign_task' || input.operation === 'assign_milestone')
+        await refreshed;
     });
   const handleBodyResult = (result: CatalogResponse | null) => {
     if (result?.ok) return;
@@ -621,10 +630,16 @@ export default function ProjectCatalog({
                     c.pending ||
                     c.unknown ||
                     propertyDirty ||
+                    planningDirty ||
                     discussionDirty
                   }
                   disabled={
-                    navigationPending || reading || lifecycleDraft || bodyCommand || discussionDirty
+                    navigationPending ||
+                    reading ||
+                    lifecycleDraft ||
+                    bodyCommand ||
+                    discussionDirty ||
+                    planningDirty
                   }
                   unknown={c.unknown && bodyCommand}
                   error={bodyError}
@@ -1051,6 +1066,7 @@ export default function ProjectCatalog({
                 creating ||
                 bodyCommand ||
                 discussionDirty ||
+                planningDirty ||
                 (!propertyDirty && (c.pending || c.unknown))
               }
               unknown={c.unknown && !bodyCommand}
@@ -1090,6 +1106,24 @@ export default function ProjectCatalog({
                 )
               }
             />
+            {editor && (
+              <ProjectPlanning
+                key={p.id}
+                project={p}
+                tasks={members}
+                disabled={
+                  navigationPending ||
+                  reading ||
+                  creating ||
+                  bodyDirty ||
+                  propertyDirty ||
+                  discussionDirty
+                }
+                pending={c.pending || c.unknown}
+                onDirty={setPlanningDirty}
+                execute={command}
+              />
+            )}
             <section className="project-inspector-section project-ai-content" aria-label="AI 对话">
               <h3>AI 对话</h3>
               <SidebarAgent

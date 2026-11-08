@@ -134,6 +134,13 @@
       "when": 1794065000000,
       "tag": "0018_project_update_health",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794066000000,
+      "tag": "0019_project_milestones",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,7 @@ import {
   type DiscussionScope,
 } from '@caselite/contracts';
 import { projectOutstanding } from './finance-store';
+import { projectMilestones } from './project-milestones';
 import { bodyPlainText, validateBody } from './body-schema';
 
 type Success = Extract<CatalogResponse, { ok: true }>;
@@ -26,9 +27,11 @@ const fail = (
 ): CatalogResponse => ({ ok: false, code, message });
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
+  const planning = projectMilestones(db, workspace);
   const hasHealth = (db.pragma('table_info(project_discussion)') as { name: string }[]).some(
     (column) => column.name === 'health',
   );
+  const hasMilestones = (db.pragma('table_info(task_milestones)') as { name: string }[]).length > 0;
   const healthProjection = hasHealth
     ? "(SELECT d.health FROM project_discussion d WHERE d.matter_id=m.id AND d.kind='update' AND d.health IS NOT NULL ORDER BY d.sequence DESC LIMIT 1)"
     : 'NULL';
@@ -253,6 +256,10 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       },
     },
     execute(request: CatalogRequest): CatalogResponse {
+      if (request.operation === 'read_project_plan') {
+        const plan = planning.read(request.project_id);
+        return 'ok' in plan ? plan : { ...narrowResult(), project_plan: plan };
+      }
       if (request.operation === 'list_discussion') {
         const { scope } = request;
         const target = discussionTarget(scope);
@@ -414,6 +421,20 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             );
           return saveReceipt(narrowResult(id, request.idempotency_key));
         }
+        if (
+          request.operation === 'create_milestone' ||
+          request.operation === 'update_milestone' ||
+          request.operation === 'assign_milestone'
+        ) {
+          const now = new Date().toISOString();
+          const target = planning.write(request, now);
+          if (typeof target !== 'string') return target;
+          if (request.operation !== 'assign_milestone')
+            db.prepare(
+              'INSERT INTO catalog_activity(id,workspace_id,target_id,operation,created_at) VALUES(?,?,?,?,?)',
+            ).run(randomUUID(), workspace, request.project_id, request.operation, now);
+          return saveReceipt(narrowResult(target, request.idempotency_key));
+        }
         let target: string;
         const now = new Date().toISOString();
         if (request.operation === 'create_project') {
@@ -455,6 +476,12 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           if (request.matter_id) {
             const p = getProject(request.matter_id);
             if (!p || p.archived_at) return fail('NOT_FOUND', '目标项目不可用或已归档。');
+            // 跨项目移动先清除原里程碑，同项目重复归组保留已有关系。
+            if (hasMilestones)
+              db.prepare('DELETE FROM task_milestones WHERE task_id=? AND matter_id<>?').run(
+                target,
+                request.matter_id,
+              );
             db.prepare(
               'INSERT INTO task_projects(task_id,matter_id) VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET matter_id=excluded.matter_id',
             ).run(target, request.matter_id);

@@ -1490,3 +1490,125 @@ it('keeps task comments scoped to the original task across grouping, rollback an
     reopened.close();
   }
 });
+
+it('binds milestones only to their current project, computes real progress and preserves receipts on reopen', () => {
+  const { app, file, store } = setup();
+  const project = (title: string) =>
+    ok(app.execute({ ...ids(), operation: 'create_project', title })).target_id!;
+  const first = project('合成里程碑甲');
+  const second = project('合成里程碑乙');
+  const milestone = (project_id: string, title: string) =>
+    ok(
+      app.execute({
+        ...ids(),
+        operation: 'create_milestone',
+        project_id,
+        title,
+        target_date: '2026-12-01',
+      }),
+    ).target_id!;
+  const plan = (project_id: string) =>
+    ok(
+      app.execute({
+        protocol_version: 1,
+        operation: 'read_project_plan',
+        project_id,
+      }),
+    ).project_plan!;
+  const firstMilestone = milestone(first, '完成核对');
+  const otherMilestone = milestone(second, '另一项目阶段');
+  const task = ok(
+    store.execute({
+      ...ids(),
+      operation: 'create',
+      title: '合成里程碑任务',
+      objective: '',
+      matter_id: first,
+    }),
+  ).tasks[0];
+  const assign = {
+    ...ids(),
+    operation: 'assign_milestone',
+    project_id: first,
+    task_id: task.id,
+    expected_version: task.version,
+    milestone_id: firstMilestone,
+  };
+  expect(app.execute({ ...assign, milestone_id: otherMilestone })).toMatchObject({
+    code: 'NOT_FOUND',
+  });
+  const foreign = openTaskStore(file, migrations, 'another-workspace');
+  expect(createCatalogApplication(foreign.catalog).execute(assign)).toMatchObject({
+    code: 'NOT_FOUND',
+  });
+  foreign.close();
+  const db = openToolchainProbe(file, migrations).sqlite;
+  db.exec(
+    "CREATE TRIGGER reject_milestone BEFORE INSERT ON task_activity WHEN NEW.operation='assign_milestone' BEGIN SELECT RAISE(ABORT,'synthetic milestone activity failure'); END",
+  );
+  expect(app.execute(assign)).toMatchObject({ code: 'UNAVAILABLE' });
+  expect(plan(first).assignments).toEqual([]);
+  expect(
+    app.execute({
+      protocol_version: 1,
+      operation: 'status',
+      idempotency_key: assign.idempotency_key,
+    }),
+  ).toMatchObject({ code: 'NOT_FOUND' });
+  db.exec('DROP TRIGGER reject_milestone');
+  db.close();
+  const receipt = ok(app.execute(assign));
+  expect(app.execute(assign)).toEqual(receipt);
+  expect(plan(first).milestones[0]).toMatchObject({ total: 1, done: 0 });
+  const saved = ok(
+    store.execute({
+      ...ids(),
+      operation: 'change_status',
+      task_id: task.id,
+      expected_version: task.version + 1,
+      status: 'done',
+    }),
+  ).tasks[0];
+  expect(plan(first).milestones[0]).toMatchObject({ total: 1, done: 1 });
+  ok(
+    app.execute({
+      ...ids(),
+      operation: 'assign_task',
+      task_id: task.id,
+      expected_version: saved.version,
+      matter_id: first,
+    }),
+  );
+  expect(plan(first).assignments).toHaveLength(1);
+  ok(
+    app.execute({
+      ...ids(),
+      operation: 'assign_task',
+      task_id: task.id,
+      expected_version: saved.version + 1,
+      matter_id: second,
+    }),
+  );
+  expect(plan(first).assignments).toEqual([]);
+  expect(plan(first).milestones[0]).toMatchObject({ total: 0, done: 0 });
+  expect(plan(second).assignments).toEqual([]);
+  store.close();
+  const reopened = openTaskStore(file, migrations);
+  expect(
+    reopened.catalog.execute({
+      protocol_version: 1,
+      operation: 'status',
+      idempotency_key: assign.idempotency_key,
+    }),
+  ).toEqual(receipt);
+  expect(
+    ok(
+      reopened.catalog.execute({
+        protocol_version: 1,
+        operation: 'read_project_plan',
+        project_id: first,
+      }),
+    ).project_plan?.milestones[0],
+  ).toMatchObject({ id: firstMilestone, title: '完成核对', target_date: '2026-12-01' });
+  reopened.close();
+});
