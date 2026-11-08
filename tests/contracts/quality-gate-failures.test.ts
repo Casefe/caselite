@@ -14,9 +14,50 @@ import {
   reviewChanges,
   isReviewableFile,
   collectChanges,
+  regressionCases,
+  validateRegression,
 } from '../../scripts/check-quality-changes.mjs';
 
 describe('G0 rejects deliberate failures', () => {
+  it('rejects stale, missing, simulated and same-session regression evidence', () => {
+    const fingerprint = 'a'.repeat(64);
+    const evidence = {
+      version: 1,
+      rulesSha256: fingerprint,
+      authorSession: 'implementation',
+      reviewerSession: 'independent-review',
+      context: 'fresh',
+      model: 'UNKNOWN',
+      cases: regressionCases.map((id: string) => ({
+        id,
+        status: 'PASS_REAL',
+        evidence: 'report.txt',
+        sha256: fingerprint,
+      })),
+    };
+    expect(validateRegression(evidence, fingerprint)).toEqual([]);
+    expect(validateRegression(undefined, fingerprint)).not.toEqual([]);
+    expect(validateRegression(evidence, 'b'.repeat(64))).toContain('Regression evidence is stale');
+    expect(
+      validateRegression({ ...evidence, reviewerSession: 'implementation' }, fingerprint),
+    ).not.toEqual([]);
+    expect(validateRegression({ ...evidence, cases: [] }, fingerprint)).not.toEqual([]);
+    for (const status of ['MOCK_ONLY', 'NOT_RUN', 'FAIL', 'BLOCKED']) {
+      expect(
+        validateRegression(
+          { ...evidence, cases: evidence.cases.map((item: object) => ({ ...item, status })) },
+          fingerprint,
+        ),
+      ).not.toEqual([]);
+    }
+    expect(
+      validateRegression(
+        { ...evidence, cases: [evidence.cases[0], evidence.cases[0], evidence.cases[2]] },
+        fingerprint,
+      ),
+    ).not.toEqual([]);
+  });
+
   it('collects tracked, untracked, deleted and moved Markdown from a real isolated Git repository', () => {
     const root = mkdtempSync(join(tmpdir(), 'caselite-rule-review-'));
     const git = (...args: string[]) =>
@@ -67,6 +108,38 @@ describe('G0 rejects deliberate failures', () => {
           'Protected rule document removed or emptied: apps/desktop/AGENTS.md',
         ]),
       );
+      const first = collectChanges(root, 'HEAD').rulesSha256;
+      put('docs/notes/example.md', 'Changed ordinary note');
+      expect(collectChanges(root, 'HEAD').rulesSha256).toBe(first);
+      put('AGENTS.md', 'Changed rule again');
+      expect(collectChanges(root, 'HEAD').rulesSha256).not.toBe(first);
+      put('.codex/config.toml', 'model = "synthetic"');
+      expect(
+        collectChanges(root, 'HEAD').changes.map(({ file }: { file: string }) => file),
+      ).toContain('.codex/config.toml');
+      for (const file of [
+        'scripts/lib/renderer-boundaries.mjs',
+        'scripts/lib/dependency-admission.mjs',
+        'scripts/lib/license-policy.mjs',
+        'scripts/lib/repository-content.mjs',
+        'eslint.config.mjs',
+        'vitest.config.mts',
+        '.github/workflows/quality.yml',
+        'package.json',
+        'pnpm-lock.yaml',
+        'mise.toml',
+        'apps/desktop/tsconfig.main.json',
+        'apps/desktop/tsconfig.preload.json',
+        'apps/desktop/tsconfig.renderer.json',
+        '.prettierignore',
+        '.gitignore',
+        '.npmrc',
+      ]) {
+        put(file, 'Original input');
+        const beforeChange = collectChanges(root, 'HEAD').rulesSha256;
+        put(file, 'Changed input');
+        expect(collectChanges(root, 'HEAD').rulesSha256, file).not.toBe(beforeChange);
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
