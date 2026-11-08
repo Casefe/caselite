@@ -3,7 +3,7 @@ import ReadTable from '../shared/ui/ReadTable';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import { Icon } from '../shared/ui/Icon';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CatalogDocument } from '../../preload/caselite-api';
 
 import DocumentInspector from './DocumentInspector';
@@ -26,6 +26,7 @@ export default function DocumentLibrary({
   const [projectFilter, setProjectFilter] = useState('');
   const [sort, setSort] = useState('updated');
   const [preview, setPreview] = useState(false);
+  const directoryHeading = useRef<HTMLHeadingElement>(null);
   const [editing, setEditing] = useState(false),
     [collection, setCollection] = useState(''),
     [tagDraft, setTagDraft] = useState(false),
@@ -97,11 +98,14 @@ export default function DocumentLibrary({
       className={`collection-workspace catalog-view ${library ? 'knowledge-view' : ''}`}
       data-layout="three-column"
       data-collection={library ? 'knowledge' : 'documents'}
+      data-directory-view={preview && d ? 'preview' : 'list'}
     >
       <div className="collection-main">
         <div className="collection-heading">
           <Icon name={library ? 'book' : 'file'} size={18} />
-          <h1>{library ? '知识库' : '文档'}</h1>
+          <h1 tabIndex={-1} ref={directoryHeading}>
+            {library ? '知识库' : '文档'}
+          </h1>
           <span>{docs.length}</span>
         </div>
         <div className="document-intro">
@@ -209,6 +213,16 @@ export default function DocumentLibrary({
             className={library ? 'catalog-table' : 'catalog-table document-directory-table'}
             data={docs}
             getRowId={(doc) => doc.id}
+            groupBy={
+              library
+                ? undefined
+                : (doc) => ({
+                    id: doc.matter_id ?? 'ungrouped',
+                    label: doc.matter_id
+                      ? (projectNames.get(doc.matter_id) ?? '关联项目不可用')
+                      : '未归组',
+                  })
+            }
             columns={[
               {
                 id: 'title',
@@ -261,13 +275,21 @@ export default function DocumentLibrary({
               'data-document-id': doc.id,
               'aria-selected': d?.id === doc.id,
               onClick: () => {
-                if (!blocked) setSelected(doc.id);
+                if (!blocked) {
+                  setSelected(doc.id);
+                  if (!library) setPreview(true);
+                }
               },
               onDoubleClick: () => {
                 if (!blocked) onOpen(doc.task_id);
               },
               onKeyDown: (event) => {
                 if (event.key === 'Enter' && !blocked) onOpen(doc.task_id);
+                if (event.key === ' ' && !blocked && !library) {
+                  event.preventDefault();
+                  setSelected(doc.id);
+                  setPreview(true);
+                }
               },
             })}
           />
@@ -379,6 +401,17 @@ export default function DocumentLibrary({
       <div className="document-directory-sidebar">
         {!library && d && (
           <section className="document-directory-preview" aria-label="文档预览">
+            {preview && (
+              <button
+                className="document-directory-back"
+                onClick={() => {
+                  setPreview(false);
+                  requestAnimationFrame(() => directoryHeading.current?.focus());
+                }}
+              >
+                返回文档列表
+              </button>
+            )}
             <h2>{d.title}</h2>
             <div className="view-tabs">
               <button aria-pressed={preview} disabled={blocked} onClick={() => setPreview(true)}>
@@ -389,6 +422,16 @@ export default function DocumentLibrary({
               </button>
             </div>
             {preview && !blocked && <DocumentPreview key={d.id} document={d} />}
+            {preview && (
+              <div className="document-preview-actions">
+                <button disabled={blocked} onClick={() => onOpen(d.task_id)}>
+                  {d.archived_at ? '打开只读正文' : '打开编辑'}
+                </button>
+                <button disabled={blocked} onClick={() => void c.load()}>
+                  重新读取文档
+                </button>
+              </div>
+            )}
           </section>
         )}
         {(!preview || library || tagDraft) && (

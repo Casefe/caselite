@@ -7,6 +7,7 @@ export default function ReadTable<T>({
   data,
   columns,
   getRowId,
+  groupBy,
   rowProps,
   className = 'catalog-table',
   label,
@@ -15,6 +16,7 @@ export default function ReadTable<T>({
   data: T[];
   columns: ColumnDef<T>[];
   getRowId(row: T): string;
+  groupBy?(row: T): { id: string; label: string };
   rowProps?(row: T): RowProps;
   className?: string;
   label?: string;
@@ -29,6 +31,16 @@ export default function ReadTable<T>({
     onStateChange: () => {},
     renderFallbackValue: null,
   });
+  const rows = table.getRowModel().rows;
+  const groups = new Map<string, { label?: string; rows: typeof rows }>();
+  if (!groupBy) groups.set('', { rows });
+  else
+    for (const row of rows) {
+      const { id, label } = groupBy(row.original);
+      const group = groups.get(id) ?? { label, rows: [] };
+      group.rows.push(row);
+      groups.set(id, group);
+    }
   return (
     <table
       className={className}
@@ -53,15 +65,24 @@ export default function ReadTable<T>({
           </tr>
         ))}
       </thead>
-      <tbody>
-        {table.getRowModel().rows.map((row) => (
-          <tr key={row.id} {...rowProps?.(row.original)}>
-            {row.getVisibleCells().map((cell) => (
-              <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
+      {[...groups].map(([id, group]) => (
+        <tbody key={id}>
+          {group.label && (
+            <tr className="table-row-group">
+              <th scope="rowgroup" colSpan={table.getVisibleLeafColumns().length}>
+                {group.label}
+              </th>
+            </tr>
+          )}
+          {group.rows.map((row) => (
+            <tr key={row.id} {...rowProps?.(row.original)}>
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      ))}
     </table>
   );
 }

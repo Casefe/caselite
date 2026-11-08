@@ -200,3 +200,60 @@ it('外部提交使首次在途目录过期后，会补发读取并忽略迟到�
   await act(async () => complete[0](projection({ ...entry, title: '过期目录' })));
   expect(screen.queryByRole('row', { name: /过期目录/ })).toBeNull();
 });
+
+it('按项目分组，快速切换后只显示当前文档的读取结果，版本不符可重读', async () => {
+  const a = { ...entry, title: '合成甲' };
+  const b = {
+    ...entry,
+    id: crypto.randomUUID(),
+    task_id: crypto.randomUUID(),
+    matter_id: crypto.randomUUID(),
+    title: '合成乙',
+  };
+  let revision = b.body_revision;
+  let finishA: ((value: unknown) => void) | undefined;
+  const catalog = vi.fn(async () => ({
+    ...projection(a),
+    documents: [a, { ...b, body_revision: revision }],
+    projects: [{ id: b.matter_id, title: '合成项目' }],
+  }));
+  const task = vi.fn(async (request: { task_id: string }) => {
+    if (request.task_id === a.task_id) return new Promise((resolve) => (finishA = resolve));
+    return {
+      ok: true,
+      tasks: [
+        {
+          id: b.task_id,
+          document_id: b.id,
+          matter_id: b.matter_id,
+          body_revision: b.body_revision + 1,
+        },
+      ],
+      state: null,
+    };
+  });
+  vi.stubGlobal('caselite', { catalog, task });
+  const onOpen = vi.fn();
+  const { container } = render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={onOpen} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole('rowheader', { name: '合成项目' })).toBeTruthy();
+  expect(screen.getByRole('rowheader', { name: '未归组' })).toBeTruthy();
+  fireEvent.click(screen.getByText('合成甲', { selector: 'td' }));
+  await waitFor(() => expect(finishA).toBeDefined());
+  fireEvent.click(screen.getByText('合成乙', { selector: 'td' }));
+  await screen.findByText('文档版本或归属已变化，请先刷新目录。');
+  await act(async () => finishA?.({ ok: false, message: '甲的迟到错误' }));
+  expect(screen.queryByText('甲的迟到错误')).toBeNull();
+
+  revision += 1;
+  fireEvent.click(screen.getByRole('button', { name: '重新读取文档' }));
+  await screen.findByText('此文档尚无已保存的正文。');
+  fireEvent.click(screen.getByRole('button', { name: '打开编辑' }));
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(b.task_id);
+
+  fireEvent.click(screen.getByRole('button', { name: '返回文档列表' }));
+  expect(container.querySelector('[data-directory-view="list"]')).toBeTruthy();
+});

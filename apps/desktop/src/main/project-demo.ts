@@ -949,6 +949,7 @@ export async function runProjectDemo(
       await checkTaskTag();
       await click('[data-nav=documents]');
       await click(documentRow);
+      await button('属性');
       await readDocumentProperties();
       const documentSummary = `${taskProperties} > summary`;
       await evaluate(`document.querySelector('${documentSummary}').focus()`);
@@ -981,6 +982,7 @@ export async function runProjectDemo(
       await button('归档文档');
       await button('已归档');
       await click(documentRow);
+      await button('属性');
       await wait(
         "document.querySelector('[aria-label=文档标签]')?.textContent.includes('合成文档标签') && !document.querySelector('.task-tag-toggle')",
       );
@@ -2608,11 +2610,30 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.document-directory-table tbody')?.textContent.includes('独立任务转项目验收')",
         );
-        await button('预览');
+        await evaluate(`
+          Array.from(document.querySelectorAll('.document-directory-table [data-document-id]'))
+            .find(row => row.textContent.includes('独立任务转项目验收')).click()
+        `);
         await wait(
           "document.querySelector('[aria-label=文档正文预览]')?.textContent.includes('原任务正文与引用保全样本')",
         );
         await captureRenderer('dev-1803-document-preview.png');
+        window.setContentSize(640, 640);
+        await wait(`innerWidth===640 &&
+          getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display==='none' &&
+          document.querySelector('.document-directory-back').getBoundingClientRect().width>0`);
+        await captureRenderer('dev-1814-document-preview-narrow.png');
+        await button('返回文档列表');
+        await wait(`getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none' &&
+          document.activeElement.matches('.collection-heading h1')`);
+        await evaluate(`
+          Array.from(document.querySelectorAll('.document-directory-table [data-document-id]'))
+            .find(row => row.textContent.includes('独立任务转项目验收')).click()
+        `);
+        await button('打开编辑');
+        await wait(
+          "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
+        );
       }
       writeFileSync(
         join(root, phase + '.json'),
