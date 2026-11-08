@@ -730,7 +730,10 @@ app
           join(taskRoot, 'delivery-exports'),
           (path) => shell.openPath(path),
           async (row) => {
-            const result = await dialog.showSaveDialog({
+            // 绑定发起时的原生窗口，避免无父级保存面板被工作台遮挡后留下等待中的调用。
+            const owner = BrowserWindow.getFocusedWindow();
+            if (!owner) throw new Error('No active export window');
+            const result = await dialog.showSaveDialog(owner, {
               title: '另存交付副本',
               buttonLabel: '保存副本',
               defaultPath: join(app.getPath('documents'), `CaseLite-草稿-${row.id}.${row.format}`),
