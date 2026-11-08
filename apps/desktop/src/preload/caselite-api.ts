@@ -167,14 +167,16 @@ export function createCaseLitePreloadApi(
     // cancel_prepare 可中止本地准备，准备本身永不调用外部模型。
     material: (request) =>
       materialResult(
-        request.operation === 'preview' && request.automatic
+        (request.operation === 'preview' && request.automatic) ||
+          request.operation === 'save_original'
           ? invoke(MATERIAL_CHANNEL, request)
           : invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request),
       ),
     pickPdf: (scope) => materialResult(invoke(MATERIAL_PICK_CHANNEL, { scope })),
     async dropPdf(file, scope) {
       const path = droppedPath?.(file);
-      if (!path) return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF。' };
+      if (!path)
+        return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF 或 DOCX。' };
       return materialResult(invoke(MATERIAL_DROP_CHANNEL, { scope, path }));
     },
     async appearance(request) {

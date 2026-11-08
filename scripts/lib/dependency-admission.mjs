@@ -12,6 +12,11 @@ const desktop = {
   '@tanstack/react-query': '5.107.1', // DEV-1800/1801/1803：本地列表读取
   '@tanstack/react-table': '8.21.3', // DEV-1323/1803：文件与工作台列表投影
   '@tiptap/extension-collaboration': '3.32.3',
+  // DEV-1811：本地 DOCX worker 与 HTML 净化。
+  '@xmldom/xmldom': '0.9.12',
+  dompurify: '3.4.17',
+  mammoth: '1.13.0',
+  yauzl: '3.4.0',
   '@tiptap/extension-table': '3.32.3', // DEV-1812：任务成果正文读取兼容
   '@tiptap/pm': '3.32.3',
   '@tiptap/react': '3.32.3',

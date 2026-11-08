@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Material, MaterialResponse } from '@caselite/contracts';
@@ -127,8 +128,72 @@ export async function runMaterialDemo(
     if (!state.ok || JSON.stringify(actual) !== JSON.stringify([...ids].sort()))
       throw new Error('Run included an unselected source version');
   }
+  async function docxStructure(selector: string) {
+    const structure = await evaluate(`(() => {
+      const node = document.querySelector(${JSON.stringify(selector)});
+      return {
+        listItems: node.querySelectorAll('ol > li').length,
+        tables: node.querySelectorAll('table').length,
+        horizontal: node.querySelector('td[colspan="2"]')?.textContent,
+        vertical: node.querySelector('td[rowspan="2"]')?.textContent,
+        text: node.textContent,
+      };
+    })()`);
+    if (
+      structure.listItems !== 2 ||
+      structure.tables !== 2 ||
+      structure.horizontal !== '横向合并' ||
+      structure.vertical !== '纵向合并' ||
+      !structure.text.includes('付款期限：新期限十日') ||
+      ['旧期限三十日', '核对交付日期', '页眉保真标记', '页脚保真标记'].some((text) =>
+        structure.text.includes(text),
+      )
+    )
+      throw new Error('Unexpected DOCX structure');
+    return structure;
+  }
+  async function savedDocxTask(id: string) {
+    const result = await evaluate(
+      `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(id)}})`,
+    );
+    if (!result.ok || result.tasks[0]?.id !== id || !result.state?.length)
+      throw new Error('Draft did not persist as Yjs');
+    return {
+      revision: result.tasks[0].body_revision,
+      stateBytes: result.state.length,
+      stateSha256: createHash('sha256').update(Buffer.from(result.state)).digest('hex'),
+    };
+  }
   try {
     await waitFor("Boolean(document.querySelector('.material-composer'))");
+    if (phase === 'materials-docx-reopen') {
+      stage = 'docx-reopen';
+      const prior = JSON.parse(readFileSync(join(directory, 'docx-result.json'), 'utf8'));
+      const [item] = await settled();
+      if (
+        item?.id !== prior.sourceId ||
+        item.asset_version_id !== prior.assetVersion ||
+        item.sha256 !== prior.sha256
+      )
+        throw new Error('Fixed original identity changed on restart');
+      const reopened = await savedDocxTask(item.task_id);
+      if (JSON.stringify(reopened) !== JSON.stringify(prior.edited))
+        throw new Error('Draft changed on restart');
+      await openTask(item.task_id);
+      const structure = await docxStructure('[data-testid=body-editor]');
+      if (!structure.text.includes('隔离实测：已保存后重开。'))
+        throw new Error('Edited text missing on restart');
+      await capture('05-docx-reopened');
+      writeFileSync(
+        join(directory, 'docx-reopened.json'),
+        JSON.stringify(
+          { ...reopened, structure, sourceId: item.id, assetVersion: item.asset_version_id },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     if (phase === 'materials-read') {
       const items = await list();
       const saved = JSON.parse(readFileSync(join(directory, 'materials-write.json'), 'utf8'));
@@ -158,6 +223,108 @@ export async function runMaterialDemo(
             ids: items.map((item) => item.id),
             texts: items.map((item) => item.pages[0].text),
             network: 'HTTP(S) blocked; physical adapter unchanged',
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (phase === 'materials-docx') {
+      stage = 'docx-import';
+      await drop('中文合同.docx');
+      await waitFor(
+        "!document.querySelector('.material-staged') || Boolean(document.querySelector('.material-error'))",
+      );
+      const [item] = await settled();
+      const page = item?.pages.find((entry) => entry.text.includes('新期限十日'));
+      if (item?.status !== 'ready' || !page?.docx_review?.revisions || !page.docx_review.comments)
+        throw new Error('Missing DOCX extraction or review flags');
+      await click('中文合同.docx');
+      await waitFor("Boolean(document.querySelector('.material-docx-reader input'))");
+      await evaluate(
+        "[...document.querySelectorAll('.material-docx-reader label')].find(x=>x.textContent.includes('新期限十日')).querySelector('input').click()",
+      );
+      await capture('01-docx-selection');
+      stage = 'docx-structured-preview';
+      await click('预览可编辑草稿');
+      await waitFor("Boolean(document.querySelector('[data-testid=docx-draft-preview]'))");
+      const structure = await docxStructure('[data-testid=docx-draft-preview]');
+      await capture('02-docx-preview');
+      await click('确认保存草稿');
+      await waitFor(
+        "document.querySelector('[data-testid=docx-draft-status]')?.textContent.includes('草稿已保存')",
+      );
+      const firstDraft = await savedDocxTask(item.task_id);
+      if (firstDraft.revision !== 1) throw new Error('Unexpected initial revision');
+      await click('收起阅读');
+      stage = 'docx-send';
+      await evaluate(
+        "document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,'仅核对选中段的付款期限。')",
+      );
+      await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+      await waitFor(
+        "Boolean(document.querySelector('.assistant-run-status.succeeded') && document.querySelector('.message-attachments button'))",
+      );
+      const context = readFileSync(join(directory, 'material-pi-context.json'), 'utf8');
+      if (
+        !context.includes('新期限十日') ||
+        context.includes('旧期限三十日') ||
+        context.includes('交付条款正文') ||
+        context.includes('核对交付日期')
+      )
+        throw new Error('Unexpected provider input');
+      await waitFor(
+        "Boolean(document.querySelector('.assistant-message--assistant')?.textContent.includes('付款期限：新期限十日'))",
+      );
+      await capture('03-docx-model-input');
+      stage = 'docx-original';
+      await evaluate("document.querySelector('.message-attachments button').click()");
+      await waitFor(
+        "Boolean(document.querySelector('.material-docx-reader')?.textContent.includes('固定原件已校验'))",
+      );
+      const original = await evaluate(
+        `(async()=>{const r=await window.caselite.material({protocol_version:1,operation:'read',scope:'home',source_id:'${item.id}'});return [...r.data]})()`,
+      );
+      const hash = createHash('sha256').update(Buffer.from(original)).digest('hex');
+      if (
+        hash !== item.sha256 ||
+        !Buffer.from(original).equals(readFileSync(join(directory, '中文合同.docx')))
+      )
+        throw new Error('Fixed original bytes mismatch');
+      await capture('04-docx-original');
+      await click('收起阅读');
+      stage = 'docx-edit-draft';
+      await openTask(item.task_id);
+      await docxStructure('[data-testid=body-editor]');
+      await evaluate(`(() => {
+        const body = document.querySelector('[data-testid=body-editor]');
+        const paragraph = [...body.querySelectorAll('p')].find(p => p.textContent.includes('Word复核段'));
+        window.getSelection().collapse(paragraph, paragraph.childNodes.length);
+        body.focus();
+        document.execCommand('insertText', false, '隔离实测：已保存后重开。');
+      })()`);
+      await waitFor(
+        "Boolean(document.querySelector('[data-testid=body-editor]')?.textContent.includes('隔离实测：已保存后重开。'))",
+      );
+      await click('保存正文');
+      await waitFor("document.querySelector('[data-testid=revision]')?.textContent === '2'");
+      const edited = await savedDocxTask(item.task_id);
+      if (firstDraft.stateSha256 === edited.stateSha256) throw new Error('Edit was not saved');
+      writeFileSync(
+        join(directory, 'docx-result.json'),
+        JSON.stringify(
+          {
+            sourceId: item.id,
+            assetVersion: item.asset_version_id,
+            sha256: hash,
+            selected: page.page,
+            review: page.docx_review,
+            provider: 'MOCK_ONLY',
+            network: 'OS network denied and Chromium offline',
+            structure,
+            firstDraft,
+            edited,
           },
           null,
           2,

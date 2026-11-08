@@ -399,3 +399,40 @@
 .material-reader-dialog .material-paper {
   max-height: 55vh;
 }
+
+.material-docx-reader {
+  padding: 16px;
+  overflow: auto;
+  max-height: 75vh;
+}
+.material-docx-reader label {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  white-space: pre-wrap;
+}
+.material-docx-reader small {
+  overflow-wrap: anywhere;
+}
+
+.docx-draft-preview {
+  margin: 12px 0;
+  padding: 12px;
+  border-left: 3px solid #5f8e80;
+}
+.docx-draft-content {
+  overflow: auto;
+  max-height: 340px;
+  margin-bottom: 12px;
+}
+.docx-draft-content table,
+.document .tiptap table {
+  border-collapse: collapse;
+}
+.docx-draft-content td,
+.docx-draft-content th,
+.document .tiptap td,
+.document .tiptap th {
+  border: 1px solid currentColor;
+  padding: 5px 9px;
+}

@@ -41,4 +41,5 @@
 
 - [ADR-018](./ADR-018-read-only-project-graph.md) 项目关系图只读投影，DEV-1802。
 
+- [ADR-021](./ADR-021-local-docx-drafts.md) 本地 DOCX 语义草稿与表格校验，DEV-1811。
 - [ADR-022](./ADR-022-document-table-rollback.md) 文档表格的读取基线与写入回退，DEV-1812。

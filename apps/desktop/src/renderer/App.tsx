@@ -392,6 +392,22 @@ function Workbench() {
   };
   const documentEntry = reviewDocument !== null && reviewDocument === active?.document_id;
   const documentReview = documentEntry && detailTab === '成果正文';
+  useEffect(() => {
+    function onDocxSaved(event: Event) {
+      if (
+        view === 'tasks' &&
+        detailTab === '成果正文' &&
+        active?.body_revision === 0 &&
+        event instanceof CustomEvent &&
+        event.detail === active.id &&
+        !dirty
+      ) {
+        void open(active.id, taskReturn?.source, true, documentEntry);
+      }
+    }
+    window.addEventListener('caselite:docx-draft-saved', onDocxSaved);
+    return () => window.removeEventListener('caselite:docx-draft-saved', onDocxSaved);
+  });
   return (
     <ModelSettingsNavigation.Provider
       value={() => {
@@ -732,7 +748,11 @@ function Workbench() {
                       aria-selected={detailTab === t}
                       data-testid={t === '成果正文' ? 'task-result-tab' : undefined}
                       onClick={() => {
-                        if (detailTab !== t && canLeave()) setDetailTab(t);
+                        if (detailTab === t || !canLeave()) return;
+                        // 空正文可能已从材料侧栏初始化，首次打开须读取已确认的修订。
+                        if (t === '成果正文' && active.body_revision === 0) {
+                          void open(active.id, taskReturn?.source, true, documentEntry);
+                        } else setDetailTab(t);
                       }}
                     >
                       {t === '材料' ? '材料阅读' : t}

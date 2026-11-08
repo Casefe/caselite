@@ -10,8 +10,10 @@ import {
   realDemoResumeId,
   inspectZeroDispatchResume,
 } from './agent-real-policy';
+import { syntheticDocxStream } from './agent-demo';
 import { runMaterialDemo } from './material-demo';
 import { createMaterialApplication } from '@caselite/application';
+import { createDocxProcessor, readDocxSemanticHtml } from './adapters/docx-processor';
 import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
@@ -51,6 +53,7 @@ import {
 } from './ipc/register-task-ipc';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
+import { createConnection } from 'node:net';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
@@ -545,6 +548,9 @@ if (taskDemoPhase) {
       'read',
       'materials',
       'materials-read',
+      'materials-docx',
+      'materials-docx-preview',
+      'materials-docx-reopen',
       'crash',
       'preview',
       'project-write',
@@ -721,6 +727,8 @@ app
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
       processor: createPdfProcessor(),
+      docxProcessor: createDocxProcessor(),
+      docxPreview: readDocxSemanticHtml,
       id: randomUUID,
       hash: (text) => createHash('sha256').update(text).digest('hex'),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
@@ -730,7 +738,7 @@ app
           operation: 'create',
           request_id: randomUUID(),
           idempotency_key: token,
-          title: name.replace(/\.pdf$/i, '').slice(0, 200) || '材料分析',
+          title: name.replace(/\.(pdf|docx)$/i, '').slice(0, 200) || '材料分析',
           objective: '',
         });
         if (!result.ok) throw new Error('Cannot create material task');
@@ -938,13 +946,15 @@ app
                       );
                       throw new Error('Unexpected restart dispatch');
                     }
-                  : taskDemoPhase === 'materials'
+                  : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
                     ? (model, context, options) => {
                         writeFileSync(
                           join(taskDemoRoot!, 'material-pi-context.json'),
                           JSON.stringify(context, null, 2),
                         );
-                        return syntheticAgentStream(model, context, options);
+                        return taskDemoPhase?.startsWith('materials-docx')
+                          ? syntheticDocxStream(model, context, options)
+                          : syntheticAgentStream(model, context, options);
                       }
                     : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
                       ? syntheticAgentStream
@@ -1025,6 +1035,33 @@ app
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
+      if (taskDemoPhase.startsWith('materials-docx')) {
+        // 测试包在宿主系统网络隔离下运行，不能只靠 Chromium 拦截。
+        const denied = await new Promise<boolean>((resolve) => {
+          const socket = createConnection({ host: '127.0.0.1', port: 9 });
+          socket.once('error', (error: NodeJS.ErrnoException) => {
+            resolve(error.code === 'EPERM' || error.code === 'EACCES');
+          });
+          socket.once('connect', () => {
+            socket.destroy();
+            resolve(false);
+          });
+          socket.setTimeout(1500, () => {
+            socket.destroy();
+            resolve(false);
+          });
+        });
+        if (!denied) throw new Error('DOCX demo requires OS network isolation');
+        writeFileSync(
+          join(taskDemoRoot, 'network-' + taskDemoPhase + '.json'),
+          JSON.stringify({ loopbackTCP: 'OS_DENIED', chromiumOffline: true }),
+        );
+        session.defaultSession.enableNetworkEmulation({ offline: true });
+        if (taskDemoPhase === 'materials-docx-preview') {
+          await createWindow();
+          return;
+        }
+      }
       await runMaterialDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;

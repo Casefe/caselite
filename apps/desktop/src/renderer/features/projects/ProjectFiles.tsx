@@ -59,7 +59,7 @@ export default function ProjectFiles({
           setError(r.message);
           return;
         }
-        setData(r.materials);
+        setData(r.materials.filter((material) => /\.pdf$/i.test(material.name)));
         if (source && r.data) {
           setSelected(r.materials.find((material) => material.id === source.id) ?? null);
           setBytes(r.data);

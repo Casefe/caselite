@@ -28,6 +28,8 @@ export default {
     executableName: 'CaseLite',
     icon: localPath('./assets/branding/caselite.icns'),
     extraResource: [
+      localPath('./assets/THIRD-PARTY-DOCX-NOTICES.txt'),
+      localPath('./.webpack/arm64/main/docx-worker.cjs'),
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
       localPath('./assets/THIRD-PARTY-GRAPH-NOTICES.txt'),

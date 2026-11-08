@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import {
   MATERIAL_CHANNEL,
@@ -5,6 +6,8 @@ import {
   MATERIAL_PICK_CHANNEL,
   materialStageRequestSchema,
   materialResponseSchema,
+  materialRequestSchema,
+  materialKind,
 } from '@caselite/contracts';
 import type { createMaterialApplication } from '@caselite/application';
 import { isTrustedDesktopSender } from './register-application-ipc';
@@ -13,6 +16,26 @@ export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplica
   let selecting = false;
   ipcMain.handle(MATERIAL_CHANNEL, async (event, input: unknown) => {
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+    const request = materialRequestSchema.safeParse(input);
+    if (request.success && request.data.operation === 'save_original') {
+      const read = { ...request.data, operation: 'read' as const };
+      const first = await app.execute(read);
+      const source = first.ok && first.materials.find((item) => item.id === read.source_id);
+      if (!source || materialKind(source.name) !== 'docx') return denied;
+      try {
+        const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+          defaultPath: source.name,
+          filters: [{ name: 'Word 原件副本', extensions: ['docx'] }],
+        });
+        if (choice.canceled || !choice.filePath) return { ok: true, materials: [] };
+        const current = await app.execute(read);
+        if (!current.ok || !current.data) return denied;
+        await writeFile(choice.filePath, current.data, { flag: 'wx', mode: 0o600 });
+        return { ok: true, materials: current.materials };
+      } catch {
+        return { ok: false, code: 'COPY_FAILED', message: '未保存原件副本，请选一个新文件名。' };
+      }
+    }
     return materialResponseSchema.parse(await app.execute(input));
   });
   for (const channel of [MATERIAL_PICK_CHANNEL, MATERIAL_DROP_CHANNEL])
@@ -30,7 +53,7 @@ export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplica
         if (channel === MATERIAL_PICK_CHANNEL) {
           const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
             properties: ['openFile'],
-            filters: [{ name: 'PDF', extensions: ['pdf'] }],
+            filters: [{ name: '分析附件', extensions: ['pdf', 'docx'] }],
           });
           if (result.canceled) return { ok: true, materials: [], staged: null };
           path = result.filePaths[0];

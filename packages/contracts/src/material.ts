@@ -7,6 +7,17 @@ export const MATERIAL_DROP_CHANNEL = 'caselite:material-drop:v1';
 export const MATERIAL_MAX_BYTES = 20 * 1024 * 1024;
 export const MATERIAL_MAX_PAGES = 200;
 export const MATERIAL_MAX_CONTEXT = 32_000;
+export type MaterialKind = 'pdf' | 'docx';
+export function materialKind(name: string): MaterialKind | undefined {
+  const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+  if (!name.includes('.')) return;
+  if (ext === 'pdf' || ext === 'docx') return ext;
+}
+export function materialLocation(name: string, page: number) {
+  const kind = materialKind(name);
+  if (kind === 'docx') return `Word 提取段 ${page}`;
+  return `物理页 ${page}`;
+}
 const id = z.string().uuid();
 export const materialScopeSchema = z.union([z.literal('home'), id]);
 export const materialStageRequestSchema = z
@@ -16,7 +27,8 @@ export type MaterialScope = z.infer<typeof materialScopeSchema>;
 export const textPageSchema = z.object({
   page: z.number().int().positive().max(MATERIAL_MAX_PAGES),
   text: z.string().max(100_000),
-  origin: z.enum(['pdf_text', 'ocr_candidate', 'needs_ocr', 'failed']),
+  origin: z.enum(['pdf_text', 'docx_text', 'ocr_candidate', 'needs_ocr', 'failed']),
+  docx_review: z.object({ revisions: z.boolean(), comments: z.boolean() }).optional(),
   // 首版只承诺物理页回看；区域结果留作定位证据，不伪装逐字核验。
   blocks: z
     .array(
@@ -90,6 +102,8 @@ export const materialRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('commit'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('discard'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('read'), source_id: id }).strict(),
+  z.object({ ...base, operation: z.literal('save_original'), source_id: id }).strict(),
+  z.object({ ...base, operation: z.literal('docx_semantic_preview'), source_id: id }).strict(),
   z
     .object({
       ...base,
@@ -144,6 +158,12 @@ export const materialResponseSchema = z.discriminatedUnion('ok', [
     staged: stagedPdfSchema.nullable().optional(),
     data: z.instanceof(Uint8Array).optional(),
     preview: materialPreviewSchema.optional(),
+    docx_semantic: z
+      .object({
+        html: z.string().min(1).max(1_000_000),
+        warningCount: z.number().int().nonnegative(),
+      })
+      .optional(),
   }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);

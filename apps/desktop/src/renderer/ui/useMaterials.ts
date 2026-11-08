@@ -11,12 +11,16 @@ import type {
 // 面板卸载不能丢失正在导入的附件，或让下一次发送绕过它。
 type DraftFiles = {
   ids: Set<string>;
+  sections: Map<string, number[]>;
   upload?: Promise<void>;
   staged?: { token: string; name: string; bytes: number; restore_source_id?: string };
   error: string;
   importError?: string;
   name?: string;
 };
+export function isDocx(name: string) {
+  return /\.docx$/i.test(name);
+}
 const drafts = new Map<string, DraftFiles>();
 export function pageRange(value: string, count: number): number[] | null {
   if (!value.trim()) return Array.from({ length: count }, (_, i) => i + 1);
@@ -32,16 +36,21 @@ export function pageRange(value: string, count: number): number[] | null {
   return [...result].sort((a, b) => a - b);
 }
 function getDraft(scope: string) {
-  if (!drafts.has(scope)) drafts.set(scope, { ids: new Set(), error: '' });
+  if (!drafts.has(scope)) drafts.set(scope, { ids: new Set(), sections: new Map(), error: '' });
   return drafts.get(scope)!;
 }
 export function useMaterials(scope: MaterialScope, enabled = true) {
   const draft = getDraft(scope);
   const [items, setItems] = useState<Material[]>([]);
   const [, update] = useState(0);
-  const [reading, setReading] = useState<{ id: string; name: string; bytes: Uint8Array } | null>(
-    null,
-  );
+  const [reading, setReading] = useState<{
+    id: string;
+    name: string;
+    task: string;
+    bytes: Uint8Array;
+    material?: Material;
+  } | null>(null);
+  const [copyError, setCopyError] = useState('');
   const alive = useRef(true);
   const available = enabled && typeof window.caselite?.material === 'function';
   const render = () => {
@@ -139,13 +148,40 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
   return {
     available,
     items,
+    sections: draft.sections,
+    toggleSection(id: string, page: number) {
+      const selected = draft.sections.get(id) ?? [];
+      draft.sections.set(
+        id,
+        selected.includes(page) ? selected.filter((n) => n !== page) : [...selected, page],
+      );
+      render();
+    },
+    async saveOriginal(id: string, task: string) {
+      setCopyError('');
+      try {
+        await command(
+          { operation: 'save_original', source_id: id } as Omit<
+            MaterialRequest,
+            'scope' | 'protocol_version'
+          >,
+          task,
+        );
+      } catch (error) {
+        setCopyError(error instanceof Error ? error.message : '原件副本未保存。');
+      }
+    },
+    copyError,
     reading,
     busy: Boolean(draft.upload),
     staged: draft.staged,
     uploadingName: draft.name,
     error: draft.error,
     selected: Object.fromEntries([...draft.ids].map((id) => [id, ''])),
-    clearReading: () => setReading(null),
+    clearReading() {
+      setReading(null);
+      setCopyError('');
+    },
     async cancelPreparation() {
       await command({ operation: 'cancel_prepare' });
     },
@@ -174,21 +210,35 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
     },
     select(id: string, selected: boolean) {
       if (selected) draft.ids.add(id);
-      else draft.ids.delete(id);
+      else {
+        draft.ids.delete(id);
+        draft.sections.delete(id);
+      }
       render();
     },
     acknowledge(ids: string[]) {
-      ids.forEach((id) => draft.ids.delete(id));
+      ids.forEach((id) => {
+        draft.ids.delete(id);
+        draft.sections.delete(id);
+      });
       render();
     },
     async localText(item: Material) {
       try {
-        await command({
-          operation: 'process',
-          source_id: item.id,
-          ocr: true,
-          force: item.status === 'ready',
-        } as Omit<MaterialRequest, 'scope' | 'protocol_version'>);
+        const docx = isDocx(item.name);
+        await command(
+          {
+            operation: 'process',
+            source_id: item.id,
+            ocr: !docx,
+            force: item.status === 'ready',
+          } as Omit<MaterialRequest, 'scope' | 'protocol_version'>,
+          docx ? item.task_id : scope,
+        );
+        if (docx) {
+          draft.error = draft.importError ?? '';
+          render();
+        }
       } catch (error) {
         draft.error = error instanceof Error ? error.message : '暂不能提取文字。';
         render();
@@ -196,10 +246,13 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
     },
     async stopLocalText(item: Material) {
       try {
-        await command({ operation: 'cancel', source_id: item.id } as Omit<
-          MaterialRequest,
-          'scope' | 'protocol_version'
-        >);
+        await command(
+          { operation: 'cancel', source_id: item.id } as Omit<
+            MaterialRequest,
+            'scope' | 'protocol_version'
+          >,
+          isDocx(item.name) ? item.task_id : scope,
+        );
       } catch (error) {
         draft.error = error instanceof Error ? error.message : '取消结果尚未确认。';
         render();
@@ -246,7 +299,14 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
           >,
           task,
         );
-        if (alive.current && result.data) setReading({ id, name, bytes: result.data });
+        if (alive.current && result.data)
+          setReading({
+            id,
+            name,
+            task,
+            bytes: result.data,
+            material: result.materials.find((item) => item.id === id),
+          });
         draft.error = draft.importError ?? '';
         render();
       } catch (error) {
@@ -288,7 +348,9 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       const selected = ids.map((id) => {
         const item = result.materials.find((material) => material.id === id);
         if (!item || !item.page_count) throw new Error('附件尚不可用，本轮未发送。');
-        return { source_id: id, pages: pageRange('', item.page_count)! };
+        const pages = isDocx(item.name) ? draft.sections.get(id) : pageRange('', item.page_count);
+        if (!pages?.length) throw new Error('请先打开 Word 附件并选择本轮使用的段落。');
+        return { source_id: id, pages };
       });
       const prepared = await wait(
         command({

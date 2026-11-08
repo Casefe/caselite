@@ -22,4 +22,6 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 
 DEV-1802 项目只读关系图在 Renderer 按需加载 `@xyflow/react@12.12.1`。使用 MIT 发布包及本地样式，详见 [ADR-018](../adr/ADR-018-read-only-project-graph.md)。
 
+DEV-1811 / ADR-021：Mammoth 1.13.0（BSD-2-Clause）、DOMPurify 3.4.17（选择 Apache-2.0）、TableKit 3.32.3（MIT）、xmldom 0.9.12（MIT）、yauzl 3.4.0（MIT）。分别供本地转换、白名单净化、同一编辑器表格、XML 标记检测和 ZIP 预检；均为 JS，无新原生模块或云服务。传递 BSD/ISC/Zlib 及双许可按精确版本准入，duck 的 BSD 元数据以随包 BSD-2-Clause 正文为准。通知全文 THIRD-PARTY-DOCX-NOTICES.txt 随包；回退保留原件及 Yjs 状态。
+
 DEV-1812 的成果正文使用 MIT 发布包 `@tiptap/extension-table@3.32.3`，与现有 Tiptap 同版。读取依赖必须随表格兼容基线保留。停用写入时仍能打开已保存表格，见 [ADR-022](../adr/ADR-022-document-table-rollback.md)。

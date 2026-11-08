@@ -11,6 +11,21 @@ import { createAgentCredentials } from './adapters/agent-credentials';
 export const syntheticAgentStream: StreamFn = (model, context, options) =>
   syntheticTextStream(model, context, options);
 
+export const syntheticDocxStream: StreamFn = (model, context, options) => {
+  const user = context.messages.find((message) => message.role === 'user');
+  const content = user?.content;
+  const input =
+    typeof content === 'string'
+      ? content
+      : (content?.map((part) => (part.type === 'text' ? part.text : '')).join('\n') ?? '');
+  const start = input.indexOf('[材料 ');
+  const material = start >= 0 ? input.slice(start) : input;
+  return syntheticTextStream(model, context, options, [
+    '合成演示 · 模拟模型实际收到的材料\n\n',
+    material,
+  ]);
+};
+
 export const syntheticReviewStream: StreamFn = (model, context, options) =>
   syntheticTextStream(model, context, options, [
     '合成替换：乙方应',

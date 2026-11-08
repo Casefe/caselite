@@ -1,3 +1,4 @@
+import { isDocx } from './useMaterials';
 import { agentMessages } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
@@ -69,10 +70,12 @@ function Message() {
               key={file.source_id}
               onClick={() => read(file.source_id, file.task_id, file.name)}
             >
-              <span className="material-file-icon">PDF</span>
+              <span className="material-file-icon">{isDocx(file.name) ? 'DOCX' : 'PDF'}</span>
               <span>
                 {file.name}
-                <small>{file.pages.length} 页</small>
+                <small>
+                  {file.pages.length} {isDocx(file.name) ? '段' : '页'}
+                </small>
               </span>
             </button>
           ))}

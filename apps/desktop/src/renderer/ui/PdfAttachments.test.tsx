@@ -16,6 +16,10 @@ afterEach(() => {
 function controller(extra: Partial<MaterialController> = {}): MaterialController {
   return {
     available: true,
+    sections: new Map(),
+    toggleSection: vi.fn(),
+    saveOriginal: vi.fn(),
+    copyError: '',
     items: [],
     error: '',
     busy: false,

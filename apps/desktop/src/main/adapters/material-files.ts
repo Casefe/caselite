@@ -2,16 +2,33 @@ import { randomUUID, createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, mkdir, rename, unlink, lstat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { MATERIAL_MAX_BYTES } from '@caselite/contracts';
+import { MATERIAL_MAX_BYTES, materialKind, type MaterialKind } from '@caselite/contracts';
 import type { MaterialFilesPort } from '@caselite/application';
 const validId = (value: string) => {
   if (!/^[a-f0-9-]{36}$/.test(value)) throw new Error('Invalid identity');
   return value;
 };
+const zip = Buffer.from([80, 75, 3, 4]);
+const pdf = Buffer.from('%PDF-');
+export function materialSignature(data: Uint8Array): MaterialKind | undefined {
+  const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  if (bytes.subarray(0, 4).equals(zip)) return 'docx';
+  if (bytes.subarray(0, 1024).includes(pdf)) return 'pdf';
+}
+
 export function createMaterialFiles(root: string): MaterialFilesPort {
   const staged = join(root, 'staging'),
     assets = join(root, 'originals');
-  const path = (dir: string, id: string) => join(dir, validId(id) + '.pdf');
+  const path = (dir: string, id: string, kind: MaterialKind = 'pdf') =>
+    join(dir, validId(id) + (kind === 'pdf' ? '.pdf' : '.asset'));
+  // 旧 PDF 原件仍以原身份和路径读取；新的格式不迁移或重写旧文件。
+  const locate = async (dir: string, id: string) => {
+    const legacy = path(dir, id),
+      attachment = path(dir, id, 'docx');
+    if (!(await exists(attachment))) return legacy;
+    if (await exists(legacy)) throw new Error('Ambiguous asset identity');
+    return attachment;
+  };
   async function setup() {
     for (const dir of [root, staged, assets]) {
       await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -33,7 +50,7 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
         after.size !== before.size
       )
         throw new Error('File changed');
-      if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('Invalid PDF');
+      if (!materialSignature(bytes)) throw new Error('Invalid file signature');
       if (sha && createHash('sha256').update(bytes).digest('hex') !== sha)
         throw new Error('Hash mismatch');
       return bytes;
@@ -61,10 +78,12 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
   return {
     async stage(source, scope) {
       await setup();
-      if (!/\.pdf$/i.test(source)) throw new Error('Unsupported type');
+      const kind = materialKind(basename(source));
+      if (!kind) throw new Error('Unsupported type');
       const bytes = await read(source),
         token = randomUUID();
-      const fd = await open(path(staged, token), 'wx', 0o600);
+      if (materialSignature(bytes) !== kind) throw new Error('Unexpected file format');
+      const fd = await open(path(staged, token, kind), 'wx', 0o600);
       try {
         await fd.writeFile(bytes);
         await fd.sync();
@@ -75,63 +94,73 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
       return {
         token,
         scope,
-        name: basename(source).slice(0, 500),
+        name:
+          basename(source).length <= 500
+            ? basename(source)
+            : basename(source).slice(0, 490) + '.' + kind,
         bytes: bytes.length,
         sha256: createHash('sha256').update(bytes).digest('hex'),
         state: 'staged',
       };
     },
     async placedOrStaged(id, sha) {
-      return read((await exists(path(assets, id))) ? path(assets, id) : path(staged, id), sha);
+      const placed = await locate(assets, id);
+      return read((await exists(placed)) ? placed : await locate(staged, id), sha);
     },
     async place(id, sha) {
       await setup();
-      if (await exists(path(assets, id))) {
-        await read(path(assets, id), sha);
+      const placed = await locate(assets, id);
+      if (await exists(placed)) {
+        await read(placed, sha);
         return;
       }
-      await read(path(staged, id), sha);
-      await rename(path(staged, id), path(assets, id));
+      const pending = await locate(staged, id);
+      const kind = materialSignature(await read(pending, sha))!;
+      const target = path(assets, id, kind);
+      await rename(pending, target);
       await syncDirectory(assets);
       await syncDirectory(staged);
-      await read(path(assets, id), sha);
+      await read(target, sha);
     },
     async read(id, sha) {
-      return read(path(assets, id), sha);
+      return read(await locate(assets, id), sha);
     },
     async discard(id) {
       try {
-        await unlink(path(staged, id));
+        await unlink(await locate(staged, id));
         await syncDirectory(staged);
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       }
     },
     async restore(token, id, sha) {
+      const original = await locate(assets, id);
+      const pending = await locate(staged, token);
       let healthy = false;
       try {
-        await read(path(assets, id), sha);
+        await read(original, sha);
         healthy = true;
       } catch {
         /* 原件不可用时才使用已校验的恢复副本。 */
       }
       if (healthy) {
         try {
-          await unlink(path(staged, token));
+          await unlink(pending);
           await syncDirectory(staged);
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
         }
         return;
       }
-      await read(path(staged, token), sha);
+      const kind = materialSignature(await read(pending, sha))!;
+      const target = path(assets, id, kind);
       // 损坏副本留在原件目录，恢复只使用完全相同 hash，不悄悄替换来源版本。
-      if (await exists(path(assets, id)))
-        await rename(path(assets, id), join(assets, `${validId(id)}.damaged-${randomUUID()}`));
-      await rename(path(staged, token), path(assets, id));
+      if (await exists(original))
+        await rename(original, join(assets, `${validId(id)}.damaged-${randomUUID()}`));
+      await rename(pending, target);
       await syncDirectory(assets);
       await syncDirectory(staged);
-      await read(path(assets, id), sha);
+      await read(target, sha);
     },
   };
 }

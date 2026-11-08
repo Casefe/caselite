@@ -1,3 +1,4 @@
+import { DocxDraftPreview } from './DocxDraftPreview';
 import { Icon } from '../shared/ui/Icon';
 import {
   lazy,
@@ -11,13 +12,17 @@ import {
   type KeyboardEvent,
   type CSSProperties,
 } from 'react';
-import type { MaterialController } from './useMaterials';
+import { isDocx, type MaterialController } from './useMaterials';
 
 const PdfReader = lazy(() => import('./PdfReader'));
 export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | null {
   if (!/\.pdf$/i.test(file.name)) return '当前仅支持 PDF，请选择 PDF 文件。';
   if (!file.size || file.size > 20 * 1024 * 1024) return '请选择非空且不超过 20 MB 的 PDF。';
   return null;
+}
+function validateMaterialFile(file: Pick<File, 'name' | 'size'>) {
+  if (!isDocx(file.name)) return validatePdfFile(file);
+  return !file.size || file.size > 20 * 1024 * 1024 ? '请选择非空且不超过 20 MB 的 DOCX。' : null;
 }
 export function materialSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -68,6 +73,9 @@ export default function PdfAttachments({
   const [menuPosition, setMenuPosition] = useState<CSSProperties>({});
   const reader = useRef<HTMLDialogElement>(null);
   const readingId = c.reading?.id;
+  const readingDocx = c.reading && isDocx(c.reading.name) ? c.reading : null;
+  const docxMaterial = c.items.find((item) => item.id === readingId) ?? readingDocx?.material;
+  const docxReview = docxMaterial?.pages[0]?.docx_review;
   const closeMenu = (restoreFocus = false) => {
     setLayer('closed');
     if (restoreFocus) trigger.current?.focus();
@@ -243,12 +251,12 @@ export default function PdfAttachments({
           c.errorMessage('每次添加一份 PDF，可多次添加。');
           return;
         }
-        const error = validatePdfFile(files[0]);
+        const error = validateMaterialFile(files[0]);
         if (error) c.errorMessage(error);
         else void c.add(files[0]);
       }}
     >
-      {over && <div className="material-drop-hint">松开以添加 PDF</div>}
+      {over && <div className="material-drop-hint">松开以添加 PDF 或 DOCX</div>}
       {c.busy && (c.uploadingName || c.staged) && (
         <div className="material-staged" role="status">
           <span className="material-file-icon">PDF</span>
@@ -296,11 +304,16 @@ export default function PdfAttachments({
                   className="material-card-open"
                   onClick={() => void c.readReference(item.id, item.task_id, item.name)}
                 >
-                  <span className="material-file-icon">PDF</span>
+                  <span className="material-file-icon">{isDocx(item.name) ? 'DOCX' : 'PDF'}</span>
                   <span>
                     <strong title={item.name}>{item.name}</strong>
                     <small title={`${item.bytes} 字节`}>
-                      {materialSize(item.bytes)} · {item.page_count} 页 · 本次发送
+                      {materialSize(item.bytes)} ·{' '}
+                      {isDocx(item.name)
+                        ? c.sections.get(item.id)?.length
+                          ? `已选 ${c.sections.get(item.id)!.length} 段`
+                          : '打开并选择段落'
+                        : `${item.page_count} 页 · 本次发送`}
                     </small>
                   </span>
                 </button>
@@ -367,19 +380,19 @@ export default function PdfAttachments({
                 aria-label="文件"
                 aria-describedby={`${menuId}-capability`}
                 aria-keyshortcuts={isMac ? 'Meta+Shift+U' : 'Control+Shift+U'}
-                title="仅支持 PDF，每份不超过 20 MB / 200 页"
+                title="PDF：20 MB / 200 页；DOCX：20 MB / 200 个提取段"
                 disabled={disabled || c.busy || !c.available}
                 onClick={requestFile}
               >
                 <PaperclipIcon />
                 <span>文件</span>
                 <span className="material-format" aria-hidden="true">
-                  PDF
+                  PDF / DOCX
                 </span>
                 <kbd aria-hidden="true">{shortcut}</kbd>
               </button>
               <span id={`${menuId}-capability`} hidden>
-                仅支持 PDF，每份不超过 20 MB 和 200 页。
+                支持 PDF 和 DOCX，每份不超过 20 MB。
               </span>
               {showSavedMaterials && c.items.some((item) => !(item.id in c.selected)) && (
                 <button
@@ -491,6 +504,7 @@ export default function PdfAttachments({
           }}
         >
           {c.reading &&
+            !readingDocx &&
             c.items
               .filter((item) => item.id === c.reading?.id)
               .map((item) => (
@@ -515,7 +529,73 @@ export default function PdfAttachments({
                   </button>
                 </div>
               ))}
-          {c.reading && (
+          {readingDocx && (
+            <section aria-label="Word 固定原件" className="material-docx-reader">
+              <header className="material-reader-tools">
+                <strong>{readingDocx.name}</strong>
+                <button
+                  type="button"
+                  onClick={() => void c.saveOriginal(readingDocx.id, readingDocx.task)}
+                >
+                  保存原件副本
+                </button>
+                <button type="button" onClick={c.clearReading}>
+                  收起阅读
+                </button>
+              </header>
+              <p>固定原件已校验 · 以下为提取正文</p>
+              {c.copyError && <p role="alert">{c.copyError}</p>}
+              <small>SHA-256 {docxMaterial?.sha256}</small>
+              {(docxReview?.revisions || docxReview?.comments) && (
+                <p role="status">
+                  原件含{docxReview.revisions ? '修订' : ''}
+                  {docxReview.revisions && docxReview.comments ? '和' : ''}
+                  {docxReview.comments ? '批注' : ''}
+                  。下方正文可能省略删除文字和审阅意见，请核对原件。
+                </p>
+              )}
+              {docxMaterial?.status === 'processing' && <p>正在本地提取文字…</p>}
+              {docxMaterial?.status === 'failed' && (
+                <p role="alert">提取未完成，仍可保存原件副本。</p>
+              )}
+              {docxMaterial && docxMaterial.status !== 'ready' && (
+                <button
+                  type="button"
+                  disabled={disabled || c.busy}
+                  onClick={() =>
+                    void (docxMaterial.status === 'processing'
+                      ? c.stopLocalText(docxMaterial)
+                      : c.localText(docxMaterial))
+                  }
+                >
+                  {docxMaterial.status === 'processing' ? '停止提取' : '提取文字（离线）'}
+                </button>
+              )}
+              {docxMaterial?.status === 'ready' && (
+                <DocxDraftPreview
+                  key={readingDocx.id}
+                  source={docxMaterial}
+                  scope={readingDocx.task}
+                />
+              )}
+              {docxMaterial?.pages.map((page) => (
+                <label key={page.page}>
+                  {readingDocx.id in c.selected && (
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={c.sections.get(readingDocx.id)?.includes(page.page) ?? false}
+                      onChange={() => c.toggleSection(readingDocx.id, page.page)}
+                    />
+                  )}
+                  <span>
+                    提取段 {page.page} · {page.text}
+                  </span>
+                </label>
+              ))}
+            </section>
+          )}
+          {c.reading && !readingDocx && (
             <Suspense fallback={<p>正在加载阅读器…</p>}>
               <PdfReader
                 key={c.reading.id}
