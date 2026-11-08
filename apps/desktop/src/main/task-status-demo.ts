@@ -324,7 +324,7 @@ export async function runTaskStatusDemo(
       await wait('document.hasFocus()');
       await evaluate("document.querySelector('[data-testid=toggle-favorite]').focus()");
       await wait(
-        "document.hasFocus() && document.activeElement?.matches('[data-testid=toggle-favorite]') && document.querySelector('.task-title h1').nextElementSibling===document.activeElement",
+        "document.hasFocus() && document.activeElement?.matches('[data-testid=toggle-favorite]') && document.querySelector('.task-detail-topline .task-breadcrumb-title').nextElementSibling===document.activeElement",
       );
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
       window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
