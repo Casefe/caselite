@@ -91,7 +91,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-hover);
+  background: var(--active);
 }
 .document-word-count {
   padding: 8px 2px;
