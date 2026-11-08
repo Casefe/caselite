@@ -89,6 +89,7 @@ ls -la
 | `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
 | `pnpm review:changes` | 检查准确变更并生成受保护文件清单、规则指纹及回归触发标记；机械通过不授予审查批准 |
 | `pnpm review:changes --require-regression <回归JSON>` | 有规则/开发配置变化等触发时的交付检查；回归记录、指纹或原始证据不合格即阻断，步骤见 `REVIEW_HANDOFF_EXERCISE.md` |
+| `pnpm evidence` | 只读本机现有 `g0-*.json` 并输出派生 `artifacts/evidence/quality-summary.json`；按环境/模式/依赖/检查计划分组，显示来源、耗时和历史失败。坏记录exit 1；旧格式/重复记录单列，空样本NOT_RUN；不启动测试或模型 |
 | `pnpm run ci` | Linux CI 使用的 G0 门槛，含生产依赖审计、许可证阻断、集成与覆盖率；桌面测试记为未运行 |
 | `pnpm coverage` | 输出当前全部生产源码的测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，执行 macOS Apple Silicon 打包后再运行 DEV-1566 同一打包应用的 PDF、IPC 与 SQLite 离线联动测试 |

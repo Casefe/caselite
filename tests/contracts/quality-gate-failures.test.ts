@@ -1,14 +1,14 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { imports, forbiddenTestModifiers } from '../../scripts/lib/source-analysis.mjs';
 import {
   analyzeArchitecture,
   boundaryViolation,
 } from '../../scripts/check-architecture-boundaries.mjs';
-import { executePlan } from '../../scripts/lib/quality-results.mjs';
+import { executePlan, summarizeEvidence } from '../../scripts/lib/quality-results.mjs';
 import { licenseViolations } from '../../scripts/lib/license-policy.mjs';
 import {
   reviewChanges,
@@ -19,6 +19,154 @@ import {
 } from '../../scripts/check-quality-changes.mjs';
 
 describe('G0 rejects deliberate failures', () => {
+  const qualityRecord = (startedAt: string, statuses = ['passed']) => ({
+    mode: 'quick',
+    startedAt,
+    node: 'v24.22.2',
+    pnpm: '11.0.9',
+    worktreeSha256: 'a'.repeat(64),
+    lockfileSha256: 'b'.repeat(64),
+    status: statuses.includes('failed') ? 'failed' : 'passed-with-limitations',
+    results: statuses.map((status, index) => ({
+      name: `check-${index}`,
+      command: `pnpm check-${index}`,
+      status,
+      durationMs: status === 'not-run' ? 0 : 100,
+      exitCode: status === 'passed' ? 0 : status === 'failed' ? 1 : null,
+      signal: null,
+    })),
+  });
+
+  it('summarizes failed and unexecuted checks without presenting retries as accepted tasks', () => {
+    const summary = summarizeEvidence([
+      { file: 'pass', evidence: qualityRecord('2026-11-01T00:00:00Z', ['passed', 'passed']) },
+      { file: 'fail', evidence: qualityRecord('2026-11-02T00:00:00Z', ['failed', 'not-run']) },
+      { file: 'again', evidence: qualityRecord('2026-11-03T00:00:00Z', ['failed', 'not-run']) },
+      { file: 'not-run', evidence: qualityRecord('2026-11-04T00:00:00Z', ['passed', 'not-run']) },
+    ]);
+    expect(summary).toMatchObject({ status: 'AVAILABLE', includedRuns: 4, errors: [] });
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]).toMatchObject({
+      runCount: 4,
+      completedRuns: 1,
+      failedRuns: 2,
+      runsWithUnexecutedChecks: 3,
+      completedRunMedianCheckMs: 200,
+      historicalCheckFailures: { 'check-0': 2 },
+      firstRunAt: '2026-11-01T00:00:00Z',
+      lastRunAt: '2026-11-04T00:00:00Z',
+    });
+    expect(Object.values(summary.outcomeMetrics)).toEqual(Array(4).fill('UNKNOWN'));
+  });
+
+  it('keeps different modes, environments, dependency snapshots and check plans separate', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    const variants = [
+      evidence,
+      { ...evidence, mode: 'full' },
+      { ...evidence, platform: 'darwin', arch: 'arm64' },
+      { ...evidence, node: 'v26.0.0' },
+      { ...evidence, pnpm: '12.0.0' },
+      { ...evidence, lockfileSha256: 'c'.repeat(64) },
+      qualityRecord(evidence.startedAt, ['passed', 'passed']),
+    ];
+    const summary = summarizeEvidence(
+      variants.map((item, i) => ({ file: `${i}`, evidence: item })),
+    );
+    expect(summary.groups).toHaveLength(7);
+    expect(summary.groups[0].environment.platform).toBe('UNKNOWN');
+    expect(summary.groups.every((group: { runCount: number }) => group.runCount === 1)).toBe(true);
+  });
+
+  it('reports bad evidence and excludes legacy or duplicate runs instead of inventing success', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    const summary = summarizeEvidence([
+      { file: 'valid', evidence },
+      { file: 'copy', evidence },
+      { file: 'legacy', evidence: { ...evidence, worktreeSha256: undefined } },
+      { file: 'broken', error: true },
+      { file: 'empty', evidence: { ...evidence, results: [] } },
+      { file: 'contradictory', evidence: { ...evidence, status: 'failed' } },
+    ]);
+    expect(summary).toMatchObject({ status: 'PARTIAL', inputFiles: 6, includedRuns: 1 });
+    expect(summary.excluded.map((item: { file: string }) => item.file)).toEqual(['copy', 'legacy']);
+    expect(summary.errors.map((item: { file: string }) => item.file)).toEqual([
+      'broken',
+      'empty',
+      'contradictory',
+    ]);
+    expect(summarizeEvidence([])).toMatchObject({ status: 'NOT_RUN', includedRuns: 0, groups: [] });
+    const incomplete = summarizeEvidence([
+      { file: 'unfinished', evidence: qualityRecord(evidence.startedAt, ['not-run']) },
+    ]);
+    expect(incomplete.groups[0].completedRunMedianCheckMs).toBeNull();
+    expect(incomplete.groups[0].completedRuns).toBe(0);
+  });
+
+  it('runs the existing evidence CLI without checks and returns failure for a corrupt report', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-evidence-'));
+    try {
+      mkdirSync(join(root, 'scripts/lib'), { recursive: true });
+      mkdirSync(join(root, 'artifacts/evidence'), { recursive: true });
+      for (const file of ['run-quality-gate.mjs', 'lib/quality-results.mjs'])
+        copyFileSync(
+          new URL(`../../scripts/${file}`, import.meta.url),
+          join(root, 'scripts', file),
+        );
+      const report = join(root, 'artifacts/evidence/g0-quick-example.json');
+      writeFileSync(report, '{broken');
+      const run = () =>
+        spawnSync(process.execPath, [join(root, 'scripts/run-quality-gate.mjs'), 'evidence'], {
+          cwd: root,
+          encoding: 'utf8',
+        });
+      expect(run().status).toBe(1);
+      const summary = () =>
+        JSON.parse(readFileSync(join(root, 'artifacts/evidence/quality-summary.json'), 'utf8'));
+      expect(summary()).toMatchObject({ status: 'PARTIAL', includedRuns: 0 });
+      writeFileSync(report, JSON.stringify(qualityRecord('2026-11-01T00:00:00Z')));
+      expect(run().status).toBe(0);
+      expect(summary()).toMatchObject({ status: 'AVAILABLE', includedRuns: 1, errors: [] });
+      expect(JSON.parse(readFileSync(report, 'utf8'))).toEqual(
+        qualityRecord('2026-11-01T00:00:00Z'),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects contradictory exits, corrupt fingerprints and conflicting copies of the same run', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    for (const altered of [
+      { ...evidence, worktreeSha256: 'corrupted' },
+      { ...evidence, worktreeSha256: ['a'.repeat(64)] },
+      { ...evidence, lockfileSha256: null },
+      { ...evidence, results: [{ ...evidence.results[0], exitCode: 1 }] },
+      { ...evidence, results: [{ ...evidence.results[0], signal: 'SIGTERM' }] },
+    ]) {
+      expect(summarizeEvidence([{ file: 'bad', evidence: altered }])).toMatchObject({
+        status: 'PARTIAL',
+        includedRuns: 0,
+        excluded: [],
+      });
+    }
+    const failed = qualityRecord(evidence.startedAt, ['failed']);
+    for (const pair of [
+      [evidence, failed],
+      [failed, evidence],
+    ]) {
+      const summary = summarizeEvidence(pair.map((item, i) => ({ file: `${i}`, evidence: item })));
+      expect(summary).toMatchObject({ status: 'PARTIAL', includedRuns: 0, groups: [] });
+      expect(summary.errors[0].reason).toBe('Conflicting run identity');
+    }
+    const deferred = qualityRecord(evidence.startedAt, ['not-run']);
+    deferred.results[0].exitCode = 0;
+    expect(summarizeEvidence([{ file: 'deferred', evidence: deferred }])).toMatchObject({
+      status: 'AVAILABLE',
+      includedRuns: 1,
+    });
+  });
+
   it('rejects stale, missing, simulated and same-session regression evidence', () => {
     const fingerprint = 'a'.repeat(64);
     const evidence = {
