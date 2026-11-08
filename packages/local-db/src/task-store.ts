@@ -268,14 +268,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             if (task.editor_schema !== 1 || task.body_revision !== request.expected_revision)
               return fail('CONFLICT', '正文已有新修订或格式不兼容，请核对后再保存。');
             try {
-              if (task.body_revision > 0) {
-                const stored = db
-                  .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
-                  .get(task.body_id, task.body_revision) as { state: Buffer } | undefined;
-                if (!stored || validateBody(stored.state, true))
-                  return fail('CONFLICT', '此版本的表格正文为只读，原修订已保留。');
-              }
-              validateBody(Uint8Array.from(request.state));
+              validateBody(Uint8Array.from(request.state), true);
             } catch {
               return fail('INVALID_REQUEST', '正文结构或格式不支持，原修订已保留。');
             }

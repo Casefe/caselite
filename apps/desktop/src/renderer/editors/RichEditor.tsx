@@ -1,3 +1,5 @@
+import { assertBoundedHtml } from './bounded-html';
+import { TableCommands } from './TableCommands';
 import { useLocalDoc, type RichDraft } from './editor-state';
 import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
@@ -278,6 +280,7 @@ export function EditorSurface({
   const [blockMenu, setBlockMenu] = useState(false);
   const [showFormats, setShowFormats] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [pasteError, setPasteError] = useState('');
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
@@ -331,6 +334,24 @@ export function EditorSurface({
   const compact = mode === 'compact';
   const documentMode = mode === 'simple';
   const trackComposition = compact || documentMode;
+  const tableMode = documentMode && Boolean(editor.schema.nodes.table);
+  const allowHtml = (html: string, position: number) => {
+    if (!tableMode || !html) return true;
+    try {
+      if (assertBoundedHtml(html)) {
+        const at = editor.state.doc.resolve(position);
+        for (let depth = at.depth; depth > 0; depth--) {
+          if (at.node(depth).type.name === 'table')
+            throw new Error('请在表格外粘贴完整表格。单元格内可粘贴文字。');
+        }
+      }
+      setPasteError('');
+      return true;
+    } catch (error) {
+      setPasteError(error instanceof Error ? error.message : '插入内容失败，正文未改变。');
+      return false;
+    }
+  };
   const slashKey = ui?.slash ? `${ui.slash.from}:${ui.slash.query}` : '';
   const choices = blocks.filter((item) =>
     `${item.label}${item.hint}${item.id}`
@@ -353,6 +374,12 @@ export function EditorSurface({
       className={`rich-editor rich-editor--${mode} editor-surface`}
       data-editor-mode={mode}
       aria-disabled={!editable}
+      onPasteCapture={(event) => {
+        if (!allowHtml(event.clipboardData.getData('text/html'), editor.state.selection.from)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       data-empty={ui?.empty ? 'true' : undefined}
       data-placeholder={placeholder}
       onClickCapture={(event) => {
@@ -382,6 +409,24 @@ export function EditorSurface({
         }
         if (event.nativeEvent.isComposing || editor.view.composing || (documentMode && composing))
           return;
+        if (
+          tableMode &&
+          event.key === 'Tab' &&
+          !event.shiftKey &&
+          editor.isActive('table') &&
+          !editor.can().goToNextCell()
+        ) {
+          const at = editor.state.selection.$from;
+          for (let depth = at.depth; depth > 0; depth--) {
+            if (at.node(depth).type.name === 'table' && at.node(depth).childCount >= 200) {
+              // TableKit 末格 Tab 会自动加行，必须保持宿主可保存的上限。
+              event.preventDefault();
+              event.stopPropagation();
+              setPasteError('表格已达 200 行，未新增行。请拆分为另一张表格。');
+              return;
+            }
+          }
+        }
         if (event.key === '/') setDismissed('');
         if (!showSlash) return;
         if (event.key === 'Escape') {
@@ -409,7 +454,19 @@ export function EditorSurface({
           event.stopPropagation();
           return;
         }
-        if (!original) return;
+        if (!original) {
+          const target = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+          if (
+            !allowHtml(
+              event.dataTransfer.getData('text/html'),
+              target?.pos ?? editor.state.selection.from,
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (original.doc !== editor.state.doc) return;
@@ -430,9 +487,11 @@ export function EditorSurface({
         editor.view.dispatch(tr.scrollIntoView());
       }}
     >
+      {pasteError && <p role="alert">{pasteError}</p>}
       {documentMode && (
         <div className="simple-toolbar">
           <FormatBar editor={editor} />
+          {tableMode && <TableCommands editor={editor} />}
         </div>
       )}
       <EditorContent className="rich-editor-content" editor={editor} />
