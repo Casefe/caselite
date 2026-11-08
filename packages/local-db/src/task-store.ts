@@ -1,4 +1,5 @@
 import { createDocumentReviewReader } from './document-review-reader';
+import { createDeliverySnapshotStore } from './delivery-snapshot-store';
 import { createReminderStore } from './reminder-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
@@ -8,6 +9,7 @@ import {
   type Task,
   type TaskRequest,
   type TaskResponse,
+  type DeliverySnapshot,
   taskResponseSchema,
   tagListSchema,
 } from '@caselite/contracts';
@@ -22,7 +24,7 @@ const decodeTask = ({ tags, ...row }: Row) => ({
   ...row,
   tags: tagListSchema.parse(JSON.parse(tags)),
 });
-const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.metadata_version AS document_metadata_version,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -39,6 +41,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     return row ? decodeTask(row) : null;
   };
   const review = createDocumentReviewReader(db, workspace, get);
+  const snapshots = createDeliverySnapshotStore(db, workspace, get);
   const objectiveState = (id: string, version: number) =>
     (
       db
@@ -65,6 +68,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
+      if (request.operation === 'list_snapshots' || request.operation === 'read_snapshot')
+        return snapshots.query(request);
       if (request.operation === 'list') {
         const q = request.query;
         if (q) {
@@ -170,6 +175,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             ? taskResponseSchema.parse(JSON.parse(old.result))
             : fail('CONFLICT', '同一提交身份已用于不同内容，请核对原结果。');
         let taskId: string;
+        let savedSnapshots: DeliverySnapshot[] | undefined;
+        let snapshotCreated: boolean | undefined;
         let objective = 'objective' in request ? request.objective : '';
         const rich = 'objective_state' in request ? request.objective_state : undefined;
         if (rich) {
@@ -218,7 +225,12 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           taskId = request.task_id;
           const task = get(taskId);
           if (!task) return fail('NOT_FOUND', '任务不存在或不在当前工作区。');
-          if (request.operation === 'update') {
+          if (request.operation === 'create_snapshot') {
+            const fixed = snapshots.create(request, task);
+            if (!fixed.ok) return fixed;
+            savedSnapshots = [fixed.snapshot];
+            snapshotCreated = fixed.created;
+          } else if (request.operation === 'update') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
             if (!rich && objective !== task.objective && objectiveState(task.id, task.version))
@@ -293,10 +305,16 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           db.prepare(
             'INSERT INTO task_objective_revisions(task_id,task_version,state) VALUES(?,?,?)',
           ).run(taskId, updated.version, Buffer.from(rich));
-        const result = ok([updated], null, request.idempotency_key);
-        db.prepare(
-          'INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)',
-        ).run(randomUUID(), taskId, request.operation, new Date().toISOString());
+        const result = {
+          ...ok([updated], null, request.idempotency_key),
+          ...(savedSnapshots
+            ? { snapshots: savedSnapshots, snapshot_created: snapshotCreated }
+            : {}),
+        };
+        if (snapshotCreated !== false)
+          db.prepare(
+            'INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)',
+          ).run(randomUUID(), taskId, request.operation, new Date().toISOString());
         db.prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)').run(
           workspace,
           request.idempotency_key,
@@ -306,7 +324,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
         return result;
       });
       // 创建先锁定写事务，保证校验项目与归组之间不会插入并发归档。
-      return request.operation === 'create' ? commit.immediate() : commit();
+      return request.operation === 'create' || request.operation === 'create_snapshot'
+        ? commit.immediate()
+        : commit();
     },
     close() {
       db.close();

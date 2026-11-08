@@ -1,4 +1,30 @@
 /* 交付页独立命名空间：不改变任务、项目和文档属性栏的共用样式。 */
+.task-work-area > .document[hidden] {
+  /* 保持编辑器挂载以保留未保存输入，同时覆盖工作区的 display:flex。 */
+  display: none;
+}
+.delivery-host {
+  container-type: inline-size;
+  min-width: 0;
+}
+.delivery-saved-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.delivery-content-hash {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 24px 18px;
+  overflow-wrap: anywhere;
+}
+.delivery-entry {
+  margin: 0 16px 16px;
+}
 .delivery-prototype {
   min-height: 100vh;
   background: var(--canvas);
@@ -318,5 +344,47 @@
   }
   .delivery-confirm {
     max-width: min(430px, calc(100vw - 36px));
+  }
+}
+@container (max-width: 760px) {
+  .delivery-heading {
+    flex-wrap: wrap;
+  }
+  .delivery-heading > button {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .delivery-heading .delivery-draft-badge {
+    margin-left: 0;
+  }
+  .delivery-capture {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .delivery-capture > div {
+    grid-column: 1 / -1;
+  }
+  .delivery-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .delivery-history {
+    border-right: 0;
+    padding-right: 0;
+  }
+  .delivery-detail {
+    display: none;
+    padding: 18px 0;
+  }
+  .delivery-grid.is-preview .delivery-detail {
+    display: block;
+  }
+  .delivery-grid.is-preview .delivery-history {
+    display: none;
+  }
+  .delivery-mobile-back {
+    display: inline-flex;
+    border: 0;
+    background: transparent;
+    padding-left: 0;
+    margin-bottom: 18px;
   }
 }

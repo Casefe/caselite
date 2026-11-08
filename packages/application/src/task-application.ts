@@ -21,6 +21,8 @@ export function createTaskApplication(port: TaskPort) {
           code:
             parsed.data.operation === 'list' ||
             parsed.data.operation === 'read' ||
+            parsed.data.operation === 'list_snapshots' ||
+            parsed.data.operation === 'read_snapshot' ||
             parsed.data.operation === 'status'
               ? 'READ_FAILED'
               : 'WRITE_FAILED',

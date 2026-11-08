@@ -6,6 +6,7 @@ const actions: Record<string, string> = {
   change_status: '修改任务状态',
   update_attributes: '修改任务属性',
   save: '保存正文',
+  create_snapshot: '固定交付版本',
   create_project: '创建项目',
   register_contract: '登记收费合同',
   record_payment: '登记已确认收款',

@@ -25,6 +25,11 @@ export default function DeliveryVersions({
   onExport,
   onBack,
   preview,
+  exportAvailable = true,
+  captureDisabled = false,
+  noteDisabled = false,
+  more = false,
+  onMore,
 }: {
   versions: DeliveryVersion[];
   selectedId: string | null;
@@ -37,6 +42,11 @@ export default function DeliveryVersions({
   onExport(id: string, format: DeliveryFormat): void;
   onBack(): void;
   preview: ReactNode;
+  exportAvailable?: boolean;
+  captureDisabled?: boolean;
+  noteDisabled?: boolean;
+  more?: boolean;
+  onMore?(): void;
 }) {
   const [note, setNote] = useState('');
   const [format, setFormat] = useState<DeliveryFormat>('Word');
@@ -44,7 +54,7 @@ export default function DeliveryVersions({
   const selected = versions.find((item) => item.id === selectedId);
   const [creating, setCreating] = useState(false);
   async function create() {
-    if (dirty || busy || creating || revision < 1) return;
+    if (dirty || busy || creating || captureDisabled || revision < 1) return;
     setCreating(true);
     try {
       if (await onCreate(note.trim())) setNote('');
@@ -80,7 +90,7 @@ export default function DeliveryVersions({
           <input
             value={note}
             maxLength={200}
-            disabled={busy || creating}
+            disabled={busy || creating || noteDisabled}
             onChange={(event) => setNote(event.target.value)}
             placeholder="例如：付款期限核对稿"
           />
@@ -88,7 +98,7 @@ export default function DeliveryVersions({
         <button
           className="primary"
           type="submit"
-          disabled={dirty || busy || creating || revision < 1}
+          disabled={dirty || busy || creating || captureDisabled || revision < 1}
         >
           {creating ? '正在固定…' : '固定当前修订'}
         </button>
@@ -126,6 +136,11 @@ export default function DeliveryVersions({
               <Icon name="chevron" size={14} />
             </button>
           ))}
+          {more && (
+            <button type="button" disabled={busy || creating} onClick={onMore}>
+              更多固定版本
+            </button>
+          )}
         </aside>
         <section className="delivery-detail" aria-label="固定版本预览">
           {selected ? (
@@ -165,13 +180,16 @@ export default function DeliveryVersions({
                 <button
                   type="button"
                   className="primary"
-                  disabled={busy || creating}
+                  disabled={busy || creating || !exportAvailable}
                   onClick={() => onExport(selected.id, format)}
                 >
                   {busy ? '正在处理…' : `导出此版本 ${format}`}
                 </button>
               </footer>
               <p className="delivery-export-note">导出不代表定稿确认、任务完成或已发送给客户。</p>
+              {!exportAvailable && (
+                <p className="delivery-export-note">Word/PDF 文件导出尚未接入。</p>
+              )}
             </>
           ) : (
             <div className="delivery-empty">

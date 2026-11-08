@@ -292,3 +292,4 @@ export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/cont
 export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
 export type { Contact, ContactsRequest } from '@caselite/contracts';
+export type { DeliverySnapshot } from '@caselite/contracts';

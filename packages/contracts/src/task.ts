@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { deliverySnapshotSchema } from './delivery-snapshot';
 
 export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
@@ -48,12 +49,31 @@ export const taskSchema = z.object({
   matter_title: z.string().nullable().optional(),
   version: z.number().int().positive(),
   document_id: taskIdSchema,
+  document_metadata_version: z.number().int().positive().optional(),
   body_id: taskIdSchema,
   body_revision: z.number().int().nonnegative(),
   editor_schema: z.literal(1),
   updated_at: z.string(),
 });
 export const taskQuerySchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      operation: z.literal('list_snapshots'),
+      protocol_version: z.literal(1),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      offset: z.number().int().min(0).max(1_000_000),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal('read_snapshot'),
+      protocol_version: z.literal(1),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      snapshot_id: taskIdSchema,
+    })
+    .strict(),
   z
     .object({
       operation: z.literal('list'),
@@ -79,6 +99,23 @@ const mutation = {
   idempotency_key: taskIdSchema,
 };
 export const taskMutationSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      ...mutation,
+      operation: z.literal('create_snapshot'),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      body_id: taskIdSchema,
+      expected_revision: z.number().int().positive(),
+      expected_metadata_version: z.number().int().positive(),
+      expected_task_version: z.number().int().positive(),
+      note: z
+        .string()
+        .trim()
+        .max(200)
+        .refine((value) => !value.includes('\0')),
+    })
+    .strict(),
   z
     .object({
       ...mutation,
@@ -145,6 +182,8 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     tasks: z.array(taskSchema),
     state: z.array(z.number().int().min(0).max(255)).nullable(),
     receipt: taskIdSchema.nullable(),
+    snapshots: z.array(deliverySnapshotSchema).max(20).optional(),
+    snapshot_created: z.boolean().optional(),
     objective_state: richState.nullable().optional(),
     page: z
       .object({

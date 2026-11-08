@@ -6,6 +6,7 @@ export * from './queries';
 export * from './results';
 export * from './offline-probe';
 export * from './task';
+export * from './delivery-snapshot';
 export * from './agent';
 export * from './catalog';
 export * from './source';

@@ -82,6 +82,63 @@ export const bodyRevisions = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.bodyId, table.revision] })],
 );
+export const deliverableSnapshots = sqliteTable(
+  'deliverable_snapshots',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    bodyId: text('body_id').notNull(),
+    bodyRevision: integer('body_revision').notNull(),
+    editorSchema: integer('editor_schema').notNull(),
+    metadataVersion: integer('metadata_version').notNull(),
+    taskVersion: integer('task_version').notNull(),
+    title: text('title').notNull(),
+    collection: text('collection').notNull(),
+    tags: text('tags').notNull(),
+    note: text('note').notNull(),
+    contentSha256: text('content_sha256').notNull(),
+    createdAt: text('created_at').notNull(),
+    createdBy: text('created_by').notNull(),
+    kind: text('kind').notNull(),
+    sourceRefs: text('source_refs').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.bodyId, table.bodyRevision],
+      foreignColumns: [bodyRevisions.bodyId, bodyRevisions.revision],
+    }),
+    unique('delivery_fixed_revision').on(
+      table.documentId,
+      table.bodyRevision,
+      table.metadataVersion,
+      table.taskVersion,
+    ),
+    index('delivery_workspace_document').on(table.workspaceId, table.documentId),
+    check(
+      'delivery_snapshot_versions_valid',
+      sql`${table.bodyRevision}>0 AND ${table.metadataVersion}>0 AND ${table.taskVersion}>0 AND ${table.editorSchema}=1`,
+    ),
+    check(
+      'delivery_snapshot_kind_valid',
+      sql`${table.kind}='draft' AND ${table.createdBy}='local' AND ${table.sourceRefs}='[]'`,
+    ),
+    check(
+      'delivery_snapshot_text_valid',
+      sql`length(${table.title}) BETWEEN 1 AND 160 AND length(${table.note})<=200 AND length(${table.collection})<=80 AND length(${table.contentSha256})=64`,
+    ),
+    check(
+      'delivery_snapshot_tags_valid',
+      sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags})='array' AND json_array_length(${table.tags})<=20 ELSE 0 END`,
+    ),
+  ],
+);
+
 export const taskReceipts = sqliteTable(
   'task_receipts',
   {
