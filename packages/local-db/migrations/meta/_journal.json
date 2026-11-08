@@ -127,6 +127,13 @@
       "when": 1794064000000,
       "tag": "0017_task_subscription",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794065000000,
+      "tag": "0018_project_update_health",
+      "breakpoints": true
     }
   ]
 }

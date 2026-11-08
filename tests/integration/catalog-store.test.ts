@@ -1090,6 +1090,45 @@ it('merges explicit professional edits, guards the original key and preserves hi
   next.close();
 });
 
+it('uses the latest explicitly published health for only its project', () => {
+  const { app, file, store } = setup();
+  const project = ok(
+    app.execute({ ...ids(), operation: 'create_project', title: '合成健康度' }),
+  ).target_id!;
+  const publication = {
+    operation: 'publish_discussion',
+    scope: { kind: 'update', project_id: project },
+    state: binary('合成项目更新'),
+  };
+  const list = { operation: 'list_discussion', protocol_version: 1, scope: publication.scope };
+  const read = { operation: 'read_project', protocol_version: 1, id: project };
+  expect(ok(app.execute(read)).projects.find((p) => p.id === project)?.health).toBeUndefined();
+  expect(
+    app.execute({
+      ...ids(),
+      ...publication,
+      scope: { ...publication.scope, kind: 'project_comment' },
+      health: 'off_track',
+    }),
+  ).toMatchObject({ code: 'INVALID_REQUEST' });
+  const publish = { ...ids(), ...publication, health: 'at_risk' };
+  const receipt = ok(app.execute(publish));
+  expect(app.execute(publish)).toEqual(receipt);
+  ok(app.execute({ ...ids(), ...publication }));
+  expect(ok(app.execute(list)).discussion?.entries).toMatchObject([
+    { id: expect.any(String) },
+    { id: receipt.target_id, health: 'at_risk' },
+  ]);
+  store.close();
+  const reopened = openTaskStore(file, migrations);
+  expect(
+    ok(
+      reopened.catalog.execute({ ...read, operation: 'read_project', protocol_version: 1 }),
+    ).projects.find((p) => p.id === project)?.health,
+  ).toBe('at_risk');
+  reopened.close();
+});
+
 it('publishes scoped fixed discussion entries atomically and reopens them without changing system activity or project description', () => {
   const { app, file, store } = setup();
   const create = (title: string) =>

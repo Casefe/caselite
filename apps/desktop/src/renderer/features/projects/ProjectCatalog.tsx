@@ -7,7 +7,7 @@ import { taskStatusNames } from '../../ui/task-status';
 import { taskPriorityNames } from '../../ui/task-priority';
 import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
-import { projectStatuses, projectTypes } from './project-display';
+import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
@@ -588,6 +588,11 @@ export default function ProjectCatalog({
                   <div className="project-overview-intro">
                     <Icon name="folder" size={24} />
                     <h2>{(p ?? editor.project).title}</h2>
+                    {p?.health && (
+                      <span className="project-health" data-health={p.health}>
+                        {projectHealthNames[p.health]}
+                      </span>
+                    )}
                     <button type="button" disabled={blocked} onClick={() => setSection('activity')}>
                       {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
                     </button>
@@ -881,6 +886,8 @@ export default function ProjectCatalog({
                       key={`activity-discussion:${editor.project.id}`}
                       projectId={editor.project.id}
                       activity
+                      health={p?.health}
+                      onPublished={() => void c.load()}
                       archived={!!p?.archived_at}
                       disabled={discussionDisabled || lifecycleDraft}
                       onDirty={setDiscussionDirty}
@@ -937,6 +944,15 @@ export default function ProjectCatalog({
                     id: 'priority',
                     header: '优先级',
                     accessorFn: (project) => taskPriorityNames[project.attributes?.priority ?? 0],
+                  },
+                  {
+                    id: 'health',
+                    header: '健康度',
+                    cell: ({ row: { original } }) => (
+                      <span className="project-health" data-health={original.health ?? undefined}>
+                        {original.health ? projectHealthNames[original.health] : '暂无更新'}
+                      </span>
+                    ),
                   },
                   { id: 'client', header: '客户', cell: () => null },
                   {

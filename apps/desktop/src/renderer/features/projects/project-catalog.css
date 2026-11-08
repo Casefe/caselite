@@ -835,3 +835,38 @@
   margin-inline-start: 4px;
   color: var(--muted);
 }
+
+.project-health-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-health::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.project-health[data-health]::before {
+  background: currentColor;
+}
+.project-health[data-health='on_track']::before {
+  color: #39866a;
+}
+.project-health[data-health='at_risk']::before {
+  color: #b67c2d;
+}
+.project-health[data-health='off_track']::before {
+  color: #bd585b;
+}

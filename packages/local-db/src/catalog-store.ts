@@ -6,6 +6,7 @@ import {
   projectAttributesSchema,
   legacyProjectType,
   type ProjectProfessionalType,
+  type ProjectHealth,
   type ProjectProfessionalFields,
   type CatalogRequest,
   type CatalogResponse,
@@ -25,11 +26,17 @@ const fail = (
 ): CatalogResponse => ({ ok: false, code, message });
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
+  const hasHealth = (db.pragma('table_info(project_discussion)') as { name: string }[]).some(
+    (column) => column.name === 'health',
+  );
+  const healthProjection = hasHealth
+    ? "(SELECT d.health FROM project_discussion d WHERE d.matter_id=m.id AND d.kind='update' AND d.health IS NOT NULL ORDER BY d.sequence DESC LIMIT 1)"
+    : 'NULL';
   const projects = (properties: string | true | null = null, withFinance = false) =>
     (
       db
         .prepare(
-          `SELECT ${withFinance ? `(${projectOutstanding}) AS outstanding_cents,` : ''}m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,m.professional_type,CASE WHEN ? OR m.id=? THEN m.professional_fields END AS professional_fields,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
+          `SELECT ${withFinance ? `(${projectOutstanding}) AS outstanding_cents,` : ''}m.id,m.title,m.status,m.version,m.archived_at,m.body_id,m.body_revision,m.editor_schema,m.updated_at,m.project_type,m.assignee,m.priority,m.start_date,m.target_date,m.tags,m.professional_type,${healthProjection} AS health,CASE WHEN ? OR m.id=? THEN m.professional_fields END AS professional_fields,(SELECT count(*) FROM task_projects p JOIN task_items t ON t.id=p.task_id WHERE p.matter_id=m.id AND t.workspace_id=m.workspace_id) AS task_count FROM matters m WHERE m.workspace_id=? ORDER BY m.updated_at DESC,m.id`,
         )
         .all(
           Number(properties === true),
@@ -55,9 +62,11 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         tags,
         professional_type,
         professional_fields,
+        health,
         ...project
       }) => ({
         ...project,
+        ...(health ? { health } : {}),
         attributes: projectAttributesSchema.parse({
           project_type: professional_type ? legacyProjectType(professional_type) : project_type,
           ...(professional_type && professional_fields !== null ? { professional_type } : {}),
@@ -252,7 +261,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         const before = request.before ?? Number.MAX_SAFE_INTEGER;
         const rows = db
           .prepare(
-            `SELECT d.sequence AS cursor,d.id,d.committed_at,b.state
+            `SELECT d.sequence AS cursor,d.id,d.committed_at,b.state,${taskScope || !hasHealth ? 'NULL' : 'd.health'} AS health
            FROM ${taskScope ? 'task_comment' : 'project_discussion'} d
            JOIN body_revisions b ON b.body_id=d.body_id AND b.revision=d.body_revision
            WHERE ${taskScope ? 'd.task_id=?' : 'd.matter_id=? AND d.kind=? AND d.update_id IS ?'}
@@ -268,13 +277,19 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
                   scope.kind === 'update_comment' ? scope.update_id : null,
                   before,
                 ]),
-          ) as { cursor: number; id: string; committed_at: string; state: Buffer }[];
+          ) as {
+          cursor: number;
+          id: string;
+          committed_at: string;
+          state: Buffer;
+          health: ProjectHealth | null;
+        }[];
         return {
           ...narrowResult(),
           discussion: {
-            entries: rows.slice(0, 10).map(({ id, committed_at, state }) => {
+            entries: rows.slice(0, 10).map(({ id, committed_at, state, health }) => {
               validateBody(state);
-              return { id, committed_at, state: Array.from(state) };
+              return { id, committed_at, state: Array.from(state), ...(health ? { health } : {}) };
             }),
             next: rows.length > 10 ? rows[9].cursor : null,
             ...(taskScope ? { read_only: !!target.archived_at } : {}),
@@ -385,8 +400,9 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
             ).run(id, scope.task_id, bodyId, now);
           else
             db.prepare(
-              `INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at)
-               VALUES(?,?,?,?,?,?)`,
+              request.health
+                ? 'INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at,health) VALUES(?,?,?,?,?,?,?)'
+                : 'INSERT INTO project_discussion(id,matter_id,kind,update_id,body_id,committed_at) VALUES(?,?,?,?,?,?)',
             ).run(
               id,
               scope.project_id,
@@ -394,6 +410,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
               scope.kind === 'update_comment' ? scope.update_id : null,
               bodyId,
               now,
+              ...(request.health ? [request.health] : []),
             );
           return saveReceipt(narrowResult(id, request.idempotency_key));
         }

@@ -187,12 +187,17 @@ export const projectDiscussion = sqliteTable(
       .notNull()
       .references(() => matters.id),
     kind: text('kind').notNull(),
+    health: text('health', { enum: ['on_track', 'at_risk', 'off_track'] }),
     updateId: text('update_id'),
     bodyId: text('body_id').notNull().unique(),
     bodyRevision: integer('body_revision').notNull().default(1),
     committedAt: text('committed_at').notNull(),
   },
   (table) => [
+    check(
+      'project_discussion_health_valid',
+      sql`${table.health} IS NULL OR (${table.kind} = 'update' AND ${table.health} IN ('on_track', 'at_risk', 'off_track'))`,
+    ),
     unique().on(table.matterId, table.id),
     index('project_discussion_scope').on(table.matterId, table.kind, table.updateId),
     foreignKey({

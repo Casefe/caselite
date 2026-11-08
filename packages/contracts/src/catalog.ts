@@ -72,6 +72,8 @@ export const projectAttributesSchema = z
   .refine((a) => !a.professional_type || a.project_type === legacyProjectType(a.professional_type));
 export type ProjectAttributes = z.infer<typeof projectAttributesSchema>;
 const id = z.string().uuid();
+export const projectHealthSchema = z.enum(['on_track', 'at_risk', 'off_track']);
+export type ProjectHealth = z.infer<typeof projectHealthSchema>;
 const version = z.number().int().positive();
 const bytes = z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000);
 const base = { protocol_version: z.literal(1) };
@@ -99,6 +101,7 @@ export const matterSchema = z.object({
   updated_at: z.string(),
   outstanding_cents: z.number().int().nonnegative().nullable().optional(),
   task_count: z.number().int().nonnegative(),
+  health: projectHealthSchema.nullable().optional(),
   attributes: projectAttributesSchema.optional(),
 });
 export const catalogDocumentSchema = z.object({
@@ -127,6 +130,7 @@ const discussionEntry = z.strictObject({
   id,
   committed_at: z.iso.datetime(),
   state: discussionState,
+  health: projectHealthSchema.optional(),
 });
 const discussionCursor = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export type DiscussionScope = z.infer<typeof discussionScope>;
@@ -138,12 +142,15 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
     scope: discussionScope,
     before: discussionCursor.optional(),
   }),
-  z.strictObject({
-    ...mutation,
-    operation: z.literal('publish_discussion'),
-    scope: discussionScope,
-    state: discussionState,
-  }),
+  z
+    .strictObject({
+      ...mutation,
+      operation: z.literal('publish_discussion'),
+      scope: discussionScope,
+      state: discussionState,
+      health: projectHealthSchema.optional(),
+    })
+    .refine((request) => !request.health || request.scope.kind === 'update'),
   z
     .object({
       ...base,

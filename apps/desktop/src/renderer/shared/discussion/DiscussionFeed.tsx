@@ -23,6 +23,9 @@ export function DiscussionFeed({
   onDirty,
   children,
   refresh,
+  publicationOptions,
+  publicationFields,
+  onPublished,
 }: {
   scope: DiscussionScope;
   archived: boolean;
@@ -30,6 +33,9 @@ export function DiscussionFeed({
   compose: boolean;
   onDirty(value: boolean): void;
   refresh?: string | null;
+  publicationOptions?: (disabled: boolean) => React.ReactNode;
+  publicationFields?: Pick<Publication, 'health'>;
+  onPublished?(): void;
   children?: (entry: DiscussionEntry, reading: boolean) => React.ReactNode;
 }) {
   const [draft, setDraft] = useState(emptyDraft);
@@ -131,6 +137,7 @@ export function DiscussionFeed({
       setUnknown(false);
       setSaved(true);
       resetDraft();
+      onPublished?.();
       void load();
     } catch {
       setUnknown(true);
@@ -163,6 +170,7 @@ export function DiscussionFeed({
             composing.current = false;
           }}
         >
+          {publicationOptions?.(editorDisabled)}
           <DraftEditor
             key={epoch}
             label={label}
@@ -183,7 +191,12 @@ export function DiscussionFeed({
             onClick={() => {
               if (!composing.current && draft.state)
                 void publish(
-                  catalogMutation({ operation: 'publish_discussion', scope, state: draft.state }),
+                  catalogMutation({
+                    operation: 'publish_discussion',
+                    scope,
+                    state: draft.state,
+                    ...publicationFields,
+                  }),
                 );
             }}
           >
