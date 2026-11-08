@@ -12,7 +12,7 @@ import FinanceView from './features/finance/FinanceView';
 import TagPicker from './shared/ui/TagPicker';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskRequest } from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
@@ -36,6 +36,7 @@ import BodyEditor from './features/documents/BodyEditor';
 import { mutation, check } from './shared/data/taskCommand';
 
 type CreateTaskCommand = Extract<TaskRequest, { operation: 'create' }>;
+const DeliveryPrototype = lazy(() => import('./features/documents/delivery/DeliveryPrototype'));
 const defaultCreateProperties = {
   status: 'todo' as Task['status'],
   priority: 0,
@@ -956,7 +957,13 @@ export default function App() {
   ) : (
     <AppearanceProvider>
       <QueryClientProvider client={queryClient}>
-        <Workbench />
+        {new URLSearchParams(window.location.search).has('delivery-preview') ? (
+          <Suspense fallback={<p role="status">正在载入交付界面原型…</p>}>
+            <DeliveryPrototype />
+          </Suspense>
+        ) : (
+          <Workbench />
+        )}
       </QueryClientProvider>
     </AppearanceProvider>
   );

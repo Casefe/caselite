@@ -112,6 +112,8 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'delivery-preview')
+    entry.searchParams.set('delivery-preview', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
@@ -532,6 +534,7 @@ const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'delivery-preview',
       'document-review-preview',
       'document-review-write',
       'document-review-read',
@@ -689,6 +692,14 @@ app
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
     registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
+    if (taskDemoPhase === 'delivery-preview' && taskDemoRoot) {
+      // 原型只使用合成内存状态；在初始化业务库、凭据和Agent前返回。
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      await createWindow();
+      return;
+    }
     const taskStore = openTaskStore(
       join(taskRoot, 'caselite.sqlite'),
       app.isPackaged
