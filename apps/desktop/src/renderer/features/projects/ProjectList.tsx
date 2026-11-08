@@ -41,6 +41,7 @@ const statuses = { ...projectStatuses, archived: '已归档' };
 // 来自 Logixy 的固定列宽、属性列与预览布局；业务值和受控动作仍由 CaseLite 提供。
 export default function ProjectList({
   projects,
+  groupByStatus = false,
   columns,
   selectedId,
   disabled,
@@ -52,6 +53,7 @@ export default function ProjectList({
   onFinance,
 }: {
   projects: Matter[];
+  groupByStatus?: boolean;
   columns: ProjectListColumns;
   selectedId?: string;
   disabled: boolean;
@@ -185,43 +187,65 @@ export default function ProjectList({
         formatCents(original.outstanding_cents)
       ),
   });
+  const groups = groupByStatus
+    ? Object.entries(statuses)
+        .map(([status, label]) => ({
+          label,
+          data: projects.filter((item) => statusOf(item) === status),
+        }))
+        .filter((group) => group.data.length > 0)
+    : [{ label: '', data: projects }];
   return (
-    <ReadTable
-      data={projects}
-      columns={definitions}
-      sized
-      getRowId={(project) => project.id}
-      label="项目列表"
-      className="catalog-table project-portfolio-table"
-      rowProps={(project) => ({
-        'data-project-id': project.id,
-        'aria-selected': selectedId === project.id,
-        tabIndex: disabled ? -1 : 0,
-        onClick: () => {
-          if (!disabled) onSelect(project);
-        },
-        onKeyDown: (event) => {
-          if (disabled || event.target !== event.currentTarget) return;
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            onOpen(project);
-          }
-          if (event.key === ' ') {
-            event.preventDefault();
-            onPreview(project);
-          }
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            const next =
-              event.key === 'ArrowDown'
-                ? event.currentTarget.nextElementSibling
-                : event.currentTarget.previousElementSibling;
-            if (next instanceof HTMLElement) {
-              event.preventDefault();
-              next.focus();
-            }
-          }
-        },
-      })}
-    />
+    <div className="project-list-groups">
+      {groups.map(({ label, data }) => (
+        <section key={label} aria-label={label || undefined}>
+          {label && (
+            <h2>
+              {label} <span>{data.length}</span>
+            </h2>
+          )}
+          <ReadTable
+            data={data}
+            columns={definitions}
+            sized
+            getRowId={(project) => project.id}
+            label={label ? `项目列表：${label}` : '项目列表'}
+            className="catalog-table project-portfolio-table"
+            rowProps={(project) => ({
+              'data-project-id': project.id,
+              'aria-selected': selectedId === project.id,
+              tabIndex: disabled ? -1 : 0,
+              onClick: () => {
+                if (!disabled) onSelect(project);
+              },
+              onKeyDown: (event) => {
+                if (disabled || event.target !== event.currentTarget) return;
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  onOpen(project);
+                }
+                if (event.key === ' ') {
+                  event.preventDefault();
+                  onPreview(project);
+                }
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  const rows = Array.from(
+                    event.currentTarget
+                      .closest('.project-list-groups')
+                      ?.querySelectorAll<HTMLElement>('[data-project-id]') ?? [],
+                  );
+                  const index = rows.indexOf(event.currentTarget);
+                  const next = rows[index + (event.key === 'ArrowDown' ? 1 : -1)];
+                  if (next instanceof HTMLElement) {
+                    event.preventDefault();
+                    next.focus();
+                  }
+                }
+              },
+            })}
+          />
+        </section>
+      ))}
+    </div>
   );
 }

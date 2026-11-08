@@ -43,6 +43,7 @@ export type ProjectViewState = {
   ownerFilter?: string;
   typeFilter?: string;
   columns: ProjectListColumns;
+  groupByStatus?: boolean;
   scrollTop: number;
   workspaceScrollTop: number;
   returnTaskId: string;
@@ -94,6 +95,7 @@ export default function ProjectCatalog({
   const [ownerFilter, setOwnerFilter] = useState(initialView?.ownerFilter ?? '');
   const [typeFilter, setTypeFilter] = useState(initialView?.typeFilter ?? '');
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
+  const [groupByStatus, setGroupByStatus] = useState(initialView?.groupByStatus ?? false);
   const [columns, setColumns] = useState({ ...projectListDefaults, ...initialView?.columns });
   const workspace = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
@@ -282,6 +284,7 @@ export default function ProjectCatalog({
     typeFilter,
     order,
     columns,
+    groupByStatus,
     scrollTop: scroll.current?.scrollTop ?? 0,
     workspaceScrollTop: workspace.current?.scrollTop ?? 0,
     returnTaskId: id,
@@ -456,6 +459,15 @@ export default function ProjectCatalog({
                 <Icon name="list" size={15} /> 显示
               </summary>
               <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={groupByStatus}
+                    disabled={blocked}
+                    onChange={(event) => setGroupByStatus(event.target.checked)}
+                  />
+                  按状态分组
+                </label>
                 <p>显示属性 · 本次会话</p>
                 {Object.entries(projectListProperties).map(([id, label]) => (
                   <label key={id}>
@@ -865,6 +877,7 @@ export default function ProjectCatalog({
             <>
               <ProjectList
                 projects={list}
+                groupByStatus={groupByStatus}
                 columns={columns}
                 selectedId={p?.id}
                 disabled={blocked}

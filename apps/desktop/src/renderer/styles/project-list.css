@@ -119,3 +119,16 @@
 .project-catalog[data-project-view='list'] .collection-footer {
   font-size: 12px;
 }
+
+.project-list-groups h2 {
+  margin: 8px 10px 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--theme-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+.project-list-groups h2 span {
+  padding-inline-start: 6px;
+  color: var(--muted);
+}
