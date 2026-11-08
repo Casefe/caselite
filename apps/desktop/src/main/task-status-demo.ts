@@ -184,6 +184,8 @@ export async function runTaskStatusDemo(
       );
       await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
       await wait(`document.querySelector('[data-row-task="${id}"]')`);
+      await evaluate("document.querySelector('[aria-label=任务预览]').click()");
+      await wait("document.querySelector('.task-list-sidebar [aria-label=任务状态]')");
       await status('done');
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
       const attributes = async (date: string, priority: number) => {
@@ -243,6 +245,23 @@ export async function runTaskStatusDemo(
       await settled('done');
       if ((await read(id)).tasks[0].tags?.[0] !== '合成列表标签')
         throw new Error('Task list label did not persist');
+      await evaluate("document.querySelector('[aria-label=任务显示设置]').click()");
+      await evaluate(`
+        Array.from(document.querySelectorAll('.task-display-options label')).find(
+          label => label.textContent.includes('按状态分组')
+        ).querySelector('input').click()
+      `);
+      await wait(`document.querySelector('.task-display-group h2') &&
+        document.querySelector('.task-display-group [data-row-task="${id}"]')`);
+      await evaluate(`
+        Array.from(document.querySelectorAll('.task-display-options label')).find(
+          label => label.textContent.trim() === '负责人'
+        ).querySelector('input').click()
+      `);
+      await wait(`!document.querySelector('[data-row-task="${id}"] [data-column=owner]')`);
+      await capture('task-display-options.png');
+      await evaluate("document.querySelector('[aria-label=任务显示设置]').click()");
+      await evaluate("document.querySelector('[aria-label=筛选任务]').click()");
       const filter = async (label: string, value: string) =>
         evaluate(
           `(()=>{const p=document.querySelector('[aria-label="${label}"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(value)});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
