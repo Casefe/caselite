@@ -62,7 +62,7 @@ export async function runFinanceDemo(
   };
   const openFromProjects = async (expected: string) => {
     await click(query('[data-nav=projects]'));
-    const balance = `Array.from(document.querySelectorAll('.project-list-table button')).find(e =>
+    const balance = `Array.from(document.querySelectorAll('[data-project-id] button')).find(e =>
       e.getAttribute('aria-label')?.startsWith(${literal('查看 ' + title + ' 的待收款 ')}))`;
     await wait(`(${balance})?.textContent.trim() === ${literal(expected)}`);
     if (phase === 'finance-write' && expected === '70,000.00')
@@ -107,6 +107,13 @@ export async function runFinanceDemo(
     await fill('input[name=amount]', '30000');
     await button('确认登记收款');
     await showBalance('70,000.00', '30,000.00');
+    const totals = query('[aria-label="筛选结果总览"]');
+    await wait(`${totals}?.textContent.includes('70,000.00')`);
+    await fill('.finance-filters input[type=search]', '无匹配合成项目');
+    await wait("document.body.textContent.includes('没有符合筛选条件的项目。')");
+    await showBalance('70,000.00', '30,000.00');
+    await button('清除筛选');
+    await wait(`${totals}?.textContent.includes('70,000.00')`);
     await screenshot('finance-70000.png');
     await openFromProjects('70,000.00');
     await showBalance('70,000.00', '30,000.00');

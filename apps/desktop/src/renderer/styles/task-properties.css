@@ -292,3 +292,62 @@
     padding: 10px 18px;
   }
 }
+
+.work-list-glyph {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--theme-secondary);
+}
+.work-list-glyph[data-priority='1'] {
+  color: #d57072;
+}
+.work-list-glyph[data-status='in_progress'] {
+  color: #369873;
+}
+.work-list-glyph[data-status='done'] {
+  color: var(--theme-accent);
+}
+.task-display-options {
+  position: relative;
+  flex-shrink: 0;
+}
+.task-display-options summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 7px;
+}
+.task-display-options fieldset {
+  position: absolute;
+  inset-inline-start: 0;
+  z-index: 3;
+  width: max-content;
+  margin: 4px 0 0;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--theme-panel);
+}
+.task-display-options input[type='checkbox'] {
+  margin: 0;
+}
+.task-display-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.task-display-group h2 {
+  margin: 8px 20px 3px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--theme-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-display-group h2 span {
+  padding-inline-start: 6px;
+  color: var(--muted);
+}

@@ -10,6 +10,7 @@ export default function ReadTable<T>({
   rowProps,
   className = 'catalog-table',
   label,
+  sized = false,
 }: {
   data: T[];
   columns: ColumnDef<T>[];
@@ -17,18 +18,30 @@ export default function ReadTable<T>({
   rowProps?(row: T): RowProps;
   className?: string;
   label?: string;
+  sized?: boolean;
 }) {
   const table = createTable({
     data,
     columns,
     getRowId,
     getCoreRowModel: getCoreRowModel(),
-    state: { columnPinning: {} },
+    state: { columnPinning: {}, columnSizing: {} },
     onStateChange: () => {},
     renderFallbackValue: null,
   });
   return (
-    <table className={className} aria-label={label}>
+    <table
+      className={className}
+      aria-label={label}
+      style={sized ? { tableLayout: 'fixed', minWidth: table.getTotalSize() } : undefined}
+    >
+      {sized && (
+        <colgroup>
+          {table.getVisibleLeafColumns().map((column) => (
+            <col key={column.id} style={{ width: column.getSize() }} />
+          ))}
+        </colgroup>
+      )}
       <thead>
         {table.getHeaderGroups().map((group) => (
           <tr key={group.id}>

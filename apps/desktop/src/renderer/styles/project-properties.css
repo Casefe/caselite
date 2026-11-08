@@ -1,0 +1,32 @@
+/* 76px 标签列和 28px 值行沿 Logixy 属性栏；作用域仅为项目字段。 */
+.project-fields .inspector-property-row {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 28px;
+  font-size: 13px;
+}
+.project-fields .project-property-label {
+  font-size: 12px;
+  gap: 6px;
+}
+.project-fields .inspector-property-row > input {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+.project-fields .inspector-property-row > input:enabled:hover {
+  background: var(--theme-hover);
+}
+.project-fields .inspector-property-row > input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.project-properties .inspector-disclosure > summary {
+  padding-block: 8px;
+}
+.project-properties .project-fields {
+  gap: 4px;
+}

@@ -1,9 +1,11 @@
-import type { ColumnDef } from '@tanstack/react-table';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
-import ReadTable from '../../shared/ui/ReadTable';
+import ProjectList, {
+  projectListDefaults,
+  projectListProperties,
+  type ProjectListColumns,
+} from './ProjectList';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
-import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
@@ -40,7 +42,8 @@ export type ProjectViewState = {
   order: string;
   ownerFilter?: string;
   typeFilter?: string;
-  columns: { status: boolean; tasks: boolean; updated: boolean };
+  columns: ProjectListColumns;
+  groupByStatus?: boolean;
   scrollTop: number;
   workspaceScrollTop: number;
   returnTaskId: string;
@@ -88,12 +91,12 @@ export default function ProjectCatalog({
   const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
   );
+  const [listInspectorOpen, setListInspectorOpen] = useState(false);
   const [ownerFilter, setOwnerFilter] = useState(initialView?.ownerFilter ?? '');
   const [typeFilter, setTypeFilter] = useState(initialView?.typeFilter ?? '');
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
-  const [columns, setColumns] = useState(
-    initialView?.columns ?? { status: true, tasks: true, updated: true },
-  );
+  const [groupByStatus, setGroupByStatus] = useState(initialView?.groupByStatus ?? false);
+  const [columns, setColumns] = useState({ ...projectListDefaults, ...initialView?.columns });
   const workspace = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const returnProjectId = useRef<string | null>(null);
@@ -281,6 +284,7 @@ export default function ProjectCatalog({
     typeFilter,
     order,
     columns,
+    groupByStatus,
     scrollTop: scroll.current?.scrollTop ?? 0,
     workspaceScrollTop: workspace.current?.scrollTop ?? 0,
     returnTaskId: id,
@@ -357,7 +361,8 @@ export default function ProjectCatalog({
       inert={navigationPending}
       aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
-      data-layout="three-column"
+      data-project-view={editor ? section : 'list'}
+      data-layout={editor || listInspectorOpen ? 'three-column' : undefined}
       data-testid="project-catalog"
     >
       <div className="collection-main">
@@ -455,21 +460,37 @@ export default function ProjectCatalog({
                 <Icon name="list" size={15} /> 显示
               </summary>
               <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={groupByStatus}
+                    disabled={blocked}
+                    onChange={(event) => setGroupByStatus(event.target.checked)}
+                  />
+                  按状态分组
+                </label>
                 <p>显示属性 · 本次会话</p>
-                {Object.entries({ status: '状态', tasks: '任务', updated: '更新时间' }).map(
-                  ([id, label]) => (
-                    <label key={id}>
-                      <input
-                        type="checkbox"
-                        checked={columns[id as keyof typeof columns]}
-                        onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                      />
-                      {label}
-                    </label>
-                  ),
-                )}
+                {Object.entries(projectListProperties).map(([id, label]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={columns[id as keyof typeof columns]}
+                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </details>
+            <button
+              type="button"
+              aria-label="项目预览"
+              aria-expanded={listInspectorOpen}
+              disabled={blocked}
+              onClick={() => setListInspectorOpen((open) => !open)}
+            >
+              <Icon name="panel" size={16} />
+            </button>
           </div>
         )}
         {!editor && (
@@ -855,106 +876,27 @@ export default function ProjectCatalog({
             </>
           ) : (
             <>
-              <ReadTable
-                data={list}
-                getRowId={(project) => project.id}
-                className="catalog-table project-list-table"
-                label="项目列表"
-                rowProps={(project) => ({
-                  'data-project-id': project.id,
-                  'aria-selected': p?.id === project.id,
-                  onClick: () => {
-                    if (!blocked) setSelected(project.id);
-                  },
-                  onDoubleClick: () => void open(project),
-                })}
-                columns={[
-                  {
-                    id: 'title',
-                    header: '项目名称',
-                    cell: ({ row: { original: project } }) => (
-                      <button
-                        className="project-title-link"
-                        title={project.title}
-                        disabled={blocked}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelected(project.id);
-                          void open(project);
-                        }}
-                      >
-                        <Icon name="folder" size={14} /> <span>{project.title}</span>
-                      </button>
-                    ),
-                  },
-                  { id: 'client', header: '客户', cell: () => null },
-                  {
-                    id: 'domain',
-                    header: '领域',
-                    accessorFn: (project) => {
-                      const type =
-                        project.attributes?.professional_type ?? project.attributes?.project_type;
-                      return type ? projectTypes[type] : '—';
-                    },
-                  },
-                  { id: 'next-date', header: '下一关键日期', cell: () => null },
-                  { id: 'risk', header: '风险／异常', cell: () => null },
-                  {
-                    id: 'owner',
-                    header: '负责人',
-                    accessorFn: (project) => project.attributes?.assignee ?? '—',
-                  },
-                  {
-                    id: 'balance',
-                    header: '余额（元）',
-                    cell: ({ row: { original: project } }) =>
-                      onFinance ? (
-                        <button
-                          type="button"
-                          className="project-title-link"
-                          aria-label={`查看 ${project.title} 的待收款 ${formatCents(project.outstanding_cents)} 元`}
-                          disabled={blocked}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onFinance(project.id);
-                          }}
-                          onDoubleClick={(event) => event.stopPropagation()}
-                        >
-                          {formatCents(project.outstanding_cents)}
-                        </button>
-                      ) : (
-                        formatCents(project.outstanding_cents)
-                      ),
-                  },
-                  ...(columns.status
-                    ? ([
-                        {
-                          id: 'status',
-                          header: '状态',
-                          cell: ({ row: { original: project } }) => (
-                            <span className={`project-status-label is-${projectStatus(project)}`}>
-                              <i />
-                              {names[projectStatus(project)]}
-                            </span>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
-                  ...(columns.tasks ? [{ accessorKey: 'task_count', header: '任务' }] : []),
-                  ...(columns.updated
-                    ? ([
-                        {
-                          id: 'updated',
-                          header: '更新时间',
-                          cell: ({ row: { original: project } }) => (
-                            <time dateTime={project.updated_at}>
-                              {new Date(project.updated_at).toLocaleDateString()}
-                            </time>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
-                ]}
+              <ProjectList
+                projects={list}
+                groupByStatus={groupByStatus}
+                columns={columns}
+                selectedId={p?.id}
+                disabled={blocked}
+                order={order}
+                onOrder={setOrder}
+                onSelect={(project) => {
+                  setSelected(project.id);
+                  if (!listInspectorOpen) void open(project);
+                }}
+                onOpen={(project) => {
+                  setSelected(project.id);
+                  void open(project);
+                }}
+                onPreview={(project) => {
+                  setSelected(project.id);
+                  setListInspectorOpen(true);
+                }}
+                onFinance={onFinance}
               />
               {!list.length && (
                 <p className="catalog-empty">
@@ -968,9 +910,15 @@ export default function ProjectCatalog({
             </>
           )}
         </div>
-        <footer className="collection-footer">真实本地项目 · 仅此设备</footer>
+        <footer className="collection-footer">
+          {editor ? '真实本地项目 · 仅此设备' : `${list.length} 个项目 · Enter 打开 · 空格预览`}
+        </footer>
       </div>
-      <aside className="project-properties" aria-label="项目辅助栏">
+      <aside
+        className="project-properties"
+        aria-label="项目辅助栏"
+        hidden={!editor && !listInspectorOpen}
+      >
         {p && !sourceUnavailable ? (
           <>
             <ProjectPropertyEditor

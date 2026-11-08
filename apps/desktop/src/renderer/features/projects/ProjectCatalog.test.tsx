@@ -109,7 +109,7 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '  不存在  ' } });
     await screen.findByText('没有匹配的项目。');
     fireEvent.click(screen.getByText('清除筛选'));
-    expect(within(table).getAllByRole('button')).toHaveLength(2);
+    expect(table.querySelectorAll('tbody .project-title-link')).toHaveLength(2);
     const display = screen.getByText('显示').closest('summary')!;
     fireEvent.click(display);
     expect(display.parentElement!.hasAttribute('open')).toBe(true);
@@ -592,6 +592,9 @@ it('discards incomplete date validation together with its property draft', async
   } as unknown as Window['caselite'];
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   show();
+  const preview = await screen.findByRole('button', { name: '项目预览' });
+  await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(preview);
   await screen.findByLabelText('侧栏项目名称');
   const target = screen.getByLabelText('项目目标日') as HTMLInputElement;
   fireEvent.change(target, { target: { value: '2024-02-29' } });

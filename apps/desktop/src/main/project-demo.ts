@@ -1563,6 +1563,10 @@ export async function runProjectDemo(
         )
           throw new Error('Attribute save changed original body');
         await button('返回项目列表');
+        // 列表预览默认收起；通过真实键盘打开，不能把隐藏表单当作可见验收。
+        await evaluate("document.querySelector('[data-project-id]')?.focus()");
+        await propertyKey(' ', 'Space', 32);
+        await wait("document.querySelector('[aria-label=项目预览][aria-expanded=true]')");
         await wait("document.querySelector('[aria-label=侧栏项目名称]')");
         await assertPropertyRows('.project-properties');
         await input('项目标签', '列表侧栏,合成');
