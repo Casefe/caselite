@@ -18,6 +18,9 @@ import { openToolchainProbe, toolchainProbe } from '../../packages/local-db/src/
 const migrationsFolder = resolve(
   fileURLToPath(new URL('../../packages/local-db/migrations/', import.meta.url)),
 );
+const migrationCount = JSON.parse(
+  readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'),
+).entries.length;
 
 describe('SQLite/Drizzle infrastructure probe', () => {
   it('migrates once, commits, rolls back, and reads data after reopening in a Unicode path', () => {
@@ -48,7 +51,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
         expect(
           second.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get(),
         ).toEqual({
-          n: 17,
+          n: migrationCount,
         });
       } finally {
         second.sqlite.close();

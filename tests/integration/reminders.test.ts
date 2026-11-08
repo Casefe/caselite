@@ -224,6 +224,8 @@ it.each(['reminder_receipts', 'task_activity'])(
     store.close();
   },
 );
+const migrationCount = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'))
+  .entries.length;
 it('rolls claim back with event failure so no OS attempt is allowed; serial claimers share dedup', () => {
   const { file, store, app, cmd } = setup();
   ok(app.execute(cmd));
@@ -358,9 +360,10 @@ it('upgrades an exact eight-migration populated database preserving all existing
       tables.map((name) => {
         const rows = connection.prepare(`SELECT * FROM ${name}`).all();
         return name === 'task_items'
-          ? rows.map(({ tags, assignee, ...task }) => {
+          ? rows.map(({ tags, assignee, subscribed, ...task }) => {
               expect(tags ?? '[]').toBe('[]');
               expect(assignee === undefined ? '本人' : assignee).toBe('本人');
+              expect(subscribed ?? 0).toBe(0);
               return task;
             })
           : rows;
@@ -391,7 +394,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
   const upgraded = openToolchainProbe(file, migrations).sqlite;
   expect(snapshotOf(upgraded)).toBe(snapshot);
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 17,
+    n: migrationCount,
   });
   expect(upgraded.pragma('foreign_key_check')).toEqual([]);
   upgraded.close();
