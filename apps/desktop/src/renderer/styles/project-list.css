@@ -1,0 +1,121 @@
+/* Logixy 的列宽与选中态只应用于项目列表，不覆盖其他列表或全局表格。 */
+.project-catalog .project-portfolio-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.project-catalog .project-portfolio-table :is(th, td) {
+  padding: 0 12px;
+  height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.project-catalog .project-portfolio-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 34px;
+  background: var(--theme-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.project-catalog .project-portfolio-table :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  background: var(--theme-panel);
+  z-index: 1;
+  padding-inline-start: 20px;
+}
+.project-catalog .project-portfolio-table th:first-child {
+  z-index: 3;
+  background: var(--theme-subtle);
+}
+.project-portfolio-table tbody tr {
+  cursor: pointer;
+}
+.project-catalog .project-portfolio-table tr:is(:hover, [aria-selected='true']) > td {
+  background: var(--theme-hover);
+}
+.project-portfolio-table tbody tr:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.project-catalog .project-column-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.project-column-sort span {
+  color: var(--muted);
+}
+.project-portfolio-table .project-title-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+.project-portfolio-table .project-title-link > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-list-symbol {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+.project-list-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.project-list-owner > span {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--active);
+  color: var(--ink);
+  font-size: 10px;
+}
+.project-list-unset,
+.project-portfolio-table time {
+  color: var(--muted);
+}
+.project-portfolio-table .project-list-money {
+  font-variant-numeric: tabular-nums;
+}
+.project-catalog[data-project-view='list'] .project-list-stages {
+  margin: 0;
+  padding-inline: 20px;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.project-catalog[data-project-view='list'] .project-list-controls {
+  padding: 8px 20px;
+}
+.project-catalog[data-project-view='list'] .project-display-menu > div {
+  max-height: 70vh;
+  overflow: auto;
+}
+.project-catalog[data-project-view='list'] .collection-footer {
+  font-size: 12px;
+}

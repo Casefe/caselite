@@ -1,11 +1,13 @@
-import type { ColumnDef } from '@tanstack/react-table';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
-import ReadTable from '../../shared/ui/ReadTable';
+import ProjectList, {
+  projectListDefaults,
+  projectListProperties,
+  type ProjectListColumns,
+} from './ProjectList';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
 import { PriorityGlyph, StatusGlyph } from '../../ui/TaskListGlyph';
 import { taskStatusNames } from '../../ui/task-status';
-import { formatCents } from '../finance/money';
 import { createPortal } from 'react-dom';
 import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
@@ -44,7 +46,7 @@ export type ProjectViewState = {
   order: string;
   ownerFilter?: string;
   typeFilter?: string;
-  columns: { status: boolean; tasks: boolean; updated: boolean };
+  columns: ProjectListColumns;
   scrollTop: number;
   workspaceScrollTop: number;
   returnTaskId: string;
@@ -98,9 +100,7 @@ export default function ProjectCatalog({
   const [ownerFilter, setOwnerFilter] = useState(initialView?.ownerFilter ?? '');
   const [typeFilter, setTypeFilter] = useState(initialView?.typeFilter ?? '');
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
-  const [columns, setColumns] = useState(
-    initialView?.columns ?? { status: true, tasks: true, updated: true },
-  );
+  const [columns, setColumns] = useState({ ...projectListDefaults, ...initialView?.columns });
   const workspace = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const returnProjectId = useRef<string | null>(null);
@@ -460,18 +460,16 @@ export default function ProjectCatalog({
               </summary>
               <div>
                 <p>显示属性 · 本次会话</p>
-                {Object.entries({ status: '状态', tasks: '任务', updated: '更新时间' }).map(
-                  ([id, label]) => (
-                    <label key={id}>
-                      <input
-                        type="checkbox"
-                        checked={columns[id as keyof typeof columns]}
-                        onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                      />
-                      {label}
-                    </label>
-                  ),
-                )}
+                {Object.entries(projectListProperties).map(([id, label]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={columns[id as keyof typeof columns]}
+                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </details>
             <button
@@ -1030,123 +1028,26 @@ export default function ProjectCatalog({
             </>
           ) : (
             <>
-              <ReadTable
-                data={list}
-                getRowId={(project) => project.id}
-                className="catalog-table project-list-table"
-                label="项目列表"
-                rowProps={(project) => ({
-                  'data-project-id': project.id,
-                  'aria-selected': p?.id === project.id,
-                  onClick: () => {
-                    if (blocked) return;
-                    setSelected(project.id);
-                    void open(project);
-                  },
-                })}
-                columns={[
-                  {
-                    id: 'title',
-                    header: '项目名称',
-                    cell: ({ row: { original: project } }) => (
-                      <button
-                        className="project-title-link"
-                        title={project.title}
-                        disabled={blocked}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelected(project.id);
-                          void open(project);
-                        }}
-                      >
-                        <Icon name="folder" size={14} /> <span>{project.title}</span>
-                      </button>
-                    ),
-                  },
-                  {
-                    id: 'health',
-                    header: '健康度',
-                    cell: ({ row: { original } }) => (
-                      <span className="project-health" data-health={original.health ?? undefined}>
-                        {original.health ? projectHealthNames[original.health] : '暂无更新'}
-                      </span>
-                    ),
-                  },
-                  {
-                    id: 'priority',
-                    header: '优先级',
-                    cell: ({ row }) => (
-                      <PriorityGlyph priority={row.original.attributes?.priority ?? 0} />
-                    ),
-                  },
-                  {
-                    id: 'owner',
-                    header: '负责人',
-                    accessorFn: (project) => project.attributes?.assignee ?? '—',
-                  },
-                  ...(columns.updated
-                    ? ([
-                        {
-                          id: 'updated',
-                          header: '更新时间',
-                          cell: ({ row: { original: project } }) => (
-                            <time dateTime={project.updated_at}>
-                              {new Date(project.updated_at).toLocaleDateString()}
-                            </time>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
-                  ...(columns.tasks ? [{ accessorKey: 'task_count', header: '任务' }] : []),
-                  ...(columns.status
-                    ? ([
-                        {
-                          id: 'status',
-                          header: '状态',
-                          cell: ({ row: { original: project } }) => (
-                            <span className={`project-status-label is-${projectStatus(project)}`}>
-                              <i />
-                              {names[projectStatus(project)]}
-                            </span>
-                          ),
-                        },
-                      ] satisfies ColumnDef<Matter>[])
-                    : []),
-                  { id: 'client', header: '客户', cell: () => null },
-                  {
-                    id: 'domain',
-                    header: '领域',
-                    accessorFn: (project) => {
-                      const type =
-                        project.attributes?.professional_type ?? project.attributes?.project_type;
-                      return type ? projectTypes[type] : '—';
-                    },
-                  },
-                  { id: 'next-date', header: '下一关键日期', cell: () => null },
-                  { id: 'risk', header: '风险／异常', cell: () => null },
-                  {
-                    id: 'balance',
-                    header: '余额（元）',
-                    cell: ({ row: { original: project } }) =>
-                      onFinance ? (
-                        <button
-                          type="button"
-                          className="project-title-link"
-                          aria-label={`查看 ${project.title} 的待收款 ${formatCents(project.outstanding_cents)} 元`}
-                          disabled={blocked}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onFinance(project.id);
-                          }}
-                          onDoubleClick={(event) => event.stopPropagation()}
-                        >
-                          {formatCents(project.outstanding_cents)}
-                        </button>
-                      ) : (
-                        formatCents(project.outstanding_cents)
-                      ),
-                  },
-                ]}
+              <ProjectList
+                projects={list}
+                columns={columns}
+                selectedId={p?.id}
+                disabled={blocked}
+                order={order}
+                onOrder={setOrder}
+                onSelect={(project) => {
+                  setSelected(project.id);
+                  if (!listInspectorOpen) void open(project);
+                }}
+                onOpen={(project) => {
+                  setSelected(project.id);
+                  void open(project);
+                }}
+                onPreview={(project) => {
+                  setSelected(project.id);
+                  setListInspectorOpen(true);
+                }}
+                onFinance={onFinance}
               />
               {!list.length && (
                 <p className="catalog-empty">
@@ -1160,7 +1061,9 @@ export default function ProjectCatalog({
             </>
           )}
         </div>
-        <footer className="collection-footer">真实本地项目 · 仅此设备</footer>
+        <footer className="collection-footer">
+          {editor ? '真实本地项目 · 仅此设备' : `${list.length} 个项目 · Enter 打开 · 空格预览`}
+        </footer>
       </div>
       <aside
         className="project-properties"

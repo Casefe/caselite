@@ -1,3 +1,7 @@
+@import './styles/property-select.css';
+@import './styles/project-list.css';
+@import './styles/project-properties.css';
+
 .project-create-dialog {
   width: min(620px, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);
@@ -175,12 +179,10 @@
 .project-task-table {
   min-width: 500px;
 }
-.project-task-table tbody tr,
-.project-list-table tbody tr {
+.project-task-table tbody tr {
   cursor: pointer;
 }
-.project-task-table tbody tr:hover,
-.project-list-table tbody tr:hover {
+.project-task-table tbody tr:hover {
   background: var(--theme-panel);
 }
 .project-record-panel:not([hidden]) {
@@ -306,30 +308,6 @@
   gap: 9px;
   padding: 7px;
 }
-.project-list-table td {
-  height: 48px;
-}
-.project-list-table {
-  min-width: 720px;
-}
-.project-list-table th:first-child {
-  min-width: 170px;
-}
-.project-list-table th {
-  white-space: nowrap;
-}
-.project-list-table .project-title-link {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 8px;
-}
-.project-list-table .project-title-link span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.project-list-table time,
 .project-list-count {
   color: var(--muted);
   font-size: 12px;
@@ -970,40 +948,16 @@
   padding: 8px var(--workbench-toolbar-inset);
   background: var(--theme-panel);
 }
-.project-catalog .project-list-table {
-  min-width: 835px;
-}
-.project-catalog .project-list-table :is(th, td) {
-  padding-inline: 10px;
-}
-.project-catalog .project-list-table th:first-child {
-  width: 42%;
-  min-width: 220px;
-}
-.project-catalog .project-list-table :is(th, td):first-child {
-  padding-inline-start: clamp(16px, 3.3vw, 48px);
-}
-.project-catalog .project-list-table td {
-  height: var(--workbench-row-height);
-}
-.project-catalog :is(.project-list-table, .project-task-table) th {
+.project-catalog .project-task-table th {
   background: transparent;
   color: var(--muted);
   font-weight: 500;
 }
-.project-catalog :is(.project-list-table, .project-task-table) td {
+.project-catalog .project-task-table td {
   border-bottom-color: transparent;
 }
-.project-catalog :is(.project-list-table, .project-task-table) tbody tr:hover {
+.project-catalog .project-task-table tbody tr:hover {
   background: var(--theme-hover);
-}
-.project-catalog .project-list-table .project-title-link svg {
-  flex: none;
-  color: var(--theme-accent);
-}
-.project-catalog .project-list-table .project-title-link span {
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 .project-catalog #project-panel-overview {
@@ -1172,9 +1126,7 @@
   padding: 12px;
   background: var(--theme-panel);
 }
-.project-catalog:not([data-project-view='list'])
-  > .project-properties
-  > :is(form, .project-planning) {
+.project-catalog:not([data-project-view='list']) > .project-properties > .project-planning {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1182,4 +1134,11 @@
 }
 .project-catalog #project-panel-overview > :is(.catalog-actions, .project-discussion) {
   padding-inline: var(--project-detail-gutter);
+}
+
+.project-catalog > .project-properties > form {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
