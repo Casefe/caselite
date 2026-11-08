@@ -128,6 +128,49 @@ describe('durable project UI receipts and target identity', () => {
       requests.every((r) => ['list', 'read_project', 'list_activity'].includes(r.operation)),
     ).toBe(true);
   });
+  it('keeps a pending milestone assignment isolated from new milestone and page actions', async () => {
+    const p = { ...project(), task_count: 1 };
+    const task = {
+      id: crypto.randomUUID(),
+      title: '合成关联任务',
+      matter_id: p.id,
+      version: 1,
+    } as Task;
+    const milestone = {
+      id: crypto.randomUUID(),
+      title: '合成阶段',
+      target_date: null,
+      version: 1,
+      archived_at: null,
+      total: 0,
+      done: 0,
+    };
+    const catalog = vi.fn(async (request: CatalogRequest) =>
+      request.operation === 'read_project_plan'
+        ? { ...response([], null), project_plan: { milestones: [milestone], assignments: [] } }
+        : response([p], p.id),
+    );
+    window.caselite = { catalog } as unknown as Window['caselite'];
+    show([task]);
+    fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+    fireEvent.change(await screen.findByLabelText('关联里程碑的任务'), {
+      target: { value: task.id },
+    });
+    fireEvent.change(screen.getByLabelText('关联目标里程碑'), { target: { value: milestone.id } });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '新建里程碑' }).disabled).toBe(
+      true,
+    );
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: '活动' }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '取消里程碑关联修改' }));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '新建里程碑' }).disabled).toBe(
+      false,
+    );
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: '活动' }).disabled).toBe(false);
+    expect(catalog.mock.calls.some(([request]) => request.operation === 'assign_milestone')).toBe(
+      false,
+    );
+  });
+
   it('keeps one project across tabs, exposes unavailable sections and protects an unsaved overview', async () => {
     const p = project();
     const original = { id: crypto.randomUUID(), title: '项目原任务', matter_id: p.id } as Task;

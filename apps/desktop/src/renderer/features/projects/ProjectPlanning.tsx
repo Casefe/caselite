@@ -157,7 +157,7 @@ export default function ProjectPlanning({
           </p>
         )}
         {!project.archived_at && !draft && (
-          <button type="button" disabled={unavailable} onClick={() => edit()}>
+          <button type="button" disabled={unavailable || assignmentDirty} onClick={() => edit()}>
             新建里程碑
           </button>
         )}
