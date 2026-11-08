@@ -881,15 +881,11 @@ function Workbench() {
                 <div className="task-reminder-entry">
                   <button
                     type="button"
-                    disabled={busy || (uncertain && !subscriptionRequest.current)}
+                    disabled={busy}
                     aria-pressed={Boolean(active.subscribed)}
                     onClick={() => void setSubscription(uncertain)}
                   >
-                    {uncertain && subscriptionRequest.current
-                      ? '核对订阅提交'
-                      : active.subscribed
-                        ? '取消订阅'
-                        : '订阅任务'}
+                    {uncertain ? '核对订阅提交' : active.subscribed ? '取消订阅' : '订阅任务'}
                   </button>
                   <button
                     type="button"
