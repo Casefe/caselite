@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import FinanceView from './FinanceView';
 import { formatCents, parseCents } from './money';
@@ -42,11 +42,14 @@ const read = (saved: boolean, receipt: string | null = null): FinanceResponse =>
     : null,
   ledger: saved ? ledger : null,
 });
-function show(handler: (request: FinanceRequest) => Promise<FinanceResponse>) {
+function show(
+  handler: (request: FinanceRequest) => Promise<FinanceResponse>,
+  projects: Matter[] = [project],
+) {
   const finance = vi.fn(handler);
   window.caselite = {
     finance,
-    catalog: vi.fn(async () => ({ ok: true, projects: [project], documents: [] })),
+    catalog: vi.fn(async () => ({ ok: true, projects, documents: [] })),
   } as unknown as Window['caselite'];
   const onDirty = vi.fn();
   render(
@@ -168,4 +171,27 @@ it('holds a draft on rejection until explicitly discarded and refuses an outdate
   await screen.findByRole('button', { name: '核对原提交' });
   expect(screen.queryByText('已保存并读回账本。')).toBeNull();
   expect(onDirty).toHaveBeenLastCalledWith(true);
+});
+
+it('filters known balances without changing the open ledger or treating missing amounts as zero', async () => {
+  const projects: Matter[] = [
+    { ...project, outstanding_cents: 101 },
+    { ...project, id: crypto.randomUUID(), title: '合成结清项目', outstanding_cents: 0 },
+    { ...project, id: crypto.randomUUID(), title: '合成未建账项目' },
+  ];
+  const { finance } = show(async () => read(true), projects);
+  const list = await screen.findByRole('table', { name: '财务项目列表' });
+  const totals = screen.getByLabelText('筛选结果总览');
+  expect(within(totals).getByText('1.01')).toBeDefined();
+  fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'unregistered' } });
+  expect(within(list).getByRole('button', { name: '合成未建账项目' })).toBeDefined();
+  expect(within(totals).getByText('—')).toBeDefined();
+  fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'registered' } });
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
+    target: { value: '结清' },
+  });
+  expect(within(list).getByRole('button', { name: '合成结清项目' })).toBeDefined();
+  expect(within(totals).getByText('0')).toBeDefined();
+  expect(screen.getByRole('heading', { name: project.title })).toBeDefined();
+  expect(finance).toHaveBeenCalledTimes(1);
 });
