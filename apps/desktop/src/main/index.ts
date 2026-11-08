@@ -39,6 +39,8 @@ import { createCatalogApplication, createFinanceApplication } from '@caselite/ap
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { createLocalPreferencesApplication } from '@caselite/application';
+import { registerLocalPreferencesIpc } from './ipc/register-local-preferences-ipc';
 import { createAgentApplication } from '@caselite/application';
 import { createPiRuntime } from './adapters/pi-runtime';
 import {
@@ -440,7 +442,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 19
+      result.value?.migration_count !== 20
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -716,6 +718,7 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
+    registerLocalPreferencesIpc(createLocalPreferencesApplication(taskStore.localPreferences));
     const taskQueryProbe =
       taskDemoRoot &&
       taskDemoPhase === 'task-status-write' &&

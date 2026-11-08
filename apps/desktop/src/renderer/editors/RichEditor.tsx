@@ -15,6 +15,7 @@ import {
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
+import { DocumentWordCount } from './DocumentWordCount';
 
 const blocks = [
   { id: 'paragraph', label: '正文', hint: '普通文本', symbol: 'T' },
@@ -495,6 +496,7 @@ export function EditorSurface({
         </div>
       )}
       <EditorContent className="rich-editor-content" editor={editor} />
+      {documentMode && <DocumentWordCount editor={editor} />}
       {compact && editable && (
         <>
           <button

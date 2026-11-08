@@ -1,6 +1,7 @@
 import { Icon } from '../shared/ui/Icon';
 import { ThemeSetting } from './Appearance';
 import ModelSettings from './ModelSettings';
+import PersonalSettings from './PersonalSettings';
 import { settingsGroups, information, type SettingsSection } from './settings-sections';
 export { settingsGroups, type SettingsSection } from './settings-sections';
 
@@ -59,13 +60,8 @@ export default function SettingsView({
           <h2>{label}</h2>
           {section === 'models' && <ModelSettings />}
           {section === 'general' && <ThemeSetting />}
-          {section === 'account' && (
-            <img
-              className="settings-profile-avatar"
-              src={new URL('./profile-avatar.svg', import.meta.url).href}
-              alt="个人头像"
-            />
-          )}
+          {section === 'account' && <PersonalSettings />}
+          {section === 'general' && <PersonalSettings preferencesOnly />}
           {information[section]?.map(([title, description, value]) => (
             <SettingRow key={title} title={title} description={description} value={value} />
           ))}

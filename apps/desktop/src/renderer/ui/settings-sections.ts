@@ -37,14 +37,8 @@ export const settingsGroups = [
 export type SettingsSection = (typeof settingsGroups)[number]['items'][number][0];
 type Row = readonly [title: string, description: string, value: string];
 export const information: Partial<Record<SettingsSection, readonly Row[]>> = {
-  account: [
-    ['图标', '当前使用本地示例头像，头像上传待接入。', '本地头像'],
-    ['名称', '当前本地显示名称；个人资料编辑与保存待接入。', '谭律师'],
-    ['电子邮箱', '尚未连接云端账户，不需要邮箱即可使用本地功能。', '未填写'],
-  ],
   general: [
     ['文档显示评论', '文档评论的全局显示偏好待接入；已有评论保留。', '待接入'],
-    ['显示字数', '编辑器全局字数显示偏好待接入。', '待接入'],
     ['启动时自动打开', '开机启动尚未接入，不修改系统登录项。', '待接入'],
     ['数据库位置', '沿用启动时选定的本地工作区；位置查看与迁移入口待接入。', '当前工作区'],
     ['输出文件夹位置', '导出产物保存在受管目录，可通过另存副本选择输出位置。', '逐次选择'],

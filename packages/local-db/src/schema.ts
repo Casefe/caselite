@@ -18,6 +18,29 @@ export const toolchainProbe = sqliteTable('toolchain_probe', {
   value: text('value').notNull(),
 });
 
+export const localPreferences = sqliteTable(
+  'local_preferences',
+  {
+    workspaceId: text('workspace_id').primaryKey(),
+    value: text('value').notNull(),
+    version: integer('version').notNull(),
+  },
+  (table) => [
+    check('local_preferences_version', sql`${table.version} > 0`),
+    check('local_preferences_json', sql`json_valid(${table.value})`),
+  ],
+);
+export const localPreferenceReceipts = sqliteTable(
+  'local_preference_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
+);
+
 export const taskItems = sqliteTable(
   'task_items',
   {

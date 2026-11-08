@@ -16,6 +16,7 @@ import {
 } from '@caselite/contracts';
 import { openToolchainProbe } from './connection';
 import { createContactsStore } from './contacts-store';
+import { createLocalPreferencesStore } from './local-preferences-store';
 import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
@@ -61,6 +62,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    localPreferences: createLocalPreferencesStore(db, workspace),
     deliveryExports: createDeliveryExportStore(db, workspace),
     reviewDocumentExists: review.reviewDocumentExists,
     reviewSaved(range: ReviewRange, receipt: string) {

@@ -117,6 +117,7 @@ describe('typed preload to main IPC Spike', () => {
       'material',
       'offlineProbe',
       'pickPdf',
+      'preferences',
       'reminder',
       'task',
     ]);

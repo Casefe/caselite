@@ -48,3 +48,4 @@
 - [ADR-024](./ADR-024-local-snapshot-word-export.md) 固定快照Word、受管产物与独立工作副本，DEV-1816。
 
 - [ADR-025](./ADR-025-fixed-snapshot-pdf-export.md) 同快照PDF、隔离打印、格式兼容与副本另存，DEV-1629。
+- [ADR-026](./ADR-026-workspace-local-preferences.md) 工作区本地个人资料、显示偏好与原键回执，DEV-1821。

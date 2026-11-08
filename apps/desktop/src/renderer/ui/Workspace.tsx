@@ -4,6 +4,7 @@ import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
+import { useLocalPreferences } from '../shared/data/LocalPreferences';
 
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
@@ -56,6 +57,7 @@ export function WorkspaceShell({
   onOpen(id: string): void;
   children: ReactNode;
 }) {
+  const { preferences } = useLocalPreferences();
   return (
     <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
       <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
@@ -144,15 +146,21 @@ export function WorkspaceShell({
           <button
             className="profile-settings"
             data-nav="settings"
-            aria-label="谭律师 · 设置"
-            title="谭律师 · 设置"
+            aria-label={`${preferences.name} · 设置`}
+            title={`${preferences.name} · 设置`}
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => onNavigate('settings')}
           >
-            <img className="profile-avatar" src={profileAvatar} alt="" />
+            {preferences.avatar === 'portrait' ? (
+              <img className="profile-avatar" src={profileAvatar} alt="" />
+            ) : (
+              <span className="profile-avatar profile-initial" aria-hidden="true">
+                {Array.from(preferences.name)[0]}
+              </span>
+            )}
             {!collapsed && (
               <span className="profile-name">
-                <strong>谭律师</strong> <small className="profile-pro">Pro</small>
+                <strong>{preferences.name}</strong> <small className="profile-pro">Pro</small>
               </span>
             )}
           </button>

@@ -58,6 +58,47 @@
   border-radius: 50%;
   margin-top: 14px;
 }
+
+.personal-settings {
+  display: grid;
+  gap: 14px;
+  max-width: 640px;
+  padding: 16px 0;
+}
+.personal-settings > label:not(.setting-row) {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.personal-settings input:not([type='checkbox']),
+.personal-settings select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+}
+.personal-settings small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.personal-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.profile-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-hover);
+}
+.document-word-count {
+  padding: 8px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
 .settings-navigation nav button[aria-current='page'] {
   background: #eaeef4;
   color: #283f56;

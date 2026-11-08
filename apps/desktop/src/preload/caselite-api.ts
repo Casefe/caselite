@@ -1,4 +1,10 @@
 import {
+  LOCAL_PREFERENCES_CHANNEL,
+  localPreferencesResponseSchema,
+  type LocalPreferencesRequest,
+  type LocalPreferencesResponse,
+} from '@caselite/contracts';
+import {
   CONTACTS_CHANNEL,
   contactsResponseSchema,
   type ContactsRequest,
@@ -101,7 +107,8 @@ async function invokeBusinessCommand(
     | MaterialRequest
     | ReminderRequest
     | FinanceRequest
-    | ContactsRequest,
+    | ContactsRequest
+    | LocalPreferencesRequest,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -119,6 +126,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
@@ -152,6 +160,18 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    async preferences(request) {
+      const result = localPreferencesResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, LOCAL_PREFERENCES_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认本地设置结果，请保留输入并核对原提交。',
+          };
+    },
     async reminder(request) {
       const result = reminderResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, REMINDER_CHANNEL, request),
@@ -300,3 +320,9 @@ export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 export type { Contact, ContactsRequest } from '@caselite/contracts';
 export type { DeliverySnapshot } from '@caselite/contracts';
 export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';
+export type {
+  LocalPreferences,
+  LocalPreferenceValues,
+  LocalPreferencesRequest,
+  LocalPreferencesResponse,
+} from '@caselite/contracts';
