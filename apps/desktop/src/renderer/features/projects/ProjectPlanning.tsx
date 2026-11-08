@@ -68,6 +68,7 @@ export default function ProjectPlanning({
   const savedAssignment =
     plan?.assignments.find((item) => item.task_id === target)?.milestone_id ?? '';
   const nextAssignment = assignment ?? savedAssignment;
+  const assignmentDirty = nextAssignment !== savedAssignment;
   const edit = (milestone?: Milestone) => {
     setDraft({ milestone, title: milestone?.title ?? '', date: milestone?.target_date ?? '' });
     onDirty(true);
@@ -232,7 +233,7 @@ export default function ProjectPlanning({
               <div>
                 <button
                   type="button"
-                  disabled={unavailable}
+                  disabled={unavailable || assignmentDirty}
                   onClick={() => edit(milestone)}
                   aria-label={`编辑里程碑 ${milestone.title}`}
                 >
@@ -240,7 +241,7 @@ export default function ProjectPlanning({
                 </button>
                 <button
                   type="button"
-                  disabled={unavailable}
+                  disabled={unavailable || assignmentDirty}
                   onClick={() =>
                     void updateMilestone(
                       milestone,
@@ -282,7 +283,7 @@ export default function ProjectPlanning({
                 <select
                   aria-label="关联里程碑的任务"
                   value={target}
-                  disabled={unavailable}
+                  disabled={unavailable || assignmentDirty}
                   onChange={(event) => {
                     setTarget(event.target.value);
                     setAssignment(null);
@@ -302,7 +303,11 @@ export default function ProjectPlanning({
                   aria-label="关联目标里程碑"
                   value={nextAssignment}
                   disabled={unavailable || !selectTask}
-                  onChange={(event) => setAssignment(event.target.value)}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setAssignment(next === savedAssignment ? null : next);
+                    onDirty(next !== savedAssignment);
+                  }}
                 >
                   <option value="">无里程碑</option>
                   {plan?.milestones
@@ -321,6 +326,18 @@ export default function ProjectPlanning({
               >
                 保存里程碑关联
               </button>
+              {assignmentDirty && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setAssignment(null);
+                    onDirty(false);
+                  }}
+                >
+                  取消里程碑关联修改
+                </button>
+              )}
             </form>
           )}
       </details>
