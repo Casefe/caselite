@@ -1,18 +1,26 @@
 import { BrowserWindow, session } from 'electron';
 import { randomUUID } from 'node:crypto';
-import type { DeliverySnapshot } from '@caselite/contracts';
+import type { DeliverySnapshot, DeliveryExport } from '@caselite/contracts';
 import { renderSnapshotPdfHtml } from './snapshot-pdf-html';
 
 export async function generateSnapshotPdf(
   snapshot: DeliverySnapshot,
   state: number[],
   signal?: AbortSignal,
+  converter: DeliveryExport['converter'] = 'electron-45.1.0-pdf-v2',
 ): Promise<Uint8Array> {
   signal?.throwIfAborted();
   const nonce = randomUUID().replaceAll('-', '');
   let html: string;
   try {
-    html = renderSnapshotPdfHtml(snapshot, new Uint8Array(state), nonce);
+    if (!['electron-45.1.0-pdf-v1', 'electron-45.1.0-pdf-v2'].includes(converter))
+      throw new Error('Unsupported converter');
+    html = renderSnapshotPdfHtml(
+      snapshot,
+      new Uint8Array(state),
+      nonce,
+      converter === 'electron-45.1.0-pdf-v1',
+    );
   } catch {
     throw new Error('UNSUPPORTED_PDF_CONTENT');
   }

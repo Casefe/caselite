@@ -18,3 +18,9 @@ PDF只从read_snapshot已校验的固定Yjs状态构建受控静态HTML；沿现
 验证双格式同snapshot、旧版/新版隔离、旧Word兼容、重复与并发、跨scope/非法格式、取消/字体/打印/文件和事务故障、重启/最终落位恢复，实际PDF文字回读、表格/长表分页及macOS阅读器打开。安全基线/精确diff和独立审查保持。回退可关闭PDF入口，但保留PDF格式读取、原文件/回执，禁止就地删行或降级丢产物；Word原有读取和hash不变。
 
 原生首测发现以家族名Songti SC写local()不能保证命中实际字体；按系统字体name表核对，改为Regular/Bold的完整字体名与PostScript名，并分别等待字体加载。CSP与禁网保持，不用放开外部字体规避失败。来源：https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@font-face/src 。
+
+## PDF回读兼容修复｜2026-11-08
+
+原生v1显示/PDFKit原码点正确，但Songti多个汉字与康熙部首共享glyph；Skia以ActualText保留原字，PDF.js6.3.289却未采用，不能用NFKC修复原文。系统自带Arial Unicode MS隔离打印后，PDF.js不归一化回读普通汉字、粗体与刻意部首均正确；本机证据在仓库外font-probe-result.json。新打印用该系统字体与合成粗体，不复制字体、不下载字体，不承诺复杂Word版式。固定字体缺失仍拒绝生成，CSP/禁网/沙箱不变。
+
+新输出标记electron-45.1.0-pdf-v2；保留v1合同及按ID读取。新提交在同快照下建立v2产物，旧键/未完成意图仍绑定原v1及旧字体映射，旧ACK、hash和文件不可覆盖。存储已有(snapshot,format,converter)唯一约束，无数据库迁移。read默认优先ready，同状态再优先当前转换器；新版失败pending时仍读回旧ready；open/save按旧产物ID仍可达。回退需保留v1/v2读取协议及全部文件/意图/回执，只关闭新生成。该修复不接入尚未准入的来源节点，也不宣称所有外部PDF的ActualText已获支持。

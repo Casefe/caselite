@@ -281,6 +281,9 @@ export function useSnapshotExport(
               <br />
               输出摘要：{record.sha256} · {record.bytes} 字节
             </p>
+            {record.converter === 'electron-45.1.0-pdf-v1' && (
+              <p>这是早期 PDF；重新导出可改善文字复制兼容性，旧文件保留。</p>
+            )}
           </>
         )}
         {record?.status === 'pending' && (

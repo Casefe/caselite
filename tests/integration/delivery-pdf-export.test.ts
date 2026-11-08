@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import * as Y from 'yjs';
+import Database from 'better-sqlite3';
 import { openTaskStore } from '../../packages/local-db/src';
 import {
   createTaskApplication,
@@ -23,6 +24,83 @@ import type {
   DeliverySnapshot,
 } from '../../packages/contracts/src';
 import { createDeliveryExportFiles } from '../../apps/desktop/src/main/adapters/delivery-export-files';
+import { taskRequestSchema } from '../../packages/contracts/src';
+
+it('keeps legacy PDF intents, files and receipts readable when a new converter is introduced', async () => {
+  const s = setup();
+  const { t, snapshot } = seed(s);
+  const request = taskRequestSchema.parse({
+    ...identity(),
+    operation: 'export_snapshot' as const,
+    format: 'pdf' as const,
+    task_id: t.id,
+    document_id: t.document_id,
+    snapshot_id: snapshot.id,
+  }) as Extract<TaskRequest, { operation: 'export_snapshot' }>;
+  const pending = s.store.deliveryExports.reserve(request);
+  // 模拟升级前已预留但尚未ACK的v1身份，不能把同一键重新绑定为v2。
+  const db = new Database(join(s.root, 'db.sqlite'));
+  try {
+    db.prepare('UPDATE delivery_exports SET converter=? WHERE id=?').run(
+      'electron-45.1.0-pdf-v1',
+      pending.id,
+    );
+  } finally {
+    db.close();
+  }
+  expect(s.store.deliveryExports.reserve(request).converter).toBe('electron-45.1.0-pdf-v1');
+  const old = good(await s.app.execute(request)).exports![0];
+  expect(old.converter).toBe('electron-45.1.0-pdf-v1');
+  expect(s.render.mock.calls[0]?.[4]).toBe('electron-45.1.0-pdf-v1');
+  const upgradeRequest = { ...request, ...identity() };
+  s.render.mockRejectedValueOnce(new Error('Synthetic print failure'));
+  expect((await s.app.execute(upgradeRequest)).ok).toBe(false);
+  expect(
+    good(
+      await s.app.execute({
+        protocol_version: 1,
+        operation: 'read_export',
+        task_id: t.id,
+        document_id: t.document_id,
+        snapshot_id: snapshot.id,
+        format: 'pdf',
+      }),
+    ).exports![0].id,
+  ).toBe(old.id);
+  const upgraded = good(await s.app.execute(upgradeRequest)).exports![0];
+  expect(upgraded.converter).toBe('electron-45.1.0-pdf-v2');
+  expect(upgraded.id).not.toBe(old.id);
+  expect(s.render).toHaveBeenCalledTimes(3);
+  expect(good(await s.app.execute({ ...request, ...identity() })).exports![0].id).toBe(upgraded.id);
+  expect(good(await s.app.execute(request)).exports![0]).toEqual(old);
+  expect(s.render).toHaveBeenCalledTimes(3);
+  expect(await s.files.verify(old)).toBe(true);
+  expect(
+    good(
+      await s.app.execute({
+        protocol_version: 1,
+        operation: 'open_export',
+        task_id: t.id,
+        document_id: t.document_id,
+        snapshot_id: snapshot.id,
+        format: 'pdf',
+        export_id: old.id,
+      }),
+    ).export_opened,
+  ).toBe(true);
+  expect(
+    good(
+      await s.app.execute({
+        protocol_version: 1,
+        operation: 'read_export',
+        task_id: t.id,
+        document_id: t.document_id,
+        snapshot_id: snapshot.id,
+        format: 'pdf',
+      }),
+    ).exports![0].id,
+  ).toBe(upgraded.id);
+});
 
 const closes: Array<() => void> = [],
   roots: string[] = [];
@@ -66,8 +144,15 @@ function setup() {
     files = createDeliveryExportFiles(join(root, 'exports'), opened);
   // 此测试只验证真实SQLite/文件提交；字节生成是模拟端口，不能作为PDF阅读器或Electron打印通过证据。
   const render = vi.fn(
-    async (_snapshot: DeliverySnapshot, state: number[], format: string, signal?: AbortSignal) => {
+    async (
+      _snapshot: DeliverySnapshot,
+      state: number[],
+      format: string,
+      signal?: AbortSignal,
+      converter?: string,
+    ) => {
       void signal;
+      void converter;
       return new Uint8Array(Buffer.from(format + ':' + digest(new Uint8Array(state))));
     },
   );

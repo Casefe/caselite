@@ -95,3 +95,19 @@ it('rejects unapproved sources, nodes, sized cells and malformed lists instead o
     ]),
   ).toThrow();
 });
+
+it('keeps intentional radicals distinct and selects the legacy font only for old converter intents', () => {
+  const doc = new Y.Doc();
+  doc.getXmlFragment('default').insert(0, [paragraph('十日和⼗⽇必须分别保留')]);
+  try {
+    const state = Y.encodeStateAsUpdate(doc);
+    const current = renderSnapshotPdfHtml(snapshot, state, 'a'.repeat(32));
+    expect(current).toContain('十日和⼗⽇必须分别保留');
+    expect(current).toContain('Arial Unicode MS');
+    const legacy = renderSnapshotPdfHtml(snapshot, state, 'a'.repeat(32), true);
+    expect(legacy).toContain('STSongti-SC-Regular');
+    expect(legacy).not.toContain('Arial Unicode MS');
+  } finally {
+    doc.destroy();
+  }
+});

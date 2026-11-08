@@ -20,12 +20,13 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
   const read = (
     snapshot: string,
     format: DeliveryExportFormat = 'docx',
+    exportId?: string,
   ): DeliveryExport | undefined => {
     const row = db
       .prepare(
-        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND converter=? AND format=?`,
+        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? ${exportId ? 'AND id=?' : "ORDER BY (status='ready') DESC,(converter=?) DESC,created_at DESC LIMIT 1"}`,
       )
-      .get(workspace, snapshot, deliveryConverters[format], format);
+      .get(workspace, snapshot, format, exportId ?? deliveryConverters[format]);
     return row ? deliveryExportSchema.parse(row) : undefined;
   };
   return {
@@ -37,14 +38,35 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
             .prepare('SELECT digest FROM task_receipts WHERE workspace_id=? AND key=?')
             .get(workspace, request.idempotency_key) as { digest: string } | undefined;
           const intent = db
-            .prepare('SELECT digest FROM delivery_export_intents WHERE workspace_id=? AND key=?')
-            .get(workspace, request.idempotency_key) as { digest: string } | undefined;
+            .prepare(
+              'SELECT digest,export_id FROM delivery_export_intents WHERE workspace_id=? AND key=?',
+            )
+            .get(workspace, request.idempotency_key) as
+            { digest: string; export_id: string } | undefined;
           if (
             (previous && previous.digest !== digest(request)) ||
             (intent && intent.digest !== digest(request))
           )
             throw new Error('IDEMPOTENCY_CONFLICT');
-          let row = read(request.snapshot_id, request.format);
+          // 原键继续指向原转换器；只有新的提交身份才能创建新版产物，不能重写旧文件或回执。
+          const current = intent
+            ? undefined
+            : db
+                .prepare(
+                  `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? AND converter=?`,
+                )
+                .get(
+                  workspace,
+                  request.snapshot_id,
+                  request.format,
+                  deliveryConverters[request.format],
+                );
+          let row = intent
+            ? read(request.snapshot_id, request.format, intent.export_id)
+            : current
+              ? deliveryExportSchema.parse(current)
+              : undefined;
+          if (intent && !row) throw new Error('Missing export intent');
           if (!row) {
             row = {
               id: randomUUID(),
@@ -101,7 +123,7 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
             if (old.digest !== digest(request)) throw new Error('IDEMPOTENCY_CONFLICT');
             return taskResponseSchema.parse(JSON.parse(old.result));
           }
-          const current = read(row.snapshot_id, row.format);
+          const current = read(row.snapshot_id, row.format, row.id);
           if (
             !current ||
             current.id !== row.id ||

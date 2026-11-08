@@ -743,9 +743,9 @@ app
             return result.canceled ? null : (result.filePath ?? null);
           },
         ),
-        render: (snapshot, state, format, signal) =>
+        render: (snapshot, state, format, signal, converter) =>
           format === 'pdf'
-            ? generateSnapshotPdf(snapshot, state, signal)
+            ? generateSnapshotPdf(snapshot, state, signal, converter)
             : generateSnapshotWord(snapshot, state, signal),
         hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
       }),

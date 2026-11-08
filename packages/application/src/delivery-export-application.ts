@@ -9,7 +9,11 @@ import {
 
 type Request = Extract<TaskRequest, { operation: 'export_snapshot' }>;
 export interface DeliveryExportStorePort {
-  read(snapshot: string, format?: DeliveryExportFormat): DeliveryExport | undefined;
+  read(
+    snapshot: string,
+    format?: DeliveryExportFormat,
+    exportId?: string,
+  ): DeliveryExport | undefined;
   reserve(request: Request): DeliveryExport;
   stage(row: DeliveryExport, hash: string, bytes: number): DeliveryExport;
   complete(request: Request, row: DeliveryExport): TaskResponse;
@@ -29,6 +33,7 @@ export function createDeliveryExportApplication(ports: {
     state: number[],
     format: DeliveryExportFormat,
     signal?: AbortSignal,
+    converter?: DeliveryExport['converter'],
   ): Promise<Uint8Array>;
   hash(bytes: Uint8Array): string;
 }) {
@@ -93,7 +98,7 @@ export function createDeliveryExportApplication(ports: {
         return success({ exports: row ? [row] : [] });
       }
       if (request.operation === 'open_export' || request.operation === 'save_export') {
-        const row = ports.store.read(snapshot.id, format);
+        const row = ports.store.read(snapshot.id, format, request.export_id);
         if (!row || row.id !== request.export_id || row.status !== 'ready')
           return failure('READ_FAILED', `所选${label}尚未确认保存。`);
         if (request.operation === 'save_export') {
@@ -109,7 +114,7 @@ export function createDeliveryExportApplication(ports: {
       if (!placed) {
         if (row.status === 'ready')
           return failure('READ_FAILED', `已保存${label}文件缺失，未重新生成或覆盖，请检查存储。`);
-        const bytes = await ports.render(snapshot, original.state, format, signal);
+        const bytes = await ports.render(snapshot, original.state, format, signal, row.converter);
         signal?.throwIfAborted();
         if (!bytes.length || bytes.length > 20_000_000) throw new Error('Export size limit');
         row = ports.store.stage(row, ports.hash(bytes), bytes.length);
