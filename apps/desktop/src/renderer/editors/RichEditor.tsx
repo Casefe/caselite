@@ -228,7 +228,7 @@ function FormatBar({
   );
 }
 
-function CompactSelectionTools({ editor, from }: { editor: Editor; from: number }) {
+function SelectionFormatTools({ editor, from }: { editor: Editor; from: number }) {
   const popup = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = popup.current;
@@ -329,6 +329,8 @@ export function EditorSurface({
     );
   const editable = !disabled && editor.isEditable;
   const compact = mode === 'compact';
+  const documentMode = mode === 'simple';
+  const trackComposition = compact || documentMode;
   const slashKey = ui?.slash ? `${ui.slash.from}:${ui.slash.query}` : '';
   const choices = blocks.filter((item) =>
     `${item.label}${item.hint}${item.id}`
@@ -336,7 +338,11 @@ export function EditorSurface({
       .includes(ui?.slash?.query.toLowerCase() ?? ''),
   );
   const showBlockActions = mode === 'notion' || (compact && blockActions && showFormats);
-  const showSlash = showBlockActions && Boolean(ui?.slash) && dismissed !== slashKey && editable;
+  const showSlash =
+    (showBlockActions || (documentMode && ui?.focused && !composing)) &&
+    Boolean(ui?.slash) &&
+    dismissed !== slashKey &&
+    editable;
   const choose = (id: string) => {
     if (ui?.slash) setBlock(editor, id, ui.slash);
     setIndex(0);
@@ -361,14 +367,12 @@ export function EditorSurface({
           !root.current?.contains(event.relatedTarget)
         ) {
           setBlockMenu(false);
-          if (compact) {
-            setShowFormats(false);
-            setComposing(false);
-          }
+          if (compact) setShowFormats(false);
+          if (trackComposition) setComposing(false);
         }
       }}
-      onCompositionStartCapture={compact ? () => setComposing(true) : undefined}
-      onCompositionEndCapture={compact ? () => setComposing(false) : undefined}
+      onCompositionStartCapture={trackComposition ? () => setComposing(true) : undefined}
+      onCompositionEndCapture={trackComposition ? () => setComposing(false) : undefined}
       onKeyDownCapture={(event) => {
         if (compact && !editable) return;
         if (!editable || !editor.isEditable) {
@@ -376,7 +380,8 @@ export function EditorSurface({
           event.stopPropagation();
           return;
         }
-        if (event.nativeEvent.isComposing || editor.view.composing) return;
+        if (event.nativeEvent.isComposing || editor.view.composing || (documentMode && composing))
+          return;
         if (event.key === '/') setDismissed('');
         if (!showSlash) return;
         if (event.key === 'Escape') {
@@ -425,7 +430,7 @@ export function EditorSurface({
         editor.view.dispatch(tr.scrollIntoView());
       }}
     >
-      {mode === 'simple' && (
+      {documentMode && (
         <div className="simple-toolbar">
           <FormatBar editor={editor} />
         </div>
@@ -444,9 +449,12 @@ export function EditorSurface({
           </button>
           {showFormats && <FormatBar editor={editor} />}
           {!showFormats && !composing && ui?.selected && ui.focused && (
-            <CompactSelectionTools editor={editor} from={ui.from} />
+            <SelectionFormatTools editor={editor} from={ui.from} />
           )}
         </>
+      )}
+      {documentMode && editable && !composing && ui?.selected && ui.focused && (
+        <SelectionFormatTools editor={editor} from={ui.from} />
       )}
       {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>
