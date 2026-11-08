@@ -30,6 +30,8 @@ export default function DeliveryVersions({
   noteDisabled = false,
   more = false,
   onMore,
+  wordOnly = false,
+  exportControls,
 }: {
   versions: DeliveryVersion[];
   selectedId: string | null;
@@ -47,6 +49,8 @@ export default function DeliveryVersions({
   noteDisabled?: boolean;
   more?: boolean;
   onMore?(): void;
+  wordOnly?: boolean;
+  exportControls?: ReactNode;
 }) {
   const [note, setNote] = useState('');
   const [format, setFormat] = useState<DeliveryFormat>('Word');
@@ -170,7 +174,7 @@ export default function DeliveryVersions({
                       type="button"
                       key={value}
                       aria-pressed={format === value}
-                      disabled={busy}
+                      disabled={busy || (wordOnly && value === 'PDF')}
                       onClick={() => setFormat(value)}
                     >
                       {value}
@@ -186,6 +190,7 @@ export default function DeliveryVersions({
                   {busy ? '正在处理…' : `导出此版本 ${format}`}
                 </button>
               </footer>
+              {exportControls}
               <p className="delivery-export-note">导出不代表定稿确认、任务完成或已发送给客户。</p>
               {!exportAvailable && (
                 <p className="delivery-export-note">Word/PDF 文件导出尚未接入。</p>

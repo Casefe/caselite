@@ -9,6 +9,10 @@ export default {
       import: localPath('./src/main/adapters/docx-worker.ts'),
       filename: 'docx-worker.cjs',
     },
+    wordExportWorker: {
+      import: localPath('./src/main/adapters/word-export-worker.ts'),
+      filename: 'word-export-worker.cjs',
+    },
   },
   devtool: 'source-map',
   node: {

@@ -73,7 +73,11 @@ const failure = (code: Extract<TaskResponse, { ok: false }>['code']): TaskRespon
   message: '合成读取失败',
 });
 function setup(handler: (request: TaskRequest) => Promise<TaskResponse>) {
-  const invoke = vi.fn(handler),
+  const invoke = vi.fn((request: TaskRequest) =>
+      request.operation === 'read_export'
+        ? Promise.resolve({ ...success(), exports: [] })
+        : handler(request),
+    ),
     onBusy = vi.fn();
   Object.defineProperty(window, 'caselite', { value: { task: invoke }, configurable: true });
   const client = createWorkbenchQueryClient();
@@ -124,8 +128,9 @@ it('does not resubmit an acknowledged snapshot when refresh fails; explicit reco
   ).toHaveLength(1);
   expect(onBusy).toHaveBeenLastCalledWith(false);
   expect(screen.getByRole('button', { name: '导出此版本 Word' }).hasAttribute('disabled')).toBe(
-    true,
+    false,
   );
+  expect(screen.getByRole('button', { name: 'PDF' }).hasAttribute('disabled')).toBe(true);
 });
 
 it('checks an unknown result by original key and only retries the exact request after no receipt', async () => {

@@ -1,4 +1,7 @@
 import { runFinanceDemo } from './finance-demo';
+import { createDeliveryExportApplication } from '@caselite/application';
+import { createDeliveryExportFiles } from './adapters/delivery-export-files';
+import { generateSnapshotWord } from './adapters/word-export-processor';
 import { runReminderDemo } from './reminder-demo';
 import { startReminderScheduler } from './adapters/reminder-scheduler';
 import { createReminderApplication } from '@caselite/application';
@@ -51,7 +54,7 @@ import {
   registerFinanceIpc,
   registerTaskIpc,
 } from './ipc/register-task-ipc';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -436,7 +439,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 18
+      result.value?.migration_count !== 19
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -718,7 +721,17 @@ app
       process.env.CASELITE_TASK_QUERY_PROBE === '1'
         ? createTaskQueryProbe(tasks)
         : undefined;
-    registerTaskIpc(taskQueryProbe?.application ?? tasks);
+    registerTaskIpc(
+      createDeliveryExportApplication({
+        task: taskQueryProbe?.application ?? tasks,
+        store: taskStore.deliveryExports,
+        files: createDeliveryExportFiles(join(taskRoot, 'delivery-exports'), (path) =>
+          shell.openPath(path),
+        ),
+        render: generateSnapshotWord,
+        hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
+      }),
+    );
     const reminders = createReminderApplication(taskStore.reminders);
     const reminderScheduler = startReminderScheduler(
       reminders,

@@ -1,4 +1,5 @@
 import {
+  uniqueIndex,
   sqliteTable,
   text,
   integer,
@@ -81,6 +82,43 @@ export const bodyRevisions = sqliteTable(
     state: blob('state', { mode: 'buffer' }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.bodyId, table.revision] })],
+);
+// 输出身份独立于可编辑工作副本；ready 后不得改写或删除。
+export const deliveryExports = sqliteTable(
+  'delivery_exports',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => deliverableSnapshots.id),
+    format: text('format').notNull(),
+    converter: text('converter').notNull(),
+    status: text('status').notNull(),
+    sha256: text('sha256'),
+    bytes: integer('bytes'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('delivery_exports_snapshot_format').on(
+      t.workspaceId,
+      t.snapshotId,
+      t.format,
+      t.converter,
+    ),
+  ],
+);
+export const deliveryExportIntents = sqliteTable(
+  'delivery_export_intents',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    exportId: text('export_id')
+      .notNull()
+      .references(() => deliveryExports.id),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
 );
 export const deliverableSnapshots = sqliteTable(
   'deliverable_snapshots',

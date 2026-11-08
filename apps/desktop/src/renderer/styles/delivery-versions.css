@@ -1,4 +1,13 @@
 /* 交付页独立命名空间：不改变任务、项目和文档属性栏的共用样式。 */
+.delivery-word-controls {
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.delivery-word-controls button {
+  margin: 0 8px 8px 0;
+}
 .task-work-area > .document[hidden] {
   /* 保持编辑器挂载以保留未保存输入，同时覆盖工作区的 display:flex。 */
   display: none;

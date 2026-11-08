@@ -1,5 +1,6 @@
 import { createDocumentReviewReader } from './document-review-reader';
 import { createDeliverySnapshotStore } from './delivery-snapshot-store';
+import { createDeliveryExportStore } from './delivery-export-store';
 import { createReminderStore } from './reminder-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
@@ -35,6 +36,10 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
+  // 完整宿主先应用全部迁移；旧版迁移夹具尚无导出意图表，不能因此破坏已有Task读写。
+  const hasExportIntents = !!db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_export_intents'")
+    .get();
   const get = (id: string) => {
     const row = db.prepare(`${select} WHERE t.id=? AND t.workspace_id=?`).get(id, workspace) as
       Row | undefined;
@@ -56,6 +61,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
   return {
+    deliveryExports: createDeliveryExportStore(db, workspace),
     reviewDocumentExists: review.reviewDocumentExists,
     reviewSaved(range: ReviewRange, receipt: string) {
       return review.reviewSaved(range, receipt, (request) => this.execute(request));
@@ -68,6 +74,12 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
+      if (
+        request.operation === 'export_snapshot' ||
+        request.operation === 'open_export' ||
+        request.operation === 'read_export'
+      )
+        return fail('INVALID_REQUEST', '导出操作须经受控交付 Application。');
       if (request.operation === 'list_snapshots' || request.operation === 'read_snapshot')
         return snapshots.query(request);
       if (request.operation === 'list') {
@@ -163,6 +175,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       }
       // 幂等结果、对象/正文修订和成功事件同事务提交；异常不留下半个成功结果。
       const commit = db.transaction((): TaskResponse => {
+        if (
+          hasExportIntents &&
+          db
+            .prepare('SELECT key FROM delivery_export_intents WHERE workspace_id=? AND key=?')
+            .get(workspace, request.idempotency_key)
+        )
+          return fail('CONFLICT', '该提交身份已用于固定版本导出。');
         const { request_id: diagnosticId, ...content } = request;
         void diagnosticId;
         const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex');

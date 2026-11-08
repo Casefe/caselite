@@ -30,6 +30,7 @@ export default {
     extraResource: [
       localPath('./assets/THIRD-PARTY-DOCX-NOTICES.txt'),
       localPath('./.webpack/arm64/main/docx-worker.cjs'),
+      localPath('./.webpack/arm64/main/word-export-worker.cjs'),
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
       localPath('./assets/THIRD-PARTY-GRAPH-NOTICES.txt'),

@@ -44,3 +44,5 @@
 - [ADR-021](./ADR-021-local-docx-drafts.md) 本地 DOCX 语义草稿与表格校验，DEV-1811。
 - [ADR-022](./ADR-022-document-table-rollback.md) 文档表格的读取基线与写入回退，DEV-1812。
 - [ADR-023](./ADR-023-fixed-delivery-snapshots.md) 固定交付快照、原键回执和读取兼容，DEV-1628。
+
+- [ADR-024](./ADR-024-local-snapshot-word-export.md) 固定快照Word、受管产物与独立工作副本，DEV-1816。

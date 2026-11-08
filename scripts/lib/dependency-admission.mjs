@@ -16,6 +16,7 @@ const desktop = {
   '@xmldom/xmldom': '0.9.12',
   dompurify: '3.4.17',
   mammoth: '1.13.0',
+  docx: '9.15.3', // DEV-1816：固定快照本地Word生成；只在宿主Worker消费。
   yauzl: '3.4.0',
   '@tiptap/extension-table': '3.32.3', // DEV-1812：任务成果正文读取兼容
   '@tiptap/pm': '3.32.3',

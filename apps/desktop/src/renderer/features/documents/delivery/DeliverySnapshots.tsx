@@ -9,6 +9,7 @@ import type {
 import { DraftEditor } from '../../../editors/RichEditor';
 import { mutation } from '../../../shared/data/taskCommand';
 import DeliveryVersions, { type DeliveryResult } from './DeliveryVersions';
+import { useSnapshotWord } from './useSnapshotWord';
 
 type Create = Extract<TaskRequest, { operation: 'create_snapshot' }>;
 type Phase = 'idle' | 'verify' | 'retry';
@@ -81,6 +82,10 @@ export default function DeliverySnapshots({
     selectedId && versions.some((row) => row.id === selectedId)
       ? selectedId
       : (versions[0]?.id ?? null);
+  const word = useSnapshotWord(task, currentId);
+  useEffect(() => {
+    onBusy(writing || phase === 'verify' || word.busy);
+  }, [writing, phase, word.busy, onBusy]);
   const fixedRead = useQuery({
     queryKey: ['delivery-snapshot-body', task.id, task.document_id, currentId],
     enabled: currentId !== null,
@@ -107,7 +112,7 @@ export default function DeliverySnapshots({
     },
   });
   async function submit(kind: 'create' | 'verify' | 'retry', note = ''): Promise<boolean> {
-    if (lock.current || (kind === 'create' && disabled)) return false;
+    if (lock.current || word.busy || (kind === 'create' && disabled)) return false;
     if (kind === 'create') {
       if (pending.current || dirty || revision < 1 || !task.document_metadata_version) return false;
       pending.current = {
@@ -126,7 +131,6 @@ export default function DeliverySnapshots({
     if (!request) return false;
     lock.current = true;
     setWriting(true);
-    onBusy(true);
     let unresolved = false;
     try {
       let checkingReceipt = kind === 'verify';
@@ -202,7 +206,7 @@ export default function DeliverySnapshots({
       lock.current = false;
       if (alive.current) {
         setWriting(false);
-        onBusy(unresolved);
+        void unresolved;
       }
     }
   }
@@ -236,7 +240,7 @@ export default function DeliverySnapshots({
         <span>固定版本保存在此设备 · 草稿</span>
         <button
           type="button"
-          disabled={list.isFetching || writing || phase !== 'idle'}
+          disabled={list.isFetching || writing || phase !== 'idle' || word.busy}
           onClick={() => {
             setResult(null);
             void list.refetch();
@@ -264,8 +268,8 @@ export default function DeliverySnapshots({
         selectedId={currentId}
         revision={revision}
         dirty={dirty}
-        busy={list.isFetching || writing || phase === 'verify'}
-        result={feedback}
+        busy={list.isFetching || writing || phase === 'verify' || word.busy}
+        result={word.result ?? feedback}
         captureDisabled={
           disabled ||
           list.isError ||
@@ -281,8 +285,12 @@ export default function DeliverySnapshots({
         }}
         onCreate={(note) => submit('create', note)}
         onBack={onBack}
-        exportAvailable={false}
-        onExport={() => {}}
+        exportAvailable={!fixedRead.isError && !!fixedRead.data}
+        wordOnly
+        exportControls={word.controls}
+        onExport={(_id, format) => {
+          if (format === 'Word') void word.start();
+        }}
         preview={
           fixedRead.isFetching ||
           fixedRead.isError ||
