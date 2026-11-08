@@ -33,9 +33,11 @@
 
 ## 执行、验证与交付
 
+- 开发必须执行 [WORKFLOW 十二项机制对照](docs/WORKFLOW.md#十二项开发机制的执行对照)中本次适用的要求，沿用原 Issue、检查和交付证据，不另填十二份表。没有适用证据不能宣称完成；不适用项说明原因。
 - 最小修改，避免顺手重构；不能为测试通过而删除/弱化测试、权限检查或 CI。
 - 先读 `docs/DEVELOPMENT.md` 确认**真实存在**的脚本；没有 `package.json`/测试工具时明确报告“未配置”，不可虚称通过。
 - 真实入口：`pnpm check:quick`、`pnpm review:changes`；按影响运行 `pnpm test:integration`、`pnpm run ci` 或 `pnpm test:full`。类型、lint、单元/合同、桌面/恢复/构建检查按范围选取，未运行逐项说明；Linux CI 不替代真实 Electron 测试。
+- 规则/Skill、开发模型或工具权限、检查器变化及同类错误复发，必须执行 [既有独立回归](docs/REVIEW_HANDOFF_EXERCISE.md)，交付运行 `pnpm review:changes --require-regression <本轮回归JSON>`；旧指纹、缺项或非真实通过不能放行。普通 quick 通过不能替代此检查；模型/权限等仓库外变化由执行者核对，未变化可复用适用证据。
 - 涉及桌面边界、公开资料、日志或依赖的改动，至少执行 `pnpm security:baseline`；它检查公开仓库、Electron/Fuses/CSP/权限、直接日志与秘密扫描。未完成的联网漏洞审计必须如实记录。
 - 交付列出文件、合同/批准、SHA、真实命令/退出码、失败路径、风险、未测项与回退；结果用 `PASS_REAL/MOCK_ONLY/NOT_RUN/BLOCKED/FAIL` 区分。CI、PR 或合并不等于业务验收，不自动将 Issue 标记“已完成”；自动评论/有限状态推进须有本次明确授权且执行器实测通过。
 

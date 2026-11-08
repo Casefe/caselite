@@ -11,7 +11,7 @@
 - 代码远端：公开仓库 `https://github.com/Casefe/caselite`。
 - GitHub HTTPS 认证、分支 Push、Pull Request 和合并流程均已实际验证。
 - Node.js 由项目级 `mise.toml` 固定为 `24.22.2`。
-- pnpm 当前实际版本为 `11.0.9`；后续应在 `package.json` 中固定 `packageManager`。
+- pnpm 由 `package.json` 的 `packageManager` 与 `engines` 固定为 `11.0.9`；shell版本不匹配时使用 `mise exec -- pnpm ...`。
 - 系统开发工具安装在内置盘；仓库、项目依赖、合成测试资料及可重建产物放在外置开发盘。
 - CI 和项目代码不得依赖 `/Volumes/CASDEV` 这一台机器的绝对路径。
 
@@ -25,7 +25,7 @@
 | Apple clang | 15.0.0，目标 `arm64-apple-darwin25.6.0` | 已验证；原生 Electron 模块仍需后续实际编译验证 |
 | Git | 2.55.0 | 已验证 |
 | Node.js | 24.22.2 | 已由 `mise.toml` 固定 |
-| pnpm | 11.0.9 | 已验证；待 `package.json` 固定版本 |
+| pnpm | 11.0.9 | 已由 `package.json` 固定；运行时仍核对版本 |
 | mise | `node 24.22.2` | 已验证 |
 | GitHub CLI | 已登录 `Lawyer-tan`，HTTPS Git 操作可用 | 已验证 |
 | GitHub Remote | `https://github.com/Casefe/caselite.git` | fetch / push 已验证 |
@@ -87,6 +87,8 @@ ls -la
 | `pnpm dev` | 运行 Electron 桌面开发环境 |
 | `pnpm security:baseline` | 公开仓库、Electron/Fuses/CSP/权限、无直接敏感日志及 Secretlint 假令牌自检；不要求联网 |
 | `pnpm check:quick` | 格式、静态检查、架构边界、完整性、安全基线、类型、单元与合同测试；不要求联网 |
+| `pnpm review:changes` | 检查准确变更并生成受保护文件清单、规则指纹及回归触发标记；机械通过不授予审查批准 |
+| `pnpm review:changes --require-regression <回归JSON>` | 有规则/开发配置变化等触发时的交付检查；回归记录、指纹或原始证据不合格即阻断，步骤见 `REVIEW_HANDOFF_EXERCISE.md` |
 | `pnpm run ci` | Linux CI 使用的 G0 门槛，含生产依赖审计、许可证阻断、集成与覆盖率；桌面测试记为未运行 |
 | `pnpm coverage` | 输出当前全部生产源码的测试覆盖率到本机 `coverage/` |
 | `pnpm test:full` / `pnpm verify` | 本机完整 G0 门槛，执行 macOS Apple Silicon 打包后再运行 DEV-1566 同一打包应用的 PDF、IPC 与 SQLite 离线联动测试 |
