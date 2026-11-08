@@ -361,6 +361,7 @@ export default function ProjectCatalog({
       inert={navigationPending}
       aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
+      data-project-view={editor ? section : 'list'}
       data-layout={editor || listInspectorOpen ? 'three-column' : undefined}
       data-testid="project-catalog"
     >

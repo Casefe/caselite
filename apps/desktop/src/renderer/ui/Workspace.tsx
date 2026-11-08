@@ -170,8 +170,8 @@ export const taskOptionalColumns = {
 export type TaskOptionalColumn = keyof typeof taskOptionalColumns;
 
 const taskColumnWidths: Record<string, string> = {
-  priority: '16px',
-  status: '16px',
+  priority: '42px',
+  status: '32px',
   title: 'minmax(90px, 1fr)',
   project: 'minmax(58px, 16%)',
   owner: 'minmax(48px, 12%)',

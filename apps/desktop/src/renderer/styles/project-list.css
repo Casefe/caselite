@@ -1,4 +1,9 @@
-/* Logixy 的列宽与选中态只应用于项目列表，不覆盖其他列表或全局表格。 */
+/* 项目列表收起预览时，回收右栏的宽度。 */
+.collection-workspace.project-catalog[data-project-view='list']:not([data-layout]) {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
 .project-catalog .project-portfolio-table {
   width: 100%;
   border-collapse: separate;

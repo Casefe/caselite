@@ -592,6 +592,9 @@ it('discards incomplete date validation together with its property draft', async
   } as unknown as Window['caselite'];
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   show();
+  const preview = await screen.findByRole('button', { name: '项目预览' });
+  await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(preview);
   await screen.findByLabelText('侧栏项目名称');
   const target = screen.getByLabelText('项目目标日') as HTMLInputElement;
   fireEvent.change(target, { target: { value: '2024-02-29' } });

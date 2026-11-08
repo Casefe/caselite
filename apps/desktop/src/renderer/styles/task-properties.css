@@ -308,17 +308,6 @@
 .work-list-glyph[data-status='done'] {
   color: var(--theme-accent);
 }
-.work-list-create {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.work-list-create:enabled:hover {
-  border-color: var(--line);
-  background: var(--theme-hover);
-}
-
 .task-display-options {
   position: relative;
   flex-shrink: 0;
@@ -340,6 +329,9 @@
   border-radius: 8px;
   background: var(--theme-panel);
 }
+.task-display-options input[type='checkbox'] {
+  margin: 0;
+}
 .task-display-options label {
   display: flex;
   align-items: center;
@@ -348,7 +340,7 @@
   font-size: 12px;
 }
 .task-display-group h2 {
-  margin: 8px var(--workbench-toolbar-inset) 3px;
+  margin: 8px 20px 3px;
   padding: 5px 10px;
   border-radius: 6px;
   background: var(--theme-subtle);

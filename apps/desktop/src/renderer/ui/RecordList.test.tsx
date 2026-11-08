@@ -3,7 +3,7 @@ import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { invalidateTaskPages } from './task-list-query';
 import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import RecordList, { initialTaskListState, type TaskListState } from './RecordList';
@@ -327,8 +327,11 @@ it('groups the loaded page, keeps display changes local, and opens the original 
   fireEvent.click(screen.getByLabelText('任务显示设置'));
   fireEvent.click(screen.getByRole('checkbox', { name: '按状态分组（当前页）' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '负责人' }));
-  expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2);
-  expect(screen.queryByRole('columnheader', { name: '负责人' })).toBeNull();
+  for (const label of ['待办', '已完成']) {
+    const group = within(screen.getByRole('region', { name: label }));
+    expect(group.getByRole('heading', { level: 2 }).textContent).toContain(label);
+    expect(group.queryByRole('columnheader', { name: '负责人' })).toBeNull();
+  }
   expect(request).toHaveBeenCalledTimes(1);
   fireEvent.keyDown(screen.getByRole('row', { name: '选择任务：已办样例' }), { key: 'Enter' });
   expect(changed.mock.lastCall?.[0].selected).toBe(complete.id);
