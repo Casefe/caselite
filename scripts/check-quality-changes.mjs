@@ -72,6 +72,25 @@ function hasRequiredPrQualityWorkflow(source) {
   );
 }
 
+function isRuleDocument(file) {
+  return (
+    /(?:^|\/)(?:AGENTS|CLAUDE|SKILL)\.md$/i.test(file) ||
+    /^(?:README\.md|docs\/(?:CODE_REVIEW|WORKFLOW|SOURCES|DEVELOPMENT|TESTING|SECURITY|ARCHITECTURE|REVIEW_HANDOFF_EXERCISE)\.md)$/i.test(
+      file,
+    ) ||
+    /^docs\/(?:adr|architecture|security)\/.*\.md$/i.test(file) ||
+    /^\.github\/.*\.md$/i.test(file)
+  );
+}
+
+export function isReviewableFile(file) {
+  return /\.(?:[cm]?[jt]sx?|json|ya?ml|md)$/i.test(file);
+}
+
+function isTestFile(file) {
+  return /\.(?:test|spec)\.[cm]?[jt]sx?$/i.test(file);
+}
+
 export function reviewChanges(changes) {
   const violations = [];
   const protectedFiles = changes
@@ -79,14 +98,16 @@ export function reviewChanges(changes) {
       ({ file }) =>
         /^(?:scripts\/|\.github\/|eslint|vitest|prettier|package\.json|pnpm-|\.secretlint|apps\/desktop\/(?:forge|webpack))/.test(
           file,
-        ) || /\.(test|spec)\./.test(file),
+        ) ||
+        isTestFile(file) ||
+        isRuleDocument(file),
     )
     .map(({ file }) => file);
   const oldTitles = changes.flatMap(({ file, before }) =>
-    /\.(test|spec)\./.test(file) ? testTitles(before, file) : [],
+    isTestFile(file) ? testTitles(before, file) : [],
   );
   const newTitles = changes.flatMap(({ file, after }) =>
-    /\.(test|spec)\./.test(file) ? testTitles(after, file) : [],
+    isTestFile(file) ? testTitles(after, file) : [],
   );
   const remaining = new Map();
   for (const title of newTitles) remaining.set(title, (remaining.get(title) ?? 0) + 1);
@@ -95,6 +116,9 @@ export function reviewChanges(changes) {
     else remaining.set(title, remaining.get(title) - 1);
   }
   for (const { file, before, after } of changes) {
+    // 规则正文的语义由独立审查负责；删除或清空不能以机器检查通过代替批准。
+    if (isRuleDocument(file) && before.trim() && !after.trim())
+      violations.push(`Protected rule document removed or emptied: ${file}`);
     if (file === 'package.json') {
       const oldScripts = JSON.parse(before || '{}').scripts ?? {};
       const scripts = JSON.parse(after || '{}').scripts ?? {};
@@ -153,7 +177,7 @@ export function reviewChanges(changes) {
           violations.push(`Required gate step removed: ${step}`);
       }
     }
-    if (/vitest.*config/.test(file)) {
+    if (/vitest.*config\.[cm]?[jt]s$/i.test(file)) {
       // Any reduction of an existing literal threshold must fail. Other config
       // changes remain in the explicit review report (including expressions).
       for (const key of ['statements', 'branches', 'functions', 'lines']) {
@@ -168,10 +192,8 @@ export function reviewChanges(changes) {
   return { violations, protectedFiles, reviewRequired: protectedFiles.length > 0 };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const root = resolve(import.meta.dirname, '..');
+export function collectChanges(root, baseRef) {
   const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-  const baseRef = process.env.QUALITY_BASE_REF || 'origin/main';
   const base = git(['rev-parse', '--verify', `${baseRef}^{commit}`]).trim();
   const tracked = git(['ls-files', '-z']).split('\0').filter(Boolean);
   const oldFiles = git(['ls-tree', '-r', '--name-only', '-z', base]).split('\0').filter(Boolean);
@@ -180,12 +202,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     .filter(Boolean);
   const changes = [];
   for (const file of new Set([...tracked, ...oldFiles, ...untracked])) {
-    if (!/\.(?:[cm]?[jt]sx?|json|ya?ml)$/.test(file)) continue;
+    if (!isReviewableFile(file)) continue;
     let before = '';
     if (oldFiles.includes(file)) before = git(['show', `${base}:${file}`]);
     const after = existsSync(resolve(root, file)) ? readFileSync(resolve(root, file), 'utf8') : '';
     if (before !== after) changes.push({ file, before, after });
   }
+  return { base, changes };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const root = resolve(import.meta.dirname, '..');
+  const { base, changes } = collectChanges(root, process.env.QUALITY_BASE_REF || 'origin/main');
   const report = {
     base,
     ...reviewChanges(changes),
@@ -204,5 +232,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.error(report.violations.join('\n'));
     process.exitCode = 1;
   } else
-    console.log('Quality change check passed: no detected test deletion or required gate removal.');
+    console.log(
+      'Quality change check passed: no detected rule/test deletion or required gate removal.',
+    );
 }

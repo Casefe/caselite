@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { imports, forbiddenTestModifiers } from '../../scripts/lib/source-analysis.mjs';
 import {
@@ -9,9 +10,117 @@ import {
 } from '../../scripts/check-architecture-boundaries.mjs';
 import { executePlan } from '../../scripts/lib/quality-results.mjs';
 import { licenseViolations } from '../../scripts/lib/license-policy.mjs';
-import { reviewChanges } from '../../scripts/check-quality-changes.mjs';
+import {
+  reviewChanges,
+  isReviewableFile,
+  collectChanges,
+} from '../../scripts/check-quality-changes.mjs';
 
 describe('G0 rejects deliberate failures', () => {
+  it('collects tracked, untracked, deleted and moved Markdown from a real isolated Git repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-rule-review-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    const put = (file: string, body: string) => {
+      const path = join(root, file);
+      mkdirSync(join(path, '..'), { recursive: true });
+      writeFileSync(path, body);
+    };
+    try {
+      git('init', '-q');
+      put('AGENTS.md', 'Original rule');
+      put('docs/SECURITY.md', 'Security rule');
+      put('apps/desktop/AGENTS.md', 'Scoped rule');
+      git('add', '.');
+      git(
+        '-c',
+        'user.name=CaseLite Test',
+        '-c',
+        'user.email=test@example.invalid',
+        'commit',
+        '-qm',
+        'baseline',
+      );
+      put('AGENTS.md', 'Updated rule');
+      rmSync(join(root, 'docs/SECURITY.md'));
+      git('mv', 'apps/desktop/AGENTS.md', 'apps/desktop/moved.md');
+      put('docs/adr/ADR-测试 空格.md', 'New decision');
+      put('docs/notes/example.md', 'Ordinary note');
+      const { base, changes } = collectChanges(root, 'HEAD');
+      expect(base).toBe(git('rev-parse', 'HEAD'));
+      expect(changes.map(({ file }: { file: string }) => file)).toEqual(
+        expect.arrayContaining([
+          'AGENTS.md',
+          'docs/SECURITY.md',
+          'apps/desktop/AGENTS.md',
+          'apps/desktop/moved.md',
+          'docs/adr/ADR-测试 空格.md',
+          'docs/notes/example.md',
+        ]),
+      );
+      const report = reviewChanges(changes);
+      expect(report.protectedFiles).not.toContain('docs/notes/example.md');
+      expect(report.protectedFiles).toContain('docs/adr/ADR-测试 空格.md');
+      expect(report.violations).toEqual(
+        expect.arrayContaining([
+          'Protected rule document removed or emptied: docs/SECURITY.md',
+          'Protected rule document removed or emptied: apps/desktop/AGENTS.md',
+        ]),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reviews rule documents at every scope while leaving ordinary notes unprotected', () => {
+    for (const file of [
+      'AGENTS.md',
+      'apps/desktop/AGENTS.md',
+      'CLAUDE.md',
+      '.agents/skills/review/SKILL.md',
+      '.claude/skills/review/SKILL.md',
+      'docs/SECURITY.md',
+      'docs/security/DEV-1561-threat-model.md',
+      'docs/CODE_REVIEW.md',
+      'docs/WORKFLOW.md',
+      'docs/SOURCES.md',
+      'docs/DEVELOPMENT.md',
+      'docs/TESTING.md',
+      'docs/ARCHITECTURE.md',
+      'docs/REVIEW_HANDOFF_EXERCISE.md',
+      'docs/adr/ADR-021-local-docx-drafts.md',
+      '.github/PULL_REQUEST_TEMPLATE.md',
+    ]) {
+      expect(isReviewableFile(file)).toBe(true);
+      const changed = reviewChanges([{ file, before: 'Existing rule', after: 'Revised rule' }]);
+      expect(changed.protectedFiles).toContain(file);
+      expect(changed.reviewRequired).toBe(true);
+      expect(changed.violations).toEqual([]);
+      expect(reviewChanges([{ file, before: '', after: 'New rule' }]).reviewRequired).toBe(true);
+      for (const after of ['', ' \n\t'])
+        expect(reviewChanges([{ file, before: 'Existing rule', after }]).violations).toContain(
+          `Protected rule document removed or emptied: ${file}`,
+        );
+    }
+    expect(isReviewableFile('docs/notes/example.md')).toBe(true);
+    expect(isReviewableFile('sample.png')).toBe(false);
+    expect(
+      reviewChanges([
+        { file: 'docs/notes/example.test.md', before: "it('example only', () => {});", after: '' },
+        { file: 'docs/notes/vitest.config.md', before: 'lines: 80', after: 'lines: 20' },
+      ]),
+    ).toEqual({ violations: [], protectedFiles: [], reviewRequired: false });
+    expect(
+      reviewChanges([{ file: 'docs/notes/example.md', before: 'Old note', after: '' }]),
+    ).toEqual({ violations: [], protectedFiles: [], reviewRequired: false });
+    expect(
+      reviewChanges([
+        { file: 'apps/desktop/AGENTS.md', before: 'Rule', after: '' },
+        { file: 'docs/notes/moved.md', before: '', after: 'Rule' },
+      ]).violations,
+    ).toContain('Protected rule document removed or emptied: apps/desktop/AGENTS.md');
+  });
+
   it('detects static, dynamic, re-export, require and relative renderer boundary bypasses', () => {
     const file = 'apps/desktop/src/renderer/probe.ts';
     for (const source of [
