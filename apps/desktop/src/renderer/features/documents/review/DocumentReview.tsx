@@ -1,5 +1,13 @@
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useImperativeHandle,
+  type Ref,
+} from 'react';
 import type {
   AgentModel,
   AgentRun,
@@ -11,6 +19,9 @@ import { documentReviewTransport, type DocumentScope } from './document-review-t
 
 import useEditorSelection from './useEditorSelection';
 import EditorConversation from './EditorConversation';
+import { editorSelection } from './editor-selection';
+import type { WritingSkillHandle } from './WritingSkillMenu';
+export { default as WritingSkillMenu, type WritingSkillHandle } from './WritingSkillMenu';
 
 const protocol_version = 1 as const;
 
@@ -21,6 +32,8 @@ export default function DocumentReview({
   onApplyBusy,
   onSaved,
   variant = 'review',
+  skillHandle,
+  onSkillAvailability,
 }: {
   variant?: 'review' | 'assistant';
   editor: Editor | null;
@@ -28,6 +41,8 @@ export default function DocumentReview({
   blocked: boolean;
   onApplyBusy(value: boolean): void;
   onSaved(result: ReviewSaved): void;
+  skillHandle?: Ref<WritingSkillHandle>;
+  onSkillAvailability?(available: boolean): void;
 }) {
   const scope: DocumentScope = `document:${identity.document_id}`;
   const [preview, setPreview] = useState<{
@@ -51,6 +66,7 @@ export default function DocumentReview({
   const previewId = useRef<string | undefined>(undefined);
   const lock = useRef(false);
   const composing = useRef(false);
+  const root = useRef<HTMLDivElement>(null);
   const transport = useMemo(() => documentReviewTransport(scope, setTerminal), [scope]);
   const { messages, sendMessage, setMessages, stop, status, error, clearError } = useChat({
     id: scope,
@@ -71,6 +87,33 @@ export default function DocumentReview({
   const canPrepare = Boolean(
     reference && !blocked && identity.revision > 0 && reference.text.length <= 8000,
   );
+  const skillAvailable =
+    canPrepare && !submitted && !running && !preparing && !applying && !recovery;
+  useEffect(() => {
+    onSkillAvailability?.(skillAvailable);
+    return () => onSkillAvailability?.(false);
+  }, [onSkillAvailability, skillAvailable]);
+  useImperativeHandle(skillHandle, () => ({
+    pick(request) {
+      if (
+        !editor ||
+        !skillAvailable ||
+        editor.view.composing ||
+        !editor.isEditable ||
+        request.revision !== identity.revision ||
+        request.doc !== editor.state.doc ||
+        request.from !== editor.state.selection.from ||
+        request.to !== editor.state.selection.to ||
+        !editorSelection(editor)?.text
+      )
+        return;
+      setQuestion(request.skill.instruction);
+      setNotice(`已选择「${request.skill.name}」，请核对指令后发送。`);
+      // 聚焦现有输入框同时展开原右栏；选择技能不准备Run、不调用模型、不写正文。
+      root.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+    },
+  }));
+
   const streamed =
     messages.at(-1)?.role === 'assistant'
       ? messages
@@ -308,7 +351,7 @@ export default function DocumentReview({
   }
 
   return (
-    <div className="document-review">
+    <div ref={root} className="document-review">
       <h2>{variant === 'assistant' ? '正文 AI 助手' : '文档 AI 审阅'}</h2>
       {new URLSearchParams(window.location.search).has('mock-agent') && (
         <p className="caption">合成演示 · MOCK_ONLY</p>

@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Editor, EditorContent } from '@tiptap/react';
 import * as Y from 'yjs';
-import DocumentReview from './DocumentReview';
+import DocumentReview, { WritingSkillMenu, type WritingSkillHandle } from './DocumentReview';
+import { createRef } from 'react';
+import { EditorSurface } from '../../../editors/RichEditor';
 import InspectorLayout from '../../../ui/InspectorLayout';
 import { localExtensions, reviewUpdateOrigin } from '../../../editors/editor-config';
 import { draftDoc } from '../../../editors/editor-state';
@@ -44,7 +46,8 @@ afterEach(() => {
   }
   vi.unstubAllGlobals();
 });
-function mount(variant: 'review' | 'assistant' = 'review') {
+function mount(variant: 'review' | 'assistant' = 'review', withToolbar = false) {
+  const skillHandle = createRef<WritingSkillHandle>();
   const doc = draftDoc({ text: '原文条款\n不能外发的第二段', state: null });
   const editor = new Editor({ extensions: localExtensions(doc), injectCSS: false });
   scopes.push({ editor, doc });
@@ -79,10 +82,35 @@ function mount(variant: 'review' | 'assistant' = 'review') {
   const onSaved = vi.fn();
   const view = render(
     <>
-      <EditorContent editor={editor} />
+      {withToolbar ? (
+        <EditorSurface
+          editor={editor}
+          mode="simple"
+          documentScheme="markdown"
+          selectionActions={
+            <WritingSkillMenu
+              editor={editor}
+              enabled
+              revision={1}
+              onPick={(request) => skillHandle.current?.pick(request)}
+            />
+          }
+        />
+      ) : (
+        <>
+          <EditorContent editor={editor} />
+          <WritingSkillMenu
+            editor={editor}
+            enabled
+            revision={1}
+            onPick={(request) => skillHandle.current?.pick(request)}
+          />
+        </>
+      )}
       <InspectorLayout properties={null}>
         <DocumentReview
           editor={editor}
+          skillHandle={skillHandle}
           identity={identity}
           variant={variant}
           blocked={false}
@@ -92,8 +120,80 @@ function mount(variant: 'review' | 'assistant' = 'review') {
       </InspectorLayout>
     </>,
   );
-  return { editor, doc, agent, onSaved, view };
+  return { editor, doc, agent, onSaved, view, skillHandle };
 }
+it.each(['review', 'assistant'] as const)(
+  'loads a writing skill into %s without preparing a run and keeps selection intact',
+  async (variant) => {
+    const { editor, doc, agent } = mount(variant, true);
+    await waitFor(() => expect(editor.isInitialized).toBe(true));
+    await act(async () => {
+      editor.view.dom.focus();
+      editor.commands.setTextSelection({ from: 1, to: 5 });
+    });
+    await screen.findByRole('button', { name: '✧ 技能' });
+    const before = Y.encodeStateAsUpdate(doc);
+    fireEvent.contextMenu(editor.view.dom, { clientX: 200, clientY: 200 });
+    await screen.findByRole('menu', { name: '写作技能' });
+    expect(screen.getAllByRole('menuitem')).toHaveLength(5);
+    fireEvent.click(screen.getByRole('menuitem', { name: '提升法律表达' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLTextAreaElement>('textbox', { name: '本轮问题' }).value,
+      ).toContain('改进所选文字'),
+    );
+    expect(screen.getByRole('button', { name: '收起 AI 对话' })).toBeTruthy();
+    expect(editor.state.selection.toJSON()).toEqual({ type: 'text', anchor: 1, head: 5 });
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+    expect(agent.mock.calls.every(([r]) => r.operation === 'read')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '发送本轮审阅' }));
+    await screen.findByText('确认写回');
+    expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(1);
+    expect(agent.mock.calls.find(([r]) => r.operation === 'preview_review')?.[0]).toMatchObject({
+      range: { text: '原文条款', from: 0, to: 4 },
+    });
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+  },
+);
+it('closes stale skill menus on selection or document changes, keeps IME native, and rejects a stale handoff', async () => {
+  const { editor, skillHandle, agent } = mount();
+  await act(async () => {
+    editor.commands.setTextSelection({ from: 1, to: 5 });
+  });
+  const stale = {
+    id: 'stale',
+    skill: { id: 'custom', name: '旧技能', instruction: '不应写入', enabled: true },
+    doc: editor.state.doc,
+    from: 1,
+    to: 5,
+    revision: 1,
+  };
+  fireEvent.contextMenu(editor.view.dom);
+  await screen.findByRole('menu', { name: '写作技能' });
+  await act(async () => {
+    editor.commands.setTextSelection({ from: 7, to: 9 });
+  });
+  expect(screen.queryByRole('menu')).toBeNull();
+  await act(async () => {
+    skillHandle.current?.pick(stale);
+  });
+  expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '本轮问题' }).value).toBe('');
+  fireEvent.contextMenu(editor.view.dom);
+  await screen.findByRole('menu', { name: '写作技能' });
+  await act(async () => {
+    editor.commands.insertContent('新');
+  });
+  expect(screen.queryByRole('menu')).toBeNull();
+  await act(async () => {
+    editor.commands.setTextSelection({ from: 1, to: 3 });
+  });
+  const composing = vi.spyOn(editor.view, 'composing', 'get').mockReturnValue(true);
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+  editor.view.dom.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(false);
+  composing.mockRestore();
+  expect(agent.mock.calls.every(([r]) => r.operation === 'read')).toBe(true);
+});
 it.each(['review', 'assistant'] as const)(
   'automatically quotes selection in %s and freezes it before one dispatch',
   async (variant) => {

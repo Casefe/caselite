@@ -4,7 +4,14 @@ import { useLocalDoc, type RichDraft } from './editor-state';
 import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
 export { localExtensions } from './editor-config';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { BubbleMenuPlugin } from '@tiptap/extension-bubble-menu';
 import { PluginKey, TextSelection } from '@tiptap/pm/state';
@@ -233,7 +240,7 @@ const selectionMenuOptions = {
   shift: { padding: 8 },
 };
 
-function SelectionFormatTools({ editor }: { editor: Editor }) {
+function SelectionFormatTools({ editor, actions }: { editor: Editor; actions?: ReactNode }) {
   const [element] = useState(() => {
     const menu = document.createElement('div');
     menu.className = 'selection-tools';
@@ -295,6 +302,7 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
       }}
     >
       <FormatBar editor={editor} floating marksOnly />
+      {actions}
     </div>,
     element,
   );
@@ -307,6 +315,7 @@ export function EditorSurface({
   disabled = false,
   blockActions = false,
   documentScheme,
+  selectionActions,
 }: {
   editor: Editor | null;
   mode: 'notion' | 'simple' | 'compact';
@@ -314,6 +323,7 @@ export function EditorSurface({
   disabled?: boolean;
   blockActions?: boolean;
   documentScheme?: 'markdown' | 'word';
+  selectionActions?: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const dragging = useRef<(ReturnType<typeof currentBlock> & { doc: object }) | null>(null);
@@ -573,7 +583,7 @@ export function EditorSurface({
         </>
       )}
       {documentMode && editable && !composing && ui?.selected && (
-        <SelectionFormatTools editor={editor} />
+        <SelectionFormatTools editor={editor} actions={selectionActions} />
       )}
       {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>

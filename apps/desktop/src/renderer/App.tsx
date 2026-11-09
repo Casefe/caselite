@@ -33,7 +33,7 @@ import { taskStatusNames } from './ui/task-status';
 import { taskPriorityNames } from './ui/task-priority';
 
 import SettingsView, { type SettingsSection } from './ui/SettingsView';
-import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
+import { SettingsNavigation } from './shared/navigation/SettingsNavigation';
 import { AppearanceProvider } from './ui/Appearance';
 import RecordList, { initialTaskListState } from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
@@ -595,8 +595,13 @@ function Workbench() {
     return () => window.removeEventListener('caselite:docx-draft-saved', onDocxSaved);
   });
   return (
-    <ModelSettingsNavigation.Provider
-      value={() => {
+    <SettingsNavigation
+      openEditor={() => {
+        if (!canLeave()) return;
+        setSettingsSection('editor');
+        navigate('settings');
+      }}
+      openModels={() => {
         if (!canLeave()) return;
         setSettingsSection('models');
         navigate('settings');
@@ -1200,7 +1205,7 @@ function Workbench() {
           <div>请选择导航入口。</div>
         )}
       </WorkspaceShell>
-    </ModelSettingsNavigation.Provider>
+    </SettingsNavigation>
   );
 }
 export default function App() {

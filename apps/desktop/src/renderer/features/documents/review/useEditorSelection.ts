@@ -38,11 +38,13 @@ export default function useEditorSelection(editor: Editor | null, enabled: boole
     captureSelection.current = capture;
     capture();
     editor.on('selectionUpdate', capture);
-    editor.on('update', capture);
+    // 浮层注销可触发内容相同的Yjs重投影；Tiptap不发update，但doc身份已变。
+    // 跟随真实事务刷新本机选区，发送时仍严格检查当前doc和保存修订。
+    editor.on('transaction', capture);
     return () => {
       captureSelection.current = () => {};
       editor.off('selectionUpdate', capture);
-      editor.off('update', capture);
+      editor.off('transaction', capture);
       if (!editor.isDestroyed) editor.unregisterPlugin(key);
     };
   }, [editor]);
