@@ -9,16 +9,30 @@
   background: var(--theme-panel, #fff);
 }
 .resize-separator {
+  position: relative;
   min-width: 6px;
   cursor: col-resize;
   touch-action: none;
   user-select: none;
-  background: var(--theme-border, #e6e7e5);
+  background: transparent;
   outline-offset: -2px;
 }
-.resize-separator:hover,
-.resize-separator:focus-visible {
+.resize-separator::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line-strong);
+  pointer-events: none;
+}
+.resize-separator:hover::before,
+.resize-separator:active::before,
+.resize-separator:focus-visible::before {
   background: var(--theme-accent, #7273ce);
+}
+.resize-separator:focus-visible {
+  outline: 2px solid var(--theme-accent);
 }
 .resize-separator[aria-disabled='true'] {
   cursor: wait;
@@ -37,7 +51,7 @@
   min-width: 0;
   overflow: auto;
   padding: 18px;
-  border-right: 1px solid var(--theme-border, #e6e7e5);
+  border-right: 0;
 }
 .calendar-dates header,
 .calendar-agenda > header,
@@ -133,6 +147,7 @@
 }
 .calendar-task-row[aria-pressed='true'] {
   background: var(--theme-selected, #eef2ec);
+  box-shadow: inset 2px 0 var(--theme-accent);
 }
 .calendar-timed-summary .calendar-task-row {
   gap: 5px;

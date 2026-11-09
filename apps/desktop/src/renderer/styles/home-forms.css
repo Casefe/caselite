@@ -45,7 +45,7 @@
 .agent-starters button {
   border-radius: 6px;
   color: #53666c;
-  border-color: #dce4e5;
+  border-color: var(--line, #dce4e5);
 }
 .home-task-feed header {
   margin-bottom: 10px;
@@ -253,7 +253,7 @@
   gap: 12px;
   margin-top: 22px;
   padding: 15px 16px;
-  border: 1px solid #dce6e5;
+  border: 1px solid var(--line, #dce6e5);
   border-radius: 7px;
   background: #f3f8f7;
   color: #334e51;
@@ -273,7 +273,7 @@
 .home-reminder-card {
   margin-top: 18px;
   padding: 16px;
-  border: 1px solid #e1e7e8;
+  border: 1px solid var(--line, #e1e7e8);
   border-radius: 8px;
   background: #fff;
 }
@@ -412,7 +412,7 @@
 .agent-context-section {
   margin-top: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e9edee;
+  border-bottom: 1px solid var(--line, #e9edee);
 }
 .agent-context-section h3 {
   color: #66767c;
