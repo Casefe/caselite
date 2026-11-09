@@ -59,6 +59,7 @@ export function useAgentController({
   const configured = providers[agentProviderFor(model)];
   const [error, setError] = useState('');
   const [credentialUnavailable, setCredentialUnavailable] = useState(false);
+  const [credentialReading, setCredentialReading] = useState(false);
   const [pending, setPending] = useState(false);
   const [unknown, setUnknown] = useState(() => submissions.has(scope));
   const composing = useRef(false),
@@ -100,6 +101,7 @@ export function useAgentController({
       setRuns(result.runs);
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
     } else setError(result.message);
   };
@@ -119,6 +121,7 @@ export function useAgentController({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialReading(Boolean(result.credential_reading));
           setCredentialUnavailable(
             Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
           );
@@ -180,10 +183,14 @@ export function useAgentController({
     if (project && !previous && (archived || !projectPreview || projectLoading)) return;
     const prompt = previous?.prompt ?? draft.text.trim();
     if (!prompt || prompt.length > 4000) return;
+    if (!previous && credentialReading) {
+      setError('正在读取系统安全凭据，请稍后再发送。附件与输入已保留。');
+      return;
+    }
     if (!previous && !configured) {
       setError(
         credentialUnavailable
-          ? '系统安全凭据暂不可读，请核对系统安全存储后重启应用。附件与输入已保留。'
+          ? '系统安全凭据暂不可读，可在设置中重新读取。附件与输入已保留。'
           : '请在设置中配置当前模型的 Key，附件与输入已保留。',
       );
       return;
@@ -226,6 +233,7 @@ export function useAgentController({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialReading(Boolean(result.credential_reading));
           setCredentialUnavailable(
             Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
           );
@@ -262,6 +270,7 @@ export function useAgentController({
     if (result.ok) {
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
       if ('scope' in request) setRuns(result.runs);
       setError('');
@@ -287,6 +296,7 @@ export function useAgentController({
     configured,
     error,
     credentialUnavailable,
+    credentialReading,
     pending,
     unknown,
     composing,

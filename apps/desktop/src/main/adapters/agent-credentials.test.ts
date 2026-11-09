@@ -323,9 +323,18 @@ it('preserves ciphertext and never initializes storage when the window fails to 
   const vault = await createAgentCredentials(root, undefined, init.options);
   init.ready.reject(new Error('synthetic window load failure'));
   await init.done.promise;
+  expect(vault.isReading?.()).toBe(false);
   expect(() => vault.get()).toThrow('Credential unavailable');
   expect(storage.isAsyncEncryptionAvailable).not.toHaveBeenCalled();
   expect(readFileSync(file())).toEqual(ciphertext);
+  const app = createAgentApplication({
+    credentials: vault,
+    runtime: { start: vi.fn() },
+    taskExists: () => true,
+  });
+  expect(
+    await app.execute({ protocol_version: 1, operation: 'refresh_credentials' }, 'window'),
+  ).toMatchObject({ ok: true, configured: true });
 });
 
 it('bounds background initialization to thirty seconds and ignores late native success', async () => {
@@ -398,3 +407,68 @@ it.each(['availability', 'decrypt'] as const)(
     expect(readFileSync(file())).toEqual(ciphertext);
   },
 );
+
+it('projects pending initialization without system polling and allows one explicit recovery after timeout', async () => {
+  writeFileSync(file(), ciphertext);
+  const ready = pending<void>();
+  const native = pending<boolean>();
+  storage.isAsyncEncryptionAvailable.mockReturnValueOnce(native.promise);
+  const vault = await createAgentCredentials(root, undefined, {
+    afterWindowReady: ready.promise,
+    onSettled() {},
+  });
+  const runtime = { start: vi.fn(() => ({ cancel() {} })) };
+  const app = createAgentApplication({ credentials: vault, runtime, taskExists: () => true });
+  for (let i = 0; i < 3; i++)
+    expect(
+      await app.execute({ protocol_version: 1, operation: 'profile' }, 'window'),
+    ).toMatchObject({ ok: true, credential_reading: true, configured: false });
+  expect(storage.isAsyncEncryptionAvailable).not.toHaveBeenCalled();
+  ready.resolve();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(
+    await app.execute({ protocol_version: 1, operation: 'refresh_credentials' }, 'window'),
+  ).toMatchObject({ ok: false, code: 'BUSY' });
+  expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(vault.isReading?.()).toBe(false);
+  expect(
+    await app.execute({ protocol_version: 1, operation: 'profile' }, 'window'),
+  ).not.toHaveProperty('credential_reading');
+  native.resolve(true);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(() => vault.get()).toThrow('Credential unavailable');
+  const recovered = await app.execute(
+    { protocol_version: 1, operation: 'refresh_credentials' },
+    'window',
+  );
+  expect(recovered).toMatchObject({ ok: true, configured: true });
+  expect(recovered).not.toHaveProperty('credential_reading');
+  expect(storage.isAsyncEncryptionAvailable).toHaveBeenCalledTimes(2);
+  expect(runtime.start).not.toHaveBeenCalled();
+  expect(readFileSync(file())).toEqual(ciphertext);
+});
+
+it('does not keep a superseded read busy or let its completion clear the next read', async () => {
+  writeFileSync(file(), ciphertext);
+  const vault = await createAgentCredentials(root);
+  const first = pending<boolean>(),
+    second = pending<boolean>();
+  storage.isAsyncEncryptionAvailable
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  const oldRead = vault.refresh!();
+  expect(vault.isReading?.()).toBe(true);
+  const rejected = expect(oldRead).rejects.toThrow('Credential operation superseded');
+  vault.clear();
+  expect(vault.isReading?.()).toBe(false);
+  writeFileSync(file(), ciphertext);
+  const nextRead = vault.refresh!();
+  first.resolve(true);
+  await rejected;
+  expect(vault.isReading?.()).toBe(true);
+  second.resolve(true);
+  await nextRead;
+  expect(vault.isReading?.()).toBe(false);
+  expect(vault.get()).toBe('synthetic-key');
+});

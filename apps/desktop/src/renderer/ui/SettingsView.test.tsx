@@ -173,3 +173,43 @@ it('refreshes system credentials exactly once after an explicit click and disabl
     ),
   ).toBe(false);
 });
+
+it('polls only memory profiles while reading, then restores explicit recovery after timeout', async () => {
+  let reading = true;
+  const agent = vi
+    .fn<Window['caselite']['agent']>()
+    .mockImplementation(async (): Promise<AgentResponse> => ({
+      ...response(false),
+      ...(reading ? { credential_reading: true } : {}),
+      credential_errors: { openai: 'UNAVAILABLE' },
+    }));
+  window.caselite = { agent } as unknown as Window['caselite'];
+  show();
+  await screen.findByText(/正在读取系统安全凭据/);
+  expect(screen.queryByText('凭据不可读')).toBeNull();
+  const refresh = screen.getByRole<HTMLButtonElement>('button', { name: '重新读取系统凭据' });
+  expect(refresh.disabled).toBe(true);
+  fireEvent.click(refresh);
+  expect((screen.getByLabelText('OpenAI API Key') as HTMLInputElement).disabled).toBe(true);
+  reading = false;
+  await screen.findByText('凭据不可读');
+  expect(refresh.disabled).toBe(false);
+  expect(agent.mock.calls.length).toBeGreaterThanOrEqual(2);
+  expect(agent.mock.calls.every(([request]) => request.operation === 'profile')).toBe(true);
+});
+
+it('stops automatic profile polling on an IPC failure instead of retrying system credentials', async () => {
+  const agent = vi
+    .fn<Window['caselite']['agent']>()
+    .mockResolvedValueOnce({ ...response(false), credential_reading: true })
+    .mockRejectedValue(new Error('synthetic IPC failure'));
+  window.caselite = { agent } as unknown as Window['caselite'];
+  show();
+  await screen.findByText(/正在读取系统安全凭据/);
+  await screen.findByText('无法读取或确认模型配置，请重新读取状态后再操作。');
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(agent).toHaveBeenCalledTimes(2);
+  expect(
+    (screen.getByRole('button', { name: '重新读取系统凭据' }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+});

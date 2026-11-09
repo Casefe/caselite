@@ -55,6 +55,7 @@ export async function createAgentCredentials(
   let unavailable = new Set<AgentProvider>();
   let generation = 0;
   let initialReadQueued = Boolean(initialization);
+  let readingGeneration: number | undefined;
   const settingsFile = join(root, 'agent-model.json');
   const requireEncryption = async () => {
     if (
@@ -67,41 +68,46 @@ export async function createAgentCredentials(
   };
   const refresh = async () => {
     const revision = ++generation;
-    const current = () => {
-      if (revision !== generation) throw new Error('Credential operation superseded');
-    };
-    const nextCached = new Map<AgentProvider, string>();
-    const nextUnavailable = new Set<AgentProvider>();
-    const storedProviders = agentProviderSchema.options.filter((provider) =>
-      existsSync(credentialFile(provider)),
-    );
-    if (storedProviders.length) {
-      let available = false;
-      try {
-        await requireEncryption();
-        available = true;
-      } catch {
-        // 初始化失败保留全部旧密文；不从轮询或失败路径自动重试。
-      }
-      current();
-      for (const provider of storedProviders) {
+    readingGeneration = revision;
+    try {
+      const current = () => {
+        if (revision !== generation) throw new Error('Credential operation superseded');
+      };
+      const nextCached = new Map<AgentProvider, string>();
+      const nextUnavailable = new Set<AgentProvider>();
+      const storedProviders = agentProviderSchema.options.filter((provider) =>
+        existsSync(credentialFile(provider)),
+      );
+      if (storedProviders.length) {
+        let available = false;
         try {
-          if (!available) throw new Error('System encryption unavailable');
-          const decrypted = await bounded(`${provider}-decrypt`, () =>
-            safeStorage.decryptStringAsync(readFileSync(credentialFile(provider))),
-          );
-          current();
-          nextCached.set(provider, decrypted.result);
+          await requireEncryption();
+          available = true;
         } catch {
-          current();
-          nextUnavailable.add(provider);
+          // 初始化失败保留全部旧密文；不从轮询或失败路径自动重试。
+        }
+        current();
+        for (const provider of storedProviders) {
+          try {
+            if (!available) throw new Error('System encryption unavailable');
+            const decrypted = await bounded(`${provider}-decrypt`, () =>
+              safeStorage.decryptStringAsync(readFileSync(credentialFile(provider))),
+            );
+            current();
+            nextCached.set(provider, decrypted.result);
+          } catch {
+            current();
+            nextUnavailable.add(provider);
+          }
         }
       }
+      // 重读只提交本代的完整内存投影；晚到读取不能覆盖后来的保存、删除或新重读。
+      current();
+      cached = nextCached;
+      unavailable = nextUnavailable;
+    } finally {
+      if (readingGeneration === revision) readingGeneration = undefined;
     }
-    // 重读只提交本代的完整内存投影；晚到读取不能覆盖后来的保存、删除或新重读。
-    current();
-    cached = nextCached;
-    unavailable = nextUnavailable;
   };
   if (initialization) {
     // 窗口就绪前只暴露不可读状态；轮询不能触发系统调用，首次读取也不能覆盖后来的显式操作。
@@ -115,11 +121,16 @@ export async function createAgentCredentials(
         await refresh();
       })
       .catch(() => {
+        initialReadQueued = false;
         // 窗口加载/初始化失败保留旧密文和不可读标记，不能明文降级或自动重试。
       })
       .finally(initialization.onSettled);
   } else await refresh();
   return {
+    isReading() {
+      // 只投影当前代的内存状态；状态查询不触发系统调用，也不等待已失效的旧读。
+      return (initialReadQueued && unavailable.size > 0) || readingGeneration === generation;
+    },
     refresh() {
       initialReadQueued = false;
       return refresh();

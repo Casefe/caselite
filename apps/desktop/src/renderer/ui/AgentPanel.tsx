@@ -228,6 +228,7 @@ export default function AgentPanel({
     configured,
     error,
     credentialUnavailable,
+    credentialReading,
     pending,
     unknown,
     composing: composingRef,
@@ -271,7 +272,7 @@ export default function AgentPanel({
           className="home-model-select"
           aria-label="选择大模型"
           value={active?.model ?? model}
-          disabled={Boolean(active) || pending || unknown}
+          disabled={Boolean(active) || pending || unknown || credentialReading}
           onChange={(event) =>
             void command({
               protocol_version: 1,
@@ -316,7 +317,8 @@ export default function AgentPanel({
           disabled={
             pending ||
             (!unknown &&
-              ((project && (archived || !projectPreview || projectLoading)) ||
+              (credentialReading ||
+                (project && (archived || !projectPreview || projectLoading)) ||
                 !draft.text.trim() ||
                 draft.text.length > 4000))
           }
@@ -400,7 +402,12 @@ export default function AgentPanel({
                 : ''}
             </p>
           )}
-          {credentialUnavailable && (
+          {credentialReading && (
+            <p className="assistant-run-status" role="status">
+              正在读取系统安全凭据，尚未发起模型请求；人工任务与正文可继续使用。
+            </p>
+          )}
+          {!credentialReading && credentialUnavailable && (
             <div role="alert" className="assistant-error">
               系统安全凭据暂不可读；旧密文已保留，未发起模型请求。可在设置中核对，人工任务与正文仍可使用。
             </div>

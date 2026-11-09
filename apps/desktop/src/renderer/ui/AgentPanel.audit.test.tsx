@@ -139,3 +139,24 @@ it('opens and closes a saved attachment while the audit composer remains absent'
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
 });
+
+it('shows reading progress without a failure alert or discarding the prompt', async () => {
+  const agent = vi.fn<Window['caselite']['agent']>().mockResolvedValue({
+    ok: true,
+    configured: false,
+    model: 'deepseek-flash',
+    providers: { deepseek: false },
+    credential_reading: true,
+    credential_errors: { deepseek: 'UNAVAILABLE' },
+    runs: [],
+  });
+  window.caselite = { agent } as unknown as Window['caselite'];
+  render(<AgentPanel scope="home" />);
+  await screen.findByText(/正在读取系统安全凭据/);
+  expect(screen.queryByRole('alert')).toBeNull();
+  const input = screen.getByTestId('agent-input');
+  fireEvent.change(input, { target: { value: '保留的合成草稿' } });
+  fireEvent.submit(input.closest('form')!);
+  expect((input as HTMLTextAreaElement).value).toBe('保留的合成草稿');
+  expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+});

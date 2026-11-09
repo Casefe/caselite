@@ -20,6 +20,7 @@ const isReviewReplacement = (text: string, original: string) =>
 
 export interface AgentCredentialPort {
   refresh?(): Promise<void>;
+  isReading?(): boolean;
   get(provider?: AgentProvider): string | undefined;
   set(key: string, provider?: AgentProvider): void | Promise<void>;
   clear(provider?: AgentProvider): void;
@@ -131,6 +132,7 @@ export function createAgentApplication(ports: {
     };
     return {
       providers,
+      ...(ports.credentials.isReading?.() ? { credential_reading: true } : {}),
       ...(Object.keys(credential_errors).length ? { credential_errors } : {}),
     };
   };
@@ -162,6 +164,12 @@ export function createAgentApplication(ports: {
       )
         return failure('BUSY', '模型配置正在保存，请稍后核对。');
       try {
+        if (
+          ports.credentials.isReading?.() &&
+          (request.operation === 'refresh_credentials' ||
+            (request.operation === 'start' && !runs.has(request.run_id)))
+        )
+          return failure('BUSY', '系统凭据正在读取，请稍后核对；不会重读或发起新请求。');
         if (request.operation === 'history' || request.operation === 'pin_history') {
           if (!ports.history?.pinnedIds || !ports.history.setPinned)
             return failure('HISTORY_UNAVAILABLE', '历史对话暂不可用，请稍后重试。');

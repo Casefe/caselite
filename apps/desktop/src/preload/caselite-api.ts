@@ -60,6 +60,8 @@ import {
 export type IpcInvoke = (channel: string, payload: unknown) => Promise<unknown>;
 
 export const IPC_COMMAND_TIMEOUT_MS = 15_000;
+// 仅凭据保存/重读覆盖30秒系统初始化和5家各3秒解密；付费Run与其他命令仍限15秒。
+export const CREDENTIAL_COMMAND_TIMEOUT_MS = 50_000;
 
 function internalFailure(): CommandFailure {
   return {
@@ -101,13 +103,14 @@ async function invokeBusinessCommand(
     | ReminderRequest
     | FinanceRequest
     | ContactsRequest,
+  timeoutMs = IPC_COMMAND_TIMEOUT_MS,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       invoke(channel, request),
       new Promise<CommandFailure>((resolve) => {
-        timer = setTimeout(() => resolve(timeoutFailure()), IPC_COMMAND_TIMEOUT_MS);
+        timer = setTimeout(() => resolve(timeoutFailure()), timeoutMs);
       }),
     ]);
   } catch {
@@ -215,7 +218,14 @@ export function createCaseLitePreloadApi(
     },
     async agent(request) {
       const result = agentResponseSchema.safeParse(
-        await invokeBusinessCommand(invoke, AGENT_CHANNEL, request),
+        await invokeBusinessCommand(
+          invoke,
+          AGENT_CHANNEL,
+          request,
+          request.operation === 'configure' || request.operation === 'refresh_credentials'
+            ? CREDENTIAL_COMMAND_TIMEOUT_MS
+            : IPC_COMMAND_TIMEOUT_MS,
+        ),
       );
       return result.success
         ? result.data

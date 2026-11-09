@@ -1,5 +1,5 @@
 import { Icon } from '../shared/ui/Icon';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { agentProviderFor, agentModelLabel, agentModels, providerNames } from './model-labels';
 import type { AgentModel, AgentProvider, AgentRequest } from '../../preload/caselite-api';
 
@@ -233,6 +233,7 @@ function ModelSettings() {
   const [credentialErrors, setCredentialErrors] = useState<
     Partial<Record<AgentProvider, 'UNAVAILABLE'>>
   >({});
+  const [credentialReading, setCredentialReading] = useState(false);
   const [defaultModel, setDefaultModel] = useState<AgentModel>('gpt-4.1-mini');
   const [selectedModel, setSelectedModel] = useState<AgentModel>('gpt-4.1-mini');
   const [key, setKey] = useState('');
@@ -253,42 +254,50 @@ function ModelSettings() {
     (provider === 'openai' || provider === 'deepseek'
       ? /^sk-[A-Za-z0-9_-]{8,}$/.test(trimmedKey)
       : /^[A-Za-z0-9._-]{10,}$/.test(trimmedKey));
-  async function execute(request: AgentRequest) {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setPending(true);
-    setError('');
-    setNotice('');
-    if (request.operation !== 'profile' && request.operation !== 'refresh_credentials') setKey('');
-    try {
-      const result = await window.caselite.agent(request);
-      if (!mounted.current) return;
-      if (result.ok) {
-        setProviders(result.providers);
-        setCredentialErrors(result.credential_errors ?? {});
-        setDefaultModel(result.model);
-        setConfirmDelete(false);
-        if (request.operation === 'configure')
-          setNotice('密钥已加密保存到此设备。尚未验证服务连接。');
-        if (request.operation === 'select_model')
-          setNotice(`默认模型已保存：${agentModelLabel(result.model)}。`);
-        if (request.operation === 'clear_key') setNotice('已删除本机密钥，人工编辑不受影响。');
-        if (request.operation === 'refresh_credentials')
-          setNotice('已重新读取系统凭据状态，未发起模型请求。');
-      } else {
-        setError(result.message);
-        setProviders(null);
+  const execute = useCallback(
+    async (request: AgentRequest) => {
+      if (inFlight.current || (credentialReading && request.operation !== 'profile')) return;
+      inFlight.current = true;
+      setPending(true);
+      setError('');
+      setNotice('');
+      if (request.operation === 'refresh_credentials') setCredentialReading(true);
+      if (request.operation !== 'profile' && request.operation !== 'refresh_credentials')
+        setKey('');
+      try {
+        const result = await window.caselite.agent(request);
+        if (!mounted.current) return;
+        if (result.ok) {
+          setProviders(result.providers);
+          setCredentialErrors(result.credential_errors ?? {});
+          setCredentialReading(Boolean(result.credential_reading));
+          setDefaultModel(result.model);
+          setConfirmDelete(false);
+          if (request.operation === 'configure')
+            setNotice('密钥已加密保存到此设备。尚未验证服务连接。');
+          if (request.operation === 'select_model')
+            setNotice(`默认模型已保存：${agentModelLabel(result.model)}。`);
+          if (request.operation === 'clear_key') setNotice('已删除本机密钥，人工编辑不受影响。');
+          if (request.operation === 'refresh_credentials')
+            setNotice('已重新读取系统凭据状态，未发起模型请求。');
+        } else {
+          setError(result.message);
+          setCredentialReading(false);
+          setProviders(null);
+        }
+      } catch {
+        if (mounted.current) {
+          setProviders(null);
+          setCredentialReading(false);
+          setError('无法读取或确认模型配置，请重新读取状态后再操作。');
+        }
+      } finally {
+        inFlight.current = false;
+        if (mounted.current) setPending(false);
       }
-    } catch {
-      if (mounted.current) {
-        setProviders(null);
-        setError('无法读取或确认模型配置，请重新读取状态后再操作。');
-      }
-    } finally {
-      inFlight.current = false;
-      if (mounted.current) setPending(false);
-    }
-  }
+    },
+    [credentialReading],
+  );
   useEffect(() => {
     mounted.current = true;
     let cancelled = false;
@@ -299,6 +308,7 @@ function ModelSettings() {
         if (result.ok) {
           setProviders(result.providers);
           setCredentialErrors(result.credential_errors ?? {});
+          setCredentialReading(Boolean(result.credential_reading));
           setDefaultModel(result.model);
         } else setError(result.message);
       })
@@ -316,6 +326,15 @@ function ModelSettings() {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!credentialReading || pending) return;
+    // 只查询主进程内存状态；完成或查询失败即停止，不自动重读系统凭据。
+    const timer = setTimeout(
+      () => void execute({ protocol_version: 1, operation: 'profile' }),
+      500,
+    );
+    return () => clearTimeout(timer);
+  }, [credentialReading, pending, execute]);
   return (
     <>
       <p className="settings-lead">统一管理对话模型、文档识别与法律检索服务。</p>
@@ -326,7 +345,7 @@ function ModelSettings() {
               key={item.id}
               data-provider={item.id}
               aria-pressed={selected === item.id}
-              disabled={pending}
+              disabled={pending || credentialReading}
               onClick={() => {
                 setSelected(item.id);
                 setSelectedModel(
@@ -352,11 +371,13 @@ function ModelSettings() {
                     ? pending
                       ? '读取中'
                       : '状态未知'
-                    : credentialErrors[item.id]
-                      ? '凭据不可读'
-                      : providers[item.id]
-                        ? '已保存'
-                        : '未配置'
+                    : credentialReading
+                      ? '读取中'
+                      : credentialErrors[item.id]
+                        ? '凭据不可读'
+                        : providers[item.id]
+                          ? '已保存'
+                          : '未配置'
                   : '待接入'}
               </span>
             </button>
@@ -388,7 +409,7 @@ function ModelSettings() {
               <select
                 aria-label="模型选择"
                 value={selectedModel}
-                disabled={pending}
+                disabled={pending || credentialReading}
                 onChange={(e) => setSelectedModel(e.target.value as AgentModel)}
               >
                 {modelOptions.map((model) => (
@@ -408,7 +429,7 @@ function ModelSettings() {
               type="password"
               autoComplete="off"
               spellCheck={false}
-              disabled={!available || pending}
+              disabled={!available || pending || credentialReading}
               maxLength={512}
               placeholder={
                 available
@@ -426,7 +447,12 @@ function ModelSettings() {
               ? '密钥仅加密保存在此设备，不回显。保存不会发送材料，也不代表连接验证成功。'
               : '当前预览不收集或保存密钥，不会发起外部请求。'}
           </p>
-          {available && credentialErrors[provider] && (
+          {available && credentialReading && (
+            <p className="settings-notice" role="status">
+              正在读取系统安全凭据，请稍候；旧密文已保留，尚未发起模型请求。
+            </p>
+          )}
+          {available && !credentialReading && credentialErrors[provider] && (
             <div className="assistant-error" role="alert">
               系统安全凭据暂不可读；旧密文已保留，不表示密钥已删除。未发起模型请求，人工任务与正文仍可使用。
             </div>
@@ -444,7 +470,7 @@ function ModelSettings() {
           <div className="provider-actions">
             <button
               className="primary"
-              disabled={!available || pending || !validKey}
+              disabled={!available || pending || credentialReading || !validKey}
               onClick={() =>
                 void execute({ protocol_version: 1, operation: 'configure', provider, key })
               }
@@ -454,7 +480,7 @@ function ModelSettings() {
             {available && (
               <>
                 <button
-                  disabled={pending}
+                  disabled={pending || credentialReading}
                   onClick={() =>
                     void execute({ protocol_version: 1, operation: 'refresh_credentials' })
                   }
@@ -462,7 +488,11 @@ function ModelSettings() {
                   重新读取系统凭据
                 </button>
                 <button
-                  disabled={pending || (configured !== true && !credentialErrors[provider])}
+                  disabled={
+                    pending ||
+                    credentialReading ||
+                    (configured !== true && !credentialErrors[provider])
+                  }
                   onClick={() => setConfirmDelete(true)}
                 >
                   删除 Key
@@ -474,7 +504,9 @@ function ModelSettings() {
             <div className="model-default-control">
               <p>当前默认：{agentModelLabel(defaultModel)}</p>
               <button
-                disabled={pending || !configured || selectedModel === defaultModel}
+                disabled={
+                  pending || credentialReading || !configured || selectedModel === defaultModel
+                }
                 onClick={() =>
                   void execute({
                     protocol_version: 1,
@@ -494,14 +526,17 @@ function ModelSettings() {
             <div className="key-delete-confirm" role="group" aria-label="确认删除密钥">
               <p>删除此设备的 {service.name} 密钥？已有任务和正文会保留。</p>
               <button
-                disabled={pending}
+                disabled={pending || credentialReading}
                 onClick={() =>
                   void execute({ protocol_version: 1, operation: 'clear_key', provider })
                 }
               >
                 确认删除
               </button>
-              <button disabled={pending} onClick={() => setConfirmDelete(false)}>
+              <button
+                disabled={pending || credentialReading}
+                onClick={() => setConfirmDelete(false)}
+              >
                 取消
               </button>
             </div>

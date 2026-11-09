@@ -182,6 +182,7 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
       kimi: z.boolean().optional(),
       siliconflow: z.boolean().optional(),
     }),
+    credential_reading: z.boolean().optional(),
     credential_errors: z
       .object({
         openai: z.literal('UNAVAILABLE').optional(),

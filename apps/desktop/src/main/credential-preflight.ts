@@ -46,6 +46,7 @@ export function readOnlyDemoCredentials(port: AgentCredentialPort): AgentCredent
   };
   return {
     get: (provider) => port.get(provider),
+    ...(port.isReading ? { isReading: () => port.isReading!() } : {}),
     ...(port.refresh ? { refresh: () => port.refresh!() } : {}),
     getDefaultModel: () => port.getDefaultModel(),
     set: reject,
