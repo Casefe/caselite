@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { ordinaryDateSchema } from './task';
+import { financeSourceClaimSchema } from './finance-source';
+export * from './finance-source';
+import { financeManagementSuccessSchema } from './finance-management';
+export * from './finance-management';
 
 export const FINANCE_CHANNEL = 'caselite:finance:v1';
 const id = z.uuid();
@@ -20,6 +24,7 @@ export const financeRequestSchema = z.discriminatedUnion('operation', [
   z.strictObject({
     ...write,
     operation: z.literal('register_contract'),
+    source: financeSourceClaimSchema.optional(),
     number: z
       .string()
       .trim()
@@ -32,6 +37,9 @@ export const financeRequestSchema = z.discriminatedUnion('operation', [
   z.strictObject({
     ...write,
     operation: z.literal('record_payment'),
+    occurred_on: ordinaryDateSchema.optional(),
+    note: z.string().trim().max(1000).optional(),
+    source: financeSourceClaimSchema.optional(),
     installment_id: id,
     amount_cents: cents,
   }),
@@ -39,6 +47,7 @@ export const financeRequestSchema = z.discriminatedUnion('operation', [
 ]);
 const detail = z.object({
   number: z.string(),
+  source_candidate_id: id.nullable().optional(),
   amount_cents: cents,
   outstanding_cents: balance,
   due_cents: balance,
@@ -49,11 +58,15 @@ const detail = z.object({
       installment_id: id,
       amount_cents: cents,
       committed_at: z.iso.datetime(),
+      occurred_on: ordinaryDateSchema.nullable().optional(),
+      note: z.string().optional(),
+      source_candidate_id: id.nullable().optional(),
       reversed_at: z.iso.datetime().nullable(),
     }),
   ),
 });
 export const financeResponseSchema = z.union([
+  financeManagementSuccessSchema,
   z.object({
     ok: z.literal(true),
     kind: z.literal('ledger'),

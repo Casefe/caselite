@@ -5,24 +5,29 @@ import {
   useOrdinaryCatalog,
 } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
-import { useState, useRef, type FormEvent } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
+import FinanceSettings from './FinanceSettings';
+import ProjectFinancePanel from './ProjectFinancePanel';
+import {
+  useFinanceManagement,
+  financeManagementKey,
+  type FinanceManagementController,
+} from './useFinanceManagement';
+import InspectorLayout from '../../ui/InspectorLayout';
+import SidebarAgent from '../../ui/SidebarAgent';
+import AgentPanel from '../../ui/AgentPanel';
 import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
 import { formatCents, parseCents } from './money';
 
 type Detail = Extract<FinanceResponse, { kind: 'ledger' }>;
 type Write = Exclude<FinanceRequest, { operation: 'read' | 'status' }>;
-type Draft =
-  | Omit<
-      Extract<Write, { operation: 'register_contract' }>,
-      'protocol_version' | 'project_id' | 'request_id' | 'idempotency_key'
-    >
-  | { operation: 'record_payment'; installment_id: string; amount_cents: number }
-  | { operation: 'reverse_payment'; payment_id: string };
+import type { Draft, ContractSeed } from './types';
 
 function matchesEvidence(result: Detail, request: Write, evidence: Detail['evidence']) {
   const ledger = result.ledger;
   if (!ledger || !evidence || evidence.operation !== request.operation) return false;
   if (request.operation === 'register_contract') {
+    if (request.source && ledger.source_candidate_id !== request.source.candidate_id) return false;
     const expected = [...request.installments].sort((a, b) => a.due_date.localeCompare(b.due_date));
     return (
       evidence.target_id === request.project_id &&
@@ -39,8 +44,11 @@ function matchesEvidence(result: Detail, request: Write, evidence: Detail['evide
   const payment = ledger.payments.find((row) => row.id === evidence.target_id);
   if (request.operation === 'record_payment')
     return (
+      (!request.source || payment?.source_candidate_id === request.source.candidate_id) &&
       payment?.installment_id === request.installment_id &&
-      payment.amount_cents === request.amount_cents
+      payment.amount_cents === request.amount_cents &&
+      (!request.occurred_on || payment.occurred_on === request.occurred_on) &&
+      (request.note === undefined || payment.note === request.note.trim())
     );
   return payment?.id === request.payment_id && Boolean(payment.reversed_at);
 }
@@ -51,17 +59,27 @@ function ContractForm({
   disabled,
   submit,
   onEdit,
+  seed,
 }: {
+  seed?: ContractSeed;
   disabled: boolean;
   submit(draft: Draft): void;
   onEdit(): void;
 }) {
-  const [rows, setRows] = useState(() => [blank()]);
+  const [rows, setRows] = useState(() => [
+    {
+      ...blank(),
+      amount: seed?.amount === undefined ? '' : (seed.amount / 100).toFixed(2),
+      date: seed?.date ?? '',
+    },
+  ]);
   function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
+    if (seed?.source && fields.get('source_confirmed') !== 'on') return;
     submit({
       operation: 'register_contract',
+      source: seed?.source,
       number: String(fields.get('number')),
       amount_cents: parseCents(String(fields.get('amount'))),
       installments: rows.map((row) => ({
@@ -76,11 +94,16 @@ function ContractForm({
         <legend>登记有效收费合同</legend>
         <label>
           合同编号
-          <input name="number" required maxLength={120} />
+          <input name="number" required maxLength={120} defaultValue={seed?.reference} />
         </label>
         <label>
           合同金额（元）
-          <input name="amount" inputMode="decimal" required />
+          <input
+            name="amount"
+            inputMode="decimal"
+            required
+            defaultValue={seed?.amount === undefined ? '' : (seed.amount / 100).toFixed(2)}
+          />
         </label>
         {rows.map((row, index) => (
           <div key={row.id} className="finance-fields">
@@ -127,6 +150,14 @@ function ContractForm({
             )}
           </div>
         ))}
+        <div>
+          {seed?.source && (
+            <label className="finance-checkbox">
+              <input type="checkbox" name="source_confirmed" required />
+              已核对 {seed.sourceName} 的金额及分期安排，确认登记本合同。
+            </label>
+          )}
+        </div>
         <div className="finance-fields">
           <button
             type="button"
@@ -148,11 +179,16 @@ function ContractForm({
 function ProjectLedger({
   project,
   onBlocked,
+  finance,
+  propertySlot,
 }: {
   project: Matter;
+  finance: FinanceManagementController;
+  propertySlot: HTMLDivElement | null;
   onBlocked(blocked: boolean): void;
 }) {
   const client = useQueryClient();
+  const [entry, setEntry] = useState(true);
   const [message, setMessage] = useState('');
   const [writeError, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -161,6 +197,7 @@ function ProjectLedger({
   const [reverse, setReverse] = useState<string>();
   const [formRevision, setFormRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [intakeBusy, setIntakeBusy] = useState(false);
   const inFlight = useRef(false);
   const projectId = project.id;
 
@@ -195,6 +232,8 @@ function ProjectLedger({
   }
 
   function discardDraft() {
+    finance.clearEntry(projectId);
+    setEntry(true);
     setFormRevision((value) => value + 1);
     setDirty(false);
     setReverse(undefined);
@@ -204,6 +243,9 @@ function ProjectLedger({
   }
 
   function accept(result: Detail) {
+    finance.clearEntry(projectId);
+    setEntry(false);
+    void client.invalidateQueries({ queryKey: financeManagementKey });
     void invalidateOrdinaryCatalog(client, true, true);
     void invalidateProjectCatalog(client);
     // 只用已经核对项目、原提交身份及账本证据的回执更新读取缓存。
@@ -286,7 +328,7 @@ function ProjectLedger({
     } finally {
       if (resolved) {
         setPending(undefined);
-        if (!dirty && !reverse) onBlocked(false);
+        if (!dirty && !reverse && !intakeBusy) onBlocked(false);
       }
       inFlight.current = false;
       setBusy(false);
@@ -307,11 +349,10 @@ function ProjectLedger({
   const ledger = detail?.ledger;
   return (
     <section aria-label="项目财务明细">
-      <h2>{project.title}</h2>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {busy && <p role="status">正在核对账本…</p>}
-      {dirty && !pending && (
+      {dirty && !pending && !busy && !intakeBusy && !finance.pending && !finance.busy && (
         <p>
           有未提交的财务输入。保存或放弃输入后可以切换项目。
           <button type="button" onClick={discardDraft}>
@@ -340,170 +381,74 @@ function ProjectLedger({
         ))}
       {detail && (
         <>
-          <p>
-            币种为人民币。到期按本机时区 {detail.time_zone} 的自然日计算，包含当日（{detail.today}
-            ）。
-          </p>
-          <p>若曾在回执未确认时退出，请先查看账本及收款记录，核对原操作是否已登记。</p>
+          <details className="finance-ledger-help">
+            <summary>人民币 · 账本说明</summary>
+            <p>
+              币种为人民币。到期按本机时区 {detail.time_zone} 的自然日计算，包含当日（{detail.today}
+              ）。
+            </p>
+            <p>若曾在回执未确认时退出，请先查看账本及收款记录，核对原操作是否已登记。</p>
+          </details>
           {project.archived_at && <p>此项目已归档，账本只读。</p>}
-          {ledger ? (
-            <>
-              <dl className="finance-summary">
-                <div>
-                  <dt>合同编号</dt>
-                  <dd>{ledger.number}</dd>
-                </div>
-                <div>
-                  <dt>合同金额（元）</dt>
-                  <dd>{formatCents(ledger.amount_cents)}</dd>
-                </div>
-                <div>
-                  <dt>待收款（元）</dt>
-                  <dd data-testid="finance-outstanding">{formatCents(ledger.outstanding_cents)}</dd>
-                </div>
-                <div>
-                  <dt>已到期未收（元）</dt>
-                  <dd data-testid="finance-due">{formatCents(ledger.due_cents)}</dd>
-                </div>
-              </dl>
-              <h3>合同分期</h3>
-              <ReadTable
-                data={ledger.installments}
-                getRowId={(row) => row.id}
-                label="合同分期"
-                columns={[
-                  {
-                    id: 'installment',
-                    header: '期款',
-                    cell: ({ row }) => `第 ${row.index + 1} 期`,
-                  },
-                  { accessorKey: 'due_date', header: '到期日' },
-                  {
-                    id: 'amount',
-                    header: '约定（元）',
-                    accessorFn: (row) => formatCents(row.amount_cents),
-                  },
-                  {
-                    id: 'outstanding',
-                    header: '未收（元）',
-                    accessorFn: (row) => formatCents(row.outstanding_cents),
-                  },
-                ]}
-              />
-              {!project.archived_at && ledger.outstanding_cents > 0 && (
-                <form
-                  key={formRevision}
-                  onChange={edit}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const fields = new FormData(event.currentTarget);
-                    submit({
-                      operation: 'record_payment',
-                      installment_id: String(fields.get('installment')),
-                      amount_cents: parseCents(String(fields.get('amount'))),
-                    });
-                  }}
-                >
-                  <fieldset disabled={!!pending || !!reverse}>
-                    <legend>登记律所已确认收款</legend>
-                    <label>
-                      分配到期款
-                      <select name="installment" required defaultValue="">
-                        <option value="" disabled>
-                          选择期款
-                        </option>
-                        {ledger.installments.map(
-                          (row, index) =>
-                            row.outstanding_cents > 0 && (
-                              <option key={row.id} value={row.id}>
-                                第 {index + 1} 期 · {row.due_date}
-                              </option>
-                            ),
-                        )}
-                      </select>
-                    </label>
-                    <label>
-                      收款金额（元）
-                      <input name="amount" inputMode="decimal" required />
-                    </label>
-                    <button className="primary">确认登记收款</button>
-                  </fieldset>
-                </form>
-              )}
-              <h3>收款与冲回记录</h3>
-              {ledger.payments.length === 0 && <p>暂无确认收款。</p>}
-              <ul className="finance-payments">
-                {ledger.payments.map((payment) => (
-                  <li key={payment.id}>
-                    <span>
-                      第{' '}
-                      {ledger.installments.findIndex((row) => row.id === payment.installment_id) +
-                        1}{' '}
-                      期 · {formatCents(payment.amount_cents)} 元
-                    </span>
-                    <time dateTime={payment.committed_at}>
-                      {new Date(payment.committed_at).toLocaleString()}
-                    </time>
-                    {payment.reversed_at ? (
-                      <span>
-                        已冲回 ·{' '}
-                        <time dateTime={payment.reversed_at}>
-                          {new Date(payment.reversed_at).toLocaleString()}
-                        </time>
-                      </span>
-                    ) : (
-                      !project.archived_at &&
-                      (reverse === payment.id ? (
-                        <div className="finance-fields">
-                          <button
-                            type="button"
-                            disabled={!!pending}
-                            onClick={() =>
-                              submit({ operation: 'reverse_payment', payment_id: payment.id })
-                            }
-                          >
-                            确认冲回原收款
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!!pending}
-                            onClick={() => {
-                              setReverse(undefined);
-                              if (!dirty) onBlocked(false);
-                            }}
-                          >
-                            取消冲回
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={!!pending || !!reverse || dirty}
-                          onClick={() => {
-                            setReverse(payment.id);
-                            onBlocked(true);
-                          }}
-                        >
-                          冲回这笔收款
-                        </button>
-                      ))
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <>
-              <p>待收款（元） — · 此项目尚未建账</p>
-              {!project.archived_at && (
-                <ContractForm
-                  key={formRevision}
-                  disabled={!!pending}
-                  submit={submit}
-                  onEdit={edit}
-                />
-              )}
-            </>
+          <ProjectFinancePanel
+            project={project}
+            entryRevision={formRevision}
+            entryDirty={dirty}
+            onEntrySaved={() => {
+              setDirty(false);
+              setFormRevision((value) => value + 1);
+              onBlocked(!!pending || busy || !!reverse || intakeBusy);
+            }}
+            ledger={ledger ?? null}
+            contractForm={
+              !ledger && !project.archived_at
+                ? (seed) => (
+                    <ContractForm
+                      key={`${formRevision}:${seed.source?.candidate_id ?? 'manual'}:${seed.amount ?? ''}:${seed.date ?? ''}`}
+                      disabled={!!pending || busy}
+                      submit={submit}
+                      onEdit={edit}
+                      seed={seed}
+                    />
+                  )
+                : undefined
+            }
+            onIntakeBusy={(value) => {
+              setIntakeBusy(value);
+              onBlocked(value || dirty || !!pending || !!reverse || busy);
+            }}
+            today={detail.today}
+            finance={finance}
+            disabled={!!pending || busy || !!reverse || finance.busy || !!finance.pending}
+            onEdit={edit}
+            submit={submit}
+            reverse={(id) => {
+              setReverse(id);
+              onBlocked(true);
+            }}
+            entry={entry}
+            setEntry={setEntry}
+            propertySlot={propertySlot}
+          />
+          {reverse && (
+            <div className="finance-preview">
+              <p>确认更正原收款登记；如已关联分配，需先核对相关到账和分配。</p>
+              <button
+                disabled={!!pending}
+                onClick={() => submit({ operation: 'reverse_payment', payment_id: reverse })}
+              >
+                确认冲回原收款
+              </button>
+              <button
+                disabled={!!pending}
+                onClick={() => {
+                  setReverse(undefined);
+                  if (!dirty) onBlocked(false);
+                }}
+              >
+                取消冲回
+              </button>
+            </div>
           )}
         </>
       )}
@@ -520,164 +465,353 @@ export default function FinanceView({
 }) {
   const read = useOrdinaryCatalog();
   const projects = read.data?.projects;
-  const error = read.error;
   const [selected, setSelected] = useState(initialProject);
+  const [opened, setOpened] = useState(Boolean(initialProject));
   const [search, setSearch] = useState('');
   const [ledgerFilter, setLedgerFilter] = useState('all');
   const [blocked, setBlocked] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [draftRevision, setDraftRevision] = useState(0);
+  const [propertySlot, setPropertySlot] = useState<HTMLDivElement | null>(null);
+  const finance = useFinanceManagement();
+  const isBlocked = blocked || finance.blocked;
+  useEffect(() => {
+    onDirty(isBlocked);
+  }, [isBlocked, onDirty]);
   const project = projects?.find((item) => item.id === selected);
-  const keyword = search.trim().toLocaleLowerCase();
-  const matches = (projects ?? []).filter((item) => {
-    const registered = item.outstanding_cents != null;
-    return (
-      item.title.toLocaleLowerCase().includes(keyword) &&
-      (ledgerFilter === 'all' || registered === (ledgerFilter === 'registered'))
-    );
-  });
+  const matches = (projects ?? []).filter(
+    (item) =>
+      item.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) &&
+      (ledgerFilter === 'all' ||
+        (item.outstanding_cents != null) === (ledgerFilter === 'registered')),
+  );
   const registered = matches.filter((item) => item.outstanding_cents != null);
   const outstanding = registered.reduce(
     (sum, item) => sum + BigInt(item.outstanding_cents ?? 0),
     0n,
   );
+  const allocations =
+    finance.state?.allocations.filter(
+      (row) => !row.reversed_at && matches.some((project) => project.id === row.project_id),
+    ) ?? [];
+  const payouts =
+    finance.state?.payouts.filter(
+      (row) => !row.reversed_at && matches.some((project) => project.id === row.project_id),
+    ) ?? [];
+  const payable = allocations.reduce((sum, row) => sum + BigInt(row.payable_cents), 0n);
+  const paid = payouts.reduce((sum, row) => sum + BigInt(row.amount_cents), 0n);
+  const received = finance.state?.projects
+    .filter((row) => matches.some((item) => item.id === row.project_id))
+    .reduce((sum, row) => sum + BigInt(row.received_cents), 0n);
+  const reimbursementWaiting = finance.state?.expenses
+    .filter(
+      (row) =>
+        !row.reversed_at &&
+        row.reimbursable &&
+        row.payer === 'lawyer' &&
+        matches.some((project) => project.id === row.project_id),
+    )
+    .reduce(
+      (sum, row) =>
+        sum +
+        BigInt(row.amount_cents) -
+        (finance.state?.reimbursements
+          .filter((paid) => paid.expense_id === row.id && !paid.reversed_at)
+          .reduce((s, paid) => s + BigInt(paid.amount_cents), 0n) ?? 0n),
+      0n,
+    );
+  const openProject = (id: string) => {
+    if (isBlocked) return;
+    setSelected(id);
+    setOpened(true);
+    setSettings(false);
+  };
   return (
-    <section className="workspace-placeholder finance-view">
-      <header className="finance-workbench-heading">
-        <div>
-          <h1>财务</h1>
-          <p>查询项目待收款，打开账本登记合同、收款和冲销。</p>
-        </div>
-        <button
-          type="button"
-          disabled={blocked || read.isFetching}
-          onClick={() => void read.load().catch(() => {})}
-        >
-          刷新项目
-        </button>
-      </header>
-      {error && (
-        <p role="alert">
-          {error}{' '}
-          <button disabled={read.isFetching} onClick={() => void read.load().catch(() => {})}>
-            重新读取项目
-          </button>
-        </p>
-      )}
-      {!projects && !error && <p role="status">正在读取项目…</p>}
-      {projects?.length === 0 && <p>请先在「项目」创建一个项目。</p>}
-      {!!projects?.length && (
-        <label>
-          选择项目
-          <select
-            value={project?.id ?? ''}
-            disabled={blocked || read.isFetching}
-            onChange={(event) => setSelected(event.target.value)}
-          >
-            <option value="">请选择</option>
-            {projects.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-                {item.archived_at ? '（已归档）' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {!!projects?.length && (
-        <section className="finance-overview" aria-label="财务项目筛选">
-          <div className="finance-filters">
-            <label>
-              搜索财务项目
-              <input
-                type="search"
-                value={search}
-                disabled={blocked}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="项目名称…"
-              />
-            </label>
-            <label>
-              建账状态
-              <select
-                value={ledgerFilter}
-                disabled={blocked}
-                onChange={(event) => setLedgerFilter(event.target.value)}
-              >
-                <option value="all">全部</option>
-                <option value="registered">已建账</option>
-                <option value="unregistered">未建账</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={blocked || (!search && ledgerFilter === 'all')}
-              onClick={() => {
-                setSearch('');
-                setLedgerFilter('all');
-              }}
-            >
-              清除筛选
+    <section
+      className="collection-workspace catalog-view finance-workspace"
+      data-layout="three-column"
+      aria-label="财务工作区"
+    >
+      <div className="collection-main finance-main">
+        <header className="collection-heading finance-workbench-heading">
+          {opened && (
+            <button disabled={isBlocked} onClick={() => setOpened(false)}>
+              ← 财务一览
             </button>
-          </div>
-          <dl className="finance-totals" aria-label="筛选结果总览">
-            <div>
-              <dt>匹配项目</dt>
-              <dd>{matches.length}</dd>
-            </div>
-            <div>
-              <dt>已建账</dt>
-              <dd>{registered.length}</dd>
-            </div>
-            <div>
-              <dt>待收款合计（元）</dt>
-              <dd>{formatCents(registered.length ? outstanding : null)}</dd>
-            </div>
-          </dl>
-          {matches.length === 0 && <p>没有符合筛选条件的项目。</p>}
-        </section>
-      )}
-      {matches.length > 0 && (
-        <ReadTable
-          data={matches}
-          getRowId={(item) => item.id}
-          label="财务项目列表"
-          rowProps={(item) => ({ 'aria-selected': item.id === project?.id })}
-          columns={[
-            {
-              id: 'project',
-              header: '项目',
-              cell: ({ row: { original: item } }) => (
-                <button
-                  type="button"
-                  disabled={blocked || read.isFetching}
-                  onClick={() => setSelected(item.id)}
+          )}
+          <h1>{opened && project ? project.title : '财务'}</h1>
+          <button disabled={isBlocked} onClick={() => setSettings((value) => !value)}>
+            {settings ? '关闭财务设置' : '财务设置'}
+          </button>
+          <button
+            disabled={isBlocked || read.isFetching}
+            onClick={() => void read.load().catch(() => {})}
+          >
+            刷新项目
+          </button>
+        </header>
+        <div className="finance-main-scroll">
+          {finance.error && (
+            <p role="alert">
+              {finance.error}{' '}
+              <button disabled={finance.busy} onClick={() => void finance.reload()}>
+                重新读取财务设置
+              </button>
+            </p>
+          )}
+          {finance.message && <p role="status">{finance.message}</p>}
+          {finance.pending && !finance.busy && (
+            <button onClick={() => void finance.recover()}>
+              {finance.retry ? '重试原财务提交' : '核对原财务提交'}
+            </button>
+          )}
+          {finance.dirty && !finance.pending && !blocked && (
+            <p>
+              有未保存的财务输入。
+              <button
+                onClick={() => {
+                  finance.discard();
+                  setDraftRevision((value) => value + 1);
+                  setSettings(false);
+                }}
+              >
+                放弃未保存的财务输入
+              </button>
+            </p>
+          )}
+          {read.error && (
+            <p role="alert">
+              {read.error}
+              <button onClick={() => void read.load()}>重新读取项目</button>
+            </p>
+          )}
+          {!projects && !read.error && <p>正在读取项目…</p>}
+          {projects?.length === 0 && <p>请先在「项目」创建项目，再登记合同或款项。</p>}
+          <div hidden={opened}>
+            <dl className="finance-result-cards finance-summary" aria-label="筛选结果总览">
+              <div>
+                <dt>客户待收</dt>
+                <dd>{formatCents(registered.length ? outstanding : null)}</dd>
+                <small>
+                  匹配项目 {matches.length} · 已建账 {registered.length}
+                </small>
+              </div>
+              <div>
+                <dt>客户已付</dt>
+                <dd>{received === undefined ? '—' : formatCents(received)}</dd>
+                <small>已确认有效回款</small>
+              </div>
+              <div>
+                <dt>我的待结算</dt>
+                <dd>
+                  {finance.state && allocations.length ? formatCents(payable - paid) : '待核对'}
+                </dd>
+                <small>按已确认分配累计</small>
+              </div>
+              <div>
+                <dt>我的已到账</dt>
+                <dd>{finance.state ? formatCents(paid) : '—'}</dd>
+                <small>
+                  另有待报销{' '}
+                  {reimbursementWaiting === undefined ? '—' : formatCents(reimbursementWaiting)} 元
+                </small>
+              </div>
+            </dl>
+            <div className="finance-filters">
+              <label>
+                搜索财务项目
+                <input
+                  type="search"
+                  aria-label="搜索财务项目"
+                  placeholder="项目名称…"
+                  value={search}
+                  disabled={isBlocked}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+              <label>
+                建账状态
+                <select
+                  value={ledgerFilter}
+                  disabled={isBlocked}
+                  onChange={(event) => setLedgerFilter(event.target.value)}
                 >
-                  {item.title}
-                </button>
-              ),
-            },
-            {
-              id: 'status',
-              header: '项目状态',
-              accessorFn: (item) => (item.archived_at ? '已归档' : '在用'),
-            },
-            {
-              id: 'balance',
-              header: '待收款（元）',
-              accessorFn: (item) => formatCents(item.outstanding_cents),
-            },
-          ]}
-        />
-      )}
-      {project && (
-        <ProjectLedger
-          key={project.id}
-          project={project}
-          onBlocked={(value) => {
-            setBlocked(value);
-            onDirty(value);
-          }}
-        />
-      )}
+                  <option value="all">全部</option>
+                  <option value="registered">已建账</option>
+                  <option value="unregistered">未建账</option>
+                </select>
+              </label>
+              <button
+                disabled={isBlocked || (!search && ledgerFilter === 'all')}
+                onClick={() => {
+                  setSearch('');
+                  setLedgerFilter('all');
+                }}
+              >
+                清除筛选
+              </button>
+            </div>
+            <ReadTable
+              data={matches}
+              getRowId={(item) => item.id}
+              label="财务项目列表"
+              rowProps={(item) => ({
+                'aria-selected': selected === item.id,
+                onClick: () => {
+                  if (!isBlocked) setSelected(item.id);
+                },
+              })}
+              columns={[
+                {
+                  id: 'project',
+                  header: '项目',
+                  cell: ({ row: { original: item } }) => (
+                    <button
+                      disabled={isBlocked}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openProject(item.id);
+                      }}
+                    >
+                      {item.title} →
+                    </button>
+                  ),
+                },
+                {
+                  id: 'status',
+                  header: '状态',
+                  accessorFn: (item) => (item.archived_at ? '已归档' : '在用'),
+                },
+                {
+                  id: 'received',
+                  header: '客户已付（元）',
+                  accessorFn: (item) =>
+                    formatCents(
+                      finance.state?.projects.find((row) => row.project_id === item.id)
+                        ?.received_cents,
+                    ),
+                },
+                {
+                  id: 'outstanding',
+                  header: '客户待收（元）',
+                  accessorFn: (item) => formatCents(item.outstanding_cents),
+                },
+                {
+                  id: 'mine',
+                  header: '我的待结算',
+                  accessorFn: (item) => {
+                    const own = allocations.filter((row) => row.project_id === item.id);
+                    if (!own.length) return '待核对';
+                    return formatCents(
+                      own.reduce((sum, row) => sum + BigInt(row.payable_cents), 0n) -
+                        payouts
+                          .filter((row) => row.project_id === item.id)
+                          .reduce((sum, row) => sum + BigInt(row.amount_cents), 0n),
+                    );
+                  },
+                },
+                {
+                  id: 'paid',
+                  header: '我的已到账',
+                  accessorFn: (item) =>
+                    finance.state
+                      ? formatCents(
+                          payouts
+                            .filter((row) => row.project_id === item.id)
+                            .reduce((sum, row) => sum + BigInt(row.amount_cents), 0n),
+                        )
+                      : '—',
+                },
+              ]}
+            />
+            {matches.length === 0 && projects && <p>没有符合筛选条件的项目。</p>}
+          </div>
+          {opened && project && (
+            <ProjectLedger
+              key={`${project.id}:${draftRevision}`}
+              project={project}
+              finance={finance}
+              propertySlot={propertySlot}
+              onBlocked={setBlocked}
+            />
+          )}
+        </div>
+      </div>
+      <aside className="project-properties finance-sidebar" aria-label="财务辅助栏">
+        <InspectorLayout
+          blocked={finance.busy}
+          properties={
+            <div className="finance-sidebar-properties">
+              {settings ? (
+                finance.state ? (
+                  <FinanceSettings
+                    key={`${draftRevision}:${finance.state.version}`}
+                    finance={finance}
+                  />
+                ) : (
+                  <p>正在读取财务设置…</p>
+                )
+              ) : (
+                <>
+                  <h2>{opened ? '记一笔' : '属性'}</h2>
+                  {project ? (
+                    <>
+                      <h3>{project.title}</h3>
+                      {!opened && (
+                        <>
+                          <dl className="finance-properties">
+                            <div>
+                              <dt>状态</dt>
+                              <dd>{project.archived_at ? '已归档' : '进行中'}</dd>
+                            </div>
+                            <div>
+                              <dt>客户待收</dt>
+                              <dd>{formatCents(project.outstanding_cents)} 元</dd>
+                            </div>
+                            <div>
+                              <dt>结算规则</dt>
+                              <dd>
+                                {finance.state?.rules.find(
+                                  (rule) =>
+                                    rule.id ===
+                                    finance.state?.bindings.find(
+                                      (row) => row.project_id === project.id,
+                                    )?.rule_id,
+                                )?.name ?? '尚未选择'}
+                              </dd>
+                            </div>
+                          </dl>
+                          <button disabled={isBlocked} onClick={() => openProject(project.id)}>
+                            打开项目 →
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <p className="finance-muted">
+                      选择左侧项目查看属性，点击项目名称打开收付明细。
+                    </p>
+                  )}
+                </>
+              )}
+              <div ref={setPropertySlot} hidden={settings || !opened} />
+            </div>
+          }
+        >
+          {project ? (
+            <SidebarAgent
+              project={{
+                id: project.id,
+                version: project.version,
+                archived: !!project.archived_at,
+              }}
+              blocked={false}
+            />
+          ) : (
+            <AgentPanel scope="home" variant="compact" />
+          )}
+        </InspectorLayout>
+      </aside>
     </section>
   );
 }
