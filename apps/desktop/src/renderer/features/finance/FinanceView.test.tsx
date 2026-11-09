@@ -7,6 +7,14 @@ import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/c
 import FinanceView from './FinanceView';
 import { formatCents, parseCents } from './money';
 
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
 afterEach(cleanup);
 const project = {
   id: crypto.randomUUID(),
@@ -42,13 +50,60 @@ const read = (saved: boolean, receipt: string | null = null): FinanceResponse =>
     : null,
   ledger: saved ? ledger : null,
 });
+const ruleA = crypto.randomUUID(),
+  ruleB = crypto.randomUUID();
+const ruleValue = {
+  name: '合成规则A',
+  firm_name: '合成律所',
+  method: 'firm_percent',
+  rate_bps: 2000,
+  second_rate_bps: 8500,
+  threshold_cents: 0,
+  cap_cents: 0,
+  settlement_trigger: 'approval',
+  effective_date: '2020-01-01',
+  annual_year: 2026,
+  opening_base_cents: 0,
+  opening_firm_cents: 0,
+  annual_data_confirmed: false,
+  created_at: '2026-11-09T00:00:00.000Z',
+};
 function show(
   handler: (request: FinanceRequest) => Promise<FinanceResponse>,
   projects: Matter[] = [project],
 ) {
-  const finance = vi.fn(handler);
+  const finance = vi.fn((request: FinanceRequest | { operation: string }) =>
+    request.operation.startsWith('m_')
+      ? Promise.resolve({
+          ok: true,
+          kind: 'management',
+          receipt: null,
+          evidence: null,
+          effect: null,
+          state: {
+            version: 0,
+            default_rule_id: null,
+            projects: [],
+            rules: [
+              { ...ruleValue, id: ruleA },
+              { ...ruleValue, id: ruleB, name: '合成规则B' },
+            ],
+            bindings: [{ project_id: project.id, rule_id: ruleA }],
+            allocations: [],
+            payouts: [],
+          },
+        })
+      : handler(request as FinanceRequest),
+  );
   window.caselite = {
     finance,
+    agent: vi.fn(async () => ({
+      ok: true,
+      configured: false,
+      model: 'gpt-4.1-mini',
+      providers: { openai: false, deepseek: false },
+      runs: [],
+    })),
     catalog: vi.fn(async () => ({ ok: true, projects, documents: [] })),
   } as unknown as Window['caselite'];
   const onDirty = vi.fn();
@@ -98,14 +153,11 @@ it('checks the lost ACK without writing again and waits for a successful readbac
   expect(onDirty).toHaveBeenLastCalledWith(true);
   fireEvent.click(screen.getByRole('button', { name: '核对原提交' }));
   await screen.findByText('已保存并读回账本。');
-  expect(finance.mock.calls.map(([request]) => request.operation)).toEqual([
-    'read',
-    'register_contract',
-    'status',
-    'read',
-    'status',
-    'read',
-  ]);
+  expect(
+    finance.mock.calls
+      .map(([request]) => request.operation)
+      .filter((operation) => !operation.startsWith('m_')),
+  ).toEqual(['read', 'register_contract', 'status', 'read', 'status', 'read']);
   expect(onDirty).toHaveBeenLastCalledWith(false);
 });
 
@@ -162,7 +214,7 @@ it('holds a draft on rejection until explicitly discarded and refuses an outdate
   await screen.findByText('合成拒绝');
   const field = screen.getByLabelText<HTMLInputElement>('合同编号');
   expect(field.value).toBe('SYNTH');
-  expect(screen.getByLabelText<HTMLSelectElement>('选择项目').disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '← 财务一览' }).disabled).toBe(true);
   expect(onDirty).toHaveBeenLastCalledWith(true);
   fireEvent.click(screen.getByRole('button', { name: '放弃当前输入' }));
   expect(screen.getByLabelText<HTMLInputElement>('合同编号').value).toBe('');
@@ -180,18 +232,55 @@ it('filters known balances without changing the open ledger or treating missing 
     { ...project, id: crypto.randomUUID(), title: '合成未建账项目' },
   ];
   const { finance } = show(async () => read(true), projects);
+  await screen.findByTestId('finance-outstanding');
+  fireEvent.click(await screen.findByRole('button', { name: '← 财务一览' }));
   const list = await screen.findByRole('table', { name: '财务项目列表' });
   const totals = screen.getByLabelText('筛选结果总览');
   expect(within(totals).getByText('1.01')).toBeDefined();
   fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'unregistered' } });
-  expect(within(list).getByRole('button', { name: '合成未建账项目' })).toBeDefined();
+  expect(within(list).getByRole('button', { name: '合成未建账项目 →' })).toBeDefined();
   expect(within(totals).getByText('—')).toBeDefined();
   fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'registered' } });
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
     target: { value: '结清' },
   });
-  expect(within(list).getByRole('button', { name: '合成结清项目' })).toBeDefined();
-  expect(within(totals).getByText('0')).toBeDefined();
+  expect(within(list).getByRole('button', { name: '合成结清项目 →' })).toBeDefined();
+  expect(within(within(totals).getByText('客户待收').parentElement!).getByText('0')).toBeDefined();
   expect(screen.getByRole('heading', { name: project.title })).toBeDefined();
-  expect(finance).toHaveBeenCalledTimes(1);
+  expect(finance.mock.calls.filter(([request]) => request.operation === 'read')).toHaveLength(1);
+});
+
+it('keeps the original client-payment identity when a second rule draft exists and the ACK is unknown', async () => {
+  const { finance, onDirty } = show(async (request) => {
+    if (request.operation === 'record_payment')
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '合成客户收款回执丢失' };
+    if (request.operation === 'status')
+      return {
+        ok: true,
+        kind: 'status',
+        project_id: project.id,
+        receipt: request.idempotency_key,
+        evidence: null,
+      };
+    return read(true);
+  });
+  fireEvent.change(await screen.findByLabelText('本案结算规则'), { target: { value: ruleB } });
+  fireEvent.change(screen.getByLabelText('分配到期款'), {
+    target: { value: ledger.installments[0].id },
+  });
+  fireEvent.change(screen.getByLabelText('收款金额（元）'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: '确认登记收款' }));
+  await screen.findByText('合成客户收款回执丢失');
+  expect(screen.queryByRole('button', { name: '放弃未保存的财务输入' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '放弃当前输入' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '核对原提交' }));
+  await screen.findByRole('button', { name: '重试原提交' });
+  const writes = finance.mock.calls
+    .map(([request]) => request)
+    .filter((request) => request.operation === 'record_payment');
+  expect(writes).toHaveLength(1);
+  expect(finance.mock.calls.find(([request]) => request.operation === 'status')?.[0]).toMatchObject(
+    { idempotency_key: 'idempotency_key' in writes[0] ? writes[0].idempotency_key : '' },
+  );
+  expect(onDirty).toHaveBeenLastCalledWith(true);
 });

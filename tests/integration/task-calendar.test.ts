@@ -1,3 +1,4 @@
+import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { afterEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -384,7 +385,7 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
     expect(check.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(check.pragma('foreign_key_check')).toEqual([]);
     expect(check.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 25,
+      n: integrationMigrations.length,
     });
     check.close();
   }

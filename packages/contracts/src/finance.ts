@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { ordinaryDateSchema } from './task';
+import { financeManagementSuccessSchema } from './finance-management';
+export * from './finance-management';
 
 export const FINANCE_CHANNEL = 'caselite:finance:v1';
 const id = z.uuid();
@@ -54,6 +56,7 @@ const detail = z.object({
   ),
 });
 export const financeResponseSchema = z.union([
+  financeManagementSuccessSchema,
   z.object({
     ok: z.literal(true),
     kind: z.literal('ledger'),

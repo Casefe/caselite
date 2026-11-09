@@ -1,16 +1,37 @@
 import {
   financeRequestSchema,
+  financeManagementRequestSchema,
   type FinanceRequest,
+  type FinanceManagementRequest,
   type FinanceResponse,
 } from '@caselite/contracts';
 
 interface FinancePort {
   execute(request: FinanceRequest): FinanceResponse;
+  management?: { execute(request: FinanceManagementRequest): FinanceResponse };
 }
 
 export function createFinanceApplication(port: FinancePort) {
   return {
     execute(input: unknown): FinanceResponse {
+      const management = financeManagementRequestSchema.safeParse(input);
+      if (management.success) {
+        try {
+          return (
+            port.management?.execute(management.data) ?? {
+              ok: false,
+              code: 'UNAVAILABLE',
+              message: '财务设置暂不可用。',
+            }
+          );
+        } catch {
+          return {
+            ok: false,
+            code: 'UNAVAILABLE',
+            message: '无法确认财务操作，请保留原提交并核对。',
+          };
+        }
+      }
       const parsed = financeRequestSchema.safeParse(input);
       if (!parsed.success)
         return { ok: false, code: 'INVALID_REQUEST', message: '项目、合同、期款或金额格式无效。' };

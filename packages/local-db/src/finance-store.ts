@@ -4,8 +4,10 @@ import {
   financeResponseSchema,
   financeEvidenceSchema,
   type FinanceRequest,
+  type FinanceAllocation,
   type FinanceResponse,
 } from '@caselite/contracts';
+import { createFinanceManagementStore } from './finance-management-store';
 
 // 只汇总有效分配，避免反复收款、冲回导致历史流水求和溢出。
 const activePayments = `SELECT SUM(p.amount_cents) FROM finance_payments p
@@ -28,6 +30,7 @@ const isWrite = (request: FinanceRequest): request is Write =>
   request.operation !== 'read' && request.operation !== 'status';
 
 export function createFinanceStore(db: Database.Database, workspace: string) {
+  const management = createFinanceManagementStore(db, workspace);
   const detail = (
     projectId: string,
     now: Date,
@@ -153,6 +156,13 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
       };
     }
 
+    if (
+      db
+        .prepare('SELECT 1 FROM finance_management_receipts WHERE workspace_id=? AND key=?')
+        .get(workspace, key)
+    )
+      return fail('CONFLICT', '此提交身份已用于结算，请核对原提交。');
+
     const { request_id: diagnostic, ...content } = request;
     void diagnostic;
     const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex');
@@ -164,6 +174,9 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
 
     const committed = now.toISOString();
     let targetId = projectId;
+    let automaticKey: string | undefined;
+    let automaticExpected: FinanceAllocation | undefined;
+    let expectedBinding: string | undefined;
     if (request.operation === 'register_contract') {
       if (db.prepare('SELECT 1 FROM finance_contracts WHERE project_id=?').get(projectId))
         return fail('CONFLICT', '此项目已有合同账本。');
@@ -177,6 +190,25 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
       );
       for (const row of request.installments)
         insert.run(randomUUID(), projectId, row.amount_cents, row.due_date);
+      const settings = db
+        .prepare('SELECT default_rule_id FROM finance_settings WHERE workspace_id=?')
+        .get(workspace) as { default_rule_id: string | null } | undefined;
+      if (
+        settings?.default_rule_id &&
+        !db.prepare('SELECT 1 FROM finance_project_rules WHERE project_id=?').get(projectId)
+      ) {
+        const bound = management.execute({
+          protocol_version: 1,
+          operation: 'm_bind_rule',
+          project_id: projectId,
+          rule_id: settings.default_rule_id,
+          expected_rule_id: null,
+          request_id: randomUUID(),
+          idempotency_key: randomUUID(),
+        });
+        if (!bound.ok) throw new Error('Default finance rule binding failed');
+        expectedBinding = settings.default_rule_id;
+      }
     } else if (request.operation === 'record_payment') {
       const row = db
         .prepare(
@@ -190,6 +222,49 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
       db.prepare(
         'INSERT INTO finance_payments(id,installment_id,amount_cents,committed_at) VALUES(?,?,?,?)',
       ).run(targetId, request.installment_id, request.amount_cents, committed);
+      const bound = db
+        .prepare(
+          `SELECT r.id,r.value FROM finance_project_rules b JOIN finance_rules r ON r.id=b.rule_id WHERE b.project_id=? AND r.workspace_id=?`,
+        )
+        .get(projectId, workspace) as { id: string; value: string } | undefined;
+      // 用户选定“回款即可分成”时已确认无扣项；分配与原回款同事务，任一步失败全部回滚。
+      if (bound && JSON.parse(bound.value).settlement_trigger === 'receipt') {
+        const occurred_on = [
+          now.getFullYear(),
+          String(now.getMonth() + 1).padStart(2, '0'),
+          String(now.getDate()).padStart(2, '0'),
+        ].join('-');
+        const draft = {
+          protocol_version: 1 as const,
+          operation: 'm_preview_allocation' as const,
+          request_id: randomUUID(),
+          idempotency_key: randomUUID(),
+          project_id: projectId,
+          payment_id: targetId,
+          rule_id: bound.id,
+          pre_tax_cents: 0,
+          pre_cost_cents: 0,
+          post_deduction_cents: 0,
+          deductions_confirmed: true as const,
+          occurred_on,
+          note: '按已确认的回款分成规则自动计算',
+        };
+        const checked = management.execute(draft);
+        if (!checked.ok || checked.kind !== 'management' || !checked.preview_digest)
+          throw new Error('Automatic allocation preview failed');
+        const allocation = management.execute({
+          ...draft,
+          operation: 'm_allocate',
+          expected_preview_digest: checked.preview_digest,
+        });
+        if (!allocation.ok) throw new Error('Automatic finance allocation failed');
+        automaticKey = draft.idempotency_key;
+        if (allocation.kind !== 'management') throw new Error('Invalid allocation result');
+        automaticExpected = allocation.state.allocations.find(
+          (row) => row.payment_id === targetId && !row.reversed_at,
+        );
+        if (!automaticExpected) throw new Error('Missing allocation result');
+      }
     } else {
       const payment = db
         .prepare(
@@ -199,6 +274,14 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
         )
         .get(request.payment_id, projectId) as { reversed: string | null } | undefined;
       if (!payment) return fail('NOT_FOUND', '当前项目没有这笔收款。');
+      if (
+        db
+          .prepare(
+            'SELECT 1 FROM finance_allocations WHERE payment_id=? AND reversed_at IS NULL AND workspace_id=? AND project_id=?',
+          )
+          .get(request.payment_id, workspace, projectId)
+      )
+        return fail('CONFLICT', '此回款已有结算分配，请先核对并冲回关联的到账和分配。');
       if (payment.reversed) return fail('CONFLICT', '这笔收款已冲回。');
       targetId = request.payment_id;
       db.prepare('INSERT INTO finance_reversals(payment_id,committed_at) VALUES(?,?)').run(
@@ -223,9 +306,29 @@ export function createFinanceStore(db: Database.Database, workspace: string) {
       saved.activity_id !== activityId
     )
       throw new Error('Finance receipt readback failed');
+    if (automaticKey) {
+      const verified = management.execute({
+        protocol_version: 1,
+        operation: 'm_status',
+        idempotency_key: automaticKey,
+      });
+      if (!verified.ok || verified.kind !== 'management' || !verified.evidence)
+        throw new Error('Automatic allocation readback failed');
+      const actual = verified.state.allocations.find((row) => row.id === automaticExpected?.id);
+      if (!actual || JSON.stringify(actual) !== JSON.stringify(automaticExpected))
+        throw new Error('Automatic allocation effect changed before commit');
+    }
+    if (expectedBinding) {
+      const binding = db
+        .prepare('SELECT rule_id FROM finance_project_rules WHERE project_id=?')
+        .get(projectId) as { rule_id: string } | undefined;
+      if (binding?.rule_id !== expectedBinding)
+        throw new Error('Default rule changed before commit');
+    }
     return detail(projectId, now, { key, evidence: verifyReceipt(saved) });
   });
   return {
+    management,
     execute(request: FinanceRequest) {
       // 先取得写锁，再检查余额、幂等键和归档状态。
       return isWrite(request) ? execute.immediate(request) : execute(request);

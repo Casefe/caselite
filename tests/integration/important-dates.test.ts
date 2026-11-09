@@ -1,3 +1,4 @@
+import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, mkdtempSync, rmSync, cpSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -468,7 +469,9 @@ it('upgrades a true complete 24-migration library without modifying the old SQL/
   expect(check.prepare('SELECT * FROM __drizzle_migrations ORDER BY id LIMIT 24').all()).toEqual(
     before,
   );
-  expect(check.prepare('SELECT count(*) n FROM __drizzle_migrations').get()).toEqual({ n: 25 });
+  expect(check.prepare('SELECT count(*) n FROM __drizzle_migrations').get()).toEqual({
+    n: integrationMigrations.length,
+  });
   expect(check.prepare('SELECT value FROM toolchain_probe').get()).toEqual({ value: '旧24项值🙂' });
   expect(check.pragma('integrity_check', { simple: true })).toBe('ok');
   check.close();

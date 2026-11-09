@@ -14,6 +14,7 @@ import {
   FINANCE_CHANNEL,
   financeResponseSchema,
   type FinanceRequest,
+  type FinanceManagementRequest,
   type FinanceResponse,
 } from '@caselite/contracts';
 import {
@@ -117,6 +118,7 @@ async function invokeBusinessCommand(
     | MaterialRequest
     | ReminderRequest
     | FinanceRequest
+    | FinanceManagementRequest
     | ContactsRequest
     | LocalPreferencesRequest,
   timeoutMs = IPC_COMMAND_TIMEOUT_MS,
@@ -144,7 +146,7 @@ export type CaseLitePreloadApi = {
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
   dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
   appearance(request: AppearanceRequest): Promise<AppearanceResponse>;
-  finance(request: FinanceRequest): Promise<FinanceResponse>;
+  finance(request: FinanceRequest | FinanceManagementRequest): Promise<FinanceResponse>;
   contacts(request: ContactsRequest): Promise<ContactsResponse>;
   catalog(request: CatalogRequest): Promise<CatalogResponse>;
   agent(request: AgentRequest): Promise<AgentResponse>;
