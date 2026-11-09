@@ -267,12 +267,14 @@ export function EditorSurface({
   placeholder = '开始输入…',
   disabled = false,
   blockActions = false,
+  documentScheme,
 }: {
   editor: Editor | null;
   mode: 'notion' | 'simple' | 'compact';
   placeholder?: string;
   disabled?: boolean;
   blockActions?: boolean;
+  documentScheme?: 'markdown' | 'word';
 }) {
   const root = useRef<HTMLDivElement>(null);
   const dragging = useRef<(ReturnType<typeof currentBlock> & { doc: object }) | null>(null);
@@ -334,6 +336,8 @@ export function EditorSurface({
   const editable = !disabled && editor.isEditable;
   const compact = mode === 'compact';
   const documentMode = mode === 'simple';
+  const markdown = documentMode && documentScheme === 'markdown';
+  const word = documentMode && documentScheme === 'word';
   const trackComposition = compact || documentMode;
   const tableMode = documentMode && Boolean(editor.schema.nodes.table);
   const allowHtml = (html: string, position: number) => {
@@ -361,7 +365,7 @@ export function EditorSurface({
   );
   const showBlockActions = mode === 'notion' || (compact && blockActions && showFormats);
   const showSlash =
-    (showBlockActions || (documentMode && ui?.focused && !composing)) &&
+    (showBlockActions || (documentMode && !word && ui?.focused && !composing)) &&
     Boolean(ui?.slash) &&
     dismissed !== slashKey &&
     editable;
@@ -374,6 +378,7 @@ export function EditorSurface({
       ref={root}
       className={`rich-editor rich-editor--${mode} editor-surface`}
       data-editor-mode={mode}
+      data-editor-scheme={documentMode ? documentScheme : undefined}
       aria-disabled={!editable}
       onPasteCapture={(event) => {
         if (!allowHtml(event.clipboardData.getData('text/html'), editor.state.selection.from)) {
@@ -489,7 +494,23 @@ export function EditorSurface({
       }}
     >
       {pasteError && <p role="alert">{pasteError}</p>}
-      {documentMode && (
+      {documentMode && documentScheme && (
+        <div className="editor-scheme-bar">
+          <span>{word ? 'Word · 连续纸张' : 'Markdown · 快捷写作'}</span>
+          {markdown ? (
+            <details className="markdown-format-menu">
+              <summary>格式与表格</summary>
+              <div className="simple-toolbar">
+                <FormatBar editor={editor} />
+                {tableMode && <TableCommands editor={editor} />}
+              </div>
+            </details>
+          ) : (
+            <small>基础格式</small>
+          )}
+        </div>
+      )}
+      {documentMode && !markdown && (
         <div className="simple-toolbar">
           <FormatBar editor={editor} />
           {tableMode && <TableCommands editor={editor} />}

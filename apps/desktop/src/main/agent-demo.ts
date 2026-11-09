@@ -71,10 +71,28 @@ export function syntheticTextStream(
       (_, i) =>
         `\n\n### 展示检查 ${i + 1}\n\n这段合成文字仅验证长文滚动、Markdown 标题和底部输入位置。请逐项核对原文、日期、付款记录和缺件；此演示不证明真实模型完成分析。`,
     ).join('');
+  // 合成伸缩用例在首个增量后等停止信号；30 秒兜底，释放后仍送迟到正文验证原守卫。
+  const holdForStop = Boolean(
+    reviewParts && JSON.stringify(_context.messages).includes('伸缩流式测试'),
+  );
+  if (holdForStop && !options?.signal)
+    throw new Error('Synthetic resize stream requires an abort signal');
+  const holdDeadline = Date.now() + 30_000;
   let index = 0;
   if (reviewParts) stream.push({ type: 'start', partial: structuredClone(response) });
   const timer = setInterval(
     () => {
+      if (holdForStop && index === 1 && !options?.signal?.aborted) {
+        if (Date.now() >= holdDeadline) {
+          clearInterval(timer);
+          stream.push({
+            type: 'error',
+            reason: 'aborted',
+            error: { ...response, stopReason: 'aborted' },
+          });
+        }
+        return;
+      }
       if (!reviewParts && options?.signal?.aborted) {
         clearInterval(timer);
         stream.push({

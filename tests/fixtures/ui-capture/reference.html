@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><title>合成项目属性参考</title>
+  <style>
+    :root {
+      --ink: #232326;
+      --muted: #77777f;
+      --line: #e8e8eb;
+      --theme-panel: #fff;
+      --theme-hover: #ededf0;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f7f7f8;
+      color: var(--ink);
+      font: 13px var(--font);
+    }
+    main {
+      width: 360px;
+      margin: 24px;
+      padding: 16px;
+      background: var(--theme-panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 16px;
+    }
+    summary {
+      padding: 8px 0;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-height: 28px;
+      margin: 4px 0;
+    }
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    button {
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      border-radius: 6px;
+      min-height: 28px;
+      text-align: left;
+      padding: 4px 8px;
+    }
+    button:hover,
+    button[aria-selected='true'] {
+      background: var(--theme-hover);
+    }
+    button:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: -2px;
+    }
+    [role='status'] {
+      color: var(--muted);
+      margin: 12px 0 0;
+    }
+    [role='alert'] {
+      color: #a32020;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+  </style>
+  <main id="sample">
+    <h1>合成项目 · 属性</h1>
+    <details open>
+      <summary>属性</summary>
+      <div class="row">
+        <span class="label">状态</span
+        ><button id="select" role="option" aria-selected="false">进行中</button>
+      </div>
+      <div class="row"><span class="label">负责人</span><span>本人（合成）</span></div>
+    </details>
+    <p role="status" id="status">暂无关联任务</p>
+    <p role="alert" hidden>合成保存失败，可重试</p>
+    <div class="actions">
+      <button id="load">模拟加载</button><button id="error">模拟失败</button>
+    </div>
+    <p data-private>合成敏感占位，不应采集</p>
+    <input aria-label="合成私密输入" value="DO-NOT-CAPTURE" />
+  </main>
+  <script>
+    document.querySelector('#select').onclick = (e) =>
+      e.currentTarget.setAttribute('aria-selected', 'true');
+    document.querySelector('#load').onclick = () =>
+      (document.querySelector('#status').textContent = '正在加载合成任务…');
+    document.querySelector('#error').onclick = () =>
+      (document.querySelector('[role=alert]').hidden = false);
+  </script>
+</html>

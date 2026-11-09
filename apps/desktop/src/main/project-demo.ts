@@ -5,6 +5,195 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
 import { openToolchainProbe } from '@caselite/local-db';
 
+// 仅供既有隔离验收入口调用，使用合成数据检查布局，不触发发送或改写运行状态。
+export async function checkSidebarResize(window: BrowserWindow, root: string, label: string) {
+  const wc = window.webContents;
+  const evaluate = async (code: string) => {
+    const result = await wc.executeJavaScript(`(async () => {
+      try { return { ok: true, value: await (${code}) }; }
+      catch (error) { return {ok:false, error:String(error), stack:error.stack}; }
+    })()`);
+    if (!result.ok) {
+      writeFileSync(
+        join(root, `resize-${label}-failure.txt`),
+        code + '\n' + result.error + '\n' + result.stack,
+      );
+      throw new Error(result.error);
+    }
+    return result.value;
+  };
+  const frame = () =>
+    evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+  const rows: unknown[] = [];
+  const originalTheme = await evaluate('document.documentElement.dataset.theme');
+  const debug = wc.debugger;
+  debug.attach('1.3');
+  await debug.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+  });
+  const selector = '.inspector-split';
+  await evaluate(`(() => {
+    const split = document.querySelector('${selector}');
+    if (!split) throw new Error('Missing split sidebar');
+    window.__resizeInput = split.querySelector('textarea, [contenteditable=true]');
+    window.__resizeConversation = split.querySelector('.assistant-panel, .document-review');
+    window.__resizeDraft = window.__resizeInput?.value ?? window.__resizeInput?.textContent;
+    if (split.dataset.aiExpanded !== 'true') split.querySelector('.inspector-ai-heading button').click();
+  })()`);
+  await frame();
+  for (const [width, height, theme] of [
+    [1440, 900, 'light'],
+    [1440, 900, 'dark'],
+    [1440, 420, 'light'],
+    [800, 500, 'light'],
+    [640, 500, 'light'],
+    [640, 500, 'dark'],
+  ] as const) {
+    // 只注入既有主题选择器以测当前 CSS，不改用户偏好或重挂载正在验证的会话。
+    await evaluate(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+    window.setContentSize(width, height);
+    await frame();
+    await evaluate(`document.querySelector('${selector}').scrollIntoView({block:'end'})`);
+    const measurement = await evaluate(`(() => {
+      const split = document.querySelector('${selector}');
+      const properties = split.querySelector('.inspector-properties-scroll');
+      const ai = split.querySelector('.inspector-ai-region');
+      const button = split.querySelector('.inspector-ai-heading button');
+      const r = split.getBoundingClientRect();
+      const a = ai.getBoundingClientRect();
+      const p = properties.getBoundingClientRect();
+      const ratio = a.height / r.height;
+      if (r.height < 100 || ratio < .73 || ratio > .81 || p.height < 30 || getComputedStyle(properties).overflowY !== 'auto')
+        throw new Error('Invalid split geometry: '+JSON.stringify({r:r.toJSON(),a:a.toJSON(),p:p.toJSON(),ratio}));
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) throw new Error('Reduced motion emulation missing');
+      properties.scrollTop = properties.scrollHeight;
+      const oldAiTop = a.top;
+      if (Math.abs(ai.getBoundingClientRect().top - oldAiTop) > 1) throw new Error('Property scrolling moved AI');
+      const scrollTop=properties.scrollTop;
+      properties.scrollTop=0;
+      button.focus();
+      return {width: innerWidth, height: innerHeight, theme:document.documentElement.dataset.theme, sidebar: r.toJSON(), ai:a.toJSON(), properties:p.toJSON(),ratio,
+        propertyScrollTop:scrollTop, focused:document.activeElement===button,
+        reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+        transition:getComputedStyle(ai).transitionDuration};
+    })()`);
+    rows.push(measurement);
+    for (const state of ['compact', 'expanded', 'compact', 'expanded']) {
+      await evaluate(`document.querySelector('${selector} .inspector-ai-heading button').click()`);
+      await frame();
+      await evaluate(`(() => {
+        const split = document.querySelector('${selector}');
+        const input = split.querySelector('textarea, [contenteditable=true]');
+        if (window.__resizeInput !== input || window.__resizeConversation !== split.querySelector('.assistant-panel, .document-review') ||
+          (input?.value ?? input?.textContent) !== window.__resizeDraft)
+          throw new Error('Resizing remounted conversation or changed draft');
+      })()`);
+      await evaluate(`(() => {
+      const split = document.querySelector('${selector}');
+      for (const control of split.querySelectorAll('textarea, [contenteditable=true], button[type=submit], .assistant-stop, .inspector-ai-heading button, .document-review-actions button, .editor-agent-thread button')) {
+        control.scrollIntoView({block:'nearest',inline:'nearest'});
+        const r=control.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.top < -1 || r.bottom > innerHeight+1 || r.right>innerWidth+1 ||
+          !control.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)))
+          throw new Error('Sidebar control unreachable: '+control.outerHTML.slice(0,200)+' '+JSON.stringify(r.toJSON()));
+      }
+    })()`);
+      rows.push(
+        await evaluate(`(() => {
+        const split=document.querySelector('${selector}');
+        return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
+          expanded:split.dataset.aiExpanded, aiHeight:split.querySelector('.inspector-ai-region').getBoundingClientRect().height};
+      })()`),
+      );
+      if (state === 'expanded' || state === 'compact') {
+        const { data } = await debug.sendCommand('Page.captureScreenshot', {
+          format: 'png',
+          captureBeyondViewport: false,
+        });
+        writeFileSync(
+          join(root, `resize-${label}-${width}-${height}-${theme}-${state}.png`),
+          Buffer.from(data, 'base64'),
+        );
+      }
+    }
+  }
+  // 使用原生键盘事件验证 Escape 焦点返回；收起只改展示，不停止流式或重发。
+  await evaluate(`document.querySelector('${selector} .inspector-ai-heading button').focus()`);
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+  await frame();
+  if (
+    !(await evaluate(
+      `document.querySelector('${selector}').dataset.aiExpanded==='false' && document.activeElement===document.querySelector('${selector} .inspector-ai-heading button')`,
+    ))
+  )
+    throw new Error('Escape did not collapse and restore focus');
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+  wc.sendInputEvent({ type: 'char', keyCode: '\r' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+  await frame();
+  if (!(await evaluate(`document.querySelector('${selector}').dataset.aiExpanded==='true'`)))
+    throw new Error('Enter did not expand');
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  await frame();
+  if (
+    !(await evaluate(
+      `document.querySelector('${selector} .inspector-ai-scroll').contains(document.activeElement)`,
+    ))
+  )
+    throw new Error('Tab did not enter the conversation controls');
+  writeFileSync(
+    join(root, `resize-${label}.json`),
+    JSON.stringify(
+      { status: 'PASS_REAL', provider: 'MOCK_ONLY', rows, physicalIME: 'NOT_RUN' },
+      null,
+      2,
+    ),
+  );
+  await evaluate(`document.documentElement.dataset.theme=${JSON.stringify(originalTheme)}`);
+  try {
+    await debug.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  } finally {
+    debug.detach();
+  }
+  window.setContentSize(1440, 900);
+  await frame();
+}
+
+export async function checkSidebarStreaming(window: BrowserWindow, root: string, label: string) {
+  const wc = window.webContents;
+  const frames: unknown[] = [];
+  const [width, height] = window.getContentSize();
+  window.setContentSize(800, 420);
+  for (let index = 0; index < 4; index++) {
+    frames.push(
+      await wc.executeJavaScript(`(async () => {
+      const split=document.querySelector('.inspector-split');
+      const input=split.querySelector('textarea, [contenteditable=true]');
+      const conversation=split.querySelector('.assistant-panel, .document-review');
+      split.querySelector('.inspector-ai-heading button').click();
+      await new Promise(done=>requestAnimationFrame(done));
+      if (input!==split.querySelector('textarea, [contenteditable=true]') || conversation!==split.querySelector('.assistant-panel, .document-review'))
+        throw new Error('Streaming resize remounted its conversation');
+      split.querySelector('.inspector-ai-region').scrollIntoView({block:'end'});
+      const stop=split.querySelector('.assistant-stop') ?? [...split.querySelectorAll('.document-review-actions button,.editor-agent-thread button')].find(button=>button.textContent.trim()==='停止');
+      if (!stop) throw new Error('Stream finished before stop reachability check');
+      stop.scrollIntoView({block:'nearest',inline:'nearest'});
+      const r=stop.getBoundingClientRect();
+      if(r.top<0 || r.bottom>innerHeight+1 || !stop.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)))
+        throw new Error('Streaming stop unreachable in short window');
+      return {expanded:split.dataset.aiExpanded, width:innerWidth,height:innerHeight,stop:r.toJSON(),text:conversation.textContent,time:performance.now()};
+    })()`),
+    );
+  }
+  window.setContentSize(width, height);
+  writeFileSync(
+    join(root, `resize-${label}-streaming.json`),
+    JSON.stringify({ provider: 'MOCK_ONLY', frames }, null, 2),
+  );
+}
+
 // 沿用宿主校验过的合成目录和正式IPC；只测项目，不改全工作台演示的既有断言。
 export async function runProjectDemo(
   createWindow: () => Promise<BrowserWindow>,
@@ -182,6 +371,13 @@ export async function runProjectDemo(
       if (phase === 'project-agent-write') {
         if (!(await create(title)).ok || !(await create(second)).ok)
           throw new Error('Project Agent setup failed');
+        if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+          await new Promise<void>((resolve) => {
+            window.webContents.once('did-finish-load', () => resolve());
+            window.webContents.reload();
+          });
+          await wait("document.querySelector('[data-nav=home]')");
+        }
         await evaluate("document.querySelector('[data-nav=home]').click()");
         await wait("document.querySelector('[data-testid=agent-input]')");
         await evaluate("document.querySelector('[data-nav=projects]').click()");
@@ -200,6 +396,10 @@ export async function runProjectDemo(
           `!document.querySelector('${context} dl') && document.querySelector('${send}:disabled')`,
         );
         assertNoRuns();
+        if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+          await checkSidebarResize(window, root, 'project-empty');
+          await evaluate("document.querySelector('.inspector-ai-heading button').click()");
+        }
         await wait(`!document.querySelector('${projectInput}')?.closest('[inert]')`);
         window.webContents.focus();
         const focused = await evaluate(`(() => {
@@ -233,7 +433,15 @@ export async function runProjectDemo(
         await captureRenderer('project-agent-context.png');
         await wait(`document.querySelector('${send}:enabled')`);
         await evaluate(`document.querySelector('${send}').click()`);
+        if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+          await wait("document.querySelector('.assistant-stop')");
+          await checkSidebarStreaming(window, root, 'project');
+        }
         await wait("document.querySelector('.project-ai-content .assistant-run-status.succeeded')");
+        if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+          await evaluate("document.querySelector('.inspector-ai-heading button').click()");
+          await checkSidebarResize(window, root, 'project-history');
+        }
         await wait(
           "document.querySelector('.project-ai-content .assistant-message--assistant')?.textContent.includes('固定 UI 测试内容')",
         );
@@ -249,6 +457,90 @@ export async function runProjectDemo(
         await button(second);
         await wait(
           `document.querySelector('${projectInput}:enabled')?.value === '' && !document.querySelector('.project-ai-content .assistant-message--assistant')`,
+        );
+      }
+      if (process.env.CASELITE_SIDEBAR_RESIZE === 'test' && phase === 'project-agent-write') {
+        const created: TaskResponse = await evaluate(
+          `window.caselite.task(${JSON.stringify({
+            protocol_version: 1,
+            operation: 'create',
+            request_id: randomUUID(),
+            idempotency_key: randomUUID(),
+            title: '合成伸缩任务',
+            objective: '',
+          })})`,
+        );
+        if (!created.ok) throw new Error('Synthetic resize task failed');
+        const task = created.tasks[0];
+        await new Promise<void>((resolve) => {
+          window.webContents.once('did-finish-load', () => resolve());
+          window.webContents.reload();
+        });
+        await wait("document.querySelector('[data-nav=tasks]')");
+        await evaluate("document.querySelector('[data-nav=tasks]').click()");
+        const row = `[data-row-task="${task.id}"] .task-row-title`;
+        await wait(`document.querySelector('${row}')`);
+        await evaluate(`document.querySelector('${row}').click()`);
+        await wait("document.querySelector('.task-inspector .sidebar-agent .material-composer')");
+        await evaluate(`(() => {
+          const old=document.querySelector('#resize-file');old?.remove();
+          const input=document.createElement('input');input.type='file';input.id='resize-file';input.hidden=true;document.body.append(input);
+        })()`);
+        const dbg = window.webContents.debugger;
+        dbg.attach('1.3');
+        try {
+          const doc = await dbg.sendCommand('DOM.getDocument');
+          const { nodeId } = await dbg.sendCommand('DOM.querySelector', {
+            nodeId: doc.root.nodeId,
+            selector: '#resize-file',
+          });
+          await dbg.sendCommand('DOM.setFileInputFiles', {
+            nodeId,
+            files: [join(root, 'fixture.pdf')],
+          });
+          await evaluate(`(() => {
+            const data=new DataTransfer();data.items.add(document.querySelector('#resize-file').files[0]);
+            document.querySelector('.task-inspector .material-composer').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
+          })()`);
+        } finally {
+          dbg.detach();
+        }
+        await wait(
+          "document.querySelector('[aria-label=待发送附件]')?.textContent.includes('fixture.pdf')",
+        );
+        await evaluate(`(() => {
+          const input=document.querySelector('.sidebar-agent [data-testid=assistant-input]');
+          input.focus();document.execCommand('insertText',false,'合成任务草稿：保留附件');
+        })()`);
+        await wait(
+          "document.querySelector('.sidebar-agent [data-testid=assistant-input]')?.value.includes('合成任务草稿')",
+        );
+        await evaluate("document.querySelector('.inspector-ai-heading button').click()");
+        await checkSidebarResize(window, root, 'task-attachment');
+        await wait(
+          "document.querySelector('[aria-label=待发送附件]')?.textContent.includes('fixture.pdf')",
+        );
+        await evaluate("document.querySelector('.material-card-open').click()");
+        await wait("document.querySelector('dialog.material-reader-dialog[open]')");
+        await evaluate("document.querySelector('.material-reader-dialog button').focus()");
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+        await wait(
+          "!document.querySelector('dialog.material-reader-dialog') && document.querySelector('.inspector-split').dataset.aiExpanded==='true'",
+        );
+        await evaluate("document.querySelector('[data-nav=documents]').click()");
+        await wait(`document.querySelector('[data-document-id="${task.document_id}"]')`);
+        await evaluate(
+          `document.querySelector('[data-document-id="${task.document_id}"]').click()`,
+        );
+        await button('属性');
+        await wait(
+          "document.querySelector('.document-property-values') && document.querySelector('.sidebar-agent')",
+        );
+        await checkSidebarResize(window, root, 'document');
+        await evaluate("document.querySelector('[data-nav=home]').click()");
+        await wait(
+          "document.querySelector('[data-testid=agent-input]') && !document.querySelector('.inspector-split')",
         );
       }
       const connection = openToolchainProbe(

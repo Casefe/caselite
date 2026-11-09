@@ -534,3 +534,175 @@
   border-radius: 10px;
   background: var(--theme-subtle);
 }
+
+/* 右栏可用高度决定伸缩比例；短窗至少保留属性入口，不使用屏幕 75vh。 */
+:is(.task-inspector, .project-catalog > .project-properties):has(> .inspector-split) {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.inspector-split {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.inspector-properties-scroll {
+  flex: 1 1 0;
+  min-height: min(64px, 20%);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.project-sidebar-properties {
+  padding: 12px;
+}
+.project-sidebar-properties > form {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.project-sidebar-properties > .project-planning {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--theme-subtle);
+}
+.inspector-split > .inspector-ai-region {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: min(180px, calc(100% - min(64px, 20%)));
+  max-height: 45%;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--line);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.inspector-split[data-ai-expanded='true'] > .inspector-ai-region {
+  flex: 0 0 75%;
+  max-height: calc(100% - min(64px, 20%));
+  min-height: min(240px, 80%);
+}
+.inspector-ai-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+.inspector-ai-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.inspector-ai-heading button {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+.inspector-ai-heading button:enabled:hover {
+  background: var(--active);
+}
+.inspector-split :is(.inspector-ai-heading button, .inspector-properties-scroll):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.inspector-ai-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.inspector-ai-scroll > .sidebar-agent,
+.inspector-ai-scroll .assistant-panel--compact {
+  height: 100%;
+  min-height: 0;
+}
+.inspector-ai-scroll .assistant-panel--compact {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.inspector-ai-scroll .assistant-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.inspector-ai-scroll .assistant-viewport {
+  max-height: none;
+}
+.inspector-ai-scroll .assistant-panel--compact > :is(.assistant-run-status, .assistant-error) {
+  flex: 0 1 auto;
+  max-height: 30%;
+  overflow: auto;
+  margin-block: 4px;
+}
+.inspector-ai-scroll .assistant-compose {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+}
+.inspector-ai-scroll .assistant-input {
+  max-height: 88px;
+  overflow: auto;
+}
+.inspector-ai-scroll .document-review {
+  padding: 0;
+}
+.inspector-ai-scroll :is(.editor-agent-thread > form, .document-review > label:has(textarea)) {
+  position: sticky;
+  bottom: 0;
+  background: var(--theme-panel);
+  z-index: 1;
+}
+@media (max-width: 1100px) {
+  .project-catalog > .project-properties:has(> .inspector-split) {
+    height: calc(100dvh - var(--workbench-header-height, 48px));
+  }
+}
+@media (max-width: 780px) {
+  .task-detail .task-inspector:has(> .inspector-split) {
+    height: calc(100dvh - var(--workbench-header-height, 48px));
+  }
+}
+
+/* 目录页页头保留原 Owner；它占用的高度不能挤到会话和输入区域之外。 */
+:is(.document-directory-sidebar, .task-list-sidebar):has(> .task-inspector > .inspector-split) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+:is(.document-directory-sidebar, .task-list-sidebar) > .task-inspector:has(> .inspector-split) {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
+}
+.document-directory-sidebar:has(.inspector-split) > .document-directory-preview {
+  flex: 0 0 auto;
+}
+@media (max-width: 900px) {
+  .collection-workspace[data-collection='documents']
+    > .document-directory-sidebar:has(.inspector-split) {
+    height: min(max(320px, 36dvh), calc(100dvh - var(--workbench-header-height, 48px)));
+    min-height: 0;
+    max-height: none;
+  }
+  .collection-workspace[data-collection='documents']
+    > .document-directory-sidebar:has(.inspector-split[data-ai-expanded='true']) {
+    height: calc(100dvh - var(--workbench-header-height, 48px));
+    max-height: none;
+  }
+}

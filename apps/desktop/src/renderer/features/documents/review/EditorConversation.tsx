@@ -82,7 +82,10 @@ export default function EditorConversation({
         </ThreadPrimitive.Viewport>
         <ComposerPrimitive.Root>
           <Input value={question} onChange={onQuestion} disabled={disabled || running} />
-          <ComposerPrimitive.Send disabled={disabled || running || !question.trim()}>
+          <ComposerPrimitive.Send
+            data-sidebar-expand
+            disabled={disabled || running || !question.trim()}
+          >
             发送本轮审阅
           </ComposerPrimitive.Send>
           {running && <ComposerPrimitive.Cancel>停止</ComposerPrimitive.Cancel>}

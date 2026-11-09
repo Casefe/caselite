@@ -810,6 +810,10 @@ it('a ready selected file does not wait for unrelated background OCR', async () 
 it('queues required local OCR behind a busy worker without making the user resubmit', async () => {
   let waiting = false;
   let resume!: () => void;
+  let workerEntered!: () => void;
+  const workerReady = new Promise<void>((resolve) => {
+    workerEntered = resolve;
+  });
   const s = setup({
     configuration: 'ocr-queue',
     inspect: async () => 1,
@@ -817,6 +821,7 @@ it('queues required local OCR behind a busy worker without making the user resub
       if (waiting) {
         await new Promise<void>((done) => {
           resume = done;
+          workerEntered();
         });
         waiting = false;
       }
@@ -831,6 +836,8 @@ it('queues required local OCR behind a busy worker without making the user resub
   await s.settled();
   waiting = true;
   await s.add();
+  // 等待读取原件后的处理器真正占槽，避免覆盖率负载下固定10ms先于resume赋值。
+  await workerReady;
   const pending = s.app.execute({
     protocol_version: 1,
     scope: 'home',
@@ -841,7 +848,6 @@ it('queues required local OCR behind a busy worker without making the user resub
     selected: [{ source_id: first.source.id, pages: [1] }],
   });
   try {
-    await new Promise((done) => setTimeout(done, 10));
     resume();
     const preview = ok(await pending).preview!;
     expect(preview.payload).toContain(page.text);

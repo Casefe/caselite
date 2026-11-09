@@ -1,4 +1,6 @@
 import CalendarView from './features/calendar/CalendarView';
+import InspectorLayout from './ui/InspectorLayout';
+import { DocumentPropertyValues } from './ui/DocumentInspector';
 import { localDate, invalidateCalendar } from './features/calendar/calendar-query';
 import ContactsView from './features/contacts/ContactsView';
 import ReportView from './features/reports/ReportView';
@@ -1104,7 +1106,27 @@ function Workbench() {
                 )}
               </div>
               {documentReview ? (
-                <aside className="task-inspector" ref={setReviewDock} aria-label="文档审阅侧栏" />
+                <aside className="task-inspector" aria-label="文档审阅侧栏">
+                  <InspectorLayout
+                    properties={
+                      <div
+                        className="inspector-content task-inspector-content"
+                        aria-label="文档属性"
+                      >
+                        <DocumentPropertyValues
+                          revision={active.body_revision}
+                          projectTitle={
+                            active.matter_title ?? (active.matter_id ? '已归组' : '未归组')
+                          }
+                          taskTitle={active.title}
+                          documentId={active.document_id}
+                        />
+                      </div>
+                    }
+                  >
+                    <div ref={setReviewDock} aria-label="正文 AI 侧栏" />
+                  </InspectorLayout>
+                </aside>
               ) : (
                 taskInspector
               )}

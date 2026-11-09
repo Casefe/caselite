@@ -1,0 +1,117 @@
+.editor-settings-intro,
+.editor-settings-note {
+  color: var(--theme-secondary);
+  line-height: 1.7;
+  font-size: 13px;
+}
+.editor-settings fieldset {
+  border: 0;
+  margin: 24px 0 0;
+  padding: 0;
+}
+.editor-settings legend {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.editor-scheme-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.editor-scheme-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--theme-panel);
+  cursor: pointer;
+}
+.editor-scheme-option[data-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.editor-scheme-option input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.editor-scheme-option strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.editor-scheme-option small {
+  color: var(--theme-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.editor-scheme-option:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.editor-scheme-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  gap: 10px;
+  padding: 0 16px;
+  color: var(--theme-secondary);
+  background: var(--theme-panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.editor-scheme-bar small {
+  font-size: 10px;
+}
+.markdown-format-menu > summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.markdown-format-menu[open] > .simple-toolbar {
+  position: absolute;
+  z-index: 16;
+  top: 34px;
+  right: 8px;
+  max-width: calc(100% - 16px);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px #18233518;
+}
+/* 纸张仅是正文视图；不插入分页节点或向 Yjs 写入布局状态。 */
+.rich-editor[data-editor-scheme='word'] > .rich-editor-content {
+  padding: 24px 20px;
+  background: var(--theme-subtle);
+  overflow: auto;
+}
+.rich-editor[data-editor-scheme='word'] .tiptap {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 794px;
+  min-height: 1123px;
+  margin: 0 auto;
+  padding: 60px clamp(24px, 7vw, 76px);
+  background: var(--theme-panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 3px 14px #18233514;
+}
+.rich-editor[data-editor-scheme='word'][data-empty='true']::before {
+  display: none;
+}
+.rich-editor[data-editor-scheme='markdown'] .tiptap {
+  max-width: 900px;
+  margin: 0 auto;
+}
+@media (max-width: 700px) {
+  .editor-scheme-options {
+    grid-template-columns: 1fr;
+  }
+  .rich-editor[data-editor-scheme='word'] > .rich-editor-content {
+    padding: 12px 8px;
+  }
+  .rich-editor[data-editor-scheme='word'] .tiptap {
+    padding: 28px 20px;
+  }
+}

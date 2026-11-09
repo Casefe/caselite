@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { DraftEditor, draftDoc } from './RichEditor';
+import { Editor } from '@tiptap/react';
+import { DraftEditor, draftDoc, EditorSurface, localExtensions } from './RichEditor';
 import * as Y from 'yjs';
 
 // jsdom无真实排版，只补齐Range几何API；本测试只验锁定，定位另由真实Electron验证。
@@ -25,6 +26,43 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 describe('rich input locking', () => {
+  it('switches document schemes without changing Yjs, selection or undo history, and retains tables', async () => {
+    const doc = draftDoc({ text: '合成付款条款', state: null });
+    const editor = new Editor({ extensions: localExtensions(doc, true), injectCSS: false });
+    const view = render(<EditorSurface editor={editor} mode="simple" documentScheme="word" />);
+    try {
+      await screen.findByRole('toolbar', { name: '文档格式' });
+      editor.commands.setTextSelection({ from: 1, to: 3 });
+      editor.commands.toggleBold();
+      const selection = editor.state.selection.toJSON();
+      const before = Y.encodeStateAsUpdate(doc);
+      const undo = editor.can().undo();
+      view.rerender(<EditorSurface editor={editor} mode="simple" documentScheme="markdown" />);
+      expect(screen.getByText('Markdown · 快捷写作')).toBeTruthy();
+      // jsdom 不实现 details 的原生可见性；桌面测试另验工具栏确实收起。
+      expect(screen.getByRole('toolbar', { name: '文档格式' }).closest('details')?.open).toBe(
+        false,
+      );
+      expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+      expect(editor.state.selection.toJSON()).toEqual(selection);
+      expect(editor.can().undo()).toBe(undo);
+      view.rerender(<EditorSurface editor={editor} mode="simple" documentScheme="word" />);
+      expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+      expect(editor.state.selection.toJSON()).toEqual(selection);
+      expect(editor.commands.undo()).toBe(true);
+      expect(editor.getJSON().content?.[0].content?.[0].marks).toBeUndefined();
+      editor.commands.focus('end');
+      editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: false });
+      const tableState = Y.encodeStateAsUpdate(doc);
+      view.rerender(<EditorSurface editor={editor} mode="simple" documentScheme="markdown" />);
+      expect(view.container.querySelectorAll('td')).toHaveLength(4);
+      expect(Y.encodeStateAsUpdate(doc)).toEqual(tableState);
+    } finally {
+      view.unmount();
+      editor.destroy();
+      doc.destroy();
+    }
+  });
   it('does not mark a saved body dirty when a save or archive toggles read-only mode', async () => {
     const change = vi.fn();
     const props = {

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Editor, EditorContent } from '@tiptap/react';
 import * as Y from 'yjs';
 import DocumentReview from './DocumentReview';
+import InspectorLayout from '../../../ui/InspectorLayout';
 import { localExtensions, reviewUpdateOrigin } from '../../../editors/editor-config';
 import { draftDoc } from '../../../editors/editor-state';
 import type { AgentRequest, AgentResponse, AgentRun } from '../../../../preload/caselite-api';
@@ -79,14 +80,16 @@ function mount(variant: 'review' | 'assistant' = 'review') {
   const view = render(
     <>
       <EditorContent editor={editor} />
-      <DocumentReview
-        editor={editor}
-        identity={identity}
-        variant={variant}
-        blocked={false}
-        onApplyBusy={vi.fn()}
-        onSaved={onSaved}
-      />
+      <InspectorLayout properties={null}>
+        <DocumentReview
+          editor={editor}
+          identity={identity}
+          variant={variant}
+          blocked={false}
+          onApplyBusy={vi.fn()}
+          onSaved={onSaved}
+        />
+      </InspectorLayout>
     </>,
   );
   return { editor, doc, agent, onSaved, view };
@@ -106,7 +109,10 @@ it.each(['review', 'assistant'] as const)(
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: '改写为明确条款' } });
     expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain('原文条款');
+    fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+    expect(screen.getByRole('button', { name: '展开 AI 对话' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '发送本轮审阅' }));
+    expect(screen.getByRole('button', { name: '收起 AI 对话' })).toBeTruthy();
     await screen.findByText('确认写回');
     expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(1);
     const preview = agent.mock.calls.find(([r]) => r.operation === 'preview_review')![0];

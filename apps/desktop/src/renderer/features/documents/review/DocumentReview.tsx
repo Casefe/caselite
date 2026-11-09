@@ -392,6 +392,7 @@ export default function DocumentReview({
             <button
               type="button"
               className="primary"
+              data-sidebar-expand
               onClick={send}
               disabled={
                 !canPrepare ||

@@ -9,6 +9,7 @@ import { mutation, check } from '../../shared/data/taskCommand';
 import { EditorSurface, localExtensions } from '../../editors/RichEditor';
 import DocumentReview from './review/DocumentReview';
 import DeliverySnapshots from './delivery/DeliverySnapshots';
+import { useLocalPreferences } from '../../shared/data/LocalPreferences';
 
 export default function BodyEditor({
   task,
@@ -31,6 +32,7 @@ export default function BodyEditor({
   onReviewSaving(value: boolean): void;
   reviewVariant?: 'review' | 'assistant';
 }) {
+  const { preferences } = useLocalPreferences();
   const [doc] = useState(() => {
     const d = new Y.Doc();
     if (initial) Y.applyUpdate(d, Uint8Array.from(initial));
@@ -136,7 +138,11 @@ export default function BodyEditor({
             修订 <b data-testid="revision">{revision}</b>
           </span>
         </div>
-        <EditorSurface editor={editor} mode={editorProfiles.document.mode} />
+        <EditorSurface
+          editor={editor}
+          mode={editorProfiles.document.mode}
+          documentScheme={preferences.editor_mode ?? 'markdown'}
+        />
         <footer>
           <span role="status" data-testid="save-status">
             {task.document_archived_at ? '文档已归档 · 只读' : status}
