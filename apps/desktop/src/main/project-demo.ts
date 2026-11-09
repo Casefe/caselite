@@ -446,7 +446,7 @@ export async function runProjectDemo(
     await wait(
       "document.querySelectorAll('[data-project-id]').length===1 && document.querySelector('.collection-footer').textContent.includes('1–1')",
     );
-    await evaluate("document.querySelector('[data-testid=assistant-input]').focus()");
+    await button('展开 AI 对话');
     await wait("document.querySelector('.inspector-split').dataset.aiExpanded==='true'");
     await evaluate(`(() => {
       const textarea=document.querySelector('[data-testid=assistant-input]');
