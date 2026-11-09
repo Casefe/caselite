@@ -5,6 +5,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { openTaskStore, openToolchainProbe } from '../../packages/local-db/src/index';
+import { validateBody } from '../../packages/local-db/src/body-schema';
 import { createTaskApplication } from '../../packages/application/src/task-application';
 import type { TaskRequest, TaskResponse } from '../../packages/contracts/src/task';
 const require = createRequire(new URL('../../packages/local-db/package.json', import.meta.url));
@@ -536,5 +537,61 @@ it('creates project tasks with atomic attributes and rejects unavailable project
     observer.sqlite.close();
     other.close();
     store.close();
+  }
+});
+
+it('reopens a committed table revision and rejects malformed grids without replacing it', () => {
+  const { file, store } = setup();
+  const task = value(
+    store.execute({ ...identity(), operation: 'create', title: '表格读回', objective: '' }),
+  ).tasks[0];
+  store.close();
+  const doc = new Y.Doc();
+  const table = new Y.XmlElement('table');
+  const row = new Y.XmlElement('tableRow');
+  const cell = new Y.XmlElement<{ colwidth: number[] }>('tableCell');
+  cell.setAttribute('colwidth', [0]);
+  const paragraph = new Y.XmlElement('paragraph');
+  const text = new Y.XmlText();
+  text.insert(0, '已提交单元格');
+  paragraph.push([text]);
+  cell.push([paragraph]);
+  row.push([cell]);
+  table.push([row]);
+  doc.getXmlFragment('default').push([table]);
+  const state = Y.encodeStateAsUpdate(doc);
+  table.push([new Y.XmlElement('tableRow')]);
+  const malformed = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  // 模拟写入版已提交的同格式二进制，再由当前版本重开。
+  const raw = openToolchainProbe(file, migrations);
+  raw.sqlite
+    .prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,?,?)')
+    .run(task.body_id, 1, Buffer.from(state));
+  raw.sqlite.prepare('UPDATE documents SET body_revision=1 WHERE id=?').run(task.document_id);
+  raw.sqlite.close();
+  const next = openTaskStore(file, migrations);
+  try {
+    const read = { operation: 'read' as const, protocol_version: 1 as const, task_id: task.id };
+    expect(value(next.execute(read)).state).toEqual(Array.from(state));
+    expect(() => validateBody(Uint8Array.from(malformed), true)).toThrow('Incomplete table grid');
+    expect(
+      next.execute({
+        ...identity(),
+        operation: 'save',
+        task_id: task.id,
+        document_id: task.document_id,
+        body_id: task.body_id,
+        expected_revision: 1,
+        editor_schema: 1,
+        state: malformed,
+      }).ok,
+    ).toBe(false);
+    expect(value(next.execute(read))).toMatchObject({
+      state: Array.from(state),
+      tasks: [{ body_revision: 1 }],
+    });
+  } finally {
+    next.close();
   }
 });

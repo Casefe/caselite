@@ -12,6 +12,30 @@ import { createHash } from 'node:crypto';
 import { agentProviderFor, type AgentModel, type AgentProvider } from '@caselite/contracts';
 
 export const realDemoId = 'DEV-1650-20261106-two-calls';
+export const realDemoFreshId = 'DEV-1650-20261109-two-calls';
+export type RealDemoAuthorization = typeof realDemoId | typeof realDemoFreshId;
+
+export function validateRealDemoLaunch(input: {
+  directory: string;
+  temporaryRoot: string;
+  approval: string | undefined;
+  resume: string | undefined;
+}): RealDemoAuthorization {
+  if (
+    input.directory === join(input.temporaryRoot, 'caselite-task-demo-dev1650-real-20261106') &&
+    input.approval === realDemoId &&
+    input.resume === 'resume-1'
+  )
+    return realDemoId;
+  // 新授权使用独立、固定账本；不能借新授权恢复或清零已消费的旧批次。
+  if (
+    input.directory === join(input.temporaryRoot, 'caselite-task-demo-dev1650-real-20261109') &&
+    input.approval === realDemoFreshId &&
+    (input.resume === undefined || input.resume === 'resume-1')
+  )
+    return realDemoFreshId;
+  throw new Error('Real validation launch is outside its approved batch');
+}
 export const realDemoPrompts = [
   '以下完全是虚构界面测试：样例甲公司向样例乙公司采购设备，总价120000元，已付80000元，约定2026-10-20交付，截至2026-11-01尚未交付。请用中文分已知事实、尚缺材料、下一步简短列项，不作法律结论；只回答，不执行工具或创建对象。',
   '只根据本轮附上的虚构PDF，用中文列出双方、合同总价、已付款、交付日、截至何日未交付，并原样输出Verification marker；列两项尚缺材料。不要作法律结论，不访问其他材料或历史。',
@@ -52,12 +76,20 @@ export function selectedCredentialReady(
   );
 }
 
-export function inspectZeroDispatchResume(directory: string, dry = false) {
+export function inspectZeroDispatchResume(
+  directory: string,
+  dry = false,
+  authorization: RealDemoAuthorization = realDemoId,
+) {
+  const names =
+    authorization === realDemoFreshId
+      ? originalNames.filter((name) => name !== 'validation-started.json')
+      : originalNames;
   const approvalBytes = readFileSync(join(directory, 'resume-approval.json'));
   const approval = JSON.parse(approvalBytes.toString());
   const read = (name: string) => JSON.parse(readFileSync(join(directory, name), 'utf8'));
   if (
-    approval.authorizationId !== realDemoId ||
+    approval.authorizationId !== authorization ||
     approval.resumeId !== realDemoResumeId ||
     approval.model !== 'deepseek-flash' ||
     approval.maximumDispatches !== 2 ||
@@ -104,10 +136,10 @@ export function inspectZeroDispatchResume(directory: string, dry = false) {
   if (
     Object.keys(approval.originalFiles ?? {})
       .sort()
-      .join('|') !== [...originalNames].sort().join('|')
+      .join('|') !== [...names].sort().join('|')
   )
     throw new Error('Incomplete original evidence seal');
-  for (const name of originalNames) {
+  for (const name of names) {
     if (digest(readFileSync(join(directory, name))) !== approval.originalFiles[name])
       throw new Error('Original evidence changed');
   }
@@ -124,12 +156,20 @@ export function inspectZeroDispatchResume(directory: string, dry = false) {
     const actual = existsSync(path) ? digest(readFileSync(path)) : null;
     if (actual !== approval.databaseFiles[name]) throw new Error('Original database changed');
   }
-  const oldStart = read('validation-started.json'),
-    oldPreflight = read('preflight.json'),
+  const oldPreflight = read('preflight.json'),
     oldResult = read('validation-result.json');
+  if (authorization === realDemoFreshId) {
+    if (
+      read('build-manifest.json').authorizationId !== realDemoFreshId ||
+      existsSync(join(directory, 'validation-started.json'))
+    )
+      throw new Error('New batch is not an unconsumed preflight failure');
+  } else {
+    const oldStart = read('validation-started.json');
+    if (oldStart.id !== realDemoId || oldStart.maximumDispatches !== 2)
+      throw new Error('Original validation authorization mismatch');
+  }
   if (
-    oldStart.id !== realDemoId ||
-    oldStart.maximumDispatches !== 2 ||
     oldPreflight.model !== 'deepseek-flash' ||
     oldPreflight.configured !== false ||
     oldPreflight.runs !== 0 ||
@@ -159,6 +199,7 @@ export function inspectZeroDispatchResume(directory: string, dry = false) {
   if (existsSync(join(directory, 'resume-started.json')))
     throw new Error('Resume already consumed');
   return {
+    authorizationId: authorization,
     approvalSha256: digest(approvalBytes),
     originalFiles: approval.originalFiles,
     consumedDispatches: 0,
@@ -171,7 +212,13 @@ export function inspectZeroDispatchResume(directory: string, dry = false) {
 export function createRealDemoBudget(
   directory: string,
   resume?: { audit: ReturnType<typeof inspectZeroDispatchResume> },
+  authorization: RealDemoAuthorization = realDemoId,
 ) {
+  if (
+    ![realDemoId, realDemoFreshId].includes(authorization) ||
+    (resume && resume.audit.authorizationId !== authorization)
+  )
+    throw new Error('Invalid validation authorization');
   const durable = (name: string, value: unknown) => {
     const fd = openSync(join(directory, name), 'wx', 0o600);
     try {
@@ -183,7 +230,7 @@ export function createRealDemoBudget(
   };
   if (resume) {
     if (
-      !existsSync(join(directory, 'validation-started.json')) ||
+      (authorization === realDemoId && !existsSync(join(directory, 'validation-started.json'))) ||
       digest(readFileSync(join(directory, 'resume-approval.json'))) !==
         resume.audit.approvalSha256 ||
       resume.audit.consumedDispatches !== 0
@@ -200,18 +247,23 @@ export function createRealDemoBudget(
     )
       throw new Error('Budget changed after audit');
     durable('resume-started.json', {
-      authorizationId: realDemoId,
       resumeId: realDemoResumeId,
       ...resume.audit,
       cumulativeDispatches: resume.audit.consumedDispatches,
       maximumDispatches: 2,
       time: new Date().toISOString(),
     });
+    if (authorization === realDemoFreshId)
+      durable('validation-started.json', {
+        id: authorization,
+        maximumDispatches: 2,
+        startedAt: new Date().toISOString(),
+      });
   } else {
     if (existsSync(join(directory, 'validation-started.json')))
       throw new Error('Validation already started; reconcile existing receipts');
     durable('validation-started.json', {
-      id: realDemoId,
+      id: authorization,
       maximumDispatches: 2,
       startedAt: new Date().toISOString(),
     });
@@ -224,7 +276,7 @@ export function createRealDemoBudget(
         actual !== count ||
         count >= 2 ||
         prompt !== realDemoPrompts[count] ||
-        (resume && model !== 'deepseek-flash')
+        ((resume || authorization === realDemoFreshId) && model !== 'deepseek-flash')
       )
         throw new Error('Outside authorized phase or budget changed');
       if (
@@ -234,7 +286,7 @@ export function createRealDemoBudget(
         throw new Error('Previous receipt failed or unknown');
       const next = count + 1;
       durable(`dispatch-${next}.json`, {
-        id: realDemoId,
+        id: authorization,
         runId,
         model,
         phase: next === 1 ? 'text' : 'pdf',

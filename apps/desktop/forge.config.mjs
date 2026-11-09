@@ -28,6 +28,9 @@ export default {
     executableName: 'CaseLite',
     icon: localPath('./assets/branding/caselite.icns'),
     extraResource: [
+      localPath('./assets/THIRD-PARTY-DOCX-NOTICES.txt'),
+      localPath('./.webpack/arm64/main/docx-worker.cjs'),
+      localPath('./.webpack/arm64/main/word-export-worker.cjs'),
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
       localPath('./assets/THIRD-PARTY-GRAPH-NOTICES.txt'),
@@ -73,7 +76,7 @@ export default {
     new WebpackPlugin({
       mainConfig: localPath('./webpack.main.config.mjs'),
       devContentSecurityPolicy:
-        "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+        "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
       devServer: {
         host: 'localhost',
         hot: false,

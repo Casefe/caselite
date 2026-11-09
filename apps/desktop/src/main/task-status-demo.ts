@@ -61,9 +61,7 @@ export async function runTaskStatusDemo(
     );
   const open = async (id: string) => {
     await wait(`document.querySelector('[data-row-task="${id}"]')`);
-    await evaluate(
-      `document.querySelector('[data-row-task="${id}"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
-    );
+    await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
     await wait(
       `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
     );
@@ -324,7 +322,7 @@ export async function runTaskStatusDemo(
       await wait('document.hasFocus()');
       await evaluate("document.querySelector('[data-testid=toggle-favorite]').focus()");
       await wait(
-        "document.hasFocus() && document.activeElement?.matches('[data-testid=toggle-favorite]') && document.querySelector('.task-title h1').nextElementSibling===document.activeElement",
+        "document.hasFocus() && document.activeElement?.matches('[data-testid=toggle-favorite]') && document.querySelector('.task-detail-topline .task-breadcrumb-title').nextElementSibling===document.activeElement",
       );
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
       window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
@@ -462,9 +460,7 @@ export async function runTaskStatusDemo(
       const expected = JSON.parse(readFileSync(join(root, 'task-status-expected.json'), 'utf8'));
       id = expected.task.id;
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
-      await evaluate(
-        `document.querySelector('[data-row-task="${id}"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
-      );
+      await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
       await wait(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
       );

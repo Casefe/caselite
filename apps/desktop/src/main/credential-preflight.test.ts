@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   session: { defaultSession: { webRequest: { onBeforeRequest: mocks.network } } },
 }));
 vi.mock('./adapters/agent-credentials', () => ({ createAgentCredentials: mocks.create }));
-import { runCredentialPreflight } from './credential-preflight';
+import { runCredentialPreflight, readOnlyDemoCredentials } from './credential-preflight';
 let root: string;
 let directory: string;
 beforeEach(() => {
@@ -79,4 +79,26 @@ it('reports unavailable enums while preserving model, ciphertext and the no-disp
   expect(readFileSync(join(directory, 'credential-result.json'), 'utf8')).not.toContain(
     'private-error',
   );
+});
+
+it('forwards only the read state and never exposes credential mutations in the validation wrapper', () => {
+  let reading = true;
+  const port = {
+    get: vi.fn(() => undefined),
+    getDefaultModel: () => 'deepseek-flash' as const,
+    isReading: () => reading,
+    refresh: vi.fn(async () => {
+      reading = false;
+    }),
+    set: vi.fn(),
+    clear: vi.fn(),
+    setDefaultModel: vi.fn(),
+  };
+  const wrapped = readOnlyDemoCredentials(port);
+  expect(wrapped.isReading?.()).toBe(true);
+  reading = false;
+  expect(wrapped.isReading?.()).toBe(false);
+  expect(port.get).not.toHaveBeenCalled();
+  expect(() => wrapped.set('synthetic-only')).toThrow('Read-only');
+  expect(port.set).not.toHaveBeenCalled();
 });

@@ -26,7 +26,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         within(sidebar.getByRole('group', { name: group }))
           .getAllByRole('button')
           .map((button) => button.getAttribute('aria-label'));
-      expect(labels('常用')).toEqual(['首页', '提醒', '任务', '项目', '文档']);
+      expect(labels('常用')).toEqual(['首页', '日历', '任务', '项目', '文档']);
       expect(labels('工作区')).toEqual(['知识库', '财务', '客户']);
       for (const name of ['白板', '报告', '工具', '联系人'])
         expect(sidebar.queryByRole('button', { name, exact: true })).toBeNull();

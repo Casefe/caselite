@@ -106,7 +106,6 @@ export async function runDocumentReviewDemo(
       document.dispatchEvent(new Event('selectionchange'));
     })()`);
     await new Promise((resolve) => setTimeout(resolve, 160));
-    await click('引用所选文字');
     await wait("document.querySelector('[aria-label=本轮引用]')");
   };
   const question = async (text: string) => {

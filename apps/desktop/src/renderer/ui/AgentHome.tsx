@@ -1,3 +1,4 @@
+import ImportantSchedules from '../features/calendar/ImportantSchedules';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
@@ -6,6 +7,7 @@ import type { AgentRun, Task } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
 import BrandLogo from './BrandLogo';
 import { useCatalog } from './useCatalog';
+import { isConversationRun } from '../features/agent/agent-messages';
 
 const starters = [
   {
@@ -44,7 +46,7 @@ export default function AgentHome({
 }: {
   prompt: RichDraft;
   onPrompt(value: RichDraft): void;
-  onNavigate(view: 'tasks' | 'projects' | 'agent-history'): void;
+  onNavigate(view: 'tasks' | 'projects' | 'agent-history' | 'calendar'): void;
   tasks: Task[];
   onOpen(id: string): void;
 }) {
@@ -73,7 +75,7 @@ export default function AgentHome({
           return;
         }
         if (result.ok) {
-          setHistory(result.runs);
+          setHistory(result.runs.filter(isConversationRun));
           setHistoryError('');
         } else setHistoryError(result.message);
       } catch {
@@ -98,7 +100,7 @@ export default function AgentHome({
         pinned: !run.pinned,
       });
       if (result.ok) {
-        setHistory(result.runs);
+        setHistory(result.runs.filter(isConversationRun));
         setHistoryError('');
       } else setHistoryError(result.message);
     } catch {
@@ -251,12 +253,7 @@ export default function AgentHome({
         }}
       >
         <div className="home-context-panel">
-          <section className="home-reminder-card">
-            <h3>
-              <Icon name="clock" size={16} /> 重要日期
-            </h3>
-            <p>日期提醒尚未接入，暂不能显示未来事项。</p>
-          </section>
+          <ImportantSchedules home onOpen={onOpen} onCalendar={() => onNavigate('calendar')} />
           <section className="home-reminder-card home-recent-card" aria-label="最近任务">
             <h3>
               <Icon name="check" size={16} />

@@ -141,7 +141,7 @@ it('refreshes compact queries after project save and task membership changes', a
   await screen.findByText('归入任务.pdf');
   assigned = false;
   view.rerender(<ProjectSummary {...props} project={{ ...props.project, version: 2 }} />);
-  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF。');
+  await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF 或 Word。');
   expect(screen.queryByText('归入任务.pdf')).toBeNull();
   expect(material).toHaveBeenCalledTimes(4);
   expect(catalog).toHaveBeenCalledTimes(4);

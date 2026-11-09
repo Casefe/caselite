@@ -1,6 +1,23 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+const render = (node: ReactNode) =>
+  rtlRender(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {node}
+    </QueryClientProvider>,
+  );
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import TaskInspector from './TaskInspector';
@@ -49,6 +66,9 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   }
   render(<Host />);
   const ai = screen.getByRole('region', { name: 'AI 对话' });
+  const calendar = screen.getByLabelText('任务日历属性') as HTMLDetailsElement;
+  fireEvent.click(screen.getByText('日历与重要标记'));
+  expect(calendar.open).toBe(true);
   const section = screen.getByText('属性', { selector: 'summary' }).closest('details')!;
   const collapseAndReopen = () => {
     section.open = false;
@@ -59,7 +79,9 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   };
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   collapseAndReopen();
-  await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(api.mock.calls.filter(([r]) => r.operation !== 'calendar_query')).toHaveLength(1),
+  );
   collapseAndReopen();
   await act(async () => finish({ ok: false, code: 'RESULT_UNKNOWN', message: '合成未知回执' }));
   collapseAndReopen();
@@ -71,4 +93,6 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
   await waitFor(() => expect(ai.querySelector('[inert]')).toBeNull());
   expect(screen.getByText('合成AI栏目')).toBeTruthy();
+  expect(screen.getByLabelText('任务日历属性')).toBe(calendar);
+  expect(calendar.open).toBe(true);
 });

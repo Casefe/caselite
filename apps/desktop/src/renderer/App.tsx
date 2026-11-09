@@ -1,3 +1,5 @@
+import CalendarView from './features/calendar/CalendarView';
+import { localDate, invalidateCalendar } from './features/calendar/calendar-query';
 import ContactsView from './features/contacts/ContactsView';
 import ReportView from './features/reports/ReportView';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -12,8 +14,14 @@ import FinanceView from './features/finance/FinanceView';
 import TagPicker from './shared/ui/TagPicker';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Matter, Task, TaskRequest } from '../preload/caselite-api';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  Matter,
+  Task,
+  TaskListQuery,
+  TaskRequest,
+  TaskResponse,
+} from '../preload/caselite-api';
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './features/projects/ProjectCatalog';
@@ -36,6 +44,10 @@ import BodyEditor from './features/documents/BodyEditor';
 import { mutation, check } from './shared/data/taskCommand';
 
 type CreateTaskCommand = Extract<TaskRequest, { operation: 'create' }>;
+const DeliveryPrototype = lazy(() => import('./features/documents/delivery/DeliveryPrototype'));
+type SubscriptionCommand = Extract<TaskRequest, { operation: 'set_subscription' }>;
+type TaskPosition = NonNullable<Extract<TaskResponse, { ok: true }>['navigation']>;
+
 const defaultCreateProperties = {
   status: 'todo' as Task['status'],
   priority: 0,
@@ -48,6 +60,7 @@ function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
+  const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -57,6 +70,13 @@ function Workbench() {
     null,
   );
   const [taskListState, setTaskListState] = useState(initialTaskListState);
+  const [taskNavigation, setTaskNavigation] = useState<{
+    query: TaskListQuery;
+    position: TaskPosition | null;
+  } | null>(null);
+  const subscriptionRequest = useRef<SubscriptionCommand | null>(null);
+  const subscriptionLocked = useRef(false);
+  const positionRead = useRef(0);
   const [reviewDocument, setReviewDocument] = useState<string | null>(null);
   const [reviewDock, setReviewDock] = useState<HTMLElement | null>(null);
   const [reviewSaving, setReviewSaving] = useState(false);
@@ -94,6 +114,7 @@ function Workbench() {
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
     invalidateTaskPages(queryClient);
+    invalidateCalendar(queryClient);
     void invalidateOrdinaryCatalog(queryClient);
     void invalidateProjectCatalog(queryClient);
     const sequence = ++listReadSequence.current;
@@ -204,8 +225,11 @@ function Workbench() {
     setLoading(false);
     setView(next);
     if (next === 'finance' && view !== 'finance') setFinanceProject('');
-    if (next !== 'settings') setTaskReturn(null);
-    if (next === 'tasks') setActive(null);
+    if (next !== 'settings') {
+      setTaskReturn(null);
+      setTaskNavigation(null);
+    }
+    if (next === 'tasks' || next === 'calendar') setActive(null);
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
@@ -224,6 +248,7 @@ function Workbench() {
     setReviewDocument(null);
     setCreating(true);
     setTaskReturn(null);
+    setTaskNavigation(null);
     setError('');
   }
   async function open(
@@ -232,6 +257,13 @@ function Workbench() {
     document = false,
     review = false,
     tab = source?.documentId || document ? '成果正文' : '内容',
+    navigation: TaskListQuery | undefined = source?.projectId &&
+    source.section === 'tasks' &&
+    !source.documentId
+      ? { ...initialTaskListState.query, scope: { type: 'project', id: source.projectId } }
+      : undefined,
+    adjacent = false,
+    destination: WorkspaceView = 'tasks',
   ) {
     if (!canLeave()) return;
     if (dirty) {
@@ -243,7 +275,12 @@ function Workbench() {
     setError('');
     try {
       const r = check(
-        await window.caselite.task({ operation: 'read', protocol_version: 1, task_id: id }),
+        await window.caselite.task({
+          operation: 'read',
+          protocol_version: 1,
+          task_id: id,
+          ...(navigation ? { navigation } : {}),
+        }),
       );
       if (seq === readSequence.current) {
         const task = r.tasks[0];
@@ -255,6 +292,20 @@ function Workbench() {
             task.document_archived_at)
         )
           throw new Error('文档已归档或已离开来源项目，请重新打开项目查看。');
+        if (adjacent && !r.navigation)
+          throw new Error('相邻任务已经离开当前视图，请返回列表重读。');
+        setTaskNavigation(
+          navigation ? { query: navigation, position: r.navigation ?? null } : null,
+        );
+        if (adjacent && !source && r.navigation) {
+          const index = r.navigation.index;
+          setTaskListState((current) => ({
+            ...current,
+            selected: id,
+            scroll: 0,
+            query: { ...current.query, offset: Math.floor(index / 20) * 20 },
+          }));
+        }
         // 只有当前读取成功才提交返回来源；迟到/失败读取不能污染下一次导航。
         setTaskReturn(source ? { taskId: id, source } : null);
         if (source) setProjectView(source);
@@ -262,7 +313,7 @@ function Workbench() {
         setReviewDocument(review ? task.document_id : null);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
-        setView('tasks');
+        setView(destination);
         setDetailTab(tab);
         setCreateTagDraft(false);
         setCreating(false);
@@ -271,6 +322,97 @@ function Workbench() {
       if (seq === readSequence.current) setError(e instanceof Error ? e.message : '读取失败');
     } finally {
       if (seq === readSequence.current) setLoading(false);
+    }
+  }
+  async function refreshTaskPosition(id: string) {
+    if (!taskNavigation) return;
+    const { query } = taskNavigation;
+    const current = readSequence.current;
+    const request = ++positionRead.current;
+    setTaskNavigation({ query, position: null });
+    try {
+      const r = check(
+        await window.caselite.task({
+          operation: 'read',
+          protocol_version: 1,
+          task_id: id,
+          navigation: query,
+        }),
+      );
+      if (current === readSequence.current && request === positionRead.current && r.navigation)
+        setTaskNavigation({ query, position: r.navigation });
+    } catch {
+      // 列表位置读失败只收起相邻入口；已确认的业务写入不重放。
+    }
+  }
+  function openAdjacent(id: string | null) {
+    if (!id || !taskNavigation) return;
+    const source = taskReturn?.source;
+    void open(
+      id,
+      source ? { ...source, returnTaskId: id } : null,
+      false,
+      false,
+      detailTab,
+      taskNavigation.query,
+      true,
+    );
+  }
+  async function setSubscription(retry = false) {
+    if (
+      !active ||
+      subscriptionLocked.current ||
+      (retry ? !subscriptionRequest.current : !canLeave())
+    )
+      return;
+    const command = subscriptionRequest.current ?? {
+      ...mutation(),
+      operation: 'set_subscription' as const,
+      task_id: active.id,
+      expected_subscribed: Boolean(active.subscribed),
+      subscribed: !active.subscribed,
+    };
+    subscriptionLocked.current = true;
+    subscriptionRequest.current = command;
+    setBusy(true);
+    setError('');
+    try {
+      let result = retry
+        ? await window.caselite.task({
+            operation: 'status',
+            protocol_version: 1,
+            idempotency_key: command.idempotency_key,
+          })
+        : await window.caselite.task(command);
+      if (retry && !result.ok && result.code === 'NOT_FOUND')
+        result = await window.caselite.task(command);
+      if (!result.ok) {
+        setError(result.message);
+        const unknown =
+          result.code === 'RESULT_UNKNOWN' || (retry && result.code === 'READ_FAILED');
+        setUncertain(unknown);
+        if (!unknown) subscriptionRequest.current = null;
+        return;
+      }
+      if (
+        result.receipt !== command.idempotency_key ||
+        result.tasks[0]?.id !== command.task_id ||
+        result.tasks[0]?.subscribed !== command.subscribed
+      )
+        throw new Error('Invalid subscription receipt');
+      subscriptionRequest.current = null;
+      setUncertain(false);
+      setActive((current) =>
+        current?.id === command.task_id ? { ...current, subscribed: command.subscribed } : current,
+      );
+      void refreshTaskPosition(command.task_id);
+      void refresh().catch(() => setError('订阅已保存，列表刷新失败，请重新打开任务列表。'));
+    } catch {
+      setUncertain(true);
+      setError('订阅结果待核对，请使用原提交核对。');
+    } finally {
+      subscriptionLocked.current = false;
+      setBusy(false);
     }
   }
   function cancelCreate() {
@@ -376,6 +518,7 @@ function Workbench() {
       setView('projects');
     }
     setTaskReturn(null);
+    setTaskNavigation(null);
     setError('');
   };
   const acceptTaskProperties = (saved: Task, description: number[] | null) => {
@@ -387,11 +530,68 @@ function Workbench() {
       setObjectiveState(description);
       // 属性动作只在正文/说明干净时准入；重读说明刷新其版本，普通保存ACK不重挂载编辑器。
       setPropertiesRead((epoch) => epoch + 1);
+      void refreshTaskPosition(saved.id);
     }
     void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
   };
+  const taskInspector = active ? (
+    <TaskInspector
+      key={active.id}
+      task={active}
+      editorAssistantDock={view === 'tasks' && detailTab === '成果正文' ? setReviewDock : undefined}
+      content={
+        view === 'calendar' ? (
+          <div className="calendar-selected-task">
+            <h2>{active.title}</h2>
+            <button
+              disabled={loading || propertiesBlocked || reminderBlocked || projectDirty || dirty}
+              onClick={() => void open(active.id)}
+            >
+              打开任务内容
+            </button>
+          </div>
+        ) : undefined
+      }
+      projectDisabled={
+        loading ||
+        dirty ||
+        commentDirty ||
+        propertiesBlocked ||
+        reminderBlocked ||
+        busy ||
+        uncertain
+      }
+      propertiesDisabled={
+        loading || dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+      }
+      reminderEditing={loading || reminderBlocked || dirty || commentDirty || projectDirty}
+      onPropertiesBlocked={setPropertiesBlocked}
+      onTaskChanged={acceptTaskProperties}
+      suggestions={tagSuggestions}
+      assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
+      onProjectDirty={setProjectDirty}
+      onProjectChanged={acceptTaskProperties}
+    />
+  ) : null;
+  const taskPosition = taskNavigation?.position;
   const documentEntry = reviewDocument !== null && reviewDocument === active?.document_id;
   const documentReview = documentEntry && detailTab === '成果正文';
+  useEffect(() => {
+    function onDocxSaved(event: Event) {
+      if (
+        view === 'tasks' &&
+        detailTab === '成果正文' &&
+        active?.body_revision === 0 &&
+        event instanceof CustomEvent &&
+        event.detail === active.id &&
+        !dirty
+      ) {
+        void open(active.id, taskReturn?.source, true, documentEntry);
+      }
+    }
+    window.addEventListener('caselite:docx-draft-saved', onDocxSaved);
+    return () => window.removeEventListener('caselite:docx-draft-saved', onDocxSaved);
+  });
   return (
     <ModelSettingsNavigation.Provider
       value={() => {
@@ -616,7 +816,7 @@ function Workbench() {
               </button>
             </footer>
           </form>
-        ) : loading && view !== 'projects' ? (
+        ) : loading && view !== 'projects' && view !== 'calendar' ? (
           <div className="loading-state" role="status">
             正在读取本地任务…
           </div>
@@ -643,6 +843,42 @@ function Workbench() {
               }
             }}
           />
+        ) : view === 'calendar' ? (
+          <CalendarView
+            date={calendarDate}
+            selected={active}
+            inspector={taskInspector}
+            blocked={
+              loading ||
+              dirty ||
+              propertiesBlocked ||
+              reminderBlocked ||
+              projectDirty ||
+              busy ||
+              uncertain
+            }
+            onOpen={(id) => void open(id, null, false, false, '内容', undefined, false, 'calendar')}
+            onClose={() => {
+              if (canLeave()) {
+                readSequence.current++;
+                setActive(null);
+              }
+            }}
+            onDate={(date) => {
+              if (canLeave()) {
+                readSequence.current++;
+                setCalendarDate(date);
+                setActive(null);
+              }
+            }}
+            onReminders={() => navigate('reminders')}
+            onSettings={() => {
+              if (canLeave()) {
+                setSettingsSection('integrations');
+                navigate('settings');
+              }
+            }}
+          />
         ) : view === 'home' ? (
           <AgentHome
             prompt={agentPrompt}
@@ -664,43 +900,88 @@ function Workbench() {
             data-active-task={active.id}
             data-task-tab={detailTab === '内容' ? 'content' : undefined}
           >
+            <div className="page-topline task-detail-topline">
+              <div>
+                <button
+                  className="icon-button"
+                  aria-label={
+                    documentEntry
+                      ? '返回文档列表'
+                      : taskReturn?.taskId === active.id
+                        ? '返回来源项目'
+                        : '返回任务列表'
+                  }
+                  data-testid="back-to-tasks"
+                  onClick={resetTask}
+                >
+                  <Icon name="back" size={16} />
+                </button>
+                <button className="breadcrumb-button" onClick={resetTask}>
+                  {documentEntry ? '文档' : taskReturn?.taskId === active.id ? '来源项目' : '任务'}
+                </button>
+                <Icon name="chevron" size={13} />
+                {active.matter_title && (
+                  <>
+                    <span data-testid="task-project-context">{active.matter_title}</span>
+                    <Icon name="chevron" size={13} />
+                  </>
+                )}
+                <span className="task-breadcrumb-title" title={active.title}>
+                  {active.title}
+                </span>
+                <button
+                  type="button"
+                  className="favorite-toggle"
+                  data-testid="toggle-favorite"
+                  aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
+                  aria-pressed={favorites.includes(active.id)}
+                  onClick={() =>
+                    setFavorites((ids) =>
+                      ids.includes(active.id)
+                        ? ids.filter((id) => id !== active.id)
+                        : [...ids, active.id],
+                    )
+                  }
+                >
+                  <Icon name="star" size={15} />
+                </button>
+              </div>
+              {taskPosition && (
+                <div className="task-adjacent" role="group" aria-label="任务列表顺序">
+                  <span>
+                    {taskPosition.index + 1} / {taskPosition.total}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="上一项"
+                    disabled={!taskPosition.previous}
+                    onClick={() => openAdjacent(taskPosition.previous)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="下一项"
+                    disabled={!taskPosition.next}
+                    onClick={() => openAdjacent(taskPosition.next)}
+                  >
+                    ↓
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="task-layout">
               <div className="task-work-area" aria-label="阅读与编辑工作区">
-                <div className="page-topline">
-                  <div>
-                    <button
-                      className="icon-button"
-                      aria-label={
-                        documentEntry
-                          ? '返回文档列表'
-                          : taskReturn?.taskId === active.id
-                            ? '返回来源项目'
-                            : '返回任务列表'
-                      }
-                      data-testid="back-to-tasks"
-                      onClick={resetTask}
-                    >
-                      <Icon name="back" size={16} />
-                    </button>
-                    <button className="breadcrumb-button" onClick={resetTask}>
-                      {documentEntry
-                        ? '文档'
-                        : taskReturn?.taskId === active.id
-                          ? '来源项目'
-                          : '任务'}
-                    </button>
-                    <Icon name="chevron" size={13} />
-                    {active.matter_title && (
-                      <>
-                        <span data-testid="task-project-context">{active.matter_title}</span>
-                        <Icon name="chevron" size={13} />
-                      </>
-                    )}
-                    <span>{active.title}</span>
-                  </div>
-                </div>
-
                 <div className="task-reminder-entry">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={Boolean(active.subscribed)}
+                    onClick={() => void setSubscription(uncertain)}
+                  >
+                    {uncertain ? '核对订阅提交' : active.subscribed ? '取消订阅' : '订阅任务'}
+                  </button>
                   <button
                     type="button"
                     aria-expanded={reminderTask === active.id}
@@ -732,7 +1013,11 @@ function Workbench() {
                       aria-selected={detailTab === t}
                       data-testid={t === '成果正文' ? 'task-result-tab' : undefined}
                       onClick={() => {
-                        if (detailTab !== t && canLeave()) setDetailTab(t);
+                        if (detailTab === t || !canLeave()) return;
+                        // 空正文可能已从材料侧栏初始化，首次打开须读取已确认的修订。
+                        if (t === '成果正文' && active.body_revision === 0) {
+                          void open(active.id, taskReturn?.source, true, documentEntry);
+                        } else setDetailTab(t);
                       }}
                     >
                       {t === '材料' ? '材料阅读' : t}
@@ -742,27 +1027,8 @@ function Workbench() {
                 </div>
 
                 <div className="task-title">
-                  <span className="task-symbol">
-                    <Icon name="check" size={23} />
-                  </span>
                   <div>
                     <h1>{active.title}</h1>
-                    <button
-                      type="button"
-                      className="favorite-toggle"
-                      data-testid="toggle-favorite"
-                      aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
-                      aria-pressed={favorites.includes(active.id)}
-                      onClick={() =>
-                        setFavorites((ids) =>
-                          ids.includes(active.id)
-                            ? ids.filter((id) => id !== active.id)
-                            : [...ids, active.id],
-                        )
-                      }
-                    >
-                      <Icon name="star" size={15} />
-                    </button>
                   </div>
                 </div>
                 {detailTab === '成果正文' ? (
@@ -771,13 +1037,15 @@ function Workbench() {
                     task={active}
                     initial={state}
                     onDirty={setDirty}
-                    reviewDock={documentReview ? reviewDock : null}
+                    reviewDock={reviewDock}
+                    reviewVariant={documentReview ? 'review' : 'assistant'}
                     reviewSaving={reviewSaving}
                     onReviewSaving={setReviewSaving}
                     disabled={projectDirty || propertiesBlocked || reminderBlocked}
                     onSaved={(t, savedState) => {
                       setActive(t);
                       setState(savedState);
+                      void refreshTaskPosition(t.id);
                       void refresh().catch(() => setError('正文已保存，列表刷新失败。'));
                     }}
                   />
@@ -794,6 +1062,7 @@ function Workbench() {
                       onSaved={(saved, bytes) => {
                         setActive(saved);
                         setObjectiveState(bytes);
+                        void refreshTaskPosition(saved.id);
                         void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
                       }}
                     />
@@ -837,35 +1106,15 @@ function Workbench() {
               {documentReview ? (
                 <aside className="task-inspector" ref={setReviewDock} aria-label="文档审阅侧栏" />
               ) : (
-                <TaskInspector
-                  key={active.id}
-                  task={active}
-                  projectDisabled={
-                    dirty ||
-                    commentDirty ||
-                    propertiesBlocked ||
-                    reminderBlocked ||
-                    busy ||
-                    uncertain
-                  }
-                  propertiesDisabled={
-                    dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
-                  }
-                  reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
-                  onPropertiesBlocked={setPropertiesBlocked}
-                  onTaskChanged={acceptTaskProperties}
-                  suggestions={tagSuggestions}
-                  assigneeSuggestions={tasks.flatMap(({ assignee }) =>
-                    assignee ? [assignee] : [],
-                  )}
-                  onProjectDirty={setProjectDirty}
-                  onProjectChanged={acceptTaskProperties}
-                />
+                taskInspector
               )}
             </div>
           </section>
         ) : view === 'reminders' ? (
-          <ReminderInbox onOpen={(id) => void open(id)} onBlocked={setPropertiesBlocked} />
+          <>
+            <button onClick={() => navigate('calendar')}>返回日历</button>
+            <ReminderInbox onOpen={(id) => void open(id)} onBlocked={setPropertiesBlocked} />
+          </>
         ) : view === 'documents' || view === 'knowledge' ? (
           <DocumentLibrary
             key={view}
@@ -879,7 +1128,7 @@ function Workbench() {
             tasks={tasks}
             viewState={taskListState}
             onViewState={setTaskListState}
-            onOpen={(id) => void open(id)}
+            onOpen={(id, navigation) => void open(id, null, false, false, '内容', navigation)}
             onNew={() => newTask()}
             propertiesBlocked={propertiesBlocked}
             projectDirty={projectDirty}
@@ -909,7 +1158,10 @@ function Workbench() {
         ) : view === 'settings' ? (
           <SettingsView
             section={settingsSection}
-            onSection={setSettingsSection}
+            onSection={(section) => {
+              if (canLeave()) setSettingsSection(section);
+            }}
+            onBlocked={setPropertiesBlocked}
             onBack={() => {
               if (settingsReturn === 'tasks' && active)
                 void open(
@@ -936,7 +1188,13 @@ export default function App() {
   ) : (
     <AppearanceProvider>
       <QueryClientProvider client={queryClient}>
-        <Workbench />
+        {new URLSearchParams(window.location.search).has('delivery-preview') ? (
+          <Suspense fallback={<p role="status">正在载入交付界面原型…</p>}>
+            <DeliveryPrototype />
+          </Suspense>
+        ) : (
+          <Workbench />
+        )}
       </QueryClientProvider>
     </AppearanceProvider>
   );

@@ -1,5 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+const render = (node: ReactNode) =>
+  rtlRender(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {node}
+    </QueryClientProvider>,
+  );
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, it, expect, vi } from 'vitest';
 import type { Task } from '../../preload/caselite-api';
 import AgentHome from './AgentHome';
@@ -78,7 +88,7 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
   const reminders = screen.getByLabelText('Agent 工作上下文');
   expect(
     Array.from(reminders.querySelectorAll('h3'), (heading) => heading.textContent?.trim()),
-  ).toEqual(['重要日期', '最近任务1', '最近项目1', '重要文档']);
+  ).toEqual(['重要日程', '最近任务1', '最近项目1', '重要文档']);
   fireEvent.click(screen.getByRole('button', { name: '示例任务' }));
   expect(onOpen).toHaveBeenCalledWith('t1');
   fireEvent.click(screen.getByRole('button', { name: '创建任务' }));

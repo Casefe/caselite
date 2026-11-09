@@ -6,6 +6,8 @@
 @import './styles/agent-settings.css';
 @import './styles/layout.css';
 @import './styles/theme.css';
+@import './styles/typography.css';
 @import './styles/agent-thread.css';
 @import './styles/task-properties.css';
 @import './styles/project-document.css';
+@import './styles/calendar.css';

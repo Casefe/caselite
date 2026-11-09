@@ -1,6 +1,7 @@
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useState } from 'react';
 import type { AgentRun, Task } from '../../preload/caselite-api';
+import { isConversationRun } from '../features/agent/agent-messages';
 
 export default function AgentHistory({
   tasks,
@@ -31,6 +32,7 @@ export default function AgentHistory({
         setRuns(
           results
             .flatMap((result) => (result.ok ? result.runs : []))
+            .filter(isConversationRun)
             .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')),
         );
       } catch {

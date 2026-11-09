@@ -10,6 +10,8 @@ import {
 import type { AgentCredentialPort } from '@caselite/application';
 
 const STORAGE_TIMEOUT_MS = 3_000;
+// macOS 冷初始化实测超过 12 秒；只给后台可用性初始化留出上限，实际加解密仍限 3 秒。
+const INITIALIZATION_TIMEOUT_MS = 30_000;
 type CredentialStage = 'availability' | `${AgentProvider}-${'decrypt' | 'encrypt'}`;
 
 export async function createAgentCredentials(
@@ -19,6 +21,7 @@ export async function createAgentCredentials(
     state: 'started' | 'succeeded' | 'unavailable',
     failure?: 'TIMEOUT' | 'REJECTED' | 'UNAVAILABLE',
   ) => void,
+  initialization?: { afterWindowReady: Promise<void>; onSettled(): void },
 ): Promise<AgentCredentialPort> {
   const bounded = async <T>(stage: CredentialStage, operation: () => Promise<T>): Promise<T> => {
     onStage?.(stage, 'started');
@@ -29,10 +32,13 @@ export async function createAgentCredentials(
       const result = await Promise.race([
         Promise.resolve().then(operation),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            timedOut = true;
-            reject(new Error('System credential timeout'));
-          }, STORAGE_TIMEOUT_MS);
+          timer = setTimeout(
+            () => {
+              timedOut = true;
+              reject(new Error('System credential timeout'));
+            },
+            stage === 'availability' ? INITIALIZATION_TIMEOUT_MS : STORAGE_TIMEOUT_MS,
+          );
         }),
       ]);
       onStage?.(stage, 'succeeded');
@@ -48,6 +54,8 @@ export async function createAgentCredentials(
   let cached = new Map<AgentProvider, string>();
   let unavailable = new Set<AgentProvider>();
   let generation = 0;
+  let initialReadQueued = Boolean(initialization);
+  let readingGeneration: number | undefined;
   const settingsFile = join(root, 'agent-model.json');
   const requireEncryption = async () => {
     if (
@@ -60,50 +68,79 @@ export async function createAgentCredentials(
   };
   const refresh = async () => {
     const revision = ++generation;
-    const current = () => {
-      if (revision !== generation) throw new Error('Credential operation superseded');
-    };
-    const nextCached = new Map<AgentProvider, string>();
-    const nextUnavailable = new Set<AgentProvider>();
-    const storedProviders = agentProviderSchema.options.filter((provider) =>
-      existsSync(credentialFile(provider)),
-    );
-    if (storedProviders.length) {
-      let available = false;
-      try {
-        await requireEncryption();
-        available = true;
-      } catch {
-        // 初始化失败保留全部旧密文；不从轮询或失败路径自动重试。
-      }
-      current();
-      for (const provider of storedProviders) {
+    readingGeneration = revision;
+    try {
+      const current = () => {
+        if (revision !== generation) throw new Error('Credential operation superseded');
+      };
+      const nextCached = new Map<AgentProvider, string>();
+      const nextUnavailable = new Set<AgentProvider>();
+      const storedProviders = agentProviderSchema.options.filter((provider) =>
+        existsSync(credentialFile(provider)),
+      );
+      if (storedProviders.length) {
+        let available = false;
         try {
-          if (!available) throw new Error('System encryption unavailable');
-          const decrypted = await bounded(`${provider}-decrypt`, () =>
-            safeStorage.decryptStringAsync(readFileSync(credentialFile(provider))),
-          );
-          current();
-          nextCached.set(provider, decrypted.result);
+          await requireEncryption();
+          available = true;
         } catch {
-          current();
-          nextUnavailable.add(provider);
+          // 初始化失败保留全部旧密文；不从轮询或失败路径自动重试。
+        }
+        current();
+        for (const provider of storedProviders) {
+          try {
+            if (!available) throw new Error('System encryption unavailable');
+            const decrypted = await bounded(`${provider}-decrypt`, () =>
+              safeStorage.decryptStringAsync(readFileSync(credentialFile(provider))),
+            );
+            current();
+            nextCached.set(provider, decrypted.result);
+          } catch {
+            current();
+            nextUnavailable.add(provider);
+          }
         }
       }
+      // 重读只提交本代的完整内存投影；晚到读取不能覆盖后来的保存、删除或新重读。
+      current();
+      cached = nextCached;
+      unavailable = nextUnavailable;
+    } finally {
+      if (readingGeneration === revision) readingGeneration = undefined;
     }
-    // 重读只提交本代的完整内存投影；晚到读取不能覆盖后来的保存、删除或新重读。
-    current();
-    cached = nextCached;
-    unavailable = nextUnavailable;
   };
-  await refresh();
+  if (initialization) {
+    // 窗口就绪前只暴露不可读状态；轮询不能触发系统调用，首次读取也不能覆盖后来的显式操作。
+    unavailable = new Set(
+      agentProviderSchema.options.filter((provider) => existsSync(credentialFile(provider))),
+    );
+    void initialization.afterWindowReady
+      .then(async () => {
+        if (!initialReadQueued) return;
+        initialReadQueued = false;
+        await refresh();
+      })
+      .catch(() => {
+        initialReadQueued = false;
+        // 窗口加载/初始化失败保留旧密文和不可读标记，不能明文降级或自动重试。
+      })
+      .finally(initialization.onSettled);
+  } else await refresh();
   return {
-    refresh,
+    isReading() {
+      // 只投影当前代的内存状态；状态查询不触发系统调用，也不等待已失效的旧读。
+      return (initialReadQueued && unavailable.size > 0) || readingGeneration === generation;
+    },
+    refresh() {
+      initialReadQueued = false;
+      return refresh();
+    },
     get(provider = 'openai') {
       if (unavailable.has(provider)) throw new Error('Credential unavailable');
       return cached.get(provider);
     },
     async set(key, provider = 'openai') {
+      initialReadQueued = false;
       const revision = ++generation;
       await requireEncryption();
       if (revision !== generation) throw new Error('Credential operation superseded');
@@ -116,6 +153,7 @@ export async function createAgentCredentials(
       unavailable.delete(provider);
     },
     clear(provider = 'openai') {
+      initialReadQueued = false;
       generation++;
       const file = credentialFile(provider);
       rmSync(file, { force: true });
@@ -132,7 +170,6 @@ export async function createAgentCredentials(
     },
     setDefaultModel(model: AgentModel) {
       const validated = agentModelSchema.parse(model);
-      generation++;
       writeFileSync(`${settingsFile}.tmp`, JSON.stringify({ version: 1, model: validated }), {
         mode: 0o600,
       });

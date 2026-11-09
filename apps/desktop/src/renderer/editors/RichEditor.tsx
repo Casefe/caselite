@@ -1,3 +1,5 @@
+import { assertBoundedHtml } from './bounded-html';
+import { TableCommands } from './TableCommands';
 import { useLocalDoc, type RichDraft } from './editor-state';
 import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
@@ -13,6 +15,7 @@ import {
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
+import { DocumentWordCount } from './DocumentWordCount';
 
 const blocks = [
   { id: 'paragraph', label: '正文', hint: '普通文本', symbol: 'T' },
@@ -228,7 +231,7 @@ function FormatBar({
   );
 }
 
-function CompactSelectionTools({ editor, from }: { editor: Editor; from: number }) {
+function SelectionFormatTools({ editor, from }: { editor: Editor; from: number }) {
   const popup = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = popup.current;
@@ -278,6 +281,7 @@ export function EditorSurface({
   const [blockMenu, setBlockMenu] = useState(false);
   const [showFormats, setShowFormats] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [pasteError, setPasteError] = useState('');
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
@@ -329,6 +333,26 @@ export function EditorSurface({
     );
   const editable = !disabled && editor.isEditable;
   const compact = mode === 'compact';
+  const documentMode = mode === 'simple';
+  const trackComposition = compact || documentMode;
+  const tableMode = documentMode && Boolean(editor.schema.nodes.table);
+  const allowHtml = (html: string, position: number) => {
+    if (!tableMode || !html) return true;
+    try {
+      if (assertBoundedHtml(html)) {
+        const at = editor.state.doc.resolve(position);
+        for (let depth = at.depth; depth > 0; depth--) {
+          if (at.node(depth).type.name === 'table')
+            throw new Error('请在表格外粘贴完整表格。单元格内可粘贴文字。');
+        }
+      }
+      setPasteError('');
+      return true;
+    } catch (error) {
+      setPasteError(error instanceof Error ? error.message : '插入内容失败，正文未改变。');
+      return false;
+    }
+  };
   const slashKey = ui?.slash ? `${ui.slash.from}:${ui.slash.query}` : '';
   const choices = blocks.filter((item) =>
     `${item.label}${item.hint}${item.id}`
@@ -336,7 +360,11 @@ export function EditorSurface({
       .includes(ui?.slash?.query.toLowerCase() ?? ''),
   );
   const showBlockActions = mode === 'notion' || (compact && blockActions && showFormats);
-  const showSlash = showBlockActions && Boolean(ui?.slash) && dismissed !== slashKey && editable;
+  const showSlash =
+    (showBlockActions || (documentMode && ui?.focused && !composing)) &&
+    Boolean(ui?.slash) &&
+    dismissed !== slashKey &&
+    editable;
   const choose = (id: string) => {
     if (ui?.slash) setBlock(editor, id, ui.slash);
     setIndex(0);
@@ -347,6 +375,12 @@ export function EditorSurface({
       className={`rich-editor rich-editor--${mode} editor-surface`}
       data-editor-mode={mode}
       aria-disabled={!editable}
+      onPasteCapture={(event) => {
+        if (!allowHtml(event.clipboardData.getData('text/html'), editor.state.selection.from)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       data-empty={ui?.empty ? 'true' : undefined}
       data-placeholder={placeholder}
       onClickCapture={(event) => {
@@ -361,14 +395,12 @@ export function EditorSurface({
           !root.current?.contains(event.relatedTarget)
         ) {
           setBlockMenu(false);
-          if (compact) {
-            setShowFormats(false);
-            setComposing(false);
-          }
+          if (compact) setShowFormats(false);
+          if (trackComposition) setComposing(false);
         }
       }}
-      onCompositionStartCapture={compact ? () => setComposing(true) : undefined}
-      onCompositionEndCapture={compact ? () => setComposing(false) : undefined}
+      onCompositionStartCapture={trackComposition ? () => setComposing(true) : undefined}
+      onCompositionEndCapture={trackComposition ? () => setComposing(false) : undefined}
       onKeyDownCapture={(event) => {
         if (compact && !editable) return;
         if (!editable || !editor.isEditable) {
@@ -376,7 +408,26 @@ export function EditorSurface({
           event.stopPropagation();
           return;
         }
-        if (event.nativeEvent.isComposing || editor.view.composing) return;
+        if (event.nativeEvent.isComposing || editor.view.composing || (documentMode && composing))
+          return;
+        if (
+          tableMode &&
+          event.key === 'Tab' &&
+          !event.shiftKey &&
+          editor.isActive('table') &&
+          !editor.can().goToNextCell()
+        ) {
+          const at = editor.state.selection.$from;
+          for (let depth = at.depth; depth > 0; depth--) {
+            if (at.node(depth).type.name === 'table' && at.node(depth).childCount >= 200) {
+              // TableKit 末格 Tab 会自动加行，必须保持宿主可保存的上限。
+              event.preventDefault();
+              event.stopPropagation();
+              setPasteError('表格已达 200 行，未新增行。请拆分为另一张表格。');
+              return;
+            }
+          }
+        }
         if (event.key === '/') setDismissed('');
         if (!showSlash) return;
         if (event.key === 'Escape') {
@@ -404,7 +455,19 @@ export function EditorSurface({
           event.stopPropagation();
           return;
         }
-        if (!original) return;
+        if (!original) {
+          const target = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+          if (
+            !allowHtml(
+              event.dataTransfer.getData('text/html'),
+              target?.pos ?? editor.state.selection.from,
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (original.doc !== editor.state.doc) return;
@@ -425,12 +488,15 @@ export function EditorSurface({
         editor.view.dispatch(tr.scrollIntoView());
       }}
     >
-      {mode === 'simple' && (
+      {pasteError && <p role="alert">{pasteError}</p>}
+      {documentMode && (
         <div className="simple-toolbar">
           <FormatBar editor={editor} />
+          {tableMode && <TableCommands editor={editor} />}
         </div>
       )}
       <EditorContent className="rich-editor-content" editor={editor} />
+      {documentMode && <DocumentWordCount editor={editor} />}
       {compact && editable && (
         <>
           <button
@@ -444,9 +510,12 @@ export function EditorSurface({
           </button>
           {showFormats && <FormatBar editor={editor} />}
           {!showFormats && !composing && ui?.selected && ui.focused && (
-            <CompactSelectionTools editor={editor} from={ui.from} />
+            <SelectionFormatTools editor={editor} from={ui.from} />
           )}
         </>
+      )}
+      {documentMode && editable && !composing && ui?.selected && ui.focused && (
+        <SelectionFormatTools editor={editor} from={ui.from} />
       )}
       {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>
@@ -586,9 +655,20 @@ export const DraftEditor = forwardRef<
     disabled?: boolean;
     compact?: boolean;
     profile?: EditorProfile;
+    readTables?: boolean;
   }
 >(function DraftEditor(
-  { value, onChange, label, testId, placeholder, disabled = false, compact = false, profile },
+  {
+    value,
+    onChange,
+    label,
+    testId,
+    placeholder,
+    disabled = false,
+    compact = false,
+    profile,
+    readTables = false,
+  },
   ref,
 ) {
   const doc = useLocalDoc(value);
@@ -596,7 +676,7 @@ export const DraftEditor = forwardRef<
   const editor = useEditor(
     {
       injectCSS: false,
-      extensions: localExtensions(doc),
+      extensions: localExtensions(doc, readTables && disabled),
       editable: !disabled,
       editorProps: {
         attributes: {

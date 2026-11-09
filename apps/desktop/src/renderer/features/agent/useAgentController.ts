@@ -9,6 +9,7 @@ import type {
   AgentResponse,
 } from '../../../preload/caselite-api';
 import { emptyDraft, type RichDraft } from '../../editors/editor-state';
+import { isConversationRun } from './agent-messages';
 
 // 仅保留尚未提交的编辑草稿/发送身份，避免面板卸载丢字或未知回执触发新收费Run。
 const drafts = new Map<string, RichDraft>();
@@ -59,7 +60,9 @@ export function useAgentController({
   const configured = providers[agentProviderFor(model)];
   const [error, setError] = useState('');
   const [credentialUnavailable, setCredentialUnavailable] = useState(false);
+  const [credentialReading, setCredentialReading] = useState(false);
   const [pending, setPending] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [unknown, setUnknown] = useState(() => submissions.has(scope));
   const composing = useRef(false),
     sending = useRef(false),
@@ -67,12 +70,13 @@ export function useAgentController({
   const preparationGeneration = useRef(0);
   const preparingAbort = useRef<AbortController | null>(null);
   const active = runs.find((run) => run.status === 'running');
+  const hasConversation = runs.some(isConversationRun);
   useEffect(() => {
-    onConversationChange?.(runs.length > 0);
-  }, [onConversationChange, runs.length]);
-  const current = useRef({ draft, setDraft, materials });
+    onConversationChange?.(hasConversation);
+  }, [onConversationChange, hasConversation]);
+  const current = useRef({ draft, setDraft, materials, scope });
   useLayoutEffect(() => {
-    current.current = { draft, setDraft, materials };
+    current.current = { draft, setDraft, materials, scope };
   });
   const acknowledge = (request: Extract<AgentRequest, { operation: 'start' }>) => {
     if (submissions.get(scope)?.run_id !== request.run_id) return;
@@ -100,6 +104,7 @@ export function useAgentController({
       setRuns(result.runs);
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
     } else setError(result.message);
   };
@@ -119,6 +124,7 @@ export function useAgentController({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialReading(Boolean(result.credential_reading));
           setCredentialUnavailable(
             Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
           );
@@ -180,10 +186,14 @@ export function useAgentController({
     if (project && !previous && (archived || !projectPreview || projectLoading)) return;
     const prompt = previous?.prompt ?? draft.text.trim();
     if (!prompt || prompt.length > 4000) return;
+    if (!previous && credentialReading) {
+      setError('正在读取系统安全凭据，请稍后再发送。附件与输入已保留。');
+      return;
+    }
     if (!previous && !configured) {
       setError(
         credentialUnavailable
-          ? '系统安全凭据暂不可读，请核对系统安全存储后重启应用。附件与输入已保留。'
+          ? '系统安全凭据暂不可读，可在设置中重新读取。附件与输入已保留。'
           : '请在设置中配置当前模型的 Key，附件与输入已保留。',
       );
       return;
@@ -226,6 +236,7 @@ export function useAgentController({
           setRuns(result.runs);
           setProviders(result.providers);
           setModel(result.model);
+          setCredentialReading(Boolean(result.credential_reading));
           setCredentialUnavailable(
             Boolean(result.credential_errors?.[agentProviderFor(result.model)]),
           );
@@ -262,6 +273,7 @@ export function useAgentController({
     if (result.ok) {
       setProviders(result.providers);
       setModel(result.model);
+      setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
       if ('scope' in request) setRuns(result.runs);
       setError('');
@@ -272,6 +284,44 @@ export function useAgentController({
     preparingAbort.current?.abort();
     setError('已取消发送，附件和输入保留。');
     void materials.cancelPreparation().catch(() => {});
+  };
+  const restoreRun = async (run: AgentRun) => {
+    if (
+      composing.current ||
+      sending.current ||
+      active ||
+      submissions.has(scope) ||
+      !isConversationRun(run) ||
+      run.scope !== scope ||
+      !['failed', 'cancelled', 'interrupted'].includes(run.status) ||
+      current.current.draft.text.trim()
+    )
+      return;
+    sending.current = true;
+    setRestoring(true);
+    setError('');
+    const revision = draftRevisions.get(scope);
+    try {
+      if (run.context_id && !run.attachments?.length)
+        throw new Error('上轮附件或选段已不可用；未恢复，请重新核对材料。');
+      const restore = await materials.prepareRecovery(run.attachments ?? []);
+      if (!alive.current || current.current.scope !== scope) return;
+      if (
+        composing.current ||
+        draftRevisions.get(scope) !== revision ||
+        current.current.draft.text.trim()
+      )
+        throw new Error('输入已变化，未覆盖当前内容。');
+      restore();
+      current.current.setDraft({ text: run.prompt, state: null });
+      // 恢复的是输入，不复用历史授权或 context_id；发送仍走当轮预览校验。
+      if (project) void loadProjectPreview();
+    } catch (error) {
+      if (alive.current) setError(error instanceof Error ? error.message : '上轮输入未恢复。');
+    } finally {
+      sending.current = false;
+      if (alive.current) setRestoring(false);
+    }
   };
   return {
     materials,
@@ -287,7 +337,10 @@ export function useAgentController({
     configured,
     error,
     credentialUnavailable,
+    credentialReading,
     pending,
+    restoring,
+    restoreRun,
     unknown,
     composing,
     active,

@@ -1,14 +1,16 @@
+import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
-import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
+import { useLocalPreferences } from '../shared/data/LocalPreferences';
 
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
 export type WorkspaceView =
   | 'home'
+  | 'calendar'
   | 'reminders'
   | 'tasks'
   | 'projects'
@@ -23,7 +25,7 @@ export type WorkspaceView =
   | 'agent-history';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
   { id: 'home', label: '首页', icon: 'home' },
-  { id: 'reminders', label: '提醒', icon: 'bell' },
+  { id: 'calendar', label: '日历', icon: 'calendar' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'documents', label: '文档', icon: 'file' },
@@ -56,6 +58,7 @@ export function WorkspaceShell({
   onOpen(id: string): void;
   children: ReactNode;
 }) {
+  const { preferences } = useLocalPreferences();
   return (
     <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
       <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
@@ -144,15 +147,21 @@ export function WorkspaceShell({
           <button
             className="profile-settings"
             data-nav="settings"
-            aria-label="谭律师 · 设置"
-            title="谭律师 · 设置"
+            aria-label={`${preferences.name} · 设置`}
+            title={`${preferences.name} · 设置`}
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => onNavigate('settings')}
           >
-            <img className="profile-avatar" src={profileAvatar} alt="" />
+            {preferences.avatar === 'portrait' ? (
+              <img className="profile-avatar" src={profileAvatar} alt="" />
+            ) : (
+              <span className="profile-avatar profile-initial" aria-hidden="true">
+                {Array.from(preferences.name)[0]}
+              </span>
+            )}
             {!collapsed && (
               <span className="profile-name">
-                <strong>谭律师</strong> <small className="profile-pro">Pro</small>
+                <strong>{preferences.name}</strong> <small className="profile-pro">Pro</small>
               </span>
             )}
           </button>
@@ -190,7 +199,7 @@ export function TaskTable({
   onOpen(id: string): void;
   documents?: boolean;
   selectedId?: string;
-  onSelect(id: string): void;
+  onSelect?(id: string): void;
   hiddenColumns?: TaskOptionalColumn[];
 }) {
   const titleColumn: ColumnDef<Task> = {
@@ -198,8 +207,12 @@ export function TaskTable({
     header: documents ? '文档名称' : '任务名称',
     cell: ({ row: { original: task } }) => (
       <span className="task-name">
-        <Icon name={documents ? 'file' : 'check'} size={16} />
-        <small>{task.id.slice(0, 4).toUpperCase()}</small>
+        {documents && (
+          <>
+            <Icon name="file" size={16} />
+            <small>{task.id.slice(0, 4).toUpperCase()}</small>
+          </>
+        )}
         <strong
           className="task-row-title"
           onClick={(event) => {
@@ -271,7 +284,7 @@ export function TaskTable({
       {table.getHeaderGroups().map((group) => (
         <div className="table-head" role="row" key={group.id} style={rowStyle}>
           {group.headers.map((header) => (
-            <span key={header.id} role="columnheader">
+            <span key={header.id} role="columnheader" data-column={header.column.id}>
               {flexRender(header.column.columnDef.header, header.getContext())}
             </span>
           ))}
@@ -286,8 +299,8 @@ export function TaskTable({
           data-row-task={row.id}
           aria-label={`选择${documents ? '文档' : '任务'}：${row.original.title}`}
           aria-current={selectedId === row.id ? 'true' : undefined}
-          onClick={() => onSelect(row.id)}
-          onDoubleClick={() => onOpen(row.id)}
+          onClick={() => (onSelect ?? onOpen)(row.id)}
+          onDoubleClick={onSelect ? () => onOpen(row.id) : undefined}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();

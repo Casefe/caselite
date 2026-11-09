@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Material, MaterialResponse } from '@caselite/contracts';
@@ -10,6 +11,10 @@ export async function runMaterialDemo(
   const window = await create();
   const evaluate = (code: string) => window.webContents.executeJavaScript(code);
   window.webContents.debugger.attach('1.3');
+  if (phase === 'materials-docx-table')
+    await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
   await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
     width: 1920,
     height: 1080,
@@ -127,8 +132,72 @@ export async function runMaterialDemo(
     if (!state.ok || JSON.stringify(actual) !== JSON.stringify([...ids].sort()))
       throw new Error('Run included an unselected source version');
   }
+  async function docxStructure(selector: string) {
+    const structure = await evaluate(`(() => {
+      const node = document.querySelector(${JSON.stringify(selector)});
+      return {
+        listItems: node.querySelectorAll('ol > li').length,
+        tables: node.querySelectorAll('table').length,
+        horizontal: node.querySelector('td[colspan="2"]')?.textContent,
+        vertical: node.querySelector('td[rowspan="2"]')?.textContent,
+        text: node.textContent,
+      };
+    })()`);
+    if (
+      structure.listItems !== 2 ||
+      structure.tables !== 2 ||
+      structure.horizontal !== '横向合并' ||
+      structure.vertical !== '纵向合并' ||
+      !structure.text.includes('付款期限：新期限十日') ||
+      ['旧期限三十日', '核对交付日期', '页眉保真标记', '页脚保真标记'].some((text) =>
+        structure.text.includes(text),
+      )
+    )
+      throw new Error('Unexpected DOCX structure');
+    return structure;
+  }
+  async function savedDocxTask(id: string) {
+    const result = await evaluate(
+      `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(id)}})`,
+    );
+    if (!result.ok || result.tasks[0]?.id !== id || !result.state?.length)
+      throw new Error('Draft did not persist as Yjs');
+    return {
+      revision: result.tasks[0].body_revision,
+      stateBytes: result.state.length,
+      stateSha256: createHash('sha256').update(Buffer.from(result.state)).digest('hex'),
+    };
+  }
   try {
     await waitFor("Boolean(document.querySelector('.material-composer'))");
+    if (phase === 'materials-docx-reopen') {
+      stage = 'docx-reopen';
+      const prior = JSON.parse(readFileSync(join(directory, 'docx-result.json'), 'utf8'));
+      const [item] = await settled();
+      if (
+        item?.id !== prior.sourceId ||
+        item.asset_version_id !== prior.assetVersion ||
+        item.sha256 !== prior.sha256
+      )
+        throw new Error('Fixed original identity changed on restart');
+      const reopened = await savedDocxTask(item.task_id);
+      if (JSON.stringify(reopened) !== JSON.stringify(prior.edited))
+        throw new Error('Draft changed on restart');
+      await openTask(item.task_id);
+      const structure = await docxStructure('[data-testid=body-editor]');
+      if (!structure.text.includes('隔离实测：已保存后重开。'))
+        throw new Error('Edited text missing on restart');
+      await capture('05-docx-reopened');
+      writeFileSync(
+        join(directory, 'docx-reopened.json'),
+        JSON.stringify(
+          { ...reopened, structure, sourceId: item.id, assetVersion: item.asset_version_id },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     if (phase === 'materials-read') {
       const items = await list();
       const saved = JSON.parse(readFileSync(join(directory, 'materials-write.json'), 'utf8'));
@@ -163,6 +232,261 @@ export async function runMaterialDemo(
           2,
         ),
       );
+      return;
+    }
+    if (
+      phase === 'materials-docx' ||
+      phase === 'materials-docx-table' ||
+      phase === 'materials-docx-lists' ||
+      phase === 'materials-docx-recovery'
+    ) {
+      stage = 'docx-import';
+      await drop('中文合同.docx');
+      await waitFor(
+        "!document.querySelector('.material-staged') || Boolean(document.querySelector('.material-error'))",
+      );
+      const [item] = await settled();
+      const page = item?.pages.find((entry) => entry.text.includes('新期限十日'));
+      if (item?.status !== 'ready' || !page?.docx_review?.revisions || !page.docx_review.comments)
+        throw new Error('Missing DOCX extraction or review flags');
+      await click('中文合同.docx');
+      await waitFor("Boolean(document.querySelector('.material-docx-reader input'))");
+      await evaluate(
+        "[...document.querySelectorAll('.material-docx-reader label')].find(x=>x.textContent.includes('新期限十日')).querySelector('input').click()",
+      );
+      await capture('01-docx-selection');
+      stage = 'docx-structured-preview';
+      await click('预览可编辑草稿');
+      await waitFor("Boolean(document.querySelector('[data-testid=docx-draft-preview]'))");
+      const structure = await docxStructure('[data-testid=docx-draft-preview]');
+      await capture('02-docx-preview');
+      await click('确认保存草稿');
+      await waitFor(
+        "document.querySelector('[data-testid=docx-draft-status]')?.textContent.includes('草稿已保存')",
+      );
+      const firstDraft = await savedDocxTask(item.task_id);
+      if (firstDraft.revision !== 1) throw new Error('Unexpected initial revision');
+      await click('收起阅读');
+      stage = 'docx-send';
+      const prompt =
+        phase === 'materials-docx-recovery'
+          ? '取消恢复测试：仅核对选中段的付款期限。'
+          : '仅核对选中段的付款期限。';
+      await evaluate(
+        `document.querySelector('[data-testid=agent-input]').focus();document.execCommand('insertText',false,${JSON.stringify(prompt)})`,
+      );
+      await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+      if (phase === 'materials-docx-recovery') {
+        stage = 'docx-cancel-restore';
+        await waitFor("Boolean(document.querySelector('button[aria-label=停止生成]'))");
+        await evaluate("document.querySelector('button[aria-label=停止生成]').click()");
+        await waitFor("Boolean(document.querySelector('.assistant-run-status.cancelled'))");
+        await click('恢复上轮要求与原选段');
+        await waitFor(
+          `document.querySelector('[data-testid=agent-input]')?.value===${JSON.stringify(prompt)}`,
+        );
+        const state = await evaluate(
+          "window.caselite.agent({protocol_version:1,operation:'read',scope:'home'})",
+        );
+        if (!state.ok || state.runs.length !== 1 || state.runs[0].status !== 'cancelled')
+          throw new Error('Restore dispatched a new run');
+        await capture('07-restored-input');
+        writeFileSync(
+          join(directory, 'composer-recovery.json'),
+          JSON.stringify({
+            cancelled: true,
+            restoredPrompt: true,
+            noAutomaticRetry: true,
+            attachments: state.runs[0].attachments,
+          }),
+        );
+        await evaluate("document.querySelector('.assistant-compose').requestSubmit()");
+      }
+      await waitFor(
+        "Boolean(document.querySelector('.assistant-run-status.succeeded') && document.querySelector('.message-attachments button'))",
+      );
+      const context = readFileSync(join(directory, 'material-pi-context.json'), 'utf8');
+      if (
+        !context.includes('新期限十日') ||
+        context.includes('旧期限三十日') ||
+        context.includes('交付条款正文') ||
+        context.includes('核对交付日期')
+      )
+        throw new Error('Unexpected provider input');
+      await waitFor(
+        "[...document.querySelectorAll('.assistant-message--assistant')].some(node => node.textContent.includes('付款期限：新期限十日'))",
+      );
+      await capture('03-docx-model-input');
+      stage = 'docx-original';
+      await evaluate("document.querySelector('.message-attachments button').click()");
+      await waitFor(
+        "Boolean(document.querySelector('.material-docx-reader')?.textContent.includes('固定原件已校验'))",
+      );
+      const original = await evaluate(
+        `(async()=>{const r=await window.caselite.material({protocol_version:1,operation:'read',scope:'home',source_id:'${item.id}'});return [...r.data]})()`,
+      );
+      const hash = createHash('sha256').update(Buffer.from(original)).digest('hex');
+      if (
+        hash !== item.sha256 ||
+        !Buffer.from(original).equals(readFileSync(join(directory, '中文合同.docx')))
+      )
+        throw new Error('Fixed original bytes mismatch');
+      await capture('04-docx-original');
+      await click('收起阅读');
+      stage = 'docx-edit-draft';
+      await openTask(item.task_id);
+      await docxStructure('[data-testid=body-editor]');
+      if (phase === 'materials-docx-table') {
+        stage = 'docx-table-controls';
+        const selectCell = async (selector: string) => {
+          await evaluate(
+            `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`,
+          );
+          const point = await evaluate(
+            `(() => {const cell=document.querySelector(${JSON.stringify(selector)}); const r=(cell.querySelector('p') ?? cell).getBoundingClientRect(); return {x:r.x+5,y:r.y+Math.min(8,r.height/2)};})()`,
+          );
+          await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          });
+          await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          });
+          await new Promise((done) => setTimeout(done, 200));
+        };
+        const tableCommand = async (command: string) => {
+          writeFileSync(
+            join(directory, 'table-selection.json'),
+            JSON.stringify(
+              await evaluate(
+                `({focus:document.hasFocus(),anchor:window.getSelection()?.anchorNode?.parentElement?.outerHTML,options:[...document.querySelector('[aria-label="表格操作"]').options].map(o=>({value:o.value,disabled:o.disabled}))})`,
+              ),
+            ),
+          );
+          await evaluate(
+            `(() => {const s=document.querySelector('[aria-label="表格操作"]'); s.value=${JSON.stringify(command)}; s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+          );
+          await new Promise((done) => setTimeout(done, 600));
+        };
+        const undo = async () => {
+          await evaluate(
+            `document.querySelector('.simple-toolbar button[aria-label="撤销"]').click()`,
+          );
+          await new Promise((done) => setTimeout(done, 600));
+        };
+        await selectCell('[data-testid=body-editor] td[rowspan="2"]');
+        await tableCommand('splitCell');
+        await waitFor(`!document.querySelector('[data-testid=body-editor] td[rowspan="2"]')`);
+        await undo();
+        await waitFor(
+          `Boolean(document.querySelector('[data-testid=body-editor] td[rowspan="2"]'))`,
+        );
+        await selectCell('[data-testid=body-editor] table td');
+        const rows = await evaluate(
+          `document.querySelector('[data-testid=body-editor] table').rows.length`,
+        );
+        await tableCommand('addRowAfter');
+        await waitFor(
+          `document.querySelector('[data-testid=body-editor] table').rows.length===${rows + 1}`,
+        );
+        await undo();
+        await waitFor(
+          `document.querySelector('[data-testid=body-editor] table').rows.length===${rows}`,
+        );
+        await capture('06-table-controls');
+        await docxStructure('[data-testid=body-editor]');
+        writeFileSync(
+          join(directory, 'table-controls.json'),
+          JSON.stringify({
+            split: true,
+            insertRow: true,
+            undoRestoresStructure: true,
+            merge: 'unit verified; physical cell drag NOT_RUN',
+            ime: 'NOT_RUN',
+          }),
+        );
+      }
+      await evaluate(`(() => {
+        const body = document.querySelector('[data-testid=body-editor]');
+        const paragraph = [...body.querySelectorAll('p')].find(p => p.textContent.includes('Word复核段'));
+        window.getSelection().collapse(paragraph, paragraph.childNodes.length);
+        body.focus();
+        document.execCommand('insertText', false, '隔离实测：已保存后重开。');
+      })()`);
+      await waitFor(
+        "Boolean(document.querySelector('[data-testid=body-editor]')?.textContent.includes('隔离实测：已保存后重开。'))",
+      );
+      await click('保存正文');
+      await waitFor("document.querySelector('[data-testid=revision]')?.textContent === '2'");
+      const edited = await savedDocxTask(item.task_id);
+      if (firstDraft.stateSha256 === edited.stateSha256) throw new Error('Edit was not saved');
+      writeFileSync(
+        join(directory, 'docx-result.json'),
+        JSON.stringify(
+          {
+            sourceId: item.id,
+            assetVersion: item.asset_version_id,
+            sha256: hash,
+            selected: page.page,
+            review: page.docx_review,
+            provider: 'MOCK_ONLY',
+            network: 'OS network denied and Chromium offline',
+            structure,
+            firstDraft,
+            edited,
+          },
+          null,
+          2,
+        ),
+      );
+      if (phase === 'materials-docx-lists') {
+        stage = 'docx-directory';
+        const projectId = await evaluate(`(async()=>{
+          const mutation=()=>({protocol_version:1,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID()});
+          for(let i=1;i<=25;i++){const r=await window.caselite.task({...mutation(),operation:'create',title:'合成分页合同'+String(i).padStart(2,'0'),objective:''});if(!r.ok)throw new Error('Seed task failed');}
+          const p=await window.caselite.catalog({...mutation(),operation:'create_project',title:'合成Word原件项目'});if(!p.ok)throw new Error('Seed project failed');
+          const t=await window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(item.task_id)}});
+          const r=await window.caselite.catalog({...mutation(),operation:'assign_task',task_id:${JSON.stringify(item.task_id)},expected_version:t.tasks[0].version,matter_id:p.target_id});if(!r.ok)throw new Error('Assign failed');return p.target_id;
+        })()`);
+        await evaluate("document.querySelector('[data-nav=documents]').click()");
+        await waitFor("document.querySelectorAll('[data-document-id]').length===20");
+        await click('下一页');
+        await waitFor("document.querySelectorAll('[data-document-id]').length===6");
+        await capture('08-document-pagination');
+        await evaluate("document.querySelector('[data-nav=projects]').click()");
+        await waitFor("Boolean(document.querySelector('.project-title-link'))");
+        await click('合成Word原件项目');
+        await waitFor("Boolean(document.querySelector('[aria-label=编辑项目名称]'))");
+        await click('文件');
+        await waitFor(`Boolean(document.querySelector('[data-source-id="${item.id}"]'))`);
+        await evaluate(
+          `document.querySelector('[data-source-id="${item.id}"] .project-file-name').click()`,
+        );
+        await waitFor("Boolean(document.querySelector('.material-docx-reader'))");
+        await capture('09-project-word-original');
+        const original = await evaluate(
+          `window.caselite.material({protocol_version:1,operation:'read_project',project_id:${JSON.stringify(projectId)},source_id:${JSON.stringify(item.id)}})`,
+        );
+        if (
+          !original.ok ||
+          createHash('sha256').update(Buffer.from(original.data)).digest('hex') !== hash
+        )
+          throw new Error('Project original mismatch');
+        writeFileSync(
+          join(directory, 'lists-result.json'),
+          JSON.stringify({
+            projectId,
+            pagination: [20, 6],
+            originalSha256: hash,
+            sourceId: item.id,
+          }),
+        );
+      }
       return;
     }
     stage = 'drop-text';

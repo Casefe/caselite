@@ -3,7 +3,17 @@ import { fileURLToPath } from 'node:url';
 const localPath = (relativePath) => fileURLToPath(new URL(relativePath, import.meta.url));
 
 export default {
-  entry: localPath('./src/main/index.ts'),
+  entry: {
+    main: { import: localPath('./src/main/index.ts'), filename: 'index.cjs' },
+    docxWorker: {
+      import: localPath('./src/main/adapters/docx-worker.ts'),
+      filename: 'docx-worker.cjs',
+    },
+    wordExportWorker: {
+      import: localPath('./src/main/adapters/word-export-worker.ts'),
+      filename: 'word-export-worker.cjs',
+    },
+  },
   devtool: 'source-map',
   node: {
     __dirname: false,

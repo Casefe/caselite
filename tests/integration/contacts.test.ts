@@ -15,6 +15,7 @@ it('migrates existing data, scopes relations, and reopens an idempotent contact 
   roots.push(root);
   const old = join(root, 'old-migrations');
   cpSync(migrations, old, { recursive: true });
+  rmSync(join(old, 'meta/dual-history-1826.json'));
   const journal = join(old, 'meta/_journal.json');
   const meta = JSON.parse(readFileSync(journal, 'utf8'));
   writeFileSync(journal, JSON.stringify({ ...meta, entries: meta.entries.slice(0, 16) }));

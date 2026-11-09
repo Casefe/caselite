@@ -1,21 +1,25 @@
-import type { ReviewRange, ReviewSaved } from '@caselite/contracts';
+import type { ReviewAction, ReviewRange, ReviewSaved } from '@caselite/contracts';
 import type { TaskPort } from './task-application';
 
 /** 审阅读取仍由本地存储拥有；应用层只编排确认和原提交回执核对。 */
 export interface DocumentReviewPort {
   reviewDocumentExists(documentId: string): boolean;
   reviewSaved(range: ReviewRange, receipt: string): ReviewSaved | undefined;
-  reviewState(range: ReviewRange, replacement?: string): Uint8Array | undefined;
+  reviewState(
+    range: ReviewRange,
+    replacement?: string,
+    action?: ReviewAction,
+  ): Uint8Array | undefined;
 }
 export function createDocumentReviewApplication(store: DocumentReviewPort, tasks: TaskPort) {
   return {
     exists: store.reviewDocumentExists,
     matches: (range: ReviewRange) => Boolean(store.reviewState(range)),
     receipt: (range: ReviewRange, key: string) => store.reviewSaved(range, key),
-    apply(range: ReviewRange, replacement: string, key: string) {
+    apply(range: ReviewRange, replacement: string, key: string, action: ReviewAction = 'replace') {
       const prior = store.reviewSaved(range, key);
       if (prior) return prior;
-      const state = store.reviewState(range, replacement);
+      const state = store.reviewState(range, replacement, action);
       if (!state) return { code: 'STALE_PREVIEW', message: '正文或选区已变化，未写回。' };
       const saved = tasks.execute({
         protocol_version: 1,

@@ -18,6 +18,9 @@ import { openToolchainProbe, toolchainProbe } from '../../packages/local-db/src/
 const migrationsFolder = resolve(
   fileURLToPath(new URL('../../packages/local-db/migrations/', import.meta.url)),
 );
+const migrationCount = JSON.parse(
+  readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'),
+).entries.length;
 
 describe('SQLite/Drizzle infrastructure probe', () => {
   it('migrates once, commits, rolls back, and reads data after reopening in a Unicode path', () => {
@@ -48,7 +51,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
         expect(
           second.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get(),
         ).toEqual({
-          n: 17,
+          n: migrationCount,
         });
       } finally {
         second.sqlite.close();
@@ -67,11 +70,19 @@ describe('SQLite/Drizzle infrastructure probe', () => {
     try {
       const first = openToolchainProbe(filePath, migrationsFolder);
       first.db.insert(toolchainProbe).values({ id: 'preserved', value: 'synthetic' }).run();
+      const latest = (
+        first.sqlite
+          .prepare('SELECT max(created_at) AS latest FROM __drizzle_migrations')
+          .get() as { latest: number }
+      ).latest;
       first.sqlite.close();
 
       cpSync(migrationsFolder, badMigrations, { recursive: true });
       const journalPath = join(badMigrations, 'meta/_journal.json');
-      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      rmSync(join(badMigrations, 'meta/dual-history-1826.json'));
+      const journal = JSON.parse(
+        readFileSync(resolve('tests/fixtures/migration-histories/A.json'), 'utf8'),
+      ) as {
         entries: Array<{
           idx: number;
           version: string;
@@ -83,7 +94,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
       journal.entries.push({
         idx: journal.entries.length,
         version: '6',
-        when: Math.max(...journal.entries.map((entry) => entry.when)) + 1,
+        when: Math.max(latest, ...journal.entries.map((entry) => entry.when)) + 1,
         tag: '0001_deliberate_failure',
         breakpoints: true,
       });

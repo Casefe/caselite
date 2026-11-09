@@ -10,6 +10,8 @@ import { createCatalogApplication } from '../../packages/application/src/catalog
 import type { Task, TaskResponse, TaskStatus } from '../../packages/contracts/src';
 
 const migrations = resolve('packages/local-db/migrations');
+const migrationCount = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'))
+  .entries.length;
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 const identity = () => ({
@@ -180,7 +182,7 @@ it('upgrades a WAL backup of a populated pre-status database without rewriting i
     expect(checked.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(checked.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 17,
+      n: migrationCount,
     });
     checked.sqlite.close();
   }

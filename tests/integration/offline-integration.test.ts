@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,8 @@ import { openOfflineProbePort } from '../../packages/local-db/src/index';
 const migrations = resolve(
   fileURLToPath(new URL('../../packages/local-db/migrations/', import.meta.url)),
 );
+const migrationCount = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'))
+  .entries.length;
 const writeRequest = {
   protocol_version: 1,
   action: 'write',
@@ -66,7 +68,7 @@ describe('DEV-1566 controlled desktop database path', () => {
       try {
         await expect(first.api.offlineProbe(writeRequest)).resolves.toMatchObject({
           ok: true,
-          value: { stored_value: 'offline-integration-verified', migration_count: 17 },
+          value: { stored_value: 'offline-integration-verified', migration_count: migrationCount },
         });
         await expect(
           first.handler({ senderFrame: { url: 'https://untrusted.example' } }, readRequest),
@@ -90,7 +92,7 @@ describe('DEV-1566 controlled desktop database path', () => {
       try {
         await expect(second.api.offlineProbe(readRequest)).resolves.toMatchObject({
           ok: true,
-          value: { stored_value: 'offline-integration-verified', migration_count: 17 },
+          value: { stored_value: 'offline-integration-verified', migration_count: migrationCount },
         });
       } finally {
         second.close();

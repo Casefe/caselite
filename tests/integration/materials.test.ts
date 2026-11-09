@@ -33,6 +33,7 @@ function setup(
     inspect: async () => 1,
     process: async (_bytes, input) => input.onPage(page),
   },
+  docxPreview?: (bytes: Uint8Array) => Promise<{ html: string; warningCount: number }>,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'caselite-material-test-'));
   roots.push(root);
@@ -42,6 +43,8 @@ function setup(
     store: store.materials,
     files,
     processor,
+    docxProcessor: docxPreview ? processor : undefined,
+    docxPreview,
     id: randomUUID,
     hash: (text) => createHash('sha256').update(text).digest('hex'),
     taskExists: (id) => store.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
@@ -83,6 +86,54 @@ function setup(
   }
   return { root, store, files, app, fixture, add, settled };
 }
+it('serializes semantic preview, releases a failed worker slot and rechecks source scope', async () => {
+  let resolve!: (value: { html: string; warningCount: number }) => void;
+  let reject!: (reason: Error) => void;
+  let calls = 0;
+  const s = setup(undefined, async () => {
+    calls++;
+    return new Promise((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+  });
+  try {
+    // 仅模拟转换器，真实 ZIP/Mammoth 由打包桌面合成 DOCX 另验。
+    const file = join(s.root, 'synthetic.docx');
+    writeFileSync(file, Buffer.from([80, 75, 3, 4, 0, 0, 0, 0]));
+    const stage = ok(await s.app.stage(file, 'home')).staged!;
+    const source = ok(
+      await s.app.execute({
+        protocol_version: 1,
+        operation: 'commit',
+        scope: 'home',
+        token: stage.token,
+      }),
+    ).materials[0];
+    await s.settled();
+    const request = {
+      protocol_version: 1,
+      operation: 'docx_semantic_preview',
+      scope: 'home',
+      source_id: source.id,
+    };
+    const first = s.app.execute(request);
+    for (let i = 0; i < 100 && calls === 0; i++) await new Promise((done) => setTimeout(done, 5));
+    expect(calls).toBe(1);
+    expect(await s.app.execute(request)).toMatchObject({ ok: false, code: 'BUSY' });
+    expect(calls).toBe(1);
+    reject(new Error('converter failure'));
+    expect(await first).toMatchObject({ ok: false });
+    const second = s.app.execute(request);
+    for (let i = 0; i < 100 && calls === 1; i++) await new Promise((done) => setTimeout(done, 5));
+    expect(calls).toBe(2);
+    ok(await s.app.execute({ protocol_version: 1, operation: 'new_home', scope: 'home' }));
+    resolve({ html: '<p>不能跨范围泄露</p>', warningCount: 0 });
+    expect(await second).toMatchObject({ ok: false });
+  } finally {
+    s.store.close();
+  }
+});
 it('preserves fixed bytes, separates same-name imports, and replays a committed token after restart', async () => {
   const s = setup();
   const first = await s.add();
@@ -107,6 +158,35 @@ it('preserves fixed bytes, separates same-name imports, and replays a committed 
   expect(reopened.materials.list('home')[0].id).toBe(first.source.id);
   expect(reopened.materials.list('home')[0].pages[0].text).toBe(page.text);
   reopened.close();
+});
+
+it('does not return original bytes after the home scope changes during a read', async () => {
+  const s = setup();
+  try {
+    const { source } = await s.add();
+    await s.settled();
+    const read = s.files.read.bind(s.files);
+    let release!: () => void;
+    s.files.read = async (id, sha) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return read(id, sha);
+    };
+    const pending = s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'read',
+      source_id: source.id,
+    });
+    ok(await s.app.execute({ protocol_version: 1, scope: 'home', operation: 'new_home' }));
+    release();
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, code: 'MATERIAL_UNAVAILABLE' });
+    expect(result).not.toHaveProperty('data');
+  } finally {
+    s.store.close();
+  }
 });
 it('projects existing fixed sources, rejects foreign scopes, and rechecks membership after an asynchronous read', async () => {
   const s = setup();

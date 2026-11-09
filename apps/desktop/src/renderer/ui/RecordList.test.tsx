@@ -42,7 +42,11 @@ const result = (rows: Task[], offset = 0): TaskResponse => ({
 const source: Task[] = [];
 function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialTaskListState) {
   window.caselite = {
-    task: api,
+    // 新增类型查询不属于本组任务页IPC计数；该通道在Calendar专项中单独验收。
+    task: (r: TaskRequest) =>
+      r.operation === 'calendar_query'
+        ? Promise.resolve({ ...result([]), calendar_types: [] })
+        : api(r),
     catalog: async () => ({
       ok: true,
       projects: [],
@@ -97,6 +101,10 @@ it('invalidates query A before B and never displays its late rows or count under
       }),
   );
   await waitFor(() => expect(pending).toHaveLength(1));
+  const filter = screen.getByRole('button', { name: '筛选任务' });
+  expect(filter.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(filter);
+  expect(filter.getAttribute('aria-expanded')).toBe('true');
   fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '乙' } });
   await waitFor(() => expect(pending).toHaveLength(2));
   await act(async () => pending[1].finish(result([b])));
@@ -138,6 +146,7 @@ it('waits for Chinese composition end before querying and retains task property 
   fireEvent.change(input, { target: { value: '中文' } });
   expect(api).toHaveBeenCalledTimes(2);
   await screen.findByRole('row', { name: '选择任务：中文任务' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   expect((screen.getByLabelText('搜索任务') as HTMLInputElement).disabled).toBe(true);
   expect(screen.getByText('正在保存任务属性…')).toBeTruthy();
@@ -161,11 +170,19 @@ it('requeries after a confirmed property change and moves the inspector when the
     selected: a.id,
   });
   await screen.findByRole('row', { name: '选择任务：待办甲' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   await waitFor(() => expect(screen.queryByRole('row', { name: '选择任务：待办甲' })).toBeNull());
   expect(await screen.findByRole('row', { name: '选择任务：待办乙' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: '待办乙' })).toBeNull();
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+});
+it('opens a task from a single row click with preview closed', async () => {
+  const row = task('单击打开');
+  show(async () => result([row]));
+  expect(screen.queryByRole('complementary', { name: '任务属性' })).toBeNull();
+  fireEvent.click(await screen.findByRole('row', { name: '选择任务：单击打开' }));
+  expect(screen.getByRole('button', { name: '返回列表' })).toBeTruthy();
 });
 it('remembers the keyboard-opened target, filter, page and scroll when returning from detail', async () => {
   const a = task('任务甲'),
@@ -248,6 +265,8 @@ it('keeps the project assignment guard until a confirmed write can be read back'
       <Host />
     </QueryClientProvider>,
   );
+  fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
   await waitFor(() => expect(field.disabled).toBe(false));
   fireEvent.change(field, { target: { value: project.id } });
@@ -308,6 +327,7 @@ it('keeps a task tag draft when an earlier refresh completes during editing', as
     });
   });
   await screen.findByRole('row', { name: '选择任务：保留任务草稿' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   act(() => invalidateTaskPages(client));
   await waitFor(() => expect(finish).toBeDefined());
   fireEvent.click(screen.getByText('添加标签'));

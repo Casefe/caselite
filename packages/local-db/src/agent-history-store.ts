@@ -82,6 +82,8 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
         JSON.stringify(old.attachments) !== JSON.stringify(run.attachments) ||
         old.model !== run.model ||
         old.provider !== run.provider ||
+        old.purpose !== run.purpose ||
+        JSON.stringify(old.date_binding) !== JSON.stringify(run.date_binding) ||
         run.sequence < old.sequence
       )
         throw new Error('Run identity or sequence conflict');
@@ -116,9 +118,10 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
           .get(id, workspace) as { pinned: number } | undefined;
         if (!row) return 'NOT_FOUND' as const;
         if (pinned && !row.pinned) {
+          // 保留旧日期Run的置顶数据；隐藏的专用历史不能占用普通对话三条配额。
           const count = db
             .prepare(
-              "SELECT count(*) AS n FROM agent_runs WHERE workspace_id=? AND json_extract(payload,'$.pinned')=1",
+              "SELECT count(*) AS n FROM agent_runs WHERE workspace_id=? AND json_extract(payload,'$.pinned')=1 AND coalesce(json_extract(payload,'$.purpose'),'') <> 'important_dates'",
             )
             .get(workspace) as { n: number };
           if (count.n >= 3) return 'LIMIT' as const;

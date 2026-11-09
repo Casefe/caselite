@@ -19,8 +19,11 @@ export function createTaskApplication(port: TaskPort) {
         return {
           ok: false,
           code:
+            parsed.data.operation === 'calendar_query' ||
             parsed.data.operation === 'list' ||
             parsed.data.operation === 'read' ||
+            parsed.data.operation === 'list_snapshots' ||
+            parsed.data.operation === 'read_snapshot' ||
             parsed.data.operation === 'status'
               ? 'READ_FAILED'
               : 'WRITE_FAILED',

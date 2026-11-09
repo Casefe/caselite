@@ -1,4 +1,5 @@
 import {
+  uniqueIndex,
   sqliteTable,
   text,
   integer,
@@ -17,6 +18,29 @@ export const toolchainProbe = sqliteTable('toolchain_probe', {
   value: text('value').notNull(),
 });
 
+export const localPreferences = sqliteTable(
+  'local_preferences',
+  {
+    workspaceId: text('workspace_id').primaryKey(),
+    value: text('value').notNull(),
+    version: integer('version').notNull(),
+  },
+  (table) => [
+    check('local_preferences_version', sql`${table.version} > 0`),
+    check('local_preferences_json', sql`json_valid(${table.value})`),
+  ],
+);
+export const localPreferenceReceipts = sqliteTable(
+  'local_preference_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
+);
+
 export const taskItems = sqliteTable(
   'task_items',
   {
@@ -29,7 +53,19 @@ export const taskItems = sqliteTable(
       .default('todo'),
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
+    plannedDate: text('planned_date'),
+    scheduleDate: text('schedule_date'),
+    scheduleStart: text('schedule_start'),
+    scheduleEnd: text('schedule_end'),
+    scheduleTimezone: text('schedule_timezone'),
+    isImportant: integer('is_important').notNull().default(0),
+    importantTypeId: text('important_type_id'),
+    attentionSource: text('attention_source').notNull().default('unknown'),
+    attentionDate: text('attention_date'),
+    attentionTime: text('attention_time'),
+    attentionTimezone: text('attention_timezone'),
     assignee: text('assignee').default('本人'),
+    subscribed: integer('subscribed', { mode: 'boolean' }).notNull().default(false),
     tags: text('tags', { mode: 'json' })
       .$type<string[]>()
       .notNull()
@@ -38,6 +74,69 @@ export const taskItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    index('task_calendar_planned').on(table.workspaceId, table.plannedDate),
+    index('task_calendar_timed').on(table.workspaceId, table.scheduleDate),
+    index('task_calendar_important').on(table.workspaceId, table.isImportant),
+    check(
+      'task_attention_timezone_valid',
+      sql.raw(
+        "attention_timezone IS NULL OR (attention_source='custom' AND attention_time IS NOT NULL AND typeof(attention_timezone)='text' AND length(attention_timezone) BETWEEN 1 AND 100)",
+      ),
+    ),
+    check(
+      'task_calendar_planned_date_valid',
+      sql.raw(
+        "planned_date IS NULL OR (typeof(planned_date)='text' AND length(planned_date)=10 AND planned_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(planned_date,1,4)<>'0000' AND date(planned_date) IS NOT NULL AND date(planned_date)=planned_date)",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_date_valid',
+      sql.raw(
+        "schedule_date IS NULL OR (typeof(schedule_date)='text' AND length(schedule_date)=10 AND schedule_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(schedule_date,1,4)<>'0000' AND date(schedule_date) IS NOT NULL AND date(schedule_date)=schedule_date)",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_start_valid',
+      sql.raw(
+        "schedule_start IS NULL OR (typeof(schedule_start)='text' AND schedule_start GLOB '[0-2][0-9]:[0-5][0-9]' AND schedule_start<'24:00')",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_end_valid',
+      sql.raw(
+        "schedule_end IS NULL OR (typeof(schedule_end)='text' AND schedule_end GLOB '[0-2][0-9]:[0-5][0-9]' AND schedule_end<'24:00')",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_complete_valid',
+      sql.raw(
+        "(schedule_date IS NULL AND schedule_start IS NULL AND schedule_end IS NULL AND schedule_timezone IS NULL) OR (schedule_date IS NOT NULL AND schedule_start IS NOT NULL AND schedule_end IS NOT NULL AND schedule_start<schedule_end AND typeof(schedule_timezone)='text' AND length(schedule_timezone) BETWEEN 1 AND 100)",
+      ),
+    ),
+    check('task_calendar_important_flag_valid', sql.raw('is_important IN (0,1)')),
+    check(
+      'task_calendar_important_type_valid',
+      sql.raw(
+        "(important_type_id IS NULL AND is_important=0) OR (typeof(important_type_id)='text' AND length(important_type_id) BETWEEN 1 AND 80)",
+      ),
+    ),
+    check(
+      'task_calendar_attention_source_valid',
+      sql.raw("attention_source IN ('unknown','schedule','planned','due','custom')"),
+    ),
+    check(
+      'task_calendar_attention_date_valid',
+      sql.raw(
+        "attention_date IS NULL OR (typeof(attention_date)='text' AND length(attention_date)=10 AND attention_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(attention_date,1,4)<>'0000' AND date(attention_date) IS NOT NULL AND date(attention_date)=attention_date)",
+      ),
+    ),
+    check(
+      'task_calendar_attention_complete_valid',
+      sql.raw(
+        "(attention_source='custom' OR (attention_date IS NULL AND attention_time IS NULL)) AND (attention_time IS NULL OR (attention_date IS NOT NULL AND (typeof(attention_time)='text' AND attention_time GLOB '[0-2][0-9]:[0-5][0-9]' AND attention_time<'24:00')))",
+      ),
+    ),
+    check('task_subscribed_valid', sql`${table.subscribed} IN (0, 1)`),
     check(
       'task_assignee_valid',
       sql`${table.assignee} IS NULL OR (typeof(${table.assignee}) = 'text' AND instr(${table.assignee}, char(0)) = 0 AND length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
@@ -82,6 +181,100 @@ export const bodyRevisions = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.bodyId, table.revision] })],
 );
+// 输出身份独立于可编辑工作副本；ready 后不得改写或删除。
+export const deliveryExports = sqliteTable(
+  'delivery_exports',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => deliverableSnapshots.id),
+    format: text('format').notNull(),
+    converter: text('converter').notNull(),
+    status: text('status').notNull(),
+    sha256: text('sha256'),
+    bytes: integer('bytes'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('delivery_exports_snapshot_format').on(
+      t.workspaceId,
+      t.snapshotId,
+      t.format,
+      t.converter,
+    ),
+  ],
+);
+export const deliveryExportIntents = sqliteTable(
+  'delivery_export_intents',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    exportId: text('export_id')
+      .notNull()
+      .references(() => deliveryExports.id),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
+);
+export const deliverableSnapshots = sqliteTable(
+  'deliverable_snapshots',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    bodyId: text('body_id').notNull(),
+    bodyRevision: integer('body_revision').notNull(),
+    editorSchema: integer('editor_schema').notNull(),
+    metadataVersion: integer('metadata_version').notNull(),
+    taskVersion: integer('task_version').notNull(),
+    title: text('title').notNull(),
+    collection: text('collection').notNull(),
+    tags: text('tags').notNull(),
+    note: text('note').notNull(),
+    contentSha256: text('content_sha256').notNull(),
+    createdAt: text('created_at').notNull(),
+    createdBy: text('created_by').notNull(),
+    kind: text('kind').notNull(),
+    sourceRefs: text('source_refs').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.bodyId, table.bodyRevision],
+      foreignColumns: [bodyRevisions.bodyId, bodyRevisions.revision],
+    }),
+    unique('delivery_fixed_revision').on(
+      table.documentId,
+      table.bodyRevision,
+      table.metadataVersion,
+      table.taskVersion,
+    ),
+    index('delivery_workspace_document').on(table.workspaceId, table.documentId),
+    check(
+      'delivery_snapshot_versions_valid',
+      sql`${table.bodyRevision}>0 AND ${table.metadataVersion}>0 AND ${table.taskVersion}>0 AND ${table.editorSchema}=1`,
+    ),
+    check(
+      'delivery_snapshot_kind_valid',
+      sql`${table.kind}='draft' AND ${table.createdBy}='local' AND ${table.sourceRefs}='[]'`,
+    ),
+    check(
+      'delivery_snapshot_text_valid',
+      sql`length(${table.title}) BETWEEN 1 AND 160 AND length(${table.note})<=200 AND length(${table.collection})<=80 AND length(${table.contentSha256})=64`,
+    ),
+    check(
+      'delivery_snapshot_tags_valid',
+      sql`CASE WHEN json_valid(${table.tags}) THEN json_type(${table.tags})='array' AND json_array_length(${table.tags})<=20 ELSE 0 END`,
+    ),
+  ],
+);
+
 export const taskReceipts = sqliteTable(
   'task_receipts',
   {
@@ -92,14 +285,20 @@ export const taskReceipts = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
 );
-export const taskActivity = sqliteTable('task_activity', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id')
-    .notNull()
-    .references(() => taskItems.id),
-  operation: text('operation').notNull(),
-  createdAt: text('created_at').notNull(),
-});
+export const taskActivity = sqliteTable(
+  'task_activity',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    operation: text('operation').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('task_activity_created_scope').on(table.taskId, table.operation, table.createdAt),
+  ],
+);
 
 export const taskObjectiveRevisions = sqliteTable(
   'task_objective_revisions',
@@ -179,12 +378,17 @@ export const projectDiscussion = sqliteTable(
       .notNull()
       .references(() => matters.id),
     kind: text('kind').notNull(),
+    health: text('health', { enum: ['on_track', 'at_risk', 'off_track'] }),
     updateId: text('update_id'),
     bodyId: text('body_id').notNull().unique(),
     bodyRevision: integer('body_revision').notNull().default(1),
     committedAt: text('committed_at').notNull(),
   },
   (table) => [
+    check(
+      'project_discussion_health_valid',
+      sql`${table.health} IS NULL OR (${table.kind} = 'update' AND ${table.health} IN ('on_track', 'at_risk', 'off_track'))`,
+    ),
     unique().on(table.matterId, table.id),
     index('project_discussion_scope').on(table.matterId, table.kind, table.updateId),
     foreignKey({
@@ -223,14 +427,60 @@ export const taskComment = sqliteTable(
     check('task_comment_fixed_revision', sql`${table.bodyRevision} = 1`),
   ],
 );
-export const taskProjects = sqliteTable('task_projects', {
-  taskId: text('task_id')
-    .primaryKey()
-    .references(() => taskItems.id),
-  matterId: text('matter_id')
-    .notNull()
-    .references(() => matters.id),
-});
+export const taskProjects = sqliteTable(
+  'task_projects',
+  {
+    taskId: text('task_id')
+      .primaryKey()
+      .references(() => taskItems.id),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+  },
+  (table) => [unique('task_projects_task_matter').on(table.taskId, table.matterId)],
+);
+export const projectMilestones = sqliteTable(
+  'project_milestones',
+  {
+    id: text('id').primaryKey().notNull(),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+    title: text('title').notNull(),
+    targetDate: text('target_date'),
+    version: integer('version').notNull().default(1),
+    createdAt: text('created_at').notNull(),
+    archivedAt: text('archived_at'),
+  },
+  (table) => [
+    unique().on(table.id, table.matterId),
+    index('project_milestones_matter').on(table.matterId, table.targetDate),
+    check(
+      'milestone_title_valid',
+      sql`length(trim(${table.title})) BETWEEN 1 AND 160 AND instr(${table.title}, char(0)) = 0`,
+    ),
+    check('milestone_version_valid', sql`${table.version} > 0`),
+  ],
+);
+export const taskMilestones = sqliteTable(
+  'task_milestones',
+  {
+    taskId: text('task_id').primaryKey().notNull(),
+    matterId: text('matter_id').notNull(),
+    milestoneId: text('milestone_id').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.taskId, table.matterId],
+      foreignColumns: [taskProjects.taskId, taskProjects.matterId],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.milestoneId, table.matterId],
+      foreignColumns: [projectMilestones.id, projectMilestones.matterId],
+    }),
+    index('task_milestones_milestone').on(table.milestoneId),
+  ],
+);
 export const catalogReceipts = sqliteTable(
   'catalog_receipts',
   {
@@ -426,6 +676,54 @@ export const financeReceipts = sqliteTable(
     check(
       'finance_receipt_operation',
       sql`${t.operation} IN ('register_contract','record_payment','reverse_payment')`,
+    ),
+  ],
+);
+
+export const calendarTypes = sqliteTable(
+  'calendar_types',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    id: text('id').notNull(),
+    name: text('name').notNull(),
+    enabled: integer('enabled').notNull(),
+    showHome: integer('show_home').notNull(),
+    version: integer('version').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    check(
+      'calendar_type_name',
+      sql`typeof(${t.name})='text' AND length(trim(${t.name})) BETWEEN 1 AND 30 AND instr(${t.name},char(0))=0`,
+    ),
+    check(
+      'calendar_type_flags',
+      sql`${t.enabled} IN (0,1) AND ${t.showHome} IN (0,1) AND ${t.version}>0`,
+    ),
+  ],
+);
+
+export const taskDateConfirmations = sqliteTable(
+  'task_date_confirmations',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    receiptKey: text('receipt_key').notNull(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    runId: text('run_id')
+      .notNull()
+      .references(() => agentRuns.id),
+    taskVersion: integer('task_version').notNull(),
+    payload: text('payload').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.receiptKey] }),
+    index('task_date_confirmation_task').on(table.workspaceId, table.taskId, table.taskVersion),
+    check('task_date_confirmation_version', sql`${table.taskVersion}>0`),
+    check(
+      'task_date_confirmation_payload',
+      sql`json_valid(${table.payload}) AND length(${table.payload})<=120000`,
     ),
   ],
 );

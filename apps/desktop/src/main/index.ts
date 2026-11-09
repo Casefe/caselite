@@ -1,21 +1,29 @@
 import { runFinanceDemo } from './finance-demo';
+import { createDeliveryExportApplication } from '@caselite/application';
+import { createDeliveryExportFiles } from './adapters/delivery-export-files';
+import { generateSnapshotPdf } from './adapters/pdf-export-processor';
+import { generateSnapshotWord } from './adapters/word-export-processor';
 import { runReminderDemo } from './reminder-demo';
 import { startReminderScheduler } from './adapters/reminder-scheduler';
 import { createReminderApplication } from '@caselite/application';
 import { registerReminderIpc } from './ipc/register-task-ipc';
 import { createRealDemoRuntime, runRealAgentDemo } from './agent-real-demo';
 import {
-  realDemoId,
+  validateRealDemoLaunch,
+  type RealDemoAuthorization,
   realDemoPdfHash,
   realDemoResumeId,
   inspectZeroDispatchResume,
 } from './agent-real-policy';
+import { syntheticDocxStream } from './agent-demo';
 import { runMaterialDemo } from './material-demo';
 import { createMaterialApplication } from '@caselite/application';
+import { createDocxProcessor, readDocxSemanticHtml } from './adapters/docx-processor';
 import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
+import { runTypographyDemo } from './typography-demo';
 import { runProjectDemo } from './project-demo';
 import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
@@ -28,12 +36,18 @@ import {
   syntheticReviewStream,
 } from './agent-demo';
 import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
+import { runEditorInteractionDemo } from './editor-interaction-demo';
 import { documentReviewStore } from './document-review-store';
 import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { createLocalPreferencesApplication } from '@caselite/application';
+import { registerLocalPreferencesIpc } from './ipc/register-local-preferences-ipc';
 import { createAgentApplication } from '@caselite/application';
+import { createImportantDateApplication } from '@caselite/application';
+import { runImportantDateDemo } from './important-date-demo';
+import { syntheticImportantDateStream } from './important-date-mock';
 import { createPiRuntime } from './adapters/pi-runtime';
 import {
   runCredentialPreflight,
@@ -49,8 +63,9 @@ import {
   registerFinanceIpc,
   registerTaskIpc,
 } from './ipc/register-task-ipc';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
+import { createConnection } from 'node:net';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
@@ -109,14 +124,21 @@ async function createWindow(
   if (process.env.CASELITE_PDF_PROBE === '1' || process.env.CASELITE_INTEGRATION_PHASE)
     entry.searchParams.set('engineering', '1');
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'delivery-preview')
+    entry.searchParams.set('delivery-preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'credential-preflight-ui')
+    entry.searchParams.set('audit-agent', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
-    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-')
+    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('important-date-')
   )
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
+  credentialWindowLoaded();
   if (show && !window.isDestroyed()) window.show();
   return window;
 }
@@ -431,7 +453,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 17
+      result.value?.migration_count !== 25
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -522,6 +544,11 @@ function runLocalDatabaseProbe(): void {
 }
 
 const defaultCredentialRoot = app.getPath('userData');
+let credentialWindowLoaded: () => void;
+const credentialWindowReady = new Promise<void>((resolve) => {
+  credentialWindowLoaded = resolve;
+});
+let realDemoAuthorization: RealDemoAuthorization | undefined;
 let taskDemoRoot: string | undefined;
 let taskDemoEvidenceRoot: string | undefined;
 let realResumeAudit: ReturnType<typeof inspectZeroDispatchResume> | undefined;
@@ -529,9 +556,13 @@ const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'delivery-preview',
       'document-review-preview',
       'document-review-write',
       'document-review-read',
+      'editor-interaction-write',
+      'editor-interaction-read',
+      'editor-interaction-preview',
       'credential-preflight',
       'credential-preflight-ui',
       'task-status-write',
@@ -545,8 +576,18 @@ if (taskDemoPhase) {
       'read',
       'materials',
       'materials-read',
+      'important-date-write',
+      'important-date-read',
+      'important-date-preview',
+      'materials-docx',
+      'materials-docx-table',
+      'materials-docx-lists',
+      'materials-docx-recovery',
+      'materials-docx-preview',
+      'materials-docx-reopen',
       'crash',
       'preview',
+      'typography',
       'project-write',
       'project-agent-write',
       'project-agent-read',
@@ -581,12 +622,13 @@ if (taskDemoPhase) {
     !basename(candidate).startsWith('caselite-task-demo-')
   )
     throw new Error('Demo directory must be isolated');
-  if (
-    taskDemoPhase === 'real-agent' &&
-    (candidate !== join(realpathSync(tmpdir()), 'caselite-task-demo-dev1650-real-20261106') ||
-      process.env.CASELITE_REAL_AGENT_APPROVAL !== realDemoId)
-  )
-    throw new Error('Real validation requires the fixed approved run');
+  if (taskDemoPhase === 'real-agent')
+    realDemoAuthorization = validateRealDemoLaunch({
+      directory: candidate,
+      temporaryRoot: realpathSync(tmpdir()),
+      approval: process.env.CASELITE_REAL_AGENT_APPROVAL,
+      resume: process.env.CASELITE_REAL_AGENT_RESUME,
+    });
   taskDemoRoot = candidate;
   taskDemoEvidenceRoot = candidate;
   const resume = process.env.CASELITE_REAL_AGENT_RESUME;
@@ -595,10 +637,12 @@ if (taskDemoPhase) {
     (resume !== realDemoResumeId || !taskDemoPhase.startsWith('real-agent'))
   )
     throw new Error('Invalid resume mode');
-  if (taskDemoPhase === 'real-agent' && !resume)
-    throw new Error('Real validation requires reviewed zero-dispatch resume');
   if (resume) {
-    realResumeAudit = inspectZeroDispatchResume(candidate, taskDemoPhase === 'real-agent-dry');
+    realResumeAudit = inspectZeroDispatchResume(
+      candidate,
+      taskDemoPhase === 'real-agent-dry',
+      realDemoAuthorization,
+    );
     taskDemoEvidenceRoot = realpathSync(join(candidate, realDemoResumeId));
     if (taskDemoEvidenceRoot !== join(candidate, realDemoResumeId))
       throw new Error('Invalid resume evidence directory');
@@ -681,6 +725,14 @@ app
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
     registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
+    if (taskDemoPhase === 'delivery-preview' && taskDemoRoot) {
+      // 原型只使用合成内存状态；在初始化业务库、凭据和Agent前返回。
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      await createWindow();
+      return;
+    }
     const taskStore = openTaskStore(
       join(taskRoot, 'caselite.sqlite'),
       app.isPackaged
@@ -693,13 +745,46 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const tasks = createTaskApplication(taskStore);
+    registerLocalPreferencesIpc(
+      createLocalPreferencesApplication(taskStore.localPreferences, {
+        database_file: join(taskRoot, 'caselite.sqlite'),
+        output_directory: join(taskRoot, 'delivery-exports'),
+      }),
+    );
     const taskQueryProbe =
       taskDemoRoot &&
       taskDemoPhase === 'task-status-write' &&
       process.env.CASELITE_TASK_QUERY_PROBE === '1'
         ? createTaskQueryProbe(tasks)
         : undefined;
-    registerTaskIpc(taskQueryProbe?.application ?? tasks);
+    registerTaskIpc(
+      createDeliveryExportApplication({
+        task: taskQueryProbe?.application ?? tasks,
+        store: taskStore.deliveryExports,
+        files: createDeliveryExportFiles(
+          join(taskRoot, 'delivery-exports'),
+          (path) => shell.openPath(path),
+          async (row) => {
+            // 绑定发起时的原生窗口，避免无父级保存面板被工作台遮挡后留下等待中的调用。
+            const owner = BrowserWindow.getFocusedWindow();
+            if (!owner) throw new Error('No active export window');
+            const result = await dialog.showSaveDialog(owner, {
+              title: '另存交付副本',
+              buttonLabel: '保存副本',
+              defaultPath: join(app.getPath('documents'), `CaseLite-草稿-${row.id}.${row.format}`),
+              filters: [{ name: row.format === 'pdf' ? 'PDF' : 'Word', extensions: [row.format] }],
+              properties: ['createDirectory'],
+            });
+            return result.canceled ? null : (result.filePath ?? null);
+          },
+        ),
+        render: (snapshot, state, format, signal, converter) =>
+          format === 'pdf'
+            ? generateSnapshotPdf(snapshot, state, signal, converter)
+            : generateSnapshotWord(snapshot, state, signal),
+        hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
+      }),
+    );
     const reminders = createReminderApplication(taskStore.reminders);
     const reminderScheduler = startReminderScheduler(
       reminders,
@@ -721,6 +806,8 @@ app
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
       processor: createPdfProcessor(),
+      docxProcessor: createDocxProcessor(),
+      docxPreview: readDocxSemanticHtml,
       id: randomUUID,
       hash: (text) => createHash('sha256').update(text).digest('hex'),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
@@ -730,7 +817,7 @@ app
           operation: 'create',
           request_id: randomUUID(),
           idempotency_key: token,
-          title: name.replace(/\.pdf$/i, '').slice(0, 200) || '材料分析',
+          title: name.replace(/\.(pdf|docx)$/i, '').slice(0, 200) || '材料分析',
           objective: '',
         });
         if (!result.ok) throw new Error('Cannot create material task');
@@ -780,15 +867,30 @@ app
         : undefined;
     const financeDemo = taskDemoPhase?.startsWith('finance-');
     if (financeDemo) materialDemoKeys.clear();
-    const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
+    const documentReviewDemo =
+      taskDemoPhase?.startsWith('document-review-') ||
+      taskDemoPhase?.startsWith('editor-interaction-');
+    let initialCredentialRead = Promise.resolve();
+    const openSystemCredentials = async (root: string) => {
+      let settled!: () => void;
+      initialCredentialRead = new Promise<void>((resolve) => {
+        settled = resolve;
+      });
+      return createAgentCredentials(root, recordCredentialStage, {
+        afterWindowReady: credentialWindowReady,
+        onSettled: settled,
+      });
+    };
     const baseAgentCredentials =
       documentReviewDemo ||
       financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
+      taskDemoPhase?.startsWith('important-date-') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase === 'typography' ||
       taskDemoPhase === 'agent-crash-synthetic' ||
       taskDemoPhase === 'agent-read-synthetic'
         ? {
@@ -807,10 +909,8 @@ app
             },
           }
         : taskDemoPhase === 'real-agent' || credentialUi
-          ? readOnlyDemoCredentials(
-              await createAgentCredentials(defaultCredentialRoot, recordCredentialStage),
-            )
-          : await createAgentCredentials(taskRoot, recordCredentialStage);
+          ? readOnlyDemoCredentials(await openSystemCredentials(defaultCredentialRoot))
+          : await openSystemCredentials(taskRoot);
     const recordCredentialUi = () => {
       if (!credentialUi || !taskDemoRoot) return;
       const after = credentialFingerprints(defaultCredentialRoot);
@@ -855,7 +955,30 @@ app
       historyReady = false;
     }
 
+    const importantDates = createImportantDateApplication(
+      {
+        ...taskStore.dates,
+        preview: (id, scope) => taskStore.materials.preview(id, scope),
+        source: taskStore.materials.fixed,
+        configuration: taskStore.materials.configuration,
+      },
+      async (binding) => {
+        for (const s of binding.sources) {
+          const r = await materials.execute({
+            protocol_version: 1,
+            operation: 'read_fixed',
+            scope: binding.task_id,
+            source_id: s.source_id,
+            derivation_id: s.derivation_id,
+            asset_version_id: s.asset_version_id,
+            sha256: s.sha256,
+          });
+          if (!r.ok) throw Error('Original verification failed');
+        }
+      },
+    );
     const agent = createAgentApplication({
+      dates: importantDates,
       credentials: agentCredentials,
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
@@ -874,6 +997,7 @@ app
               directory: taskDemoEvidenceRoot!,
               budgetDirectory: taskDemoRoot,
               resumeAudit: realResumeAudit,
+              authorization: realDemoAuthorization,
               model: agentCredentials.getDefaultModel(),
               dry: taskDemoPhase === 'real-agent-dry',
               runs: () => taskStore.agentHistory.load(),
@@ -914,56 +1038,109 @@ app
               },
             })
           : createPiRuntime(
-              documentReviewDemo
-                ? syntheticReviewStream
-                : financeDemo ||
-                    credentialUi ||
-                    taskDemoPhase?.startsWith('reminder') ||
-                    (taskDemoPhase?.startsWith('project-') &&
-                      taskDemoPhase !== 'project-agent-write') ||
-                    taskDemoPhase === 'task-status-write' ||
-                    taskDemoPhase === 'task-status-read' ||
-                    taskDemoPhase === 'agent-read' ||
-                    taskDemoPhase === 'agent-credential-read' ||
-                    taskDemoPhase === 'agent-read-synthetic' ||
-                    taskDemoPhase === 'materials-read'
-                  ? () => {
-                      if (credentialUi) {
-                        credentialRuntimeAttempts++;
-                        recordCredentialUi();
-                      }
-                      writeFileSync(
-                        join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                        'unexpected dispatch',
-                      );
-                      throw new Error('Unexpected restart dispatch');
-                    }
-                  : taskDemoPhase === 'materials'
-                    ? (model, context, options) => {
+              taskDemoPhase?.startsWith('important-date-')
+                ? syntheticImportantDateStream
+                : documentReviewDemo
+                  ? syntheticReviewStream
+                  : financeDemo ||
+                      taskDemoPhase === 'typography' ||
+                      credentialUi ||
+                      taskDemoPhase?.startsWith('reminder') ||
+                      (taskDemoPhase?.startsWith('project-') &&
+                        taskDemoPhase !== 'project-agent-write') ||
+                      taskDemoPhase === 'task-status-write' ||
+                      taskDemoPhase === 'task-status-read' ||
+                      taskDemoPhase === 'agent-read' ||
+                      taskDemoPhase === 'agent-credential-read' ||
+                      taskDemoPhase === 'agent-read-synthetic' ||
+                      taskDemoPhase === 'materials-read'
+                    ? () => {
+                        if (credentialUi) {
+                          credentialRuntimeAttempts++;
+                          recordCredentialUi();
+                        }
                         writeFileSync(
-                          join(taskDemoRoot!, 'material-pi-context.json'),
-                          JSON.stringify(context, null, 2),
+                          join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                          'unexpected dispatch',
                         );
-                        return syntheticAgentStream(model, context, options);
+                        throw new Error('Unexpected restart dispatch');
                       }
-                    : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
-                      ? syntheticAgentStream
-                      : undefined,
+                    : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
+                      ? (model, context, options) => {
+                          writeFileSync(
+                            join(taskDemoRoot!, 'material-pi-context.json'),
+                            JSON.stringify(context, null, 2),
+                          );
+                          return taskDemoPhase?.startsWith('materials-docx')
+                            ? syntheticDocxStream(model, context, options)
+                            : syntheticAgentStream(model, context, options);
+                        }
+                      : taskDemoPhase === 'project-agent-write' ||
+                          taskDemoPhase?.startsWith('agent')
+                        ? syntheticAgentStream
+                        : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase?.startsWith('important-date-')) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      if (taskDemoPhase === 'important-date-preview') {
+        const window = await createWindow();
+        window.setTitle('CaseLite · 合成重要日期 · MOCK_ONLY');
+        return;
+      }
+      try {
+        await runImportantDateDemo(
+          () => createWindow(false),
+          taskDemoRoot,
+          taskDemoPhase,
+          materials,
+        );
+        agent.release();
+        materials.close();
+        taskStore.close();
+        app.exit(0);
+      } catch {
+        agent.release();
+        materials.close();
+        taskStore.close();
+        app.exit(1);
+      }
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase === 'typography') {
+      try {
+        await runTypographyDemo(() => createWindow(false), taskDemoRoot, tasks);
+      } finally {
+        agent.release();
+        materials.close();
+        taskStore.close();
+      }
+      app.exit(0);
+      return;
+    }
     if (documentReviewDemo && taskDemoRoot) {
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
       app.on('will-quit', () => taskStore.close());
-      if (taskDemoPhase !== 'document-review-read') seedDocumentReview(tasks);
-      if (taskDemoPhase === 'document-review-preview') {
+      if (taskDemoPhase !== 'document-review-read' && taskDemoPhase !== 'editor-interaction-read')
+        seedDocumentReview(tasks);
+      if (
+        taskDemoPhase === 'document-review-preview' ||
+        taskDemoPhase === 'editor-interaction-preview'
+      ) {
         await createWindow();
       } else {
-        await runDocumentReviewDemo(
+        await (
+          taskDemoPhase?.startsWith('editor-interaction-')
+            ? runEditorInteractionDemo
+            : runDocumentReviewDemo
+        )(
           () => createWindow(false),
           taskDemoRoot,
           taskDemoPhase!,
@@ -975,8 +1152,9 @@ app
       return;
     }
     if (credentialUi) {
-      recordCredentialUi();
       const window = await createWindow();
+      await initialCredentialRead;
+      recordCredentialUi();
       window.setTitle('CaseLite · 系统凭据重读验收');
       return;
     }
@@ -995,6 +1173,7 @@ app
         taskDemoEvidenceRoot!,
         taskDemoPhase === 'real-agent-dry',
         taskDemoRoot,
+        initialCredentialRead,
       );
       if (taskDemoPhase === 'real-agent-dry') app.exit(0);
       return;
@@ -1025,6 +1204,33 @@ app
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
+      if (taskDemoPhase.startsWith('materials-docx')) {
+        // 测试包在宿主系统网络隔离下运行，不能只靠 Chromium 拦截。
+        const denied = await new Promise<boolean>((resolve) => {
+          const socket = createConnection({ host: '127.0.0.1', port: 9 });
+          socket.once('error', (error: NodeJS.ErrnoException) => {
+            resolve(error.code === 'EPERM' || error.code === 'EACCES');
+          });
+          socket.once('connect', () => {
+            socket.destroy();
+            resolve(false);
+          });
+          socket.setTimeout(1500, () => {
+            socket.destroy();
+            resolve(false);
+          });
+        });
+        if (!denied) throw new Error('DOCX demo requires OS network isolation');
+        writeFileSync(
+          join(taskDemoRoot, 'network-' + taskDemoPhase + '.json'),
+          JSON.stringify({ loopbackTCP: 'OS_DENIED', chromiumOffline: true }),
+        );
+        session.defaultSession.enableNetworkEmulation({ offline: true });
+        if (taskDemoPhase === 'materials-docx-preview') {
+          await createWindow();
+          return;
+        }
+      }
       await runMaterialDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;

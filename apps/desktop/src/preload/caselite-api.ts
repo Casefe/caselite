@@ -1,4 +1,10 @@
 import {
+  LOCAL_PREFERENCES_CHANNEL,
+  localPreferencesResponseSchema,
+  type LocalPreferencesRequest,
+  type LocalPreferencesResponse,
+} from '@caselite/contracts';
+import {
   CONTACTS_CHANNEL,
   contactsResponseSchema,
   type ContactsRequest,
@@ -39,6 +45,7 @@ import {
   type AgentRequest,
   type AgentResponse,
   TASK_CHANNEL,
+  taskRequestSchema,
   taskResponseSchema,
   type TaskRequest,
   type TaskResponse,
@@ -60,6 +67,8 @@ import {
 export type IpcInvoke = (channel: string, payload: unknown) => Promise<unknown>;
 
 export const IPC_COMMAND_TIMEOUT_MS = 15_000;
+// 仅凭据保存/重读覆盖30秒系统初始化和5家各3秒解密；付费Run与其他命令仍限15秒。
+export const CREDENTIAL_COMMAND_TIMEOUT_MS = 50_000;
 
 function internalFailure(): CommandFailure {
   return {
@@ -100,14 +109,16 @@ async function invokeBusinessCommand(
     | MaterialRequest
     | ReminderRequest
     | FinanceRequest
-    | ContactsRequest,
+    | ContactsRequest
+    | LocalPreferencesRequest,
+  timeoutMs = IPC_COMMAND_TIMEOUT_MS,
 ): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       invoke(channel, request),
       new Promise<CommandFailure>((resolve) => {
-        timer = setTimeout(() => resolve(timeoutFailure()), IPC_COMMAND_TIMEOUT_MS);
+        timer = setTimeout(() => resolve(timeoutFailure()), timeoutMs);
       }),
     ]);
   } catch {
@@ -118,6 +129,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
@@ -151,6 +163,18 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    async preferences(request) {
+      const result = localPreferencesResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, LOCAL_PREFERENCES_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认本地设置结果，请保留输入并核对原提交。',
+          };
+    },
     async reminder(request) {
       const result = reminderResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, REMINDER_CHANNEL, request),
@@ -167,14 +191,17 @@ export function createCaseLitePreloadApi(
     // cancel_prepare 可中止本地准备，准备本身永不调用外部模型。
     material: (request) =>
       materialResult(
-        request.operation === 'preview' && request.automatic
+        (request.operation === 'preview' && request.automatic) ||
+          request.operation === 'save_original' ||
+          request.operation === 'save_project_original'
           ? invoke(MATERIAL_CHANNEL, request)
           : invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request),
       ),
     pickPdf: (scope) => materialResult(invoke(MATERIAL_PICK_CHANNEL, { scope })),
     async dropPdf(file, scope) {
       const path = droppedPath?.(file);
-      if (!path) return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF。' };
+      if (!path)
+        return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF 或 DOCX。' };
       return materialResult(invoke(MATERIAL_DROP_CHANNEL, { scope, path }));
     },
     async appearance(request) {
@@ -215,7 +242,14 @@ export function createCaseLitePreloadApi(
     },
     async agent(request) {
       const result = agentResponseSchema.safeParse(
-        await invokeBusinessCommand(invoke, AGENT_CHANNEL, request),
+        await invokeBusinessCommand(
+          invoke,
+          AGENT_CHANNEL,
+          request,
+          request.operation === 'configure' || request.operation === 'refresh_credentials'
+            ? CREDENTIAL_COMMAND_TIMEOUT_MS
+            : IPC_COMMAND_TIMEOUT_MS,
+        ),
       );
       return result.success
         ? result.data
@@ -226,9 +260,14 @@ export function createCaseLitePreloadApi(
           };
     },
     async task(request) {
-      const result = taskResponseSchema.safeParse(
-        await invokeBusinessCommand(invoke, TASK_CHANNEL, request),
-      );
+      // 原生另存为等待人工选择，不受短业务命令的15秒预算限制；宿主仍校验对象权限和目标路径。
+      // 只放行通过严格协议校验的另存为请求，普通保存继续保留超时与未知回执保护。
+      const parsed = taskRequestSchema.safeParse(request);
+      const call =
+        parsed.success && parsed.data.operation === 'save_export'
+          ? invoke(TASK_CHANNEL, parsed.data).catch(() => internalFailure())
+          : invokeBusinessCommand(invoke, TASK_CHANNEL, request);
+      const result = taskResponseSchema.safeParse(await call);
       return result.success
         ? result.data
         : {
@@ -289,3 +328,21 @@ export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/cont
 export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
 export type { Contact, ContactsRequest } from '@caselite/contracts';
+export type { DeliverySnapshot } from '@caselite/contracts';
+export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';
+export type {
+  LocalPreferences,
+  LocalPreferenceValues,
+  LocalPreferencesRequest,
+  LocalPreferencesResponse,
+  WorkspaceLocations,
+} from '@caselite/contracts';
+
+export type { TaskCalendar, CalendarType, CalendarQuery } from '@caselite/contracts';
+export type {
+  DateBinding,
+  DateChecks,
+  DateEvaluated,
+  DateConfirmRequest,
+  DateConfirmation,
+} from '@caselite/contracts';

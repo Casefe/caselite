@@ -3,6 +3,18 @@ const admitted = new Set(['MIT', 'Apache-2.0']);
 
 // ADR-008：仅准入本次已阅读许可的精确版本；升级或其他依赖仍须审查。
 const reviewed = new Set([
+  // ADR-021：精确锁版，许可正文随 DOCX 通知打包。
+  'dompurify@3.4.17:(MPL-2.0 OR Apache-2.0)',
+  'mammoth@1.13.0:BSD-2-Clause',
+  'sprintf-js@1.0.3:BSD-3-Clause',
+  'dingbat-to-unicode@1.0.2:BSD-2-Clause',
+  'jszip@3.10.2:(MIT OR GPL-3.0-or-later)',
+  'pako@1.0.11:(MIT AND Zlib)',
+  'inherits@2.0.4:ISC',
+  'lop@0.4.2:BSD-2-Clause',
+  'duck@0.1.12:BSD',
+  'option@0.2.4:BSD-2-Clause',
+
   'json-schema@0.4.0:(AFL-2.1 OR BSD-3-Clause)',
   '@ungap/structured-clone@1.4.0:ISC',
   '@protobufjs/aspromise@1.1.2:BSD-3-Clause',

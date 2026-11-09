@@ -200,3 +200,93 @@ it('外部提交使首次在途目录过期后，会补发读取并忽略迟到�
   await act(async () => complete[0](projection({ ...entry, title: '过期目录' })));
   expect(screen.queryByRole('row', { name: /过期目录/ })).toBeNull();
 });
+
+it('按项目分组，快速切换后只显示当前文档的读取结果，版本不符可重读', async () => {
+  const a = { ...entry, title: '合成甲' };
+  const b = {
+    ...entry,
+    id: crypto.randomUUID(),
+    task_id: crypto.randomUUID(),
+    matter_id: crypto.randomUUID(),
+    title: '合成乙',
+  };
+  let revision = b.body_revision;
+  let finishA: ((value: unknown) => void) | undefined;
+  const catalog = vi.fn(async () => ({
+    ...projection(a),
+    documents: [a, { ...b, body_revision: revision }],
+    projects: [{ id: b.matter_id, title: '合成项目' }],
+  }));
+  const task = vi.fn(async (request: { task_id: string }) => {
+    if (request.task_id === a.task_id) return new Promise((resolve) => (finishA = resolve));
+    return {
+      ok: true,
+      tasks: [
+        {
+          id: b.task_id,
+          document_id: b.id,
+          matter_id: b.matter_id,
+          body_revision: b.body_revision + 1,
+        },
+      ],
+      state: null,
+    };
+  });
+  vi.stubGlobal('caselite', { catalog, task });
+  const onOpen = vi.fn();
+  const { container } = render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={onOpen} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole('rowheader', { name: '合成项目' })).toBeTruthy();
+  expect(screen.getByRole('rowheader', { name: '未归组' })).toBeTruthy();
+  fireEvent.click(screen.getByText('合成甲', { selector: 'td' }));
+  await waitFor(() => expect(finishA).toBeDefined());
+  fireEvent.click(screen.getByText('合成乙', { selector: 'td' }));
+  await screen.findByText('文档版本或归属已变化，请先刷新目录。');
+  await act(async () => finishA?.({ ok: false, message: '甲的迟到错误' }));
+  expect(screen.queryByText('甲的迟到错误')).toBeNull();
+
+  revision += 1;
+  fireEvent.click(screen.getByRole('button', { name: '重新读取文档' }));
+  await screen.findByText('此文档尚无已保存的正文。');
+  fireEvent.click(screen.getByRole('button', { name: '打开编辑' }));
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(b.task_id);
+
+  fireEvent.click(screen.getByRole('button', { name: '返回文档列表' }));
+  expect(container.querySelector('[data-directory-view="list"]')).toBeTruthy();
+});
+
+it('paginates by stable document identity and resets filtering without losing pending edits', async () => {
+  const docs = Array.from({ length: 25 }, (_, i) => ({
+    ...entry,
+    id: crypto.randomUUID(),
+    task_id: crypto.randomUUID(),
+    title: `合同${String(i + 1).padStart(2, '0')}`,
+    updated_at: `2026-11-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+  }));
+  show(async () => ({ ...projection(entry), documents: docs }) as CatalogResponse);
+  await screen.findByText('第 1 / 2 页 · 共 25 份');
+  expect(document.querySelectorAll('[data-document-id]')).toHaveLength(20);
+  fireEvent.click(screen.getByText('合同25', { selector: 'td' }));
+  fireEvent.change(screen.getByLabelText('文档排序'), { target: { value: 'name' } });
+  expect(screen.getByText('第 2 / 2 页 · 共 25 份')).toBeTruthy();
+  expect(document.querySelector('[aria-selected="true"]')?.getAttribute('data-document-id')).toBe(
+    docs[24].id,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  expect(screen.getByText('第 2 / 2 页 · 共 25 份')).toBeTruthy();
+  expect(document.querySelectorAll('[data-document-id]')).toHaveLength(5);
+  fireEvent.change(screen.getByLabelText('搜索文档'), { target: { value: '合同01' } });
+  expect(document.querySelectorAll('[data-document-id]')).toHaveLength(1);
+  expect(document.querySelector('[data-document-id]')?.getAttribute('data-document-id')).toBe(
+    docs[0].id,
+  );
+  fireEvent.change(screen.getByLabelText('搜索文档'), { target: { value: '' } });
+  expect(screen.getByText('第 1 / 2 页 · 共 25 份')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '尚未提交' } });
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '下一页' }).disabled).toBe(true);
+});
