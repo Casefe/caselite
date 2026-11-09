@@ -361,10 +361,10 @@ export async function runProjectDemo(
   };
   const button = async (text: string) => {
     await wait(
-      `Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()===${JSON.stringify(text)}&&!e.disabled)`,
+      `Array.from(document.querySelectorAll('button')).some(e=>(e.getAttribute('aria-label')??e.textContent.trim())===${JSON.stringify(text)}&&!e.disabled)`,
     );
     return evaluate(`(()=>{
-    const button=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===${JSON.stringify(text)});
+    const button=Array.from(document.querySelectorAll('button')).find(e=>(e.getAttribute('aria-label')??e.textContent.trim())===${JSON.stringify(text)});
     if(!button||button.disabled) throw new Error('Project button unavailable');
     button.click();
   })()`);
@@ -385,6 +385,129 @@ export async function runProjectDemo(
     );
   };
   const projectComposer = '.project-ai-content .agent-prompt';
+  const checkDashboard = async () => {
+    // 仅在已核验隔离的 demo 目录中经公开 Application 入口生成合成样本。
+    await evaluate(`(async () => {
+      const mutation = () => ({protocol_version:1,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID()});
+      for(let i=0;i<22;i++) {
+        const result=await window.caselite.catalog({...mutation(),operation:'create_project',
+          title:'合成项目 '+String(i+1).padStart(2,'0'),status:i<12?'active':i<14?'planned':'done',
+          attributes:{project_type:'general',assignee:i%2?'合成负责人甲':'合成负责人乙',priority:0,start_date:null,target_date:null,tags:[]}});
+        if(!result.ok) throw new Error('Synthetic dashboard project failed');
+        if(i<4) {
+          const created=await window.caselite.task({...mutation(),operation:'create',title:'合成重要事项 '+(i+1),objective:'',matter_id:result.target_id});
+          if(!created.ok) throw new Error('Synthetic dashboard task failed');
+          const task=created.tasks[0];
+          const saved=await window.caselite.task({...mutation(),operation:'update_calendar',task_id:task.id,expected_version:task.version,
+            calendar:{planned_date:null,schedule:null,important:true,type_id:'hearing',attention_source:'custom',attention_date:'2026-11-'+(12+i),attention_time:null}});
+          if(!saved.ok) throw new Error('Synthetic dashboard calendar failed');
+        }
+      }
+    })()`);
+    await new Promise<void>((resolve) => {
+      window.webContents.once('did-finish-load', () => resolve());
+      window.webContents.reload();
+    });
+    await wait("document.querySelector('[data-nav=projects]')");
+    await evaluate("document.querySelector('[data-nav=projects]').click()");
+    await wait("document.querySelectorAll('[data-project-id]').length===8");
+    await wait("document.querySelectorAll('[data-important-task]').length===4");
+    const original = window.getBounds();
+    const measurements = [];
+    for (const [width, height, theme] of [
+      [1920, 1080, 'light'],
+      [1920, 1080, 'dark'],
+      [1100, 760, 'light'],
+      [640, 500, 'dark'],
+    ] as const) {
+      window.setContentSize(width, height);
+      await wait(`innerWidth===${width}`);
+      await evaluate(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+      await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+      const layout = await evaluate(`(() => {
+        const split=document.querySelector('.inspector-split');
+        const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
+        const r=split.getBoundingClientRect();
+        const input=split.querySelector('[data-testid=assistant-input]');
+        const totals=[...document.querySelectorAll('.project-metric dd:not(.project-metric-hint)')].map(e=>e.textContent).join(',');
+        if(totals!=='23,12,3,8') throw new Error('Dashboard totals do not match committed data: '+totals);
+        if(split.dataset.aiExpanded!=='false' || Math.abs(ai.width-r.width)>1 || Math.abs(ai.height-164)>1 || !input || input.disabled || document.querySelector('.project-ai-actions'))
+          throw new Error('Dashboard default AI does not use shared compact design: '+JSON.stringify({ai:ai.toJSON(),r:r.toJSON()}));
+        return {width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.theme,ai:ai.toJSON(),sidebar:r.toJSON(),totals};
+      })()`);
+      measurements.push(layout);
+      await captureRenderer(`dashboard-${width}-${theme}.png`);
+    }
+    window.setContentSize(1440, 900);
+    await evaluate("document.documentElement.dataset.theme='light'");
+    await button('项目下一页');
+    await wait("document.querySelector('.collection-footer').textContent.includes('9–16')");
+    await input('搜索项目', '合成项目 01');
+    await wait(
+      "document.querySelectorAll('[data-project-id]').length===1 && document.querySelector('.collection-footer').textContent.includes('1–1')",
+    );
+    await evaluate("document.querySelector('[data-testid=assistant-input]').focus()");
+    await wait("document.querySelector('.inspector-split').dataset.aiExpanded==='true'");
+    await evaluate(`(() => {
+      const textarea=document.querySelector('[data-testid=assistant-input]');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,'合成未发送草稿，伸缩后保留');
+      textarea.dispatchEvent(new Event('input',{bubbles:true}));
+    })()`);
+    await evaluate(
+      "window.__dashboardInput=document.querySelector('[data-testid=assistant-input]')",
+    );
+    await evaluate("document.querySelector('.project-ai-actions summary').click()");
+    await wait("document.querySelector('.project-ai-actions').open");
+    await captureRenderer('dashboard-ai-expanded.png');
+    await evaluate(
+      "document.querySelector('.project-ai-actions summary').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))",
+    );
+    await wait(
+      "!document.querySelector('.project-ai-actions').open && document.querySelector('.inspector-split').dataset.aiExpanded==='true'",
+    );
+    await button('收起 AI 对话');
+    await wait("document.querySelector('.inspector-split').dataset.aiExpanded==='false'");
+    if (
+      !(await evaluate(
+        "window.__dashboardInput===document.querySelector('[data-testid=assistant-input]') && window.__dashboardInput.value==='合成未发送草稿，伸缩后保留'",
+      ))
+    )
+      throw new Error('Dashboard resizing replaced the conversation or lost its draft');
+    const row = await evaluate(
+      "document.querySelector('[data-important-task]').dataset.importantTask",
+    );
+    await evaluate("document.querySelector('[data-important-task]').click()");
+    await wait(
+      `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(row)}`,
+    );
+    const taskAi = await evaluate(
+      "document.querySelector('.inspector-ai-region').getBoundingClientRect().toJSON()",
+    );
+    if (Math.abs(taskAi.width - 300) > 1 || Math.abs(taskAi.height - 164) > 1)
+      throw new Error('Task and dashboard compact AI geometry differs');
+    await captureRenderer('dashboard-important-task.png');
+    await evaluate("document.querySelector('[data-nav=projects]').click()");
+    await wait("document.querySelector('[aria-label=搜索项目]')");
+    await input('搜索项目', '项目创建与重启验收');
+    await wait("document.querySelectorAll('[data-project-id]').length===1");
+    assertNoRuns();
+    writeFileSync(
+      join(root, 'dashboard.json'),
+      JSON.stringify(
+        {
+          status: 'PASS_REAL',
+          isolation,
+          measurements,
+          taskAi,
+          providerDispatches: 0,
+          unverified: ['Physical Chinese IME', 'Real Provider', 'Lawyer acceptance'],
+        },
+        null,
+        2,
+      ),
+    );
+    window.setBounds(original);
+  };
   const projectInput = `${projectComposer} [data-testid=assistant-input]`;
   const projectComposerReady = `(() => {
     const form = document.querySelector('${projectComposer}');
@@ -3194,6 +3317,7 @@ export async function runProjectDemo(
       await capture('project-created.png');
       await button('返回项目列表');
       await wait("document.querySelector('.project-title-link')");
+      if (process.env.CASELITE_PROJECT_DASHBOARD === '1') await checkDashboard();
       const originalBounds = window.getBounds();
       const layouts = [];
       for (const width of [640, 1440]) {
@@ -3228,6 +3352,7 @@ export async function runProjectDemo(
       const title = restored ? '验收项目（已编辑）' : '项目创建与重启验收';
       if (restored) await select('筛选项目状态', 'archived');
       await wait("document.querySelector('.project-title-link')");
+      if (process.env.CASELITE_PROJECT_DASHBOARD === '1') await input('搜索项目', title);
       await button(title);
       await wait(
         `document.querySelector('[aria-label=编辑项目名称]')?.value===${JSON.stringify(title)}`,

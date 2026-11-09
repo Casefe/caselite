@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import type { Matter } from '../../../preload/caselite-api';
+import type { Matter, Task } from '../../../preload/caselite-api';
+import { attentionDate, attentionGroup } from '../../shared/data/calendar-dates';
 import ReadTable from '../../shared/ui/ReadTable';
 import { Icon } from '../../shared/ui/Icon';
 import { PriorityGlyph } from '../../ui/TaskListGlyph';
@@ -53,6 +54,8 @@ export default function ProjectList({
   onOpen,
   onPreview,
   onFinance,
+  tasks = [],
+  datesUnavailable = false,
 }: {
   projects: Matter[];
   groupByStatus?: boolean;
@@ -65,6 +68,8 @@ export default function ProjectList({
   onOpen(project: Matter): void;
   onPreview(project: Matter): void;
   onFinance?(projectId: string): void;
+  tasks?: Task[];
+  datesUnavailable?: boolean;
 }) {
   const visible = { ...projectListDefaults, ...columns };
   const sortHeader = (label: string, key: string) => (
@@ -89,6 +94,7 @@ export default function ProjectList({
         <button
           className="project-title-link"
           title={project.title}
+          aria-label={project.title}
           disabled={disabled}
           onClick={(event) => {
             event.stopPropagation();
@@ -98,7 +104,10 @@ export default function ProjectList({
           <span className="project-list-symbol">
             <Icon name="folder" size={16} />
           </span>
-          <span>{project.title}</span>
+          <span className="project-list-title-text">
+            <strong>{project.title}</strong>
+            <small title={project.id}>{project.id.slice(0, 8)}</small>
+          </span>
         </button>
       ),
     },
@@ -174,8 +183,36 @@ export default function ProjectList({
     ),
   });
   // 尚未接入的法律属性保持空值，不用目标日、健康度等近似字段冒充。
-  add('client', { size: 120, header: '客户', cell: () => null });
-  add('nextDate', { size: 124, header: '下一关键日期', cell: () => null });
+  add('client', {
+    size: 120,
+    header: '客户',
+    cell: () => <span className="project-list-unset">—</span>,
+  });
+  add('nextDate', {
+    size: 124,
+    header: '下一关键日期',
+    cell: ({ row: { original: project } }) => {
+      const members = tasks.filter((task) => task.matter_id === project.id);
+      // 只有完整项目任务投影才能判断最早日期；加载中的子集不冒充完整结果。
+      if (datesUnavailable || members.length !== project.task_count)
+        return <span className="project-list-unset">正在更新</span>;
+      const important = members.filter(
+        (task) => task.calendar?.important && !['done', 'canceled'].includes(task.status),
+      );
+      const next = important
+        .filter((task) => attentionDate(task))
+        .sort((a, b) => attentionDate(a)!.localeCompare(attentionDate(b)!))[0];
+      const date = next && attentionDate(next);
+      return next && date ? (
+        <span className="project-list-date">
+          <time dateTime={date}>{date}</time>
+          <small>{attentionGroup(next)}</small>
+        </span>
+      ) : (
+        <span className="project-list-unset">{important.length ? '日期待确认' : '—'}</span>
+      );
+    },
+  });
   add('risk', { size: 120, header: '风险／异常', cell: () => null });
   add('balance', {
     size: 124,
@@ -206,6 +243,14 @@ export default function ProjectList({
         }))
         .filter((group) => group.data.length > 0)
     : [{ label: '', data: projects }];
+  const dashboardOrder = ['title', 'client', 'domain', 'nextDate', 'owner', 'balance'];
+  const orderedDefinitions = [...definitions].sort((a, b) => {
+    const rank = (column: ColumnDef<Matter>) => {
+      const index = dashboardOrder.indexOf(column.id ?? '');
+      return index < 0 ? dashboardOrder.length : index;
+    };
+    return rank(a) - rank(b);
+  });
   return (
     <div className="project-list-groups">
       {groups.map(({ label, data }) => (
@@ -217,7 +262,7 @@ export default function ProjectList({
           )}
           <ReadTable
             data={data}
-            columns={definitions}
+            columns={orderedDefinitions}
             sized
             getRowId={(project) => project.id}
             label={label ? `项目列表：${label}` : '项目列表'}
