@@ -92,6 +92,11 @@ export default function DocumentInspector({
           }
         >
           <SidebarAgent
+            document={{
+              id: document.id,
+              revision: document.body_revision,
+              archived: !!document.archived_at,
+            }}
             taskId={document.archived_at ? undefined : document.task_id}
             blocked={blocked}
             unavailable={document.archived_at ? '文档已归档，恢复后可使用 AI 对话。' : undefined}

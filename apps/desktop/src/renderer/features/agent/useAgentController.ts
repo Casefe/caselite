@@ -5,6 +5,7 @@ import type {
   MaterialPreview,
   AgentModel,
   AgentRun,
+  AgentPageReference,
   AgentRequest,
   AgentResponse,
 } from '../../../preload/caselite-api';
@@ -24,6 +25,7 @@ export type AgentControllerOptions = {
   onDraft?(value: RichDraft): void;
   onConversationChange?(hasRuns: boolean): void;
   project?: { version: number; archived: boolean };
+  page?: { version: string; archived: boolean };
 };
 
 export function useAgentController({
@@ -32,8 +34,22 @@ export function useAgentController({
   onDraft,
   onConversationChange,
   project,
+  page,
 }: AgentControllerOptions) {
-  const materials = useMaterials(scope, !project);
+  const withoutMaterials = Boolean(project || scope.startsWith('document:'));
+  const materials = useMaterials(scope, !withoutMaterials);
+  const [pageState, setPageState] = useState<{
+    version: string | undefined;
+    value: AgentPageReference;
+  }>();
+  const pageReference = pageState?.version === page?.version ? pageState?.value : undefined;
+  const setPageReference = (value?: AgentPageReference) =>
+    setPageState(value ? { version: page?.version, value } : undefined);
+  const [pageRequestVersion, setPageRequestVersion] = useState<string>();
+  const pageLoading = page !== undefined && pageRequestVersion === page.version;
+  const setPageLoading = (loading: boolean) =>
+    setPageRequestVersion(loading ? page?.version : undefined);
+  const pageGeneration = useRef(0);
   const [preview, setProjectPreview] = useState<{
     version: number;
     value: NonNullable<Extract<AgentResponse, { ok: true }>['project_preview']>;
@@ -81,7 +97,7 @@ export function useAgentController({
   const acknowledge = (request: Extract<AgentRequest, { operation: 'start' }>) => {
     if (submissions.get(scope)?.run_id !== request.run_id) return;
     const context = confirmedMaterials.get(scope);
-    if (!project)
+    if (!withoutMaterials)
       current.current.materials.acknowledge(
         context?.selections.map((item) => item.source_id) ?? [],
       );
@@ -101,7 +117,7 @@ export function useAgentController({
     const result = await window.caselite.agent({ protocol_version: 1, operation: 'read', scope });
     if (!alive.current) return;
     if (result.ok) {
-      setRuns(result.runs);
+      setRuns(result.runs.filter((run) => run.scope === scope));
       setProviders(result.providers);
       setModel(result.model);
       setCredentialReading(Boolean(result.credential_reading));
@@ -121,7 +137,7 @@ export function useAgentController({
         });
         if (stopped) return;
         if (result.ok) {
-          setRuns(result.runs);
+          setRuns(result.runs.filter((run) => run.scope === scope));
           setProviders(result.providers);
           setModel(result.model);
           setCredentialReading(Boolean(result.credential_reading));
@@ -180,10 +196,41 @@ export function useAgentController({
   useEffect(() => {
     if (previewStarted.current) void reloadPreview.current();
   }, [projectVersion]);
+  const loadPageReference = async (selected_text?: string) => {
+    if (!page || page.archived || pending || unknown || active) return;
+    const generation = ++pageGeneration.current;
+    setPageLoading(true);
+    setPageReference(undefined);
+    try {
+      const result = await window.caselite.agent({
+        protocol_version: 1,
+        operation: 'preview_page',
+        scope,
+        ...(selected_text ? { selected_text } : {}),
+      });
+      if (!alive.current || generation !== pageGeneration.current) return;
+      if (result.ok && result.page_preview) setPageReference(result.page_preview);
+      else setError(result.ok ? '当前页面无法引用。' : result.message);
+    } catch {
+      if (alive.current && generation === pageGeneration.current)
+        setError('页面引用读取失败，请重新点击输入框。');
+    } finally {
+      if (alive.current && generation === pageGeneration.current) setPageLoading(false);
+    }
+  };
+  useLayoutEffect(() => {
+    pageGeneration.current++;
+  }, [scope, page?.version]);
   async function send() {
     if (sending.current || composing.current || active) return;
     const previous = submissions.get(scope);
-    if (project && !previous && (archived || !projectPreview || projectLoading)) return;
+    if (
+      !previous &&
+      (page
+        ? page.archived || !pageReference || pageLoading
+        : project && (archived || !projectPreview || projectLoading))
+    )
+      return;
     const prompt = previous?.prompt ?? draft.text.trim();
     if (!prompt || prompt.length > 4000) return;
     if (!previous && credentialReading) {
@@ -208,7 +255,9 @@ export function useAgentController({
     let request = previous;
     try {
       if (!request) {
-        const context = project ? undefined : await materials.preview(prompt, model, abort.signal);
+        const context = withoutMaterials
+          ? undefined
+          : await materials.preview(prompt, model, abort.signal);
         if (!alive.current || generation !== preparationGeneration.current) return;
         request = {
           protocol_version: 1,
@@ -219,7 +268,11 @@ export function useAgentController({
           prompt,
           confirmed: true,
           ...(context ? { context_id: context.id } : {}),
-          ...(projectPreview ? { project_fingerprint: projectPreview.fingerprint } : {}),
+          ...(pageReference
+            ? { page_context_id: pageReference.id }
+            : projectPreview
+              ? { project_fingerprint: projectPreview.fingerprint }
+              : {}),
         };
         submissions.set(scope, request);
         if (revision !== undefined) submissionRevisions.set(request.run_id, revision);
@@ -233,7 +286,7 @@ export function useAgentController({
         if (result.runs.some((run) => run.id === request!.run_id)) acceptResponse.current(request);
         else if (project && submissions.get(scope)?.run_id === request.run_id) setUnknown(true);
         if (alive.current) {
-          setRuns(result.runs);
+          setRuns(result.runs.filter((run) => run.scope === scope));
           setProviders(result.providers);
           setModel(result.model);
           setCredentialReading(Boolean(result.credential_reading));
@@ -245,8 +298,10 @@ export function useAgentController({
       } else {
         const refreshProject =
           result.code === 'STALE_PROJECT_CONTEXT' || result.code === 'ARCHIVED';
+        if (result.code === 'STALE_PAGE_CONTEXT') setPageReference(undefined);
         const uncertain =
-          result.code === 'RESULT_UNKNOWN' || (Boolean(previous) && !refreshProject);
+          result.code === 'RESULT_UNKNOWN' ||
+          (Boolean(previous) && !refreshProject && result.code !== 'STALE_PAGE_CONTEXT');
         if (refreshProject) void loadProjectPreview();
         if (submissions.get(scope)?.run_id === request.run_id) {
           if (!uncertain) {
@@ -275,7 +330,7 @@ export function useAgentController({
       setModel(result.model);
       setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
-      if ('scope' in request) setRuns(result.runs);
+      if ('scope' in request) setRuns(result.runs.filter((run) => run.scope === scope));
       setError('');
     } else setError(result.message);
   };
@@ -324,6 +379,14 @@ export function useAgentController({
     }
   };
   return {
+    pageReference,
+    pageLoading,
+    loadPageReference,
+    removePageReference: () => {
+      pageGeneration.current++;
+      setPageReference(undefined);
+      setPageLoading(false);
+    },
     materials,
     projectLoading,
     projectError,
