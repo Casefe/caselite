@@ -21,3 +21,4 @@ export * from './finance';
 export * from './contacts';
 export * from './local-preferences';
 export * from './important-date';
+export * from './legal-consent';

@@ -44,6 +44,10 @@ import { createCatalogApplication, createFinanceApplication } from '@caselite/ap
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { createLegalConsentApplication } from '@caselite/application';
+import { createLegalAcceptance, loadLegalBundle } from './adapters/legal-acceptance';
+import { showLegalConsent } from './legal-consent-window';
+import { observeLegalConsentDemo } from './legal-consent-demo';
 import { createLocalPreferencesApplication } from '@caselite/application';
 import { registerLocalPreferencesIpc } from './ipc/register-local-preferences-ipc';
 import { createAgentApplication } from '@caselite/application';
@@ -68,7 +72,7 @@ import {
 import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 
@@ -92,6 +96,9 @@ function reportStartupFailure(): void {
   dialog.showErrorBox('CaseLite 启动失败', '无法加载工程骨架页面。请关闭应用并检查本地构建配置。');
   app.quit();
 }
+
+// 协议窗口到工作台之间可能短暂没有窗口；Windows/Linux不能因此提前退出。
+let startingProductWindow = true;
 
 async function createWindow(
   show = true,
@@ -142,6 +149,7 @@ async function createWindow(
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
+  startingProductWindow = false;
   credentialWindowLoaded();
   if (show && !window.isDestroyed()) window.show();
   return window;
@@ -560,6 +568,15 @@ const taskDemoPhase = process.env.CASELITE_TASK_DEMO;
 if (taskDemoPhase) {
   if (
     ![
+      'legal-accept',
+      'legal-read',
+      'legal-reject',
+      'legal-close',
+      'legal-write-failure',
+      'legal-corrupt',
+      'legal-update',
+      'legal-preview',
+      'legal-workbench',
       'delivery-preview',
       'document-review-preview',
       'document-review-write',
@@ -731,9 +748,44 @@ app
       app.exit(result.configured ? 0 : 2);
       return;
     }
-    registerIpcSpike();
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
+    // 普通入口必须先确认协议；业务IPC、案件库、凭据和Agent都在确认后初始化。
+    const accepted = await showLegalConsent(
+      createLegalConsentApplication(
+        createLegalAcceptance(taskRoot),
+        loadLegalBundle(
+          app.isPackaged
+            ? join(process.resourcesPath, 'legal')
+            : resolve(app.getAppPath(), '../../legal'),
+        ),
+      ),
+      taskDemoRoot
+        ? (window) => observeLegalConsentDemo(window, taskDemoRoot!, taskDemoPhase!)
+        : undefined,
+    );
+    if (
+      taskDemoRoot &&
+      taskDemoPhase?.startsWith('legal-') &&
+      taskDemoPhase !== 'legal-preview' &&
+      taskDemoPhase !== 'legal-workbench'
+    ) {
+      writeFileSync(
+        join(taskDemoRoot, taskDemoPhase + '.json'),
+        JSON.stringify({
+          accepted,
+          businessDatabaseCreated: existsSync(join(taskRoot, 'caselite.sqlite')),
+          acceptanceActor: 'synthetic harness; automated UI actions when prompting',
+        }),
+      );
+      app.exit(0);
+      return;
+    }
+    if (!accepted) {
+      app.quit();
+      return;
+    }
+    registerIpcSpike();
     registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
     if (taskDemoPhase === 'delivery-preview' && taskDemoRoot) {
       // 原型只使用合成内存状态；在初始化业务库、凭据和Agent前返回。
@@ -902,6 +954,7 @@ app
       });
     };
     const baseAgentCredentials =
+      taskDemoPhase?.startsWith('legal-') ||
       performanceDemo ||
       documentReviewDemo ||
       financeDemo ||
@@ -1309,6 +1362,40 @@ app
       return;
     }
     app.on('will-quit', () => taskStore.close());
+    if (taskDemoRoot && taskDemoPhase === 'legal-workbench') {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      const window = await createWindow();
+      let ready = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        ready = await window.webContents.executeJavaScript(
+          "!!window.caselite && !window.caseliteLegal && !!document.querySelector('.workbench') && ['grid', 'flex'].includes(getComputedStyle(document.querySelector('.workbench')).display) && document.body.textContent.includes('首页') && !document.body.textContent.includes('正在读取本地任务')",
+        );
+        if (ready) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (!ready) throw new Error('Workbench did not open after legal acceptance');
+      const response = await window.webContents.executeJavaScript(
+        "window.caselite.task({ protocol_version: 1, operation: 'list' })",
+      );
+      if (!response.ok) throw new Error('Workbench business IPC failed after acceptance');
+      writeFileSync(
+        join(taskDemoRoot, 'legal-workbench.png'),
+        (await window.webContents.capturePage()).toPNG(),
+      );
+      writeFileSync(
+        join(taskDemoRoot, 'legal-workbench.json'),
+        JSON.stringify({
+          accepted: true,
+          workbenchVisible: ready,
+          taskQueryOk: response.ok,
+          businessDatabaseCreated: existsSync(join(taskRoot, 'caselite.sqlite')),
+        }),
+      );
+      app.quit();
+      return;
+    }
     if (
       taskDemoRoot &&
       (taskDemoPhase === 'finance-write' ||
@@ -1347,6 +1434,7 @@ app
       taskDemoRoot &&
       taskDemoPhase &&
       taskDemoPhase !== 'preview' &&
+      taskDemoPhase !== 'legal-preview' &&
       taskDemoPhase !== 'agent-preview'
     ) {
       await runTaskDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
@@ -1388,5 +1476,5 @@ app
   });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin' && !startingProductWindow) app.quit();
 });
