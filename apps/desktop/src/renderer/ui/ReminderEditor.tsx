@@ -52,8 +52,10 @@ function ReminderEditorState({
     [committed, setCommitted] = useState(false);
   useEffect(() => {
     if (!compact) return;
-    if (editing) dialog.current?.showModal();
-    else dialog.current?.close();
+    const element = dialog.current;
+    if (!element) return;
+    if (editing && !element.open) element.showModal();
+    else if (!editing && element.open) element.close();
   }, [compact, editing]);
   const dateInput = useRef<HTMLInputElement>(null),
     timeInput = useRef<HTMLInputElement>(null);
