@@ -91,6 +91,7 @@ import {
 import {
   openOfflineProbePort,
   openToolchainProbe,
+  integrationMigrations,
   toolchainProbe,
   openTaskStore,
 } from '@caselite/local-db';
@@ -472,7 +473,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 25
+      result.value?.migration_count !== integrationMigrations.length
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
