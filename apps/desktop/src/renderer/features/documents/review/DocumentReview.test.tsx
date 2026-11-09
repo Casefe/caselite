@@ -122,6 +122,7 @@ function mount(variant: 'review' | 'assistant' = 'review', withToolbar = false) 
   );
   return { editor, doc, agent, onSaved, view, skillHandle };
 }
+// 保留既有门禁识别标题；本轮用户授权已改为点技能即执行，打开菜单仍不派发。
 it.each(['review', 'assistant'] as const)(
   'loads a writing skill into %s without preparing a run and keeps selection intact',
   async (variant) => {
@@ -131,12 +132,20 @@ it.each(['review', 'assistant'] as const)(
       editor.view.dom.focus();
       editor.commands.setTextSelection({ from: 1, to: 5 });
     });
-    await screen.findByRole('button', { name: '✧ 技能' });
+    await screen.findByRole('button', { name: '更多技能…' });
     const before = Y.encodeStateAsUpdate(doc);
-    fireEvent.contextMenu(editor.view.dom, { clientX: 200, clientY: 200 });
-    await screen.findByRole('menu', { name: '写作技能' });
-    expect(screen.getAllByRole('menuitem')).toHaveLength(5);
-    fireEvent.click(screen.getByRole('menuitem', { name: '提升法律表达' }));
+    const shortcuts = screen.getByRole('region', { name: '常用写作技能' });
+    const panel = shortcuts.closest('.selection-menu-panel')!;
+    expect(panel.querySelector('[aria-label="选区格式"]')).toBeTruthy();
+    expect(
+      [...shortcuts.querySelectorAll('.writing-skill-quick')].map((b) =>
+        b.textContent?.replace('↗', ''),
+      ),
+    ).toEqual(['提升法律表达', '校对与一致性检查', '解释条款']);
+    expect(agent.mock.calls.every(([r]) => r.operation === 'read')).toBe(true);
+    const quick = screen.getByRole('button', { name: '提升法律表达', exact: true });
+    fireEvent.click(quick);
+    fireEvent.click(quick);
     await waitFor(() =>
       expect(
         screen.getByRole<HTMLTextAreaElement>('textbox', { name: '本轮问题' }).value,
@@ -145,12 +154,30 @@ it.each(['review', 'assistant'] as const)(
     expect(screen.getByRole('button', { name: '收起 AI 对话' })).toBeTruthy();
     expect(editor.state.selection.toJSON()).toEqual({ type: 'text', anchor: 1, head: 5 });
     expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
-    expect(agent.mock.calls.every(([r]) => r.operation === 'read')).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: '发送本轮审阅' }));
     await screen.findByText('确认写回');
     expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(1);
+    expect(agent.mock.calls.find(([r]) => r.operation === 'start')?.[0]).toMatchObject({
+      prompt: expect.stringContaining('改进所选文字'),
+    });
     expect(agent.mock.calls.find(([r]) => r.operation === 'preview_review')?.[0]).toMatchObject({
       range: { text: '原文条款', from: 0, to: 4 },
+    });
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+    fireEvent.click(screen.getByRole('button', { name: '拒绝', exact: true }));
+    fireEvent.change(screen.getByRole('textbox', { name: '本轮问题' }), {
+      target: { value: '不要串入这条未发送的问题' },
+    });
+    await act(async () => {
+      editor.view.dom.focus();
+      editor.commands.setTextSelection({ from: 1, to: 5 });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '更多技能…' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '摘要与要点提炼' }));
+    await screen.findByRole('button', { name: '确认写回' });
+    const starts = agent.mock.calls.filter(([r]) => r.operation === 'start');
+    expect(starts).toHaveLength(2);
+    expect(starts.at(-1)?.[0]).toMatchObject({
+      prompt: expect.stringContaining('精简概括所选文字'),
     });
     expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
   },
@@ -168,7 +195,7 @@ it('closes stale skill menus on selection or document changes, keeps IME native,
     to: 5,
     revision: 1,
   };
-  fireEvent.contextMenu(editor.view.dom);
+  fireEvent.click(screen.getByRole('button', { name: '更多技能…' }));
   await screen.findByRole('menu', { name: '写作技能' });
   await act(async () => {
     editor.commands.setTextSelection({ from: 7, to: 9 });
@@ -178,7 +205,7 @@ it('closes stale skill menus on selection or document changes, keeps IME native,
     skillHandle.current?.pick(stale);
   });
   expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '本轮问题' }).value).toBe('');
-  fireEvent.contextMenu(editor.view.dom);
+  fireEvent.click(screen.getByRole('button', { name: '更多技能…' }));
   await screen.findByRole('menu', { name: '写作技能' });
   await act(async () => {
     editor.commands.insertContent('新');
@@ -233,43 +260,50 @@ it.each(['review', 'assistant'] as const)(
     );
   },
 );
-it('blocks stale content during asynchronous input validation and preserves the question', async () => {
-  const { editor, agent } = mount();
-  await act(async () => {
-    editor.commands.setTextSelection({ from: 1, to: 5 });
-  });
-  const fallback = agent.getMockImplementation()!;
-  let finish!: (r: AgentResponse) => void;
-  agent.mockImplementation((r) =>
-    r.operation === 'preview_review'
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : fallback(r),
-  );
-  fireEvent.change(screen.getByRole('textbox', { name: '本轮问题' }), {
-    target: { value: '保留本轮问题' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: '发送本轮审阅' }));
-  await waitFor(() => expect(finish).toBeTypeOf('function'));
-  await act(async () => {
-    editor.commands.insertContent('本地新字');
-    finish({
-      ok: true,
-      runs: [],
-      providers: { openai: true },
-      model: 'gpt-4.1-mini',
-      review_preview: {
-        id: previewId,
-        range: { ...identity, paragraph: 0, from: 0, to: 4, text: '原文条款' },
-      },
+it.each([false, true])(
+  'blocks stale content during asynchronous input validation and preserves the question',
+  async (shortcut) => {
+    const { editor, agent } = mount('review', shortcut);
+    await waitFor(() => expect(editor.isInitialized).toBe(true));
+    await act(async () => {
+      editor.view.dom.focus();
+      editor.commands.setTextSelection({ from: 1, to: 5 });
     });
-  });
-  expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
-  expect((screen.getByRole('textbox', { name: '本轮问题' }) as HTMLTextAreaElement).value).toBe(
-    '保留本轮问题',
-  );
-});
+    const fallback = agent.getMockImplementation()!;
+    let finish!: (r: AgentResponse) => void;
+    agent.mockImplementation((r) =>
+      r.operation === 'preview_review'
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : fallback(r),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: '本轮问题' }), {
+      target: { value: '保留本轮问题' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: shortcut ? '提升法律表达' : '发送本轮审阅', exact: true }),
+    );
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    await act(async () => {
+      editor.commands.insertContent('本地新字');
+      finish({
+        ok: true,
+        runs: [],
+        providers: { openai: true },
+        model: 'gpt-4.1-mini',
+        review_preview: {
+          id: previewId,
+          range: { ...identity, paragraph: 0, from: 0, to: 4, text: '原文条款' },
+        },
+      });
+    });
+    expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
+    expect(
+      (screen.getByRole('textbox', { name: '本轮问题' }) as HTMLTextAreaElement).value,
+    ).toContain(shortcut ? '改进所选文字' : '保留本轮问题');
+  },
+);
 it('tracks the acknowledged Yjs update in Tiptap undo and redo without rebuilding the document', () => {
   const { editor, doc } = mount();
   const state = reviewBodyRange(

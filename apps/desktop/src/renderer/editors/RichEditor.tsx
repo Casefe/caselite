@@ -262,7 +262,6 @@ function SelectionFormatTools({ editor, actions }: { editor: Editor; actions?: R
     };
   }, [editor, element]);
   useEffect(() => {
-    if (!active) return;
     // 正文和紧凑描述使用不同滚动祖先；交给官方插件监听，不能只跟随window。
     let parent = editor.view.dom.parentElement;
     let scrollTarget: HTMLElement | Window = window;
@@ -288,12 +287,14 @@ function SelectionFormatTools({ editor, actions }: { editor: Editor; actions?: R
       editor.unregisterPlugin(pluginKey);
       element.remove();
     };
-  }, [editor, element, pluginKey, active]);
+  }, [editor, element, pluginKey]);
   return createPortal(
+    // 失焦仅隐藏内容，不注销插件；既有焦点隔离保留，展开右栏不会重投影正文。
     <div
+      className={actions ? 'selection-menu-panel' : undefined}
+      hidden={!active}
       onBlur={(event) => {
         const next = event.relatedTarget;
-        // 菜单按钮属于当前选区；离开菜单和正文时必须收起，不能把旧选区留在另一对象上。
         if (!(
           next instanceof Node &&
           (element.contains(next) || (!editor.isDestroyed && editor.view.dom.contains(next)))

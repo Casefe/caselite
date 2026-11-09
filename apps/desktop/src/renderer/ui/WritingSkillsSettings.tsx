@@ -17,8 +17,8 @@ export default function WritingSkillsSettings({ disabled }: { disabled: boolean 
     <fieldset disabled={disabled} className="writing-skills-settings">
       <legend>自定义写作技能</legend>
       <p className="editor-settings-note">
-        选中文字后从右键或选区菜单使用。选择技能会填入右侧 AI
-        指令，发送后生成候选，确认后才修改正文。最多 20 项。
+        选中文字后从右键或选区菜单使用。前三个已启用技能直接展示，点击即开始 AI
+        分析，确认候选后才修改正文。最多 20 项。
       </p>
       {skills.map((skill, index) => (
         <section className="writing-skill-card" key={skill.id} aria-label={`技能 ${index + 1}`}>

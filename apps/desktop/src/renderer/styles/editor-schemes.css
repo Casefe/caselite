@@ -199,3 +199,62 @@
     padding: 28px 20px;
   }
 }
+.selection-menu-panel {
+  box-sizing: border-box;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--theme-panel);
+  box-shadow: 0 6px 24px #0002;
+}
+.selection-menu-panel > .format-bar--floating {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.writing-skills-shortcuts {
+  padding-top: 5px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.writing-skills-shortcuts-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px 4px;
+  font-size: 11px;
+  color: var(--theme-secondary);
+}
+.writing-skills-shortcuts button {
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+}
+.writing-skills-shortcuts > button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+}
+.writing-skills-shortcuts button:hover,
+.writing-skills-shortcuts button:focus-visible {
+  background: var(--theme-subtle);
+}
+.writing-skills-shortcuts button:disabled {
+  opacity: 0.4;
+}
+.writing-skills-shortcuts .writing-skills-trigger,
+.writing-skills-shortcuts > p {
+  color: var(--theme-secondary);
+  font-size: 12px;
+}
