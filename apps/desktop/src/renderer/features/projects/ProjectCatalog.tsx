@@ -16,6 +16,7 @@ import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../pre
 import ProjectEditor from './ProjectEditor';
 
 import SidebarAgent from '../../ui/SidebarAgent';
+import InspectorLayout from '../../ui/InspectorLayout';
 import { useCatalog } from '../../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
@@ -1084,84 +1085,88 @@ export default function ProjectCatalog({
         hidden={!editor && !listInspectorOpen}
       >
         {p && !sourceUnavailable ? (
-          <>
-            <ProjectPropertyEditor
-              key={p.id}
-              project={p}
-              sidebar={!editor}
-              pending={c.pending}
-              disabled={
-                navigationPending ||
-                reading ||
-                creating ||
-                bodyCommand ||
-                discussionDirty ||
-                planningDirty ||
-                (!propertyDirty && (c.pending || c.unknown))
-              }
-              unknown={c.unknown && !bodyCommand}
-              bodyDirty={bodyDirty}
-              onDirty={(value, lifecycle = false) => {
-                setLifecycleDraft(value && lifecycle);
-                if (value) setSelected(p.id);
-                setPropertyDirty(value);
-              }}
-              onReload={c.load}
-              onRetry={c.retry}
-              onSave={(base, values, onCommitted) =>
-                command(
-                  catalogMutation({
-                    operation: 'update_project' as const,
-                    id: base.id,
-                    expected_version: base.version,
-                    expected_body_revision: base.body_revision,
-                    ...values,
-                  }),
-                  (r) => onCommitted(acknowledge(r, base)),
-                )
-              }
-              onArchive={(base, archived, onCommitted) =>
-                command(
-                  catalogMutation({
-                    operation: 'archive_project' as const,
-                    id: base.id,
-                    expected_version: base.version,
-                    archived,
-                  }),
-                  (r) => {
-                    const confirmed = acknowledge(r, base);
-                    if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
-                    onCommitted(confirmed);
-                  },
-                )
-              }
+          <InspectorLayout
+            className="project-ai-content"
+            blocked={blocked}
+            properties={
+              <div className="project-sidebar-properties">
+                <ProjectPropertyEditor
+                  key={p.id}
+                  project={p}
+                  sidebar={!editor}
+                  pending={c.pending}
+                  disabled={
+                    navigationPending ||
+                    reading ||
+                    creating ||
+                    bodyCommand ||
+                    discussionDirty ||
+                    planningDirty ||
+                    (!propertyDirty && (c.pending || c.unknown))
+                  }
+                  unknown={c.unknown && !bodyCommand}
+                  bodyDirty={bodyDirty}
+                  onDirty={(value, lifecycle = false) => {
+                    setLifecycleDraft(value && lifecycle);
+                    if (value) setSelected(p.id);
+                    setPropertyDirty(value);
+                  }}
+                  onReload={c.load}
+                  onRetry={c.retry}
+                  onSave={(base, values, onCommitted) =>
+                    command(
+                      catalogMutation({
+                        operation: 'update_project' as const,
+                        id: base.id,
+                        expected_version: base.version,
+                        expected_body_revision: base.body_revision,
+                        ...values,
+                      }),
+                      (r) => onCommitted(acknowledge(r, base)),
+                    )
+                  }
+                  onArchive={(base, archived, onCommitted) =>
+                    command(
+                      catalogMutation({
+                        operation: 'archive_project' as const,
+                        id: base.id,
+                        expected_version: base.version,
+                        archived,
+                      }),
+                      (r) => {
+                        const confirmed = acknowledge(r, base);
+                        if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
+                        onCommitted(confirmed);
+                      },
+                    )
+                  }
+                />
+                {editor && (
+                  <ProjectPlanning
+                    key={p.id}
+                    project={p}
+                    tasks={members}
+                    disabled={
+                      navigationPending ||
+                      reading ||
+                      creating ||
+                      bodyDirty ||
+                      propertyDirty ||
+                      discussionDirty
+                    }
+                    pending={c.pending || c.unknown}
+                    onDirty={setPlanningDirty}
+                    execute={command}
+                  />
+                )}
+              </div>
+            }
+          >
+            <SidebarAgent
+              project={{ id: p.id, version: p.version, archived: Boolean(p.archived_at) }}
+              blocked={blocked}
             />
-            {editor && (
-              <ProjectPlanning
-                key={p.id}
-                project={p}
-                tasks={members}
-                disabled={
-                  navigationPending ||
-                  reading ||
-                  creating ||
-                  bodyDirty ||
-                  propertyDirty ||
-                  discussionDirty
-                }
-                pending={c.pending || c.unknown}
-                onDirty={setPlanningDirty}
-                execute={command}
-              />
-            )}
-            <section className="project-inspector-section project-ai-content" aria-label="AI 对话">
-              <h3>AI 对话</h3>
-              <SidebarAgent
-                project={{ id: p.id, version: p.version, archived: Boolean(p.archived_at) }}
-                blocked={blocked}
-              />
-            </section>
-          </>
+          </InspectorLayout>
         ) : (
           <p>选择项目查看实际属性。</p>
         )}

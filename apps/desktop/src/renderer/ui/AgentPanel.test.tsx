@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { AgentRequest, AgentResponse, AgentRun } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
 import SidebarAgent from './SidebarAgent';
+import InspectorLayout from './InspectorLayout';
 import userEvent from '@testing-library/user-event';
 vi.stubGlobal(
   'ResizeObserver',
@@ -600,4 +601,84 @@ it('does not enter ordinary conversation layout for a date-only history', async 
   expect(changed).toHaveBeenLastCalledWith(false);
   expect(view.container.querySelector('.assistant-panel--conversation')).toBeNull();
   expect(screen.queryByText(/candidates/)).toBeNull();
+});
+
+it.each(['running', 'failed', 'reading', 'unknown'] as const)(
+  'resizing a %s sidebar preserves its controller and guards without extra IPC',
+  async (state) => {
+    const scope = '91919191-9191-4191-8191-919191919191';
+    const run: AgentRun = {
+      id: '92929292-9292-4292-8292-929292929292',
+      scope,
+      prompt: '历史问题',
+      output: '已有部分回答',
+      model: 'gpt-4.1-mini',
+      provider: 'openai',
+      status: state === 'running' ? 'running' : 'failed',
+      sequence: 1,
+      message: '合成运行状态',
+      usage: null,
+    };
+    const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+      if (request.operation === 'start') throw new Error('Unknown receipt');
+      return {
+        ...profile,
+        credential_reading: state === 'reading',
+        runs: state === 'reading' || state === 'unknown' ? [] : [run],
+      };
+    });
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(
+      <InspectorLayout properties={<input aria-label="属性" />}>
+        <SidebarAgent taskId={scope} />
+      </InspectorLayout>,
+    );
+    const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+    await waitFor(() => expect(agent).toHaveBeenCalled());
+    if (state === 'reading') await screen.findByText(/正在读取系统安全凭据/);
+    if (state === 'running') await screen.findByRole('button', { name: '停止生成' });
+    if (state === 'failed') await screen.findByText('已有部分回答');
+    fireEvent.change(input, { target: { value: '保留这份草稿' } });
+    if (state === 'unknown') {
+      fireEvent.submit(input.closest('form')!);
+      await screen.findByRole('button', { name: '核对原发送（同一标识）' });
+    }
+    const before = agent.mock.calls.length;
+    const toggle = screen.getByRole('button', { name: /展开 AI 对话|收起 AI 对话/ });
+    for (let i = 0; i < 4; i++) fireEvent.click(toggle);
+    expect(input).toBe(screen.getByLabelText('AI 工作要求'));
+    expect(input.value).toBe('保留这份草稿');
+    expect(agent.mock.calls).toHaveLength(before);
+    expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(
+      state === 'unknown' ? 1 : 0,
+    );
+    expect(agent.mock.calls.some(([r]) => r.operation === 'cancel')).toBe(false);
+  },
+);
+
+it('lets the attachment menu consume Escape before the layout collapses', async () => {
+  const agent = vi.fn(async () => profile);
+  const material = vi.fn(async () => ({ ok: true, materials: [], staged: null }));
+  window.caselite = { agent, material } as unknown as Window['caselite'];
+  render(
+    <InspectorLayout properties={null}>
+      <SidebarAgent taskId="93939393-9393-4393-8393-939393939393" />
+    </InspectorLayout>,
+  );
+  await waitFor(() => expect(agent).toHaveBeenCalled());
+  const user = userEvent.setup();
+  await user.click(screen.getByLabelText('AI 工作要求'));
+  const toggle = screen.getByRole('button', { name: '收起 AI 对话' });
+  await user.click(screen.getByRole('button', { name: '添加文件与材料' }));
+  expect(screen.getByRole('menu', { name: '添加文件与材料' })).toBeTruthy();
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('menu', { name: '添加文件与材料' })).toBeNull();
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  await user.keyboard('{Escape}');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(
+    agent.mock.calls.some(([request]) =>
+      ['start', 'cancel'].includes((request as AgentRequest).operation),
+    ),
+  ).toBe(false);
 });

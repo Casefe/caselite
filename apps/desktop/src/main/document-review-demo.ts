@@ -5,6 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, type BrowserWindow, session } from 'electron';
 import * as Y from 'yjs';
+import { checkSidebarResize, checkSidebarStreaming } from './project-demo';
 
 type Tasks = ReturnType<typeof createTaskApplication>;
 const titles = ['合成文档甲｜付款条款', '合成文档乙｜交付条款'];
@@ -59,10 +60,29 @@ export async function runDocumentReviewDemo(
     )
   )
     throw new Error('Document review demo isolation failed');
-  const window = await createWindow();
+  const window = await createWindow().catch((error: unknown) => {
+    writeFileSync(
+      join(root, 'review-window-failure.txt'),
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    );
+    throw error;
+  });
   window.webContents.setBackgroundThrottling(false);
   const wc = window.webContents;
-  const evaluate = (code: string) => wc.executeJavaScript(code);
+  const evaluate = async (code: string) => {
+    const result = await wc.executeJavaScript(`(async () => {
+      try { return {ok:true,value:await (${code})}; }
+      catch(error) { return {ok:false,error:String(error),stack:error.stack}; }
+    })()`);
+    if (!result.ok) {
+      writeFileSync(
+        join(root, 'review-evaluate-failure.txt'),
+        code + '\n' + result.error + '\n' + result.stack,
+      );
+      throw new Error(result.error);
+    }
+    return result.value;
+  };
   async function wait(condition: string) {
     for (let index = 0; index < 100; index++) {
       if (await evaluate(`Boolean(${condition})`)) return;
@@ -71,8 +91,17 @@ export async function runDocumentReviewDemo(
     writeFileSync(join(root, `${phase}-failure-ui.txt`), await evaluate('document.body.innerText'));
     throw new Error('Document review condition failed: ' + condition);
   }
-  const capture = async (name: string) =>
-    writeFileSync(join(root, name), (await wc.capturePage()).toPNG());
+  const capture = async (name: string) => {
+    try {
+      writeFileSync(join(root, name), (await wc.capturePage()).toPNG());
+    } catch (error) {
+      writeFileSync(
+        join(root, 'review-capture-failure.txt'),
+        name + '\n' + (error instanceof Error ? error.stack : String(error)),
+      );
+      throw error;
+    }
+  };
   const button = (label: string) =>
     `[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)})`;
   const click = async (label: string) => {
@@ -109,9 +138,11 @@ export async function runDocumentReviewDemo(
     await wait("document.querySelector('[aria-label=本轮引用]')");
   };
   const question = async (text: string) => {
+    wc.focus();
     await evaluate(`(() => {
       const input = document.querySelector('.document-review textarea');
       input.focus();
+      input.click();
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(text)});
       input.dispatchEvent(new InputEvent('input',{bubbles:true,data:${JSON.stringify(text)}}));
     })()`);
@@ -119,49 +150,59 @@ export async function runDocumentReviewDemo(
   const assertRunCount = (count: number) => {
     if (runs().length !== count) throw new Error('Unexpected local Run count');
   };
-  await wait("document.querySelector('[data-nav=settings]')");
-  await evaluate("document.querySelector('[data-nav=settings]').click()");
-  await wait("document.querySelector('.settings-page h2')?.textContent === '常规'");
-  await wait(`JSON.stringify([...document.querySelectorAll('[aria-label=设置分类] button')].map(b=>b.textContent)) ===
+  if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+    await wait("document.querySelector('[data-nav=settings]')");
+    await evaluate("document.querySelector('[data-nav=settings]').click()");
+    await wait("document.querySelector('.theme-option:nth-child(2):not(:disabled)')");
+    await evaluate("document.querySelector('.theme-option:nth-child(2)').click()");
+    await wait("document.documentElement.dataset.theme==='dark'");
+    await click('返回工作区');
+    await wait("document.querySelector('.agent-main')");
+  } else {
+    await wait("document.querySelector('[data-nav=settings]')");
+    await evaluate("document.querySelector('[data-nav=settings]').click()");
+    await wait("document.querySelector('.settings-page h2')?.textContent === '常规'");
+    await wait(`JSON.stringify([...document.querySelectorAll('[aria-label=设置分类] button')].map(b=>b.textContent)) ===
     JSON.stringify(['常规','账户','通知','工作台','安全','模型','编辑器','绘图工具','工作流','Skills','工作区','团队','成员','安全','MCP','套餐','导入导出','备份'])`);
-  if (phase === 'document-review-write') {
-    await capture('settings-workspace.png');
-    await click('安全');
-    await wait("document.querySelector('.settings-page').innerText.includes('保留原版本')");
-    await capture('settings-privacy.png');
-    await click('团队');
-    await wait("document.querySelector('.settings-page').innerText.includes('待开放')");
-    await capture('settings-account.png');
-    await click('模型');
-    await wait("document.querySelector('[data-provider=mineru]:not(:disabled)')");
-    await capture('settings-ai.png');
-    for (const id of ['mineru', 'yuandian']) {
-      await evaluate(`document.querySelector('[data-provider=${id}]').click()`);
-      await wait(`document.querySelector('[data-provider=${id}][aria-pressed=true]').textContent.includes('待接入') &&
+    if (phase === 'document-review-write') {
+      await capture('settings-workspace.png');
+      await click('安全');
+      await wait("document.querySelector('.settings-page').innerText.includes('保留原版本')");
+      await capture('settings-privacy.png');
+      await click('团队');
+      await wait("document.querySelector('.settings-page').innerText.includes('待开放')");
+      await capture('settings-account.png');
+      await click('模型');
+      await wait("document.querySelector('[data-provider=mineru]:not(:disabled)')");
+      await capture('settings-ai.png');
+      for (const id of ['mineru', 'yuandian']) {
+        await evaluate(`document.querySelector('[data-provider=${id}]').click()`);
+        await wait(`document.querySelector('[data-provider=${id}][aria-pressed=true]').textContent.includes('待接入') &&
         document.querySelector('.provider-detail input[type=password]').disabled &&
         document.querySelector('.provider-actions .primary').disabled`);
-    }
-    const [width, height] = window.getContentSize();
-    window.setContentSize(640, 500);
-    await wait(`innerWidth === 640 && [...document.querySelectorAll('.settings-navigation nav button, .settings-back')]
+      }
+      const [width, height] = window.getContentSize();
+      window.setContentSize(640, 500);
+      await wait(`innerWidth === 640 && [...document.querySelectorAll('.settings-navigation nav button, .settings-back')]
       .every(e => e.getBoundingClientRect().right <= innerWidth) &&
       document.querySelector('.settings-content').scrollWidth <= document.querySelector('.settings-content').clientWidth`);
-    await capture('settings-narrow.png');
-    window.setContentSize(width, height);
+      await capture('settings-narrow.png');
+      window.setContentSize(width, height);
+    }
+    await click('常规');
+    await wait(
+      "document.querySelectorAll('.theme-setting').length === 1 && document.querySelector('.theme-option:not(:disabled)')",
+    );
+    if (phase === 'document-review-write') {
+      await evaluate("document.querySelector('.theme-option:nth-child(2)').click()");
+    }
+    await wait(
+      "document.documentElement.dataset.theme === 'dark' && document.querySelector('.theme-option:nth-child(2)[aria-pressed=true]')",
+    );
+    await capture(`settings-appearance-${phase}.png`);
+    await click('返回工作区');
+    await wait("document.querySelector('.agent-main')");
   }
-  await click('常规');
-  await wait(
-    "document.querySelectorAll('.theme-setting').length === 1 && document.querySelector('.theme-option:not(:disabled)')",
-  );
-  if (phase === 'document-review-write') {
-    await evaluate("document.querySelector('.theme-option:nth-child(2)').click()");
-  }
-  await wait(
-    "document.documentElement.dataset.theme === 'dark' && document.querySelector('.theme-option:nth-child(2)[aria-pressed=true]')",
-  );
-  await capture(`settings-appearance-${phase}.png`);
-  await click('返回工作区');
-  await wait("document.querySelector('.agent-main')");
   await open(a.document_id);
   if (phase === 'document-review-read') {
     await wait(
@@ -207,8 +248,16 @@ export async function runDocumentReviewDemo(
   if (!emojiProbe) throw new Error('Native IPC accepted a split emoji or rejected an intact one');
 
   await select();
-  await question('合成问题：明确付款期限');
+  await question(
+    process.env.CASELITE_SIDEBAR_RESIZE === 'test'
+      ? '伸缩流式测试：明确付款期限'
+      : '合成问题：明确付款期限',
+  );
   assertRunCount(0);
+  if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+    await wait("document.querySelector('.inspector-split')?.dataset.aiExpanded==='true'");
+    await checkSidebarResize(window, root, 'review-draft');
+  }
   await evaluate(`(() => {
     const input=document.querySelector('.document-review textarea');
     input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'付'}));
@@ -219,6 +268,10 @@ export async function runDocumentReviewDemo(
   assertRunCount(0);
   await click('发送本轮审阅');
   await wait("document.querySelector('[aria-label=流式候选]')?.textContent.includes('合成替换')");
+  if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+    await checkSidebarStreaming(window, root, 'review');
+    assertRunCount(1);
+  }
   await click('停止');
   await wait("!document.querySelector('[aria-label=流式候选]')");
   await new Promise((resolve) => setTimeout(resolve, 1800));
