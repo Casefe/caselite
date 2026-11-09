@@ -80,9 +80,13 @@ export default function ImportantSchedules({
           重要日程读取失败。<button onClick={() => void read.refetch()}>重读</button>
         </p>
       )}
-      {visible.map((task) => (
-        <ImportantScheduleRow key={task.id} task={task} types={types} onOpen={onOpen} />
-      ))}
+      <div
+        className={`${home ? 'important-preview-home' : 'important-preview-calendar'} ${expanded ? 'is-expanded' : ''}`}
+      >
+        {visible.map((task) => (
+          <ImportantScheduleRow key={task.id} task={task} types={types} onOpen={onOpen} />
+        ))}
+      </div>
       {read.data && !rows.length && <p>暂无重要日程</p>}
       <p className="calendar-caption">
         {read.data

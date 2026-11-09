@@ -102,7 +102,7 @@ export const defaultCalendarTypes: CalendarType[] = [
 ].map(([id, name]) => ({ id, name, enabled: true, show_home: true, version: 0 }));
 export const calendarQuerySchema = z
   .object({
-    view: z.enum(['important', 'day', 'timed', 'undated', 'counts', 'types']),
+    view: z.enum(['important', 'day', 'untimed', 'timed', 'undated', 'counts', 'types']),
     date: ordinaryDateSchema,
     from: ordinaryDateSchema,
     to: ordinaryDateSchema,

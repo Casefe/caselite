@@ -104,7 +104,7 @@ export default function TaskInspector({
         )}
         {onPropertiesBlocked && onTaskChanged && (
           <TaskCalendarEditor
-            key={task.id + ':' + task.version}
+            key={task.id}
             task={task}
             disabled={propertiesDisabled || editing}
             onBlocked={reportCalendar}

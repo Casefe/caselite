@@ -118,6 +118,9 @@ it('queries full accessible ranges beyond 20 and 50 rows, deduplicates date coun
   ]);
   expect(good(app.execute(query('undated'))).tasks.map((t) => t.id)).not.toContain(dateOnly.id);
   expect(good(app.execute(query('day'))).page?.total).toBe(62);
+  const untimed = good(app.execute(query('untimed')));
+  expect(untimed.page).toEqual({ offset: 0, total: 2, has_more: false });
+  expect(untimed.tasks.map((t) => t.id).sort()).toEqual([tasks[60].id, dateOnly.id].sort());
   expect(good(app.execute(query('important'))).calendar_pending_count).toBe(1);
   const other = openTaskStore(file, migrations, 'other');
   closes.push(other.close);
@@ -134,6 +137,10 @@ it('queries full accessible ranges beyond 20 and 50 rows, deduplicates date coun
   expect(good(app.execute(query('important'))).page?.total).toBe(61);
   expect(good(app.execute(query('important', { include_closed: true }))).page?.total).toBe(62);
   expect(good(app.execute(query('timed'))).page?.total).toBe(59);
+  expect(good(app.execute(query('counts', { include_closed: true }))).calendar_counts).toEqual([
+    { date: '2026-11-09', count: 62 },
+  ]);
+  expect(good(app.execute(query('timed', { include_closed: true }))).page?.total).toBe(60);
   good(
     app.execute({
       ...identity(),

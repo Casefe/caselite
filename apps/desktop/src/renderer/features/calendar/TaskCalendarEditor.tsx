@@ -15,7 +15,7 @@ export default function TaskCalendarEditor({
   onBlocked(value: boolean): void;
   onChanged(task: Task, description: number[] | null): void;
 }) {
-  const [draft, setDraft] = useState<TaskCalendar>(task.calendar ?? emptyCalendar),
+  const [edited, setDraft] = useState<TaskCalendar>(task.calendar ?? emptyCalendar),
     [dirty, setDirty] = useState(false),
     [invalid, setInvalid] = useState('');
   const types = useCalendar(calendarQuery('types'));
@@ -34,6 +34,8 @@ export default function TaskCalendarEditor({
     setDirty(false);
     onChanged(saved, r.objective_state ?? null);
   });
+  // 同Task自动保存不重挂载折叠与焦点；干净表单读取最新投影，未确认输入仍保留自己的草稿。
+  const draft = dirty || commit.locked ? edited : (task.calendar ?? emptyCalendar);
   useEffect(() => {
     onBlocked(dirty || commit.locked);
     return () => onBlocked(false);
@@ -111,8 +113,8 @@ export default function TaskCalendarEditor({
     );
   }
   return (
-    <section className="task-calendar-editor" aria-label="任务日历属性">
-      <h3>日历</h3>
+    <details className="task-calendar-editor" aria-label="任务日历属性">
+      <summary>日历与重要标记{dirty || commit.locked ? ' · 待确认' : ''}</summary>
       <label>
         任务计划日
         <input
@@ -290,6 +292,6 @@ export default function TaskCalendarEditor({
           放弃日历输入并重读
         </button>
       )}
-    </section>
+    </details>
   );
 }

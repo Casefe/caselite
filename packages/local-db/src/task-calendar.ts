@@ -76,6 +76,9 @@ export function calendarTypes(db: Database.Database, workspace: string): Calenda
     ...configured.filter((v) => !defaultCalendarTypes.some((t) => t.id === v.id)),
   ];
 }
+// 可空时段须先折为false；否则SQL NOT(NULL)会把普通date-only任务错误排除。
+const timedForDate =
+  "(COALESCE(t.schedule_date=?,0) OR (t.is_important=1 AND t.attention_source='custom' AND t.attention_date=? AND t.attention_time IS NOT NULL))";
 const attention = `CASE t.attention_source WHEN 'schedule' THEN t.schedule_date WHEN 'planned' THEN t.planned_date WHEN 'due' THEN t.due_date WHEN 'custom' THEN t.attention_date ELSE NULL END`;
 export function queryCalendar<Row>(
   db: Database.Database,
@@ -98,17 +101,19 @@ export function queryCalendar<Row>(
       );
     }
     order = `(${attention} IS NULL),${attention},COALESCE(CASE t.attention_source WHEN 'schedule' THEN t.schedule_start WHEN 'custom' THEN t.attention_time END,'99:99'),t.id`;
-  } else if (q.view === 'day') {
+  } else if (q.view === 'day' || q.view === 'untimed') {
     clauses.push(
       `(t.due_date=? OR t.planned_date=? OR t.schedule_date=? OR (t.is_important=1 AND t.attention_source='custom' AND t.attention_date=?) ${q.include_overdue ? 'OR (t.due_date<?)' : ''})`,
     );
     params.push(q.date, q.date, q.date, q.date, ...(q.include_overdue ? [q.date] : []));
+    if (q.view === 'untimed') {
+      clauses.push(`NOT ${timedForDate}`);
+      params.push(q.date, q.date);
+    }
     order = `${q.include_overdue ? '(t.due_date IS NULL OR t.due_date>=?),' : ''}(t.priority=0),t.priority,t.id`;
     if (q.include_overdue) orderParams.push(q.date);
   } else if (q.view === 'timed') {
-    clauses.push(
-      "(t.schedule_date=? OR (t.is_important=1 AND t.attention_source='custom' AND t.attention_date=? AND t.attention_time IS NOT NULL))",
-    );
+    clauses.push(timedForDate);
     params.push(q.date, q.date);
     order = 'CASE WHEN t.schedule_date=? THEN t.schedule_start ELSE t.attention_time END,t.id';
     orderParams.push(q.date);

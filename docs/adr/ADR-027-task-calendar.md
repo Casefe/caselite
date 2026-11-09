@@ -14,7 +14,7 @@
 
 继续使用既有严格Task请求Schema→Preload/可信发送端IPC→Task Application→SQLite。update_calendar沿原预期Task version、task_activity和task_receipts同事务；set_calendar_type沿同工作区原键回执/摘要及类型版本同事务。未知结果保留原请求先status原键，再read当前值，不用历史ACK覆盖新值。
 
-calendar_query在当前工作区全部Task范围执行重要/所选日期/仅时段/无日期/日期计数查询，限页与稳定排序；不依赖已有任务页20行、首页recent或Renderer直接读库。首页和日历使用同Query key/取消迟到读取/失效策略及同重要行组件；根据用户增量，明确标重要的自选关注日也参与当天Task与日计数；自选关注时刻参与左下时点安排，不伪造结束时刻。日计数按Task ID合并截止/计划/时段/重要关注日，同一Task只计一次；左下仅时段且日期匹配。普通日期、重要关注日和提醒互不覆盖。
+calendar_query在当前工作区全部Task范围执行重要/所选日期/仅时段/无日期/日期计数查询，限页与稳定排序；不依赖已有任务页20行、首页recent或Renderer直接读库。day保留全日Task语义，中央其他当日任务使用独立untimed查询，先排除本日时刻再计数/分页，避免超过50条时段造成空页；日期计数与列表共用已完成/取消过滤条件。首页和日历使用同Query key/取消迟到读取/失效策略及同重要行组件；根据用户增量，明确标重要的自选关注日也参与当天Task与日计数；自选关注时刻参与左下时点安排，不伪造结束时刻。日计数按Task ID合并截止/计划/时段/重要关注日，同一Task只计一次；左下仅时段且日期匹配。普通日期、重要关注日和提醒互不覆盖。
 
 UI复用TaskInspector、TaskProperties、TaskContentEditor、SidebarAgent（按Task ID隔离），所有导航走原草稿/未知回执守卫。原ReminderInbox保留为日历可达入口，不改其计划/已读。Google/EventKit仅显示未接入，不放模拟同步进产品。
 

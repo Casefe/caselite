@@ -338,3 +338,112 @@
     min-width: 0;
   }
 }
+/* 日历列表保持紧凑左对齐，避免全局button居中规则和长卡片挤占当日安排。 */
+.calendar-workbench .calendar-task-row {
+  justify-content: flex-start;
+  align-items: flex-start;
+  text-align: left;
+}
+.calendar-workbench .calendar-task-row > span {
+  flex: 1;
+  white-space: normal;
+  text-align: left;
+}
+.calendar-workbench .calendar-task-row.is-timed > span:first-child {
+  flex: 0 0 92px;
+  white-space: normal;
+}
+.calendar-workbench .calendar-task-row > small {
+  margin-left: auto;
+  flex: none;
+  text-align: right;
+}
+.calendar-workbench .important-schedule-row {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.important-preview-calendar {
+  max-height: 144px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.important-preview-calendar.is-expanded {
+  max-height: 240px;
+}
+.important-preview-calendar .important-schedule-row {
+  gap: 7px;
+  padding: 7px 0;
+}
+.important-preview-calendar .important-schedule-row > span:first-child {
+  min-width: 56px;
+  max-width: 64px;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.important-preview-calendar .important-schedule-row > span:last-child {
+  min-width: 0;
+  flex: 1;
+}
+.important-preview-calendar .important-schedule-row b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.important-preview-calendar .important-schedule-row > span:last-child > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+.calendar-selected-task {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 10px;
+}
+.calendar-selected-task h2 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.calendar-selected-task button {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+}
+.task-calendar-editor > summary {
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 5px 0;
+}
+.calendar-task-inspector .task-calendar-editor:not([open]) {
+  margin: 10px 0;
+  padding-top: 4px;
+}
+.calendar-timed-summary .calendar-task-row.is-timed > span:first-child {
+  flex-basis: 74px;
+}
+.calendar-workbench .calendar-weekdays,
+.calendar-workbench .calendar-date-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+}
+.calendar-workbench .calendar-date-grid button {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  padding: 3px 1px;
+  gap: 1px;
+  justify-content: center;
+}
+.calendar-workbench .calendar-weekdays > small {
+  min-width: 0;
+  text-align: center;
+}

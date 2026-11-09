@@ -402,34 +402,15 @@ function Workbench() {
       task={active}
       content={
         view === 'calendar' ? (
-          <>
+          <div className="calendar-selected-task">
             <h2>{active.title}</h2>
-            <TaskContentEditor
-              key={active.id + ':' + propertiesRead}
-              task={active}
-              initial={objectiveState}
-              onDirty={setDirty}
-              disabled={propertiesBlocked || reminderBlocked || projectDirty}
-              onSaved={(saved, bytes) => {
-                setActive(saved);
-                setObjectiveState(bytes);
-                void refresh().catch(() => setError('任务内容已保存，日历刷新失败。'));
-              }}
-            />
             <button
-              disabled={propertiesBlocked || reminderBlocked}
-              onClick={() => setReminderTask(reminderTask === active.id ? null : active.id)}
+              disabled={propertiesBlocked || reminderBlocked || projectDirty || dirty}
+              onClick={() => void open(active.id)}
             >
-              本机提醒
+              打开任务内容
             </button>
-            {reminderTask === active.id && (
-              <ReminderEditor
-                taskId={active.id}
-                disabled={dirty || propertiesBlocked || projectDirty}
-                onBlocked={setReminderBlocked}
-              />
-            )}
-          </>
+          </div>
         ) : undefined
       }
       projectDisabled={

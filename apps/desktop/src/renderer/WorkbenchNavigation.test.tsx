@@ -29,6 +29,7 @@ vi.mock('./ui/Workspace', () => ({
   }) => (
     <>
       <button onClick={() => onNavigate('projects')}>项目入口</button>
+      <button onClick={() => onNavigate('calendar')}>日历入口</button>
       <button onClick={() => onNavigate('tasks')}>全局入口</button>
       <button onClick={() => onNavigate('settings')}>设置入口</button>
       <button onClick={() => onOpen('B')}>全局B</button>
@@ -54,14 +55,25 @@ vi.mock('./ui/TaskInspector', () => ({
   default: ({
     onProjectDirty,
     onPropertiesBlocked,
+    content,
   }: {
+    content?: React.ReactNode;
     onProjectDirty(v: boolean): void;
     onPropertiesBlocked(v: boolean): void;
   }) => (
     <>
+      {content}
       <input aria-label="未保存草稿" onChange={() => onProjectDirty(true)} />
       <button onClick={() => onPropertiesBlocked(true)}>未知提交</button>
     </>
+  ),
+}));
+vi.mock('./features/calendar/CalendarView', () => ({
+  default: ({ inspector, onOpen }: { inspector: React.ReactNode; onOpen(id: string): void }) => (
+    <div>
+      <button onClick={() => onOpen('A')}>日历A</button>
+      {inspector}
+    </div>
   ),
 }));
 vi.mock('./ui/SettingsView', () => {
@@ -187,4 +199,22 @@ it('does not let a late project failure overwrite a newer task', async () => {
   await act(async () => reject(new Error('迟到错误')));
   await waitFor(() => expect(screen.queryByText('迟到错误')).toBeNull());
   expect(document.querySelector('[data-active-task]')?.getAttribute('data-active-task')).toBe('B');
+});
+
+it('keeps the calendar inspector compact and opens original Task content through the existing detail route', async () => {
+  setup();
+  await screen.findByText('首页');
+  fireEvent.click(screen.getByText('日历入口'));
+  fireEvent.click(screen.getByText('日历A'));
+  const content = await screen.findByRole('button', { name: '打开任务内容' });
+  expect(screen.queryByTestId('save-task-content')).toBeNull();
+  expect(screen.queryByRole('button', { name: '本机提醒' })).toBeNull();
+  expect(screen.getByRole('heading', { name: 'A' })).toBeTruthy();
+  fireEvent.click(content);
+  await waitFor(() =>
+    expect(document.querySelector('[data-active-task]')?.getAttribute('data-active-task')).toBe(
+      'A',
+    ),
+  );
+  expect(screen.getByTestId('save-task-content')).toBeTruthy();
 });

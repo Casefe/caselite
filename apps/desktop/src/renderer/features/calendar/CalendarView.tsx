@@ -4,12 +4,6 @@ import { calendarQuery, localDate, shiftDate, useCalendar } from './calendar-que
 import ImportantSchedules from './ImportantSchedules';
 import { taskPriorityNames } from '../../ui/task-priority';
 
-const hasTime = (t: Task, date: string) =>
-  t.calendar?.schedule?.date === date ||
-  (t.calendar?.important &&
-    t.calendar.attention_source === 'custom' &&
-    t.calendar.attention_date === date &&
-    !!t.calendar.attention_time);
 function TimeLabel({ task, date }: { task: Task; date: string }) {
   const c = task.calendar;
   return (
@@ -51,12 +45,19 @@ export default function CalendarView({
     first = date.slice(0, 7) + '-01';
   const start = shiftDate(first, -((new Date(`${first}T12:00:00`).getDay() + 6) % 7)),
     days = Array.from({ length: 42 }, (_, i) => shiftDate(start, i));
-  const counts = useCalendar(calendarQuery('counts', { date, from: days[0], to: days[41] }));
+  const counts = useCalendar(
+    calendarQuery('counts', { date, from: days[0], to: days[41], include_closed: closed }),
+  );
   const timed = useCalendar(
     calendarQuery('timed', { date, offset: timedOffset, include_closed: closed }),
   );
   const day = useCalendar(
-    calendarQuery('day', { date, offset, include_closed: closed, include_overdue: date === today }),
+    calendarQuery('untimed', {
+      date,
+      offset,
+      include_closed: closed,
+      include_overdue: date === today,
+    }),
   );
   const undated = useCalendar(
     calendarQuery('undated', { date, offset: undatedOffset, include_closed: closed }),
@@ -68,12 +69,12 @@ export default function CalendarView({
     setTimedOffset(0);
     setDatesOpen(false);
   }
-  const dayRows = (day.data?.tasks ?? []).filter((t) => !hasTime(t, date));
+  const dayRows = day.data?.tasks ?? [];
   function rows(items: Task[], time = false) {
     return items.map((t) => (
       <button
         key={t.id}
-        className="calendar-task-row"
+        className={`calendar-task-row ${time ? 'is-timed' : ''}`}
         data-calendar-task={t.id}
         aria-pressed={selected?.id === t.id}
         onClick={() => onOpen(t.id)}
@@ -195,7 +196,12 @@ export default function CalendarView({
               type="checkbox"
               checked={closed}
               disabled={blocked}
-              onChange={(e) => setClosed(e.target.checked)}
+              onChange={(e) => {
+                setClosed(e.target.checked);
+                setOffset(0);
+                setTimedOffset(0);
+                setUndatedOffset(0);
+              }}
             />
             显示已完成／已取消
           </label>
@@ -226,7 +232,7 @@ export default function CalendarView({
           {page(timed, timedOffset, setTimedOffset)}
         </section>
         <section aria-label="当日任务">
-          <h2>当日任务</h2>
+          <h2>其他当日任务</h2>
           {rows(dayRows)}
           {!dayRows.length && !day.isPending && <p>本页暂无其他当日任务</p>}
           {page(day, offset, setOffset)}

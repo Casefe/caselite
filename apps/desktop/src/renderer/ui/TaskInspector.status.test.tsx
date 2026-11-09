@@ -66,6 +66,9 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   }
   render(<Host />);
   const ai = screen.getByRole('region', { name: 'AI 对话' });
+  const calendar = screen.getByLabelText('任务日历属性') as HTMLDetailsElement;
+  fireEvent.click(screen.getByText('日历与重要标记'));
+  expect(calendar.open).toBe(true);
   const section = screen.getByText('属性', { selector: 'summary' }).closest('details')!;
   const collapseAndReopen = () => {
     section.open = false;
@@ -90,4 +93,6 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
   await waitFor(() => expect(ai.querySelector('[inert]')).toBeNull());
   expect(screen.getByText('合成AI栏目')).toBeTruthy();
+  expect(screen.getByLabelText('任务日历属性')).toBe(calendar);
+  expect(calendar.open).toBe(true);
 });

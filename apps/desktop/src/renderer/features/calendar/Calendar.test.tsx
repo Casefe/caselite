@@ -109,8 +109,8 @@ it('shows only timed Tasks in the lower sidebar, including explicit important po
         ? success(
             r.query.view === 'timed'
               ? [a, b]
-              : r.query.view === 'day'
-                ? [a, b, c]
+              : r.query.view === 'untimed'
+                ? [c]
                 : r.query.view === 'undated'
                   ? [d]
                   : r.query.view === 'important'
@@ -135,6 +135,16 @@ it('shows only timed Tasks in the lower sidebar, including explicit important po
     />,
   );
   const left = screen.getByRole('region', { name: '本日工作安排' });
+  await within(left).findByText('重要时点');
+  fireEvent.click(screen.getByLabelText('显示已完成／已取消'));
+  await waitFor(() =>
+    expect(
+      (window.caselite.task as ReturnType<typeof vi.fn>).mock.calls.some(
+        ([r]) =>
+          r.operation === 'calendar_query' && r.query.view === 'counts' && r.query.include_closed,
+      ),
+    ).toBe(true),
+  );
   await within(left).findByText('重要时点');
   expect(within(left).queryByText('重要只有日期')).toBeNull();
   expect(left.querySelectorAll('[data-calendar-task]')).toHaveLength(2);
@@ -183,6 +193,7 @@ it('blocks navigation through unknown calendar ACK and recovers the original key
     );
   }
   show(<Host />);
+  fireEvent.click(screen.getByText('日历与重要标记'));
   const input = screen.getByLabelText('任务计划日');
   fireEvent.change(input, { target: { value: '2026-11-10' } });
   fireEvent.blur(input);
@@ -207,6 +218,9 @@ it('keeps partial timed input and blocks switching until a valid same-day range 
   window.caselite = { task: api } as unknown as Window['caselite'];
   const blocked = vi.fn();
   show(<TaskCalendarEditor task={t} disabled={false} onBlocked={blocked} onChanged={vi.fn()} />);
+  const metadata = screen.getByLabelText('任务日历属性') as HTMLDetailsElement;
+  expect(metadata.open).toBe(false);
+  fireEvent.click(screen.getByText('日历与重要标记'));
   fireEvent.click(screen.getByText('工作时段'));
   fireEvent.change(screen.getByLabelText('工作时段日期'), { target: { value: '2026-11-09' } });
   fireEvent.blur(screen.getByLabelText('工作时段日期'));
