@@ -57,7 +57,7 @@ export default function InspectorLayout({
     // 仅在展开时回到最新位置；后续阅读历史不被强制拉回，也不改变焦点或会话身份。
     scroll.scrollTop = scroll.scrollHeight;
     for (const viewport of scroll.querySelectorAll<HTMLElement>(
-      '.assistant-thread, .assistant-viewport, .editor-agent-viewport',
+      '.assistant-thread, .assistant-viewport, .editor-agent-viewport, .document-review',
     ))
       viewport.scrollTop = viewport.scrollHeight;
   }, [expanded]);

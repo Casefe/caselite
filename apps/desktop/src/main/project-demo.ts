@@ -110,7 +110,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
           (input?.value ?? input?.textContent) !== window.__resizeDraft)
           throw new Error('Resizing remounted conversation or changed draft');
         if(split.dataset.aiExpanded==='true') {
-          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport'))
+          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport,.document-review'))
             if(scroll.clientHeight>0 && scroll.scrollHeight>scroll.clientHeight+2 && scroll.scrollTop+scroll.clientHeight<scroll.scrollHeight-2)
               throw new Error('Expanded conversation did not open at the latest content');
         }
