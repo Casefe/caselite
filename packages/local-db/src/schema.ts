@@ -63,6 +63,7 @@ export const taskItems = sqliteTable(
     attentionSource: text('attention_source').notNull().default('unknown'),
     attentionDate: text('attention_date'),
     attentionTime: text('attention_time'),
+    attentionTimezone: text('attention_timezone'),
     assignee: text('assignee').default('本人'),
     subscribed: integer('subscribed', { mode: 'boolean' }).notNull().default(false),
     tags: text('tags', { mode: 'json' })
@@ -76,6 +77,12 @@ export const taskItems = sqliteTable(
     index('task_calendar_planned').on(table.workspaceId, table.plannedDate),
     index('task_calendar_timed').on(table.workspaceId, table.scheduleDate),
     index('task_calendar_important').on(table.workspaceId, table.isImportant),
+    check(
+      'task_attention_timezone_valid',
+      sql.raw(
+        "attention_timezone IS NULL OR (attention_source='custom' AND attention_time IS NOT NULL AND typeof(attention_timezone)='text' AND length(attention_timezone) BETWEEN 1 AND 100)",
+      ),
+    ),
     check(
       'task_calendar_planned_date_valid',
       sql.raw(
@@ -692,6 +699,31 @@ export const calendarTypes = sqliteTable(
     check(
       'calendar_type_flags',
       sql`${t.enabled} IN (0,1) AND ${t.showHome} IN (0,1) AND ${t.version}>0`,
+    ),
+  ],
+);
+
+export const taskDateConfirmations = sqliteTable(
+  'task_date_confirmations',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    receiptKey: text('receipt_key').notNull(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    runId: text('run_id')
+      .notNull()
+      .references(() => agentRuns.id),
+    taskVersion: integer('task_version').notNull(),
+    payload: text('payload').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.receiptKey] }),
+    index('task_date_confirmation_task').on(table.workspaceId, table.taskId, table.taskVersion),
+    check('task_date_confirmation_version', sql`${table.taskVersion}>0`),
+    check(
+      'task_date_confirmation_payload',
+      sql`json_valid(${table.payload}) AND length(${table.payload})<=120000`,
     ),
   ],
 );

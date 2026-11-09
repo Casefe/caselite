@@ -70,7 +70,7 @@ it.each([
     f.db.close();
     for (let i = 0; i < 2; i++) {
       const upgraded = openToolchainProbe(f.file, migrations).sqlite;
-      expect(history(upgraded)).toHaveLength(24);
+      expect(history(upgraded)).toHaveLength(integrationMigrations.length);
       expect(history(upgraded)).toEqual(expect.arrayContaining(before));
       expect(upgraded.prepare('SELECT * FROM toolchain_probe').all()).toEqual([
         { id: 'preserved', value: '合成旧业务' },
@@ -384,7 +384,7 @@ it('rolls every bridge DDL and original migration record back on a mid-bridge fa
   vi.restoreAllMocks();
   f.db.close();
   const recovered = openToolchainProbe(f.file, migrations).sqlite;
-  expect(history(recovered)).toHaveLength(24);
+  expect(history(recovered)).toHaveLength(integrationMigrations.length);
   recovered.close();
 });
 type WorkerMessage = { phase: string; ok?: boolean; error?: string };
@@ -430,7 +430,7 @@ it('preserves the A library after process death inside the uncommitted bridge', 
     expect({ history: history(old), schema: schema(old) }).toEqual(before);
     old.close();
     const good = openToolchainProbe(f.file, migrations).sqlite;
-    expect(history(good)).toHaveLength(24);
+    expect(history(good)).toHaveLength(integrationMigrations.length);
     good.close();
   } finally {
     c.process.kill('SIGKILL');
@@ -449,8 +449,10 @@ it('concurrent independent opens converge or fail safely and recover without dup
     expect(results.some((r) => r.ok)).toBe(true);
     for (const r of results) if (!r.ok) expect(r.error).toMatch(/SQLITE_BUSY|SQLITE_ERROR/);
     const good = openToolchainProbe(f.file, migrations).sqlite;
-    expect(history(good)).toHaveLength(24);
-    expect(new Set(history(good).map((r) => JSON.stringify(r))).size).toBe(24);
+    expect(history(good)).toHaveLength(integrationMigrations.length);
+    expect(new Set(history(good).map((r) => JSON.stringify(r))).size).toBe(
+      integrationMigrations.length,
+    );
     good.close();
   } finally {
     a.process.kill('SIGKILL');
@@ -475,7 +477,7 @@ it('reports the stale Drizzle read/BEGIN competitor as a failure and safely reop
     writeFileSync(secondRelease, 'release');
     expect(await b.next('done')).toMatchObject({ ok: false, error: 'SQLITE_ERROR' });
     const good = openToolchainProbe(f.file, migrations).sqlite;
-    expect(history(good)).toHaveLength(24);
+    expect(history(good)).toHaveLength(integrationMigrations.length);
     expect(good.pragma('table_info(task_items)')).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'planned_date' })]),
     );

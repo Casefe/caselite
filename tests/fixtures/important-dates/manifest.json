@@ -1,0 +1,102 @@
+[
+  {
+    "path": "01-开庭传票-合成.pdf",
+    "sha256": "ba3eedcd3638c9c7574187921eeea04713dbe2a7b690e6ddac2344a9788dee00",
+    "bytes": 29781
+  },
+  {
+    "path": "01-开庭传票-合成.docx",
+    "sha256": "761a95da5c61aca27ec6f43d1fa5e33e034e7ed943ada4a6aac6bbc6344dc3ae",
+    "bytes": 11590
+  },
+  {
+    "path": "02-举证通知明确日期-合成.pdf",
+    "sha256": "ebbf5df489aa2c51ee84bb73816832271c569902230b5fc68553e7d524bbc469",
+    "bytes": 29253
+  },
+  {
+    "path": "02-举证通知明确日期-合成.docx",
+    "sha256": "411477dcb93ccebf518de179666cdd65d2b2122aeeac7fe919a7c8debae6e09b",
+    "bytes": 11583
+  },
+  {
+    "path": "03-举证通知相对期间-合成.pdf",
+    "sha256": "e46f49029074a4e669e85cc4bd954fb5485dcbfe38fe19ddac1430db3ca0e16a",
+    "bytes": 31346
+  },
+  {
+    "path": "03-举证通知相对期间-合成.docx",
+    "sha256": "f7e60cf3a76d6802068c48eacdcbcd077acea4b5e276c9cf07fa8e4688f51ee4",
+    "bytes": 11632
+  },
+  {
+    "path": "04-缴费通知节假日-合成.pdf",
+    "sha256": "baa1fb82793d46d554ea958d0ba94760ab9fcbf45c25ca7ed61628e4be274841",
+    "bytes": 32901
+  },
+  {
+    "path": "04-缴费通知节假日-合成.docx",
+    "sha256": "81afce93f6637d7f5bb89ecea323487f289a688faacc683de2b09f40ed4096a6",
+    "bytes": 11657
+  },
+  {
+    "path": "05-可上诉判决及送达-合成.pdf",
+    "sha256": "0dbd745d50bfcdab5015c2b1c31ead5624f4260911f7c405af6733e9da16e978",
+    "bytes": 33148
+  },
+  {
+    "path": "05-可上诉判决及送达-合成.docx",
+    "sha256": "2db9e02dfc2fe081c1d92ac753ea245d63ab3b524da5500ef9285e205e6dbb9b",
+    "bytes": 11665
+  },
+  {
+    "path": "06-缺失送达记录-合成.pdf",
+    "sha256": "316b6ec281e36db1bf1ef69a17a205d6f458203a0bded9272b169c5bae05a108",
+    "bytes": 31017
+  },
+  {
+    "path": "06-缺失送达记录-合成.docx",
+    "sha256": "91d218b0853f0e4dc4affc608098f8368730a788145766cf2d7f9efb5e7df861",
+    "bytes": 11615
+  },
+  {
+    "path": "07-改期冲突待确认-合成.pdf",
+    "sha256": "27752354827dbf0acdb8645c3bdba00b7deb18a1c4ff8879b21c2d45adb9e5b5",
+    "bytes": 32076
+  },
+  {
+    "path": "07-改期冲突待确认-合成.docx",
+    "sha256": "1114261d90a55714b41a5f1b9844415afb9bd3f8b4318e6e59e4d83116350f9d",
+    "bytes": 11619
+  },
+  {
+    "path": "08-律师工作会议-合成.pdf",
+    "sha256": "a3d20e68226abfdb471d7d41e034466421d41244ed6734a080dc3aeba343a111",
+    "bytes": 28412
+  },
+  {
+    "path": "08-律师工作会议-合成.docx",
+    "sha256": "635a45349e1128a6f95c262f8087055c140a0108090018074c6cc9784b547827",
+    "bytes": 11567
+  },
+  {
+    "path": "09-鉴定资料提交-合成.pdf",
+    "sha256": "f974ff0bd2be4086899304a827c34b4d87df8ab1d6b3d7200a6b1a8e336f1048",
+    "bytes": 29385
+  },
+  {
+    "path": "09-鉴定资料提交-合成.docx",
+    "sha256": "0c87fda35cb709f92d442cf38d0edc7731861e9df527a38a445ffa5438201861",
+    "bytes": 11576
+  },
+  {
+    "path": "10-保全期限事实不足-合成.pdf",
+    "sha256": "eb3d7dec44efb3b69bf28e62fb4a0ba2d9c18bf621f1771129c653976610f8c5",
+    "bytes": 32346
+  },
+  {
+    "path": "10-保全期限事实不足-合成.docx",
+    "sha256": "fabbf3ebe17710578670acea919df6f3a91c1eeed62cbf9f1b5599da8459c426",
+    "bytes": 11632
+  }
+]

@@ -45,6 +45,9 @@ import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
 import { createLocalPreferencesApplication } from '@caselite/application';
 import { registerLocalPreferencesIpc } from './ipc/register-local-preferences-ipc';
 import { createAgentApplication } from '@caselite/application';
+import { createImportantDateApplication } from '@caselite/application';
+import { runImportantDateDemo } from './important-date-demo';
+import { syntheticImportantDateStream } from './important-date-mock';
 import { createPiRuntime } from './adapters/pi-runtime';
 import {
   runCredentialPreflight,
@@ -129,7 +132,8 @@ async function createWindow(
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
-    process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-')
+    process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('important-date-')
   )
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
@@ -572,6 +576,9 @@ if (taskDemoPhase) {
       'read',
       'materials',
       'materials-read',
+      'important-date-write',
+      'important-date-read',
+      'important-date-preview',
       'materials-docx',
       'materials-docx-table',
       'materials-docx-lists',
@@ -880,6 +887,7 @@ app
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
       taskDemoPhase?.startsWith('materials') ||
+      taskDemoPhase?.startsWith('important-date-') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
       taskDemoPhase === 'typography' ||
@@ -947,7 +955,30 @@ app
       historyReady = false;
     }
 
+    const importantDates = createImportantDateApplication(
+      {
+        ...taskStore.dates,
+        preview: (id, scope) => taskStore.materials.preview(id, scope),
+        source: taskStore.materials.fixed,
+        configuration: taskStore.materials.configuration,
+      },
+      async (binding) => {
+        for (const s of binding.sources) {
+          const r = await materials.execute({
+            protocol_version: 1,
+            operation: 'read_fixed',
+            scope: binding.task_id,
+            source_id: s.source_id,
+            derivation_id: s.derivation_id,
+            asset_version_id: s.asset_version_id,
+            sha256: s.sha256,
+          });
+          if (!r.ok) throw Error('Original verification failed');
+        }
+      },
+    );
     const agent = createAgentApplication({
+      dates: importantDates,
       credentials: agentCredentials,
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
@@ -1007,49 +1038,80 @@ app
               },
             })
           : createPiRuntime(
-              documentReviewDemo
-                ? syntheticReviewStream
-                : financeDemo ||
-                    taskDemoPhase === 'typography' ||
-                    credentialUi ||
-                    taskDemoPhase?.startsWith('reminder') ||
-                    (taskDemoPhase?.startsWith('project-') &&
-                      taskDemoPhase !== 'project-agent-write') ||
-                    taskDemoPhase === 'task-status-write' ||
-                    taskDemoPhase === 'task-status-read' ||
-                    taskDemoPhase === 'agent-read' ||
-                    taskDemoPhase === 'agent-credential-read' ||
-                    taskDemoPhase === 'agent-read-synthetic' ||
-                    taskDemoPhase === 'materials-read'
-                  ? () => {
-                      if (credentialUi) {
-                        credentialRuntimeAttempts++;
-                        recordCredentialUi();
-                      }
-                      writeFileSync(
-                        join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                        'unexpected dispatch',
-                      );
-                      throw new Error('Unexpected restart dispatch');
-                    }
-                  : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
-                    ? (model, context, options) => {
+              taskDemoPhase?.startsWith('important-date-')
+                ? syntheticImportantDateStream
+                : documentReviewDemo
+                  ? syntheticReviewStream
+                  : financeDemo ||
+                      taskDemoPhase === 'typography' ||
+                      credentialUi ||
+                      taskDemoPhase?.startsWith('reminder') ||
+                      (taskDemoPhase?.startsWith('project-') &&
+                        taskDemoPhase !== 'project-agent-write') ||
+                      taskDemoPhase === 'task-status-write' ||
+                      taskDemoPhase === 'task-status-read' ||
+                      taskDemoPhase === 'agent-read' ||
+                      taskDemoPhase === 'agent-credential-read' ||
+                      taskDemoPhase === 'agent-read-synthetic' ||
+                      taskDemoPhase === 'materials-read'
+                    ? () => {
+                        if (credentialUi) {
+                          credentialRuntimeAttempts++;
+                          recordCredentialUi();
+                        }
                         writeFileSync(
-                          join(taskDemoRoot!, 'material-pi-context.json'),
-                          JSON.stringify(context, null, 2),
+                          join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                          'unexpected dispatch',
                         );
-                        return taskDemoPhase?.startsWith('materials-docx')
-                          ? syntheticDocxStream(model, context, options)
-                          : syntheticAgentStream(model, context, options);
+                        throw new Error('Unexpected restart dispatch');
                       }
-                    : taskDemoPhase === 'project-agent-write' || taskDemoPhase?.startsWith('agent')
-                      ? syntheticAgentStream
-                      : undefined,
+                    : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
+                      ? (model, context, options) => {
+                          writeFileSync(
+                            join(taskDemoRoot!, 'material-pi-context.json'),
+                            JSON.stringify(context, null, 2),
+                          );
+                          return taskDemoPhase?.startsWith('materials-docx')
+                            ? syntheticDocxStream(model, context, options)
+                            : syntheticAgentStream(model, context, options);
+                        }
+                      : taskDemoPhase === 'project-agent-write' ||
+                          taskDemoPhase?.startsWith('agent')
+                        ? syntheticAgentStream
+                        : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase?.startsWith('important-date-')) {
+      session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
+        callback({ cancel: /^https?:/i.test(details.url) }),
+      );
+      if (taskDemoPhase === 'important-date-preview') {
+        const window = await createWindow();
+        window.setTitle('CaseLite · 合成重要日期 · MOCK_ONLY');
+        return;
+      }
+      try {
+        await runImportantDateDemo(
+          () => createWindow(false),
+          taskDemoRoot,
+          taskDemoPhase,
+          materials,
+        );
+        agent.release();
+        materials.close();
+        taskStore.close();
+        app.exit(0);
+      } catch {
+        agent.release();
+        materials.close();
+        taskStore.close();
+        app.exit(1);
+      }
+      return;
+    }
     if (taskDemoRoot && taskDemoPhase === 'typography') {
       try {
         await runTypographyDemo(() => createWindow(false), taskDemoRoot, tasks);

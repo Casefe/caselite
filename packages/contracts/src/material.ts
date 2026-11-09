@@ -102,6 +102,14 @@ export const materialRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('commit'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('discard'), token: id }).strict(),
   z.object({ ...base, operation: z.literal('read'), source_id: id }).strict(),
+  z.strictObject({
+    ...base,
+    operation: z.literal('read_fixed'),
+    source_id: id,
+    derivation_id: id,
+    asset_version_id: id,
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }),
   z.object({ ...base, operation: z.literal('save_original'), source_id: id }).strict(),
   z
     .object({
@@ -132,6 +140,7 @@ export const materialRequestSchema = z.discriminatedUnion('operation', [
       model: agentModelSchema,
       selected: z.array(materialSelectionSchema).min(1).max(16),
       automatic: z.boolean().optional(),
+      text_only: z.literal(true).optional(),
     })
     .strict(),
 ]);

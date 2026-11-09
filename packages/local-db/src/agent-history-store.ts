@@ -82,6 +82,8 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
         JSON.stringify(old.attachments) !== JSON.stringify(run.attachments) ||
         old.model !== run.model ||
         old.provider !== run.provider ||
+        old.purpose !== run.purpose ||
+        JSON.stringify(old.date_binding) !== JSON.stringify(run.date_binding) ||
         run.sequence < old.sequence
       )
         throw new Error('Run identity or sequence conflict');

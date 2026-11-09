@@ -70,6 +70,11 @@ describe('SQLite/Drizzle infrastructure probe', () => {
     try {
       const first = openToolchainProbe(filePath, migrationsFolder);
       first.db.insert(toolchainProbe).values({ id: 'preserved', value: 'synthetic' }).run();
+      const latest = (
+        first.sqlite
+          .prepare('SELECT max(created_at) AS latest FROM __drizzle_migrations')
+          .get() as { latest: number }
+      ).latest;
       first.sqlite.close();
 
       cpSync(migrationsFolder, badMigrations, { recursive: true });
@@ -89,7 +94,7 @@ describe('SQLite/Drizzle infrastructure probe', () => {
       journal.entries.push({
         idx: journal.entries.length,
         version: '6',
-        when: Math.max(...journal.entries.map((entry) => entry.when)) + 1,
+        when: Math.max(latest, ...journal.entries.map((entry) => entry.when)) + 1,
         tag: '0001_deliberate_failure',
         breakpoints: true,
       });

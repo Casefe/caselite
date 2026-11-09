@@ -12,3 +12,4 @@ export * from './finance-application';
 export * from './document-review-application';
 export * from './contacts-application';
 export * from './local-preferences-application';
+export * from './important-date-application';

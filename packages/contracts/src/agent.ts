@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { matterSchema, projectProfessionalTypeSchema } from './catalog';
 import { ordinaryDateSchema, taskSchema } from './task';
+import {
+  dateBindingSchema,
+  dateRunResultSchema,
+  dateEvaluatedSchema,
+  dateConfirmationSchema,
+  dateDecisionFields,
+  dateConfirmRequestSchema,
+} from './important-date';
 
 export const agentProviderSchema = z.enum(['openai', 'deepseek', 'glm', 'kimi', 'siliconflow']);
 export const agentModelSchema = z.enum([
@@ -71,6 +79,22 @@ const agentProjectPreviewSchema = z.strictObject({
 export type AgentProjectPreview = z.infer<typeof agentProjectPreviewSchema>;
 const base = { protocol_version: z.literal(1) };
 export const agentRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({ ...base, operation: z.literal('date_rules') }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('read_dates'),
+    scope: z.string().uuid(),
+    run_id: z.string().uuid(),
+  }),
+  z.strictObject({ ...base, operation: z.literal('preview_date'), ...dateDecisionFields }),
+  dateConfirmRequestSchema,
+  z.strictObject({
+    ...base,
+    operation: z.literal('status_date'),
+    scope: z.string().uuid(),
+    run_id: z.string().uuid(),
+    idempotency_key: z.string().uuid(),
+  }),
   z.object({ ...base, operation: z.literal('profile') }).strict(),
   z.object({ ...base, operation: z.literal('refresh_credentials') }).strict(),
   z
@@ -141,6 +165,9 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       confirmed: z.literal(true),
       context_id: z.string().uuid().optional(),
       project_fingerprint: projectFingerprint.optional(),
+      purpose: z.literal('important_dates').optional(),
+      date_types: z.array(z.string().min(1).max(80)).min(1).max(24).optional(),
+      task_version: z.number().int().positive().optional(),
     })
     .strict(),
   z.object({ ...base, operation: z.literal('cancel'), scope, run_id: z.string().uuid() }).strict(),
@@ -152,6 +179,7 @@ export const agentRunSchema = z.object({
   scope,
   prompt: z.string(),
   output: z.string(),
+  output_incomplete: z.boolean().optional(),
   attachments: z
     .array(
       z.object({
@@ -164,6 +192,9 @@ export const agentRunSchema = z.object({
     .max(16)
     .optional(),
   context_id: z.string().uuid().optional(),
+  purpose: z.literal('important_dates').optional(),
+  date_binding: dateBindingSchema.optional(),
+  date_result: dateRunResultSchema.optional(),
   project_fingerprint: projectFingerprint.optional(),
   status: z.enum(['running', 'succeeded', 'cancelled', 'failed', 'interrupted']),
   created_at: z.string().optional(),
@@ -200,6 +231,30 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
     project_preview: agentProjectPreviewSchema.optional(),
     review_preview: z.strictObject({ id: z.string().uuid(), range: reviewRange }).optional(),
     review_saved: reviewSaved.optional(),
+    date_task: taskSchema.optional(),
+    date_error: z.string().max(300).nullable().optional(),
+    date_candidates: z.array(dateEvaluatedSchema).max(24).optional(),
+    date_confirmations: z.array(dateConfirmationSchema).max(100).optional(),
+    date_saved: z
+      .strictObject({
+        task: taskSchema,
+        confirmation: dateConfirmationSchema,
+        receipt: z.string().uuid(),
+      })
+      .optional(),
+    date_rules: z
+      .strictObject({
+        version: z.string(),
+        checks: z.record(z.string(), z.string()),
+        types: z.array(
+          z.strictObject({ type_id: z.string(), documents: z.string(), support: z.string() }),
+        ),
+        laws: z.array(z.strictObject({ title: z.string(), url: z.url(), effective: z.string() })),
+        calendars: z.array(
+          z.strictObject({ id: z.string(), url: z.url(), year: z.number().int() }),
+        ),
+      })
+      .optional(),
   }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);

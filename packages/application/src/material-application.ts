@@ -31,6 +31,7 @@ export interface MaterialStorePort {
   home(id: string): void;
   newHome(): void;
   get(id: string): Material | undefined;
+  fixed?(id: string, derivation: string): Material | undefined;
   list(scope: MaterialScope): Material[];
   projectSources(projectId: string): Material[] | undefined;
   commit(stage: MaterialStage, taskId: string, pageCount: number): Material;
@@ -299,6 +300,25 @@ export function createMaterialApplication(ports: {
             committing = false;
           }
         }
+        if (r.operation === 'read_fixed') {
+          allowed(r.scope, r.source_id);
+          const fixed = store.fixed?.(r.source_id, r.derivation_id);
+          if (
+            !fixed ||
+            fixed.asset_version_id !== r.asset_version_id ||
+            fixed.sha256 !== r.sha256 ||
+            fixed.task_id !== store.task(r.scope)
+          )
+            return fail('VERSION_MISMATCH', '固定来源或派生版本不可访问。');
+          const data = new Uint8Array(await files.read(fixed.asset_version_id, fixed.sha256));
+          const current = allowed(r.scope, r.source_id);
+          if (
+            current.asset_version_id !== fixed.asset_version_id ||
+            current.sha256 !== fixed.sha256
+          )
+            return fail('VERSION_MISMATCH', '来源已变化。');
+          return { ok: true, materials: [fixed], data };
+        }
         if (r.operation === 'read') {
           const source = allowed(r.scope, r.source_id);
           const data = new Uint8Array(await files.read(source.asset_version_id, source.sha256));
@@ -358,7 +378,7 @@ export function createMaterialApplication(ports: {
             if (abort.signal.aborted) throw new Error('CANCELLED');
           };
           try {
-            const vision = r.automatic && agentModelAcceptsImages(r.model);
+            const vision = r.automatic && agentModelAcceptsImages(r.model) && !r.text_only;
             const images: NonNullable<MaterialPreview['images']> = [];
             const seen = new Set<string>();
             const selections: MaterialPreview['selections'] = [];

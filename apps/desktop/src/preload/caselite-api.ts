@@ -339,3 +339,10 @@ export type {
 } from '@caselite/contracts';
 
 export type { TaskCalendar, CalendarType, CalendarQuery } from '@caselite/contracts';
+export type {
+  DateBinding,
+  DateChecks,
+  DateEvaluated,
+  DateConfirmRequest,
+  DateConfirmation,
+} from '@caselite/contracts';

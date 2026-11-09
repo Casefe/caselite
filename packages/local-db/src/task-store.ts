@@ -29,6 +29,7 @@ import { createLocalPreferencesStore } from './local-preferences-store';
 import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
+import { createImportantDateStore } from './important-date-store';
 
 type Row = Omit<Task, 'tags' | 'assignee' | 'subscribed'> & {
   tags: string;
@@ -49,6 +50,7 @@ const decodeTask = (input: Row): Task => {
     attention_source,
     attention_date,
     attention_time,
+    attention_timezone,
     ...row
   } = input;
   return {
@@ -68,6 +70,7 @@ const decodeTask = (input: Row): Task => {
             attention_source,
             attention_date,
             attention_time,
+            attention_timezone,
           } as CalendarRow),
         }
       : {}),
@@ -94,9 +97,12 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   const hasCalendar = (
     db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
   ).some((v) => v.name === 'planned_date');
+  const hasTimezone = (
+    db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
+  ).some((c) => c.name === 'attention_timezone');
   const select = (hasSubscription ? baseSelect : baseSelect.replace(',t.subscribed', '')).replace(
     ' FROM task_items',
-    `${hasCalendar ? calendarColumns : ''} FROM task_items`,
+    `${hasCalendar ? calendarColumns : ''}${hasTimezone ? ',t.attention_timezone' : ''} FROM task_items`,
   );
   // 完整宿主先应用全部迁移；旧版迁移夹具尚无导出意图表，不能因此破坏已有Task读写。
   const hasExportIntents = !!db
@@ -191,7 +197,11 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       .get(...params, id) as
       NonNullable<Extract<TaskResponse, { ok: true }>['navigation']> | undefined;
   };
-  return {
+  const executeTask = (r: TaskRequest, confirmation?: boolean): TaskResponse =>
+    api.execute(r, confirmation);
+  const dates = createImportantDateStore(db, workspace, get, (r) => executeTask(r, true));
+  const api = {
+    dates,
     localPreferences: createLocalPreferencesStore(db, workspace),
     deliveryExports: createDeliveryExportStore(db, workspace),
     reviewDocumentExists: review.reviewDocumentExists,
@@ -205,7 +215,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     contacts: createContactsStore(db, workspace),
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
-    execute(request: TaskRequest): TaskResponse {
+    execute(request: TaskRequest, calendarConfirmation = false): TaskResponse {
       if (request.operation === 'calendar_query')
         return hasCalendar
           ? queryCalendar(db, workspace, select, decodeTask, request.query)
@@ -411,11 +421,29 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
                     (!task.calendar?.important && request.calendar.important))))
             )
               return fail('INVALID_REQUEST', '请选择启用的重要类型；原停用引用可以保留。');
-            if (JSON.stringify(task.calendar) === JSON.stringify(request.calendar))
+            if (
+              !calendarConfirmation &&
+              JSON.stringify(task.calendar) === JSON.stringify(request.calendar)
+            )
               return fail('INVALID_REQUEST', '日历属性没有变化。');
             db.prepare(
-              'UPDATE task_items SET planned_date=?,schedule_date=?,schedule_start=?,schedule_end=?,schedule_timezone=?,is_important=?,important_type_id=?,attention_source=?,attention_date=?,attention_time=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
-            ).run(...calendarValues(request.calendar), new Date().toISOString(), taskId, workspace);
+              `UPDATE task_items SET planned_date=?,schedule_date=?,schedule_start=?,schedule_end=?,schedule_timezone=?,is_important=?,important_type_id=?,attention_source=?,attention_date=?,attention_time=?${hasTimezone ? ',attention_timezone=?' : ''},version=version+1,updated_at=? WHERE id=? AND workspace_id=?`,
+            ).run(
+              ...calendarValues(request.calendar),
+              ...(hasTimezone
+                ? [
+                    request.calendar.attention_timezone === undefined &&
+                    request.calendar.attention_source === task.calendar?.attention_source &&
+                    request.calendar.attention_date === task.calendar?.attention_date &&
+                    request.calendar.attention_time === task.calendar?.attention_time
+                      ? (task.calendar?.attention_timezone ?? null)
+                      : (request.calendar.attention_timezone ?? null),
+                  ]
+                : []),
+              new Date().toISOString(),
+              taskId,
+              workspace,
+            );
           } else if (request.operation === 'update_attributes') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
@@ -519,4 +547,5 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       db.close();
     },
   };
+  return api;
 }

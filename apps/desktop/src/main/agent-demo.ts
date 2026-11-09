@@ -34,7 +34,7 @@ export const syntheticReviewStream: StreamFn = (model, context, options) =>
     '支付剩余款项。',
   ]);
 
-function syntheticTextStream(
+export function syntheticTextStream(
   _model: Parameters<StreamFn>[0],
   _context: Parameters<StreamFn>[1],
   options: Parameters<StreamFn>[2],

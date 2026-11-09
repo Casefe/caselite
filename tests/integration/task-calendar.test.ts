@@ -384,7 +384,7 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
     expect(check.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(check.pragma('foreign_key_check')).toEqual([]);
     expect(check.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 24,
+      n: 25,
     });
     check.close();
   }
@@ -428,7 +428,7 @@ it('matches the generated Drizzle snapshot while applying additive DDL without r
   const s = setup(),
     db = openToolchainProbe(s.file, migrations).sqlite;
   try {
-    const snapshot = JSON.parse(readFileSync(join(migrations, 'meta/0020_snapshot.json'), 'utf8'));
+    const snapshot = JSON.parse(readFileSync(join(migrations, 'meta/0021_snapshot.json'), 'utf8'));
     const t = create(s.app);
     for (const name of ['task_items', 'calendar_types']) {
       const columns = (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>)

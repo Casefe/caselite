@@ -52,6 +52,7 @@ export const taskCalendarSchema = z
     attention_source: z.enum(['unknown', 'schedule', 'planned', 'due', 'custom']),
     attention_date: ordinaryDateSchema.nullable(),
     attention_time: calendarTimeSchema.nullable(),
+    attention_timezone: calendarZoneSchema.nullable().optional(),
   })
   .strict()
   .refine(
@@ -59,7 +60,8 @@ export const taskCalendarSchema = z
       (!v.important || v.type_id !== null) &&
       (v.attention_source === 'custom' ||
         (v.attention_date === null && v.attention_time === null)) &&
-      (!v.attention_time || v.attention_date !== null),
+      (!v.attention_time || v.attention_date !== null) &&
+      (!v.attention_timezone || (v.attention_source === 'custom' && v.attention_time !== null)),
   );
 export type TaskCalendar = z.infer<typeof taskCalendarSchema>;
 export const emptyTaskCalendar: TaskCalendar = {

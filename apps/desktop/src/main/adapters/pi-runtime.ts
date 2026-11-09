@@ -112,12 +112,18 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
         status: 'succeeded' | 'failed',
         message: string,
         usage: { input: number; output: number } | null = null,
+        outputIncomplete = false,
       ) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         unsubscribe();
-        input.onEnd({ status, message, usage });
+        input.onEnd({
+          status,
+          message,
+          usage,
+          ...(outputIncomplete ? { output_incomplete: true } : {}),
+        });
       };
       unsubscribe = agent.subscribe((event) => {
         if (settled) return;
@@ -149,6 +155,7 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
                 ? '已达到输出上限，结果可能不完整。'
                 : '生成完成，内容待人工核对。',
               { input: message.usage.input, output: message.usage.output },
+              message.stopReason === 'length',
             );
           }
         }

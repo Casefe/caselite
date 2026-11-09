@@ -54,6 +54,21 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     putStage,
     task,
     get,
+    fixed(id: string, derivation: string): Material | undefined {
+      const source = get(id);
+      if (!source) return;
+      const row = db
+        .prepare('SELECT status,pages FROM material_derivations WHERE id=? AND source_id=?')
+        .get(derivation, id) as { status: string; pages: string } | undefined;
+      return row
+        ? materialSchema.parse({
+            ...source,
+            derivation_id: derivation,
+            status: row.status,
+            pages: JSON.parse(row.pages),
+          })
+        : undefined;
+    },
     projectSources(projectId: string): Material[] | undefined {
       if (
         !db

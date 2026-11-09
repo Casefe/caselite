@@ -156,7 +156,7 @@ it('upgrades the actual previous 19 migrations without changing existing rows', 
   const next = openToolchainProbe(file, migrations);
   closes.push(() => next.sqlite.close());
   expect(next.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 24,
+    n: 25,
   });
   expect(next.sqlite.prepare('SELECT * FROM toolchain_probe').all()).toEqual(before);
   expect(next.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');

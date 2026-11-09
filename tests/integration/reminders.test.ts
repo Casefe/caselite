@@ -375,8 +375,10 @@ it('upgrades an exact eight-migration populated database preserving all existing
                 attention_source,
                 attention_date,
                 attention_time,
+                attention_timezone,
                 ...task
               }) => {
+                if (planned_date !== undefined) expect(attention_timezone).toBeNull();
                 if (planned_date !== undefined)
                   expect({
                     planned_date,

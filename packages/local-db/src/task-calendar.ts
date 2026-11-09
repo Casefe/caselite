@@ -23,6 +23,7 @@ export type CalendarRow = {
   attention_source: TaskCalendar['attention_source'];
   attention_date: string | null;
   attention_time: string | null;
+  attention_timezone?: string | null;
 };
 export function decodeCalendar(row: CalendarRow): TaskCalendar {
   return taskCalendarSchema.parse({
@@ -40,6 +41,7 @@ export function decodeCalendar(row: CalendarRow): TaskCalendar {
     attention_source: row.attention_source,
     attention_date: row.attention_date,
     attention_time: row.attention_time,
+    ...(row.attention_timezone ? { attention_timezone: row.attention_timezone } : {}),
   });
 }
 export function calendarValues(v: TaskCalendar) {
