@@ -21,7 +21,7 @@ it('reads all accessible scopes and opens a task conversation', async () => {
         scope: request.scope,
         purpose: 'important_dates',
         prompt: '专用日期提取',
-        output: '{\"candidates\":[]}',
+        output: '{"candidates":[]}',
       },
     ],
   }));
