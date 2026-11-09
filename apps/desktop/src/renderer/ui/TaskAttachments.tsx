@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DocxOriginalReader } from './DocxOriginalReader';
 import { isDocx, useMaterials } from './useMaterials';
+import ImportantDates from '../features/calendar/ImportantDates';
+import type { Task } from '../../preload/caselite-api';
 
 const PdfReader = lazy(() => import('./PdfReader'));
 const statuses = {
@@ -16,9 +18,15 @@ const statuses = {
 export default function TaskAttachments({
   taskId,
   disabled = false,
+  task,
+  onDateBlocked,
+  onTaskChanged,
 }: {
   taskId: string;
   disabled?: boolean;
+  task?: Task;
+  onDateBlocked?(value: boolean): void;
+  onTaskChanged?(task: Task, state: number[] | null): void;
 }) {
   // 属性栏只消费材料，不把导入或阅读动作变成 AI 选材授权。
   const c = useMaterials(taskId, true, false);
@@ -60,6 +68,15 @@ export default function TaskAttachments({
           添加附件
         </button>
       </header>
+      {task && onDateBlocked && onTaskChanged && (
+        <ImportantDates
+          key={task.id}
+          task={task}
+          disabled={disabled}
+          onBlocked={onDateBlocked}
+          onChanged={onTaskChanged}
+        />
+      )}
       {!c.available ? (
         <p>当前环境暂不可读取附件。</p>
       ) : !c.loaded && !c.readError ? (

@@ -22,11 +22,13 @@ export default function PdfReader({
   onClose,
   textPages = [],
   initialWidth = 620,
+  initialPage = 1,
 }: {
   bytes: Uint8Array;
   textPages?: TextPage[];
   name: string;
   initialWidth?: number;
+  initialPage?: number;
   onClose(): void;
 }) {
   // PDF.js 会转移底层 buffer；阅读器只消费副本，不能损坏暂存原件。
@@ -34,7 +36,7 @@ export default function PdfReader({
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [dimensions, setDimensions] = useState<{ page: number; ratio: number } | null>(null);
   const [pages, setPages] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialPage);
   const [failure, setFailure] = useState('');
   const [width, setWidth] = useState(initialWidth);
   useEffect(() => {

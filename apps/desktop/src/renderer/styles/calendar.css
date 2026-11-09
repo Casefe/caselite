@@ -447,3 +447,56 @@
   min-width: 0;
   text-align: center;
 }
+
+.important-date-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  color: var(--theme-text, CanvasText);
+  background: var(--theme-panel, Canvas);
+  border: 1px solid var(--theme-border, GrayText);
+  border-radius: 12px;
+  padding: 20px;
+}
+.important-date-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+.important-date-dialog header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.important-date-dialog label {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin-block: 8px;
+}
+.important-date-dialog input:not([type='checkbox']),
+.important-date-dialog select {
+  min-width: 0;
+  max-width: 100%;
+}
+.important-date-dialog pre {
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.date-candidate {
+  border-block-start: 1px solid var(--border-color, GrayText);
+  padding-block: 16px;
+}
+.date-candidate blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-inline-start: 2px solid currentColor;
+}
+.date-candidate small,
+.date-candidate p,
+.date-source-url {
+  overflow-wrap: anywhere;
+}
+.date-candidate button {
+  margin: 6px;
+}

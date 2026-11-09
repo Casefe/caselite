@@ -11,7 +11,20 @@ function TimeLabel({ task, date }: { task: Task; date: string }) {
       {c?.schedule?.date === date
         ? `${c.schedule.start}–${c.schedule.end}`
         : `${c?.attention_time} · 重要关注`}
-      <small>{c?.schedule?.date === date ? c.schedule.timezone : '关注时刻，未指定时区'}</small>
+      <small>
+        {c?.schedule?.date === date
+          ? c.schedule.timezone
+          : (c?.attention_timezone ?? '关注时刻，未指定时区')}
+      </small>
+      {c?.schedule?.date === date &&
+        c.important &&
+        c.attention_source === 'custom' &&
+        c.attention_date === date &&
+        c.attention_time && (
+          <small>
+            重要关注：{c.attention_time} {c.attention_timezone ?? '未指定时区'}（独立于工作安排）
+          </small>
+        )}
     </span>
   );
 }
@@ -182,7 +195,7 @@ export default function CalendarView({
         <button onClick={onReminders}>提醒收件箱</button>
         <button onClick={onSettings}>日历与类型设置</button>
         <p className="calendar-caption">
-          按记录日期归组，不作跨时区投影。数量按Task去重；不计算法律期间。外部同步尚未接入。
+          按记录日期归组，不作跨时区投影。数量按Task去重；日期识别需从附件明确触发并人工确认。外部同步尚未接入。
         </p>
       </aside>
       <main className="calendar-agenda">

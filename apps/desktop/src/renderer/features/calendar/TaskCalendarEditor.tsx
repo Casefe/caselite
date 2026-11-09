@@ -225,6 +225,7 @@ export default function TaskCalendarEditor({
               attention_source: e.target.value as TaskCalendar['attention_source'],
               attention_date: null,
               attention_time: null,
+              attention_timezone: null,
             })
           }
         >
@@ -258,11 +259,30 @@ export default function TaskCalendarEditor({
               aria-label="重要关注时刻"
               value={draft.attention_time ?? ''}
               disabled={locked}
-              onChange={(e) => change({ attention_time: e.target.value || null }, false)}
+              onChange={(e) =>
+                change(
+                  {
+                    attention_time: e.target.value || null,
+                    ...(!e.target.value ? { attention_timezone: null } : {}),
+                  },
+                  false,
+                )
+              }
               onBlur={(event) => {
                 if (event.currentTarget.validity.valid) persist();
                 else setInvalid('日期或时刻尚不完整，输入未保存。');
               }}
+            />
+          </label>
+          <label>
+            关注时区
+            <input
+              aria-label="重要关注时区"
+              value={draft.attention_timezone ?? ''}
+              disabled={locked || !draft.attention_time}
+              placeholder="未指定时区"
+              onChange={(e) => change({ attention_timezone: e.target.value || null }, false)}
+              onBlur={() => persist()}
             />
           </label>
         </>

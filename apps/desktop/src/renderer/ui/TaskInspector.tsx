@@ -36,12 +36,13 @@ export default function TaskInspector({
 }) {
   const [editing, setEditing] = useState(false);
   const [calendarEditing, setCalendarEditing] = useState(false);
-  const flags = useRef({ properties: false, calendar: false });
+  const [dateEditing, setDateEditing] = useState(false);
+  const flags = useRef({ properties: false, calendar: false, dates: false });
   const reportBlocked = useCallback(
     (value: boolean) => {
       flags.current.properties = value;
       setEditing(value);
-      onPropertiesBlocked?.(value || flags.current.calendar);
+      onPropertiesBlocked?.(value || flags.current.calendar || flags.current.dates);
     },
     [onPropertiesBlocked],
   );
@@ -49,7 +50,15 @@ export default function TaskInspector({
     (value: boolean) => {
       flags.current.calendar = value;
       setCalendarEditing(value);
-      onPropertiesBlocked?.(value || flags.current.properties);
+      onPropertiesBlocked?.(value || flags.current.properties || flags.current.dates);
+    },
+    [onPropertiesBlocked],
+  );
+  const reportDates = useCallback(
+    (value: boolean) => {
+      flags.current.dates = value;
+      setDateEditing(value);
+      onPropertiesBlocked?.(value || flags.current.properties || flags.current.calendar);
     },
     [onPropertiesBlocked],
   );
@@ -61,7 +70,7 @@ export default function TaskInspector({
         {onPropertiesBlocked && onTaskChanged ? (
           <TaskProperties
             task={task}
-            disabled={propertiesDisabled || calendarEditing}
+            disabled={propertiesDisabled || calendarEditing || dateEditing}
             suggestions={suggestions}
             assigneeSuggestions={assigneeSuggestions}
             groupTags
@@ -109,7 +118,7 @@ export default function TaskInspector({
           <TaskCalendarEditor
             key={task.id}
             task={task}
-            disabled={propertiesDisabled || editing}
+            disabled={propertiesDisabled || editing || dateEditing}
             onBlocked={reportCalendar}
             onChanged={onTaskChanged}
           />
@@ -117,6 +126,9 @@ export default function TaskInspector({
         <TaskAttachments
           key={`attachments:${task.id}`}
           taskId={task.id}
+          task={task}
+          onDateBlocked={reportDates}
+          onTaskChanged={onTaskChanged}
           disabled={propertiesDisabled || reminderEditing || editing || calendarEditing}
         />
         <section aria-label="AI 对话" className="project-inspector-section">
@@ -127,7 +139,7 @@ export default function TaskInspector({
             <SidebarAgent
               key={task.id}
               taskId={task.id}
-              blocked={reminderEditing || editing || calendarEditing}
+              blocked={reminderEditing || editing || calendarEditing || dateEditing}
             />
           )}
         </section>

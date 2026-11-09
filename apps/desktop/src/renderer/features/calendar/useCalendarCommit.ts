@@ -60,7 +60,14 @@ export function useCalendarCommit(confirm: (command: Command) => Promise<void>) 
           if (
             !saved ||
             saved.version !== request.expected_version + 1 ||
-            JSON.stringify(saved.calendar) !== JSON.stringify(request.calendar)
+            JSON.stringify({
+              ...saved.calendar,
+              attention_timezone: saved.calendar?.attention_timezone ?? null,
+            }) !==
+              JSON.stringify({
+                ...request.calendar,
+                attention_timezone: request.calendar.attention_timezone ?? null,
+              })
           )
             throw Error('任务回执与日历输入不一致，请核对原提交。');
         } else {

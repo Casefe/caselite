@@ -74,8 +74,10 @@ export function attentionGroup(task: Task, now = new Date()) {
     : date < today ||
         (date === today &&
           !!time &&
-          task.calendar?.attention_source === 'schedule' &&
-          task.calendar.schedule?.timezone === Intl.DateTimeFormat().resolvedOptions().timeZone &&
+          (task.calendar?.attention_source === 'schedule'
+            ? task.calendar.schedule?.timezone
+            : task.calendar?.attention_timezone) ===
+            Intl.DateTimeFormat().resolvedOptions().timeZone &&
           time < clock)
       ? '已过时点待核对'
       : date === today

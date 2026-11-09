@@ -3,6 +3,7 @@ import type { CalendarType } from '../../../preload/caselite-api';
 import { mutation } from '../../shared/data/taskCommand';
 import { calendarQuery, useCalendar } from './calendar-query';
 import { useCalendarCommit } from './useCalendarCommit';
+import DateRuleSettings from './DateRuleSettings';
 export default function CalendarSettings({ onBlocked }: { onBlocked(value: boolean): void }) {
   const read = useCalendar(calendarQuery('types')),
     [draft, setDraft] = useState<CalendarType | null>(null);
@@ -27,6 +28,7 @@ export default function CalendarSettings({ onBlocked }: { onBlocked(value: boole
       </p>
       <h3>重要日程类型</h3>
       <p>类型独立于优先级。停用阻止新选用，原引用保留；首页显示单独控制。</p>
+      <DateRuleSettings types={read.data?.calendar_types ?? []} />
       {read.isPending && <p role="status">正在读取类型…</p>}
       {read.error && (
         <p role="alert">

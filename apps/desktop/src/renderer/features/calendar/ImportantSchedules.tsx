@@ -34,7 +34,7 @@ export function ImportantScheduleRow({
             {time} ·{' '}
             {task.calendar?.attention_source === 'schedule'
               ? task.calendar.schedule?.timezone
-              : '未指定时区'}
+              : (task.calendar?.attention_timezone ?? '未指定时区')}
           </small>
         )}
       </span>
@@ -47,6 +47,12 @@ export function ImportantScheduleRow({
             ? ' · ' + taskStatusNames[task.status]
             : ''}
         </small>
+        {task.calendar?.attention_source === 'custom' && task.calendar.schedule && (
+          <small>
+            独立工作安排：{task.calendar.schedule.date} {task.calendar.schedule.start}–
+            {task.calendar.schedule.end} {task.calendar.schedule.timezone}
+          </small>
+        )}
       </span>
     </button>
   );
