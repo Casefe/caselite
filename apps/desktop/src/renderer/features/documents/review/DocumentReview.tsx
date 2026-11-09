@@ -11,6 +11,7 @@ import {
 import type {
   AgentModel,
   AgentRun,
+  AgentPageReference,
   ReviewRange,
   ReviewSaved,
 } from '../../../../preload/caselite-api';
@@ -20,6 +21,7 @@ import { documentReviewTransport, type DocumentScope } from './document-review-t
 import useEditorSelection from './useEditorSelection';
 import EditorConversation from './EditorConversation';
 import { editorSelection } from './editor-selection';
+import PageReference from '../../../shared/ui/PageReference';
 import type { WritingSkillHandle } from './WritingSkillMenu';
 export { default as WritingSkillMenu, type WritingSkillHandle } from './WritingSkillMenu';
 
@@ -34,6 +36,7 @@ export default function DocumentReview({
   variant = 'review',
   skillHandle,
   onSkillAvailability,
+  title = '当前文档',
 }: {
   variant?: 'review' | 'assistant';
   editor: Editor | null;
@@ -43,6 +46,7 @@ export default function DocumentReview({
   onSaved(result: ReviewSaved): void;
   skillHandle?: Ref<WritingSkillHandle>;
   onSkillAvailability?(available: boolean): void;
+  title?: string;
 }) {
   const scope: DocumentScope = `document:${identity.document_id}`;
   const [preview, setPreview] = useState<{
@@ -52,6 +56,12 @@ export default function DocumentReview({
     doc: object;
   }>();
   const [question, setQuestion] = useState('');
+  const [pageState, setPageState] = useState<{ key: string; reference: AgentPageReference }>();
+  const [pageRunId, setPageRunId] = useState<string>();
+  const pageSubmission = useRef<
+    { id: string; model: AgentModel; page_context_id: string; prompt: string } | undefined
+  >(undefined);
+  const pageGeneration = useRef(0);
   const [terminal, setTerminal] = useState<AgentRun>();
   const [history, setHistory] = useState<AgentRun[]>([]);
   const [notice, setNotice] = useState('');
@@ -67,7 +77,18 @@ export default function DocumentReview({
   const lock = useRef(false);
   const composing = useRef(false);
   const root = useRef<HTMLDivElement>(null);
-  const transport = useMemo(() => documentReviewTransport(scope, setTerminal), [scope]);
+  const transport = useMemo(
+    () =>
+      documentReviewTransport(scope, setTerminal, (code) => {
+        if (pageSubmission.current && !['UNAVAILABLE', 'RESULT_UNKNOWN'].includes(code)) {
+          pageSubmission.current = undefined;
+          setPageRunId(undefined);
+          setSubmitted(false);
+          setPageState(undefined);
+        }
+      }),
+    [scope],
+  );
   const { messages, sendMessage, setMessages, stop, status, error, clearError } = useChat({
     id: scope,
     transport,
@@ -84,8 +105,17 @@ export default function DocumentReview({
     preview.range.revision === identity.revision &&
     preview.doc === editor?.state.doc;
   const reference = submitted ? preview?.range : selected?.range;
+  const generalSelection =
+    editor && !editor.state.selection.empty
+      ? editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, '\n')
+      : '';
+  const pageKey = JSON.stringify([scope, identity.revision, generalSelection]);
+  const pagePreview =
+    pageState && (submitted || pageState.key === pageKey) ? pageState.reference : undefined;
+  const setPagePreview = (reference?: AgentPageReference) =>
+    setPageState(reference ? { key: pageKey, reference } : undefined);
   const canPrepare = Boolean(
-    reference && !blocked && identity.revision > 0 && reference.text.length <= 8000,
+    !blocked && identity.revision > 0 && (!reference || reference.text.length <= 8000),
   );
   const skillAvailable =
     canPrepare && !submitted && !running && !preparing && !applying && !recovery;
@@ -125,6 +155,7 @@ export default function DocumentReview({
       : '';
   const candidate = terminal?.output.trim();
   const applicable = Boolean(
+    terminal?.status === 'succeeded' &&
     candidate &&
     candidate.length <= 8000 &&
     !/[\p{Cc}\u2028\u2029\uD800-\uDFFF]/u.test(candidate.replaceAll('\n', '')) &&
@@ -135,13 +166,55 @@ export default function DocumentReview({
     window.caselite
       .agent({ protocol_version, operation: 'discard_review', scope, run_id: id })
       .catch(() => {});
+  const activation = useRef(() => {});
+  useLayoutEffect(() => {
+    activation.current = () => {
+      if (blocked || submitted || preparing || running || selected?.range.text) return;
+      if (pagePreview && pagePreview.mode === (generalSelection ? 'selection' : 'page')) return;
+      const generation = ++pageGeneration.current;
+      void window.caselite
+        .agent({
+          protocol_version,
+          operation: 'preview_page',
+          scope,
+          ...(generalSelection ? { selected_text: generalSelection } : {}),
+        })
+        .then((result) => {
+          if (
+            alive.current &&
+            generation === pageGeneration.current &&
+            !current.current.blocked &&
+            current.current.revision === identity.revision &&
+            result.ok &&
+            result.page_preview
+          )
+            setPagePreview(result.page_preview);
+        })
+        .catch(() => {});
+    };
+  });
+  useEffect(() => {
+    const region = root.current?.closest('.inspector-ai-region');
+    if (!region) return;
+    const activate = () => activation.current();
+    region.addEventListener('pointerdown', activate, true);
+    region.addEventListener('focusin', activate, true);
+    return () => {
+      region.removeEventListener('pointerdown', activate, true);
+      region.removeEventListener('focusin', activate, true);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    pageGeneration.current++;
+  }, [pageKey, submitted]);
   useEffect(() => {
     alive.current = true;
     let current = true;
     void window.caselite
       .agent({ protocol_version, operation: 'read', scope })
       .then((result) => {
-        if (current && result.ok) setHistory(result.runs.filter((run) => run.status !== 'running'));
+        if (current && result.ok)
+          setHistory(result.runs.filter((run) => run.scope === scope && run.status !== 'running'));
       })
       .catch(() => {});
     return () => {
@@ -213,6 +286,54 @@ export default function DocumentReview({
   async function send(prompt = question, captured = selected) {
     if (blocked || lock.current || running || submitted || !prompt.trim() || composing.current)
       return;
+    if (!captured?.range.text) {
+      if (blocked || identity.revision < 1) return;
+      lock.current = true;
+      setPreparing(true);
+      pageGeneration.current++;
+      try {
+        const result = await window.caselite.agent({
+          protocol_version,
+          operation: 'preview_page',
+          scope,
+          ...(generalSelection ? { selected_text: generalSelection } : {}),
+        });
+        if (
+          !alive.current ||
+          current.current.blocked ||
+          current.current.revision !== identity.revision
+        )
+          return;
+        if (!result.ok || !result.page_preview) {
+          setNotice(result.ok ? '无法引用当前页面。' : result.message);
+          return;
+        }
+        setPagePreview(result.page_preview);
+        setPreview(undefined);
+        setMessages([]);
+        setTerminal(undefined);
+        setSubmitted(true);
+        clearError();
+        const submission = {
+          id: crypto.randomUUID(),
+          model: result.model,
+          page_context_id: result.page_preview.id,
+          prompt: prompt.trim(),
+        };
+        pageSubmission.current = submission;
+        setPageRunId(submission.id);
+        await sendMessage(
+          { text: prompt.trim() },
+          {
+            body: submission,
+          },
+        );
+      } finally {
+        lock.current = false;
+        if (alive.current) setPreparing(false);
+      }
+      return;
+    }
     // 选区变化只更新本机引用卡；明确发送时才固定经可信端验证的输入。
     const prepared = await prepare(captured);
     if (!prepared || !alive.current || current.current.blocked) return;
@@ -230,7 +351,17 @@ export default function DocumentReview({
   }
 
   async function reject() {
-    if (!preview) return;
+    if (!preview) {
+      if (running) void stop();
+      if (terminal) setHistory((old) => [...old.filter((run) => run.id !== terminal.id), terminal]);
+      setSubmitted(false);
+      setPageRunId(undefined);
+      pageSubmission.current = undefined;
+      setTerminal(undefined);
+      setMessages([]);
+      clearError();
+      return;
+    }
     const runId = preview.id;
     setPreview(undefined);
     setSubmitted(false);
@@ -249,7 +380,8 @@ export default function DocumentReview({
   }
 
   async function recoverRun() {
-    if (!preview || lock.current || running) return;
+    const runId = preview?.id ?? pageRunId;
+    if (!runId || lock.current || running) return;
     lock.current = true;
     try {
       const result = await window.caselite.agent({ protocol_version, operation: 'read', scope });
@@ -258,7 +390,7 @@ export default function DocumentReview({
         setNotice(result.message);
         return;
       }
-      const original = result.runs.find((run) => run.id === preview.id);
+      const original = result.runs.find((run) => run.id === runId && run.scope === scope);
       if (original?.status === 'running') {
         setNotice('原运行仍在进行中，请先停止并再次核对。');
         return;
@@ -268,6 +400,15 @@ export default function DocumentReview({
         clearError();
         setNotice('已找回本轮候选，未重新调用模型。');
       } else {
+        if (!preview && !original && pageSubmission.current) {
+          clearError();
+          setMessages([]);
+          await sendMessage(
+            { text: pageSubmission.current.prompt },
+            { body: pageSubmission.current },
+          );
+          return;
+        }
         await reject();
         setNotice('已核对原运行；问题已保留，可重新选择并发送。');
       }
@@ -352,7 +493,16 @@ export default function DocumentReview({
   }
 
   return (
-    <div ref={root} className="document-review">
+    <div
+      ref={root}
+      className="document-review"
+      onCompositionStart={() => {
+        composing.current = true;
+      }}
+      onCompositionEnd={() => {
+        composing.current = false;
+      }}
+    >
       <h2>{variant === 'assistant' ? '正文 AI 助手' : '文档 AI 审阅'}</h2>
       {new URLSearchParams(window.location.search).has('mock-agent') && (
         <p className="caption">合成演示 · MOCK_ONLY</p>
@@ -360,21 +510,23 @@ export default function DocumentReview({
       <p className="caption">
         选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
       </p>
-      {reference ? (
+      {reference?.text ? (
         <section className="document-review-text" aria-label="本轮引用">
-          <h3>
-            {reference.text ? '本轮引用' : '插入位置'} · 修订{' '}
-            {submitted ? preview?.range.revision : identity.revision}
-          </h3>
-          <p>{reference.text || '当前段落光标处；未引用其他正文。'}</p>
+          <PageReference
+            reference={{ title, mode: 'selection', characters: reference.text.length }}
+          />
           {submitted && !valid && !applying && !verifyApply && (
             <p>工作稿已变化，请保存后重新选取。</p>
           )}
           {!submitted && blocked && <p>请先保存正文，引用不会自动外发。</p>}
         </section>
-      ) : (
-        <p className="caption">在正文段落中选择文字或放置光标。跨段、列表和表格选区暂不支持。</p>
-      )}
+      ) : generalSelection && !submitted ? (
+        <PageReference
+          reference={{ title, mode: 'selection', characters: generalSelection.length }}
+        />
+      ) : pagePreview ? (
+        <PageReference reference={pagePreview} />
+      ) : null}
       {!submitted && reference?.text && (
         <button
           type="button"
@@ -385,7 +537,7 @@ export default function DocumentReview({
           移除引用，改为插入
         </button>
       )}
-      {variant === 'assistant' ? (
+      {
         <EditorConversation
           messages={messages.map((message) => ({
             id: message.id,
@@ -401,73 +553,24 @@ export default function DocumentReview({
           running={running}
           disabled={!canPrepare || submitted || preparing || applying || verifyApply}
         />
-      ) : (
-        <>
-          <label>
-            本轮问题
-            <textarea
-              value={question}
-              maxLength={4000}
-              rows={3}
-              disabled={running || applying || verifyApply}
-              onChange={(event) => setQuestion(event.currentTarget.value)}
-              onCompositionStart={() => {
-                composing.current = true;
-              }}
-              onCompositionEnd={() => {
-                composing.current = false;
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.key !== 'Enter' ||
-                  event.shiftKey ||
-                  event.nativeEvent.isComposing ||
-                  event.nativeEvent.keyCode === 229 ||
-                  composing.current
-                )
-                  return;
-                event.preventDefault();
-                send();
-              }}
-              placeholder="例如：将这一条款改为明确的付款期限"
-            />
-          </label>
-          <div className="document-review-actions">
-            <button
-              type="button"
-              className="primary"
-              data-sidebar-expand
-              onClick={() => void send()}
-              disabled={
-                !canPrepare ||
-                !question.trim() ||
-                submitted ||
-                preparing ||
-                running ||
-                applying ||
-                verifyApply
-              }
-            >
-              发送本轮审阅
-            </button>
-            {running && (
-              <button type="button" onClick={() => void reject()}>
-                停止
-              </button>
-            )}
-          </div>
-        </>
-      )}
-      {preview && submitted && !terminal && (running || streamed) && !error && (
+      }
+      {(preview || pagePreview) && submitted && !terminal && (running || streamed) && !error && (
         <section className="document-review-text" aria-label="流式候选">
           <h3>正在生成候选</h3>
           <p>{streamed || '等待模型响应…'}</p>
         </section>
       )}
+      {!preview && pagePreview && terminal && (
+        <section className="document-review-text" aria-label="本页 AI 回答">
+          <p>{candidate}</p>
+          <button type="button" onClick={() => void reject()}>
+            继续提问
+          </button>
+        </section>
+      )}
       {preview && terminal && (
         <section className="document-review-text" aria-label="替换差异">
           <h3>{action === 'replace' ? '替换差异' : '待插入正文'}</h3>
-          {action === 'replace' && <del>{preview.range.text}</del>}
           <label>
             接受方式
             <select
@@ -506,7 +609,7 @@ export default function DocumentReview({
           </div>
         </section>
       )}
-      {error && !running && !terminal && preview && (
+      {error && !running && !terminal && (preview || pageRunId) && (
         <div className="document-review-actions">
           <button type="button" onClick={() => void recoverRun()}>
             核对本轮结果
@@ -515,7 +618,12 @@ export default function DocumentReview({
             type="button"
             onClick={() =>
               void window.caselite
-                .agent({ protocol_version, operation: 'cancel', scope, run_id: preview.id })
+                .agent({
+                  protocol_version,
+                  operation: 'cancel',
+                  scope,
+                  run_id: (preview?.id ?? pageRunId)!,
+                })
                 .then(() => recoverRun())
                 .catch(() => setNotice('停止结果待核对。'))
             }

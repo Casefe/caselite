@@ -46,6 +46,66 @@ const profile: AgentResponse = {
   providers: { openai: true, deepseek: false },
   runs: [],
 };
+it('uses a metadata-only page card, prioritizes external selection, and separates document from task history', async () => {
+  const taskId = crypto.randomUUID(),
+    documentId = crypto.randomUUID();
+  const pageId = crypto.randomUUID();
+  const foreign: AgentRun = {
+    id: crypto.randomUUID(),
+    scope: taskId,
+    prompt: '任务页的其他聊天',
+    output: '不能进入文档页',
+    model: 'gpt-4.1-mini',
+    provider: 'openai',
+    status: 'succeeded',
+    sequence: 1,
+    message: '',
+    usage: null,
+  };
+  const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> =>
+    request.operation === 'preview_page'
+      ? {
+          ...profile,
+          page_preview: {
+            id: pageId,
+            title: '本页文件',
+            mode: request.selected_text ? 'selection' : 'page',
+            characters: request.selected_text?.length ?? 80,
+          },
+        }
+      : { ...profile, runs: [foreign] },
+  );
+  window.caselite = { agent } as unknown as Window['caselite'];
+  render(
+    <>
+      <p data-testid="page-content">本页选中的文字</p>
+      <InspectorLayout properties={null}>
+        <SidebarAgent taskId={taskId} document={{ id: documentId, revision: 1, archived: false }} />
+      </InspectorLayout>
+    </>,
+  );
+  const selected = screen.getByTestId('page-content');
+  const range = document.createRange();
+  range.selectNodeContents(selected);
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  fireEvent.pointerDown(screen.getByRole('heading', { name: 'AI 对话' }));
+  await screen.findByLabelText('选区引用文件');
+  expect(screen.getByLabelText('选区引用文件').textContent).toContain('本页文件.txt');
+  expect(screen.getByLabelText('选区引用文件').textContent).not.toContain('本页选中的文字');
+  expect(screen.queryByText('任务页的其他聊天')).toBeNull();
+  expect(agent.mock.calls.find(([r]) => r.operation === 'preview_page')![0]).toMatchObject({
+    scope: `document:${documentId}`,
+    selected_text: '本页选中的文字',
+  });
+  expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
+  expect(
+    agent.mock.calls
+      .filter(([r]) => r.operation === 'read')
+      .every(([r]) => 'scope' in r && r.scope === `document:${documentId}`),
+  ).toBe(true);
+  window.getSelection()!.removeAllRanges();
+});
 it('keeps the shared composer disabled and performs no Agent or material IPC without a task', async () => {
   const agent = vi.fn();
   const material = vi.fn();
@@ -462,7 +522,7 @@ it('opens a local project preview on focus, preserves scoped drafts, and sends o
   });
   const material = vi.fn();
   window.caselite = { agent, material } as unknown as Window['caselite'];
-  const view = render(<SidebarAgent project={a} />);
+  const view = render(<AgentPanel key={a.id} scope={firstScope} project={a} variant="compact" />);
   const input = () => screen.getByTestId('assistant-input') as HTMLTextAreaElement;
   const send = () => screen.getByRole<HTMLButtonElement>('button', { name: '发送', exact: true });
   expect(agent.mock.calls.some(([request]) => request.operation === 'preview_project')).toBe(false);
@@ -477,12 +537,14 @@ it('opens a local project preview on focus, preserves scoped drafts, and sends o
   expect(send().disabled).toBe(false);
   expect(screen.queryByLabelText('添加文件与材料')).toBeNull();
 
-  view.rerender(<SidebarAgent project={{ ...a, version: 2 }} />);
+  view.rerender(
+    <AgentPanel key={a.id} scope={firstScope} project={{ ...a, version: 2 }} variant="compact" />,
+  );
   expect(send().disabled).toBe(true);
   expect(screen.queryByText('项目甲')).toBeNull();
   expect(input().value).toBe('项目甲草稿');
   const oldResponse = finish;
-  view.rerender(<SidebarAgent project={b} />);
+  view.rerender(<AgentPanel key={b.id} scope={`project:${b.id}`} project={b} variant="compact" />);
   expect(input().value).toBe('');
   await act(async () => oldResponse?.(preview('不应显示的迟到结果')));
   expect(screen.queryByText('不应显示的迟到结果')).toBeNull();
@@ -490,7 +552,9 @@ it('opens a local project preview on focus, preserves scoped drafts, and sends o
   expect(await screen.findByText('项目乙')).toBeTruthy();
   fireEvent.change(input(), { target: { value: '项目乙草稿' } });
 
-  view.rerender(<SidebarAgent project={{ ...a, version: 2 }} />);
+  view.rerender(
+    <AgentPanel key={a.id} scope={firstScope} project={{ ...a, version: 2 }} variant="compact" />,
+  );
   expect(input().value).toBe('项目甲草稿');
   expect(send().disabled).toBe(true);
   fireEvent.focus(input());
@@ -620,6 +684,16 @@ it.each(['running', 'failed', 'reading', 'unknown'] as const)(
       usage: null,
     };
     const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+      if (request.operation === 'preview_page')
+        return {
+          ...profile,
+          page_preview: {
+            id: crypto.randomUUID(),
+            title: '合成页面',
+            mode: 'page',
+            characters: 12,
+          },
+        };
       if (request.operation === 'start') throw new Error('Unknown receipt');
       return {
         ...profile,
@@ -640,6 +714,8 @@ it.each(['running', 'failed', 'reading', 'unknown'] as const)(
     if (state === 'failed') await screen.findByText('已有部分回答');
     fireEvent.change(input, { target: { value: '保留这份草稿' } });
     if (state === 'unknown') {
+      fireEvent.focus(input);
+      await screen.findByLabelText('页面引用文件');
       fireEvent.submit(input.closest('form')!);
       await screen.findByRole('button', { name: '核对原发送（同一标识）' });
     }

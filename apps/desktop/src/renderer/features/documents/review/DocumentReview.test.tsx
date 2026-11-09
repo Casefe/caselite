@@ -59,6 +59,16 @@ function mount(variant: 'review' | 'assistant' = 'review', withToolbar = false) 
     model: 'gpt-4.1-mini',
   });
   const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+    if (request.operation === 'preview_page')
+      return {
+        ...response(),
+        page_preview: {
+          id: previewId,
+          title: '合成当前文档',
+          mode: request.selected_text ? 'selection' : 'page',
+          characters: request.selected_text?.length ?? 99,
+        },
+      };
     if (request.operation === 'preview_review')
       return { ...response(), review_preview: { id: previewId, range: request.range } };
     if (request.operation === 'start')
@@ -228,14 +238,20 @@ it.each(['review', 'assistant'] as const)(
     await act(async () => {
       editor.commands.setTextSelection({ from: 1, to: 5 });
     });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain('原文条款');
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+      '选中内容 · 4 字符',
+    );
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
     expect(
       agent.mock.calls.filter(([r]) => r.operation === 'preview_review' || r.operation === 'start'),
     ).toHaveLength(0);
     const input = screen.getByRole('textbox', { name: '本轮问题' });
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: '改写为明确条款' } });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain('原文条款');
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+      '选中内容 · 4 字符',
+    );
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
     fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
     expect(screen.getByRole('button', { name: '展开 AI 对话' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '发送本轮审阅' }));
@@ -248,7 +264,10 @@ it.each(['review', 'assistant'] as const)(
     await act(async () => {
       editor.commands.setTextSelection({ from: 7, to: 9 });
     });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain('原文条款');
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+      '选中内容 · 4 字符',
+    );
+    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
     fireEvent.change(screen.getByRole('combobox', { name: '接受方式' }), {
       target: { value: 'append' },
     });

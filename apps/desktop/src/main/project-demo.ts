@@ -63,6 +63,9 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const a = ai.getBoundingClientRect();
       const p = properties.getBoundingClientRect();
       const ratio = a.height / r.height;
+      const expectedWidth = Math.min(r.width * 1.5, Math.max(r.width, r.right - 12));
+      if (Math.abs(a.width - expectedWidth) > 2 || Math.abs(a.right - r.right) > 2 || getComputedStyle(ai).position !== 'fixed')
+        throw new Error('Invalid floating AI width: '+JSON.stringify({expectedWidth,r:r.toJSON(),a:a.toJSON()}));
       if (r.height < 100 || ratio < .73 || ratio > .81 || p.height < 30 || getComputedStyle(properties).overflowY !== 'auto')
         throw new Error('Invalid split geometry: '+JSON.stringify({r:r.toJSON(),a:a.toJSON(),p:p.toJSON(),ratio}));
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) throw new Error('Reduced motion emulation missing');
@@ -70,6 +73,13 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const oldAiTop = a.top;
       if (Math.abs(ai.getBoundingClientRect().top - oldAiTop) > 1) throw new Error('Property scrolling moved AI');
       const scrollTop=properties.scrollTop;
+      const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
+      if(last) {
+        last.scrollIntoView({block:'nearest'});
+        const l=last.getBoundingClientRect();
+        if(l.top<p.top-1 || l.bottom>p.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON()}));
+      }
       properties.scrollTop=0;
       button.focus();
       return {width: innerWidth, height: innerHeight, theme:document.documentElement.dataset.theme, sidebar: r.toJSON(), ai:a.toJSON(), properties:p.toJSON(),ratio,
@@ -91,6 +101,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       await evaluate(`(() => {
       const split = document.querySelector('${selector}');
       for (const control of split.querySelectorAll('textarea, [contenteditable=true], button[type=submit], .assistant-stop, .inspector-ai-heading button, .document-review-actions button, .editor-agent-thread button')) {
+        if (!control.getClientRects().length) continue;
         control.scrollIntoView({block:'nearest',inline:'nearest'});
         const r=control.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0 || r.top < -1 || r.bottom > innerHeight+1 || r.right>innerWidth+1 ||
@@ -101,8 +112,21 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       rows.push(
         await evaluate(`(() => {
         const split=document.querySelector('${selector}');
+        const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
+        const properties=split.querySelector('.inspector-properties-scroll');
+        const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
+        if(last) {
+          last.scrollIntoView({block:'nearest'});
+          const l=last.getBoundingClientRect();
+          if(!last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+            throw new Error('Last property control unreachable after toggle');
+        }
+        if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
+          throw new Error('Minimized AI does not match property width');
+        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review > h2,.document-review > .caption')].some(node=>node.getClientRects().length)))
+          throw new Error('Compact AI exposed history/status or exceeded composer height');
         return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
-          expanded:split.dataset.aiExpanded, aiHeight:split.querySelector('.inspector-ai-region').getBoundingClientRect().height};
+          expanded:split.dataset.aiExpanded, ai:ai.toJSON()};
       })()`),
       );
       if (state === 'expanded' || state === 'compact') {
@@ -117,6 +141,49 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       }
     }
   }
+  window.setContentSize(1440, 900);
+  await frame();
+  const beforeDrag = await evaluate(`(() => {
+    const handle=document.querySelector('${selector} .inspector-ai-resize').getBoundingClientRect();
+    return {x:handle.x+4,y:handle.y+handle.height/2,width:document.querySelector('${selector} .inspector-ai-region').getBoundingClientRect().width};
+  })()`);
+  // 用真实 Electron 鼠标事件覆盖指针捕获；拖出手柄后仍须连续调宽。
+  wc.sendInputEvent({
+    type: 'mouseMove',
+    x: Math.round(beforeDrag.x),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseDown',
+    button: 'left',
+    clickCount: 1,
+    x: Math.round(beforeDrag.x),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseMove',
+    x: Math.round(beforeDrag.x - 96),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseUp',
+    button: 'left',
+    clickCount: 1,
+    x: Math.round(beforeDrag.x - 96),
+    y: Math.round(beforeDrag.y),
+  });
+  await frame();
+  const afterDrag = await evaluate(
+    `document.querySelector('${selector} .inspector-ai-region').getBoundingClientRect().width`,
+  );
+  if (Math.abs(afterDrag - beforeDrag.width - 96) > 2)
+    throw new Error('Native pointer resizing failed: ' + JSON.stringify({ beforeDrag, afterDrag }));
+  rows.push({ nativeDrag: { before: beforeDrag.width, after: afterDrag } });
+  const { data: dragImage } = await debug.sendCommand('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: false,
+  });
+  writeFileSync(join(root, `resize-${label}-dragged.png`), Buffer.from(dragImage, 'base64'));
   // 使用原生键盘事件验证 Escape 焦点返回；收起只改展示，不停止流式或重发。
   await evaluate(`document.querySelector('${selector} .inspector-ai-heading button').focus()`);
   wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
@@ -345,7 +412,7 @@ export async function runProjectDemo(
       const title = '合成项目 · 独立 AI';
       const second = '合成项目 · 隔离检查';
       const question = '合成问题：项目目标日是哪一天？';
-      const context = '[aria-label="项目上下文"]';
+      const context = '[aria-label="页面引用文件"]';
       const send = `${projectComposer} [aria-label=发送]`;
       const create = (title: string) =>
         evaluate(
@@ -393,7 +460,7 @@ export async function runProjectDemo(
         await captureRenderer('project-agent-reopened.png');
       } else {
         await wait(
-          `!document.querySelector('${context} dl') && document.querySelector('${send}:disabled')`,
+          `!document.querySelector('${context}') && document.querySelector('${send}:disabled')`,
         );
         assertNoRuns();
         if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
@@ -408,23 +475,14 @@ export async function runProjectDemo(
           return document.activeElement === input;
         })()`);
         if (!focused) throw new Error('Project composer could not be focused');
-        await wait(
-          `document.querySelector('${context} dl') || document.querySelector('${context} [role=alert]')`,
-        );
+        await wait(`document.querySelector('${context}')`);
         const previewText = await evaluate(`document.querySelector('${context}').innerText`);
         if (
-          !['合成项目 · 独立 AI', '进行中', '民事诉讼', '高', '2027-02-03'].every((value) =>
-            previewText.includes(value),
-          )
+          !previewText.includes('合成项目 · 独立 AI.txt') ||
+          ['进行中', '2027-02-03', '不进入预览'].some((value) => previewText.includes(value))
         )
-          throw new Error(`Unexpected project preview: ${previewText}`);
-        await wait(`(() => {
-          const preview = document.querySelector('${context} dl');
-          return preview?.querySelectorAll('dd').length === 5 &&
-            ['合成项目 · 独立 AI', '进行中', '民事诉讼', '高', '2027-02-03'].every(value => preview.textContent.includes(value)) &&
-            !preview.textContent.includes('不进入预览') &&
-            !document.querySelector('${projectComposer} [aria-label="添加文件与材料"]');
-        })()`);
+          throw new Error('Page card exposed body or omitted its filename: ' + previewText);
+        await wait(`!document.querySelector('${projectComposer} [aria-label="添加文件与材料"]')`);
         assertNoRuns();
         await typeProjectDraft(question);
         await evaluate(

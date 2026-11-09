@@ -299,6 +299,7 @@ export function createCaseLitePreloadApi(
 export type { Task, TaskRequest, TaskResponse, TaskListQuery } from '@caselite/contracts';
 export type {
   AgentRun,
+  AgentPageReference,
   AgentRequest,
   AgentResponse,
   AgentModel,

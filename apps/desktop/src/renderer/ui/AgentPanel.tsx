@@ -4,12 +4,14 @@ import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
 import { AssistantMarkdown } from '../features/agent/AssistantMarkdown';
+import PageReference from '../shared/ui/PageReference';
 import {
   createContext,
   forwardRef,
   useContext,
   useState,
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   type ComponentProps,
@@ -207,6 +209,7 @@ export default function AgentPanel({
   editorRef,
   onConversationChange,
   project,
+  page,
 }: {
   scope: string;
   variant?: 'default' | 'compact';
@@ -216,8 +219,12 @@ export default function AgentPanel({
   onCreate?(): void;
   onConversationChange?(hasRuns: boolean): void;
   project?: { version: number; archived: boolean };
+  page?: { version: string; archived: boolean };
 }) {
   const {
+    pageReference,
+    pageLoading,
+    loadPageReference,
     materials,
     projectLoading,
     projectError,
@@ -251,7 +258,48 @@ export default function AgentPanel({
     onDraft,
     onConversationChange,
     project,
+    page,
   });
+  const panel = useRef<HTMLElement>(null);
+  const activate = useRef(() => {});
+  useLayoutEffect(() => {
+    activate.current = () => {
+      if (!page || pageLoading || active || pending || unknown) return;
+      const selection = window.getSelection();
+      const anchor = selection?.anchorNode?.parentElement;
+      const focus = selection?.focusNode?.parentElement;
+      // 在鼠标落到输入框前固定页面选区；对话自身的文字不反向变成页面材料。
+      const selected =
+        selection &&
+        !selection.isCollapsed &&
+        anchor &&
+        focus &&
+        !anchor.closest('.inspector-ai-region') &&
+        !focus.closest('.inspector-ai-region')
+          ? selection.toString().trim()
+          : '';
+      if (selected || !pageReference) void loadPageReference(selected || undefined);
+    };
+  });
+  const pageEnabled = Boolean(page);
+  useEffect(() => {
+    const region = panel.current?.closest('.inspector-ai-region');
+    if (!pageEnabled || !region) return;
+    const trigger = (event: Event) => {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest('.inspector-ai-heading button, .inspector-ai-resize')
+      )
+        return;
+      activate.current();
+    };
+    region.addEventListener('pointerdown', trigger, true);
+    region.addEventListener('focusin', trigger, true);
+    return () => {
+      region.removeEventListener('pointerdown', trigger, true);
+      region.removeEventListener('focusin', trigger, true);
+    };
+  }, [pageEnabled]);
   const openSettings = useContext(ModelSettingsNavigation);
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
   const readOnlyPreview = new URLSearchParams(window.location.search).has('audit-agent');
@@ -324,7 +372,9 @@ export default function AgentPanel({
             pending ||
             (!unknown &&
               (credentialReading ||
-                (project && (archived || !projectPreview || projectLoading)) ||
+                (page
+                  ? page.archived || !pageReference || pageLoading
+                  : project && (archived || !projectPreview || projectLoading)) ||
                 !draft.text.trim() ||
                 draft.text.length > 4000))
           }
@@ -351,12 +401,13 @@ export default function AgentPanel({
         }}
       >
         <section
+          ref={panel}
           className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${messages.length ? ' assistant-panel--conversation' : ''}`}
           aria-label={
             project ? '项目 AI 对话' : scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'
           }
-          onFocusCapture={openProjectPreview}
-          onClickCapture={openProjectPreview}
+          onFocusCapture={page ? undefined : openProjectPreview}
+          onClickCapture={page ? undefined : openProjectPreview}
         >
           {mockPreview && (
             <p className="assistant-run-status" role="status">
@@ -451,7 +502,7 @@ export default function AgentPanel({
                 {restoring ? '正在核对上轮材料…' : '恢复上轮要求与原选段'}
               </button>
             )}
-          {project && (
+          {project && !page && (
             <div className="assistant-run-status project-agent-context" aria-label="项目上下文">
               <button
                 type="button"
@@ -506,7 +557,9 @@ export default function AgentPanel({
                 composingRef.current = false;
               }}
             >
-              {project ? (
+              {pageReference && <PageReference reference={pageReference} />}
+              {pageLoading && <span className="caption">正在引用当前页面…</span>}
+              {project || scope.startsWith('document:') ? (
                 <div className="material-composer">
                   {composer}
                   <div className="assistant-actions">{actions}</div>

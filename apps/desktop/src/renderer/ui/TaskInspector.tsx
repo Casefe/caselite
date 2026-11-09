@@ -144,6 +144,7 @@ export default function TaskInspector({
           <SidebarAgent
             key={task.id}
             taskId={task.id}
+            taskVersion={task.version}
             blocked={reminderEditing || editing || calendarEditing || dateEditing}
           />
         )}

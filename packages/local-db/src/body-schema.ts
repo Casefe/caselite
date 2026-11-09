@@ -223,8 +223,8 @@ export function validateBody(state: Uint8Array, allowTables = false) {
 }
 
 // 仅派生列表/检索用文字；格式与块结构仍由已验证的Yjs二进制唯一持有。
-export function bodyPlainText(state: Uint8Array) {
-  validateBody(state);
+export function bodyPlainText(state: Uint8Array, allowTables = false) {
+  validateBody(state, allowTables);
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, state);
