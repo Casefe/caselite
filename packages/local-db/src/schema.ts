@@ -53,6 +53,16 @@ export const taskItems = sqliteTable(
       .default('todo'),
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
+    plannedDate: text('planned_date'),
+    scheduleDate: text('schedule_date'),
+    scheduleStart: text('schedule_start'),
+    scheduleEnd: text('schedule_end'),
+    scheduleTimezone: text('schedule_timezone'),
+    isImportant: integer('is_important').notNull().default(0),
+    importantTypeId: text('important_type_id'),
+    attentionSource: text('attention_source').notNull().default('unknown'),
+    attentionDate: text('attention_date'),
+    attentionTime: text('attention_time'),
     assignee: text('assignee').default('本人'),
     tags: text('tags', { mode: 'json' })
       .$type<string[]>()
@@ -62,6 +72,62 @@ export const taskItems = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    index('task_calendar_planned').on(table.workspaceId, table.plannedDate),
+    index('task_calendar_timed').on(table.workspaceId, table.scheduleDate),
+    index('task_calendar_important').on(table.workspaceId, table.isImportant),
+    check(
+      'task_calendar_planned_date_valid',
+      sql.raw(
+        "planned_date IS NULL OR (typeof(planned_date)='text' AND length(planned_date)=10 AND planned_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(planned_date,1,4)<>'0000' AND date(planned_date) IS NOT NULL AND date(planned_date)=planned_date)",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_date_valid',
+      sql.raw(
+        "schedule_date IS NULL OR (typeof(schedule_date)='text' AND length(schedule_date)=10 AND schedule_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(schedule_date,1,4)<>'0000' AND date(schedule_date) IS NOT NULL AND date(schedule_date)=schedule_date)",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_start_valid',
+      sql.raw(
+        "schedule_start IS NULL OR (typeof(schedule_start)='text' AND schedule_start GLOB '[0-2][0-9]:[0-5][0-9]' AND schedule_start<'24:00')",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_end_valid',
+      sql.raw(
+        "schedule_end IS NULL OR (typeof(schedule_end)='text' AND schedule_end GLOB '[0-2][0-9]:[0-5][0-9]' AND schedule_end<'24:00')",
+      ),
+    ),
+    check(
+      'task_calendar_schedule_complete_valid',
+      sql.raw(
+        "(schedule_date IS NULL AND schedule_start IS NULL AND schedule_end IS NULL AND schedule_timezone IS NULL) OR (schedule_date IS NOT NULL AND schedule_start IS NOT NULL AND schedule_end IS NOT NULL AND schedule_start<schedule_end AND typeof(schedule_timezone)='text' AND length(schedule_timezone) BETWEEN 1 AND 100)",
+      ),
+    ),
+    check('task_calendar_important_flag_valid', sql.raw('is_important IN (0,1)')),
+    check(
+      'task_calendar_important_type_valid',
+      sql.raw(
+        "(important_type_id IS NULL AND is_important=0) OR (typeof(important_type_id)='text' AND length(important_type_id) BETWEEN 1 AND 80)",
+      ),
+    ),
+    check(
+      'task_calendar_attention_source_valid',
+      sql.raw("attention_source IN ('unknown','schedule','planned','due','custom')"),
+    ),
+    check(
+      'task_calendar_attention_date_valid',
+      sql.raw(
+        "attention_date IS NULL OR (typeof(attention_date)='text' AND length(attention_date)=10 AND attention_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(attention_date,1,4)<>'0000' AND date(attention_date) IS NOT NULL AND date(attention_date)=attention_date)",
+      ),
+    ),
+    check(
+      'task_calendar_attention_complete_valid',
+      sql.raw(
+        "(attention_source='custom' OR (attention_date IS NULL AND attention_time IS NULL)) AND (attention_time IS NULL OR (attention_date IS NOT NULL AND (typeof(attention_time)='text' AND attention_time GLOB '[0-2][0-9]:[0-5][0-9]' AND attention_time<'24:00')))",
+      ),
+    ),
     check(
       'task_assignee_valid',
       sql`${table.assignee} IS NULL OR (typeof(${table.assignee}) = 'text' AND instr(${table.assignee}, char(0)) = 0 AND length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
@@ -544,6 +610,29 @@ export const financeReceipts = sqliteTable(
     check(
       'finance_receipt_operation',
       sql`${t.operation} IN ('register_contract','record_payment','reverse_payment')`,
+    ),
+  ],
+);
+
+export const calendarTypes = sqliteTable(
+  'calendar_types',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    id: text('id').notNull(),
+    name: text('name').notNull(),
+    enabled: integer('enabled').notNull(),
+    showHome: integer('show_home').notNull(),
+    version: integer('version').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    check(
+      'calendar_type_name',
+      sql`typeof(${t.name})='text' AND length(trim(${t.name})) BETWEEN 1 AND 30 AND instr(${t.name},char(0))=0`,
+    ),
+    check(
+      'calendar_type_flags',
+      sql`${t.enabled} IN (0,1) AND ${t.showHome} IN (0,1) AND ${t.version}>0`,
     ),
   ],
 );

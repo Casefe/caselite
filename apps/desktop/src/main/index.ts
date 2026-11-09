@@ -442,7 +442,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 20
+      result.value?.migration_count !== 21
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }

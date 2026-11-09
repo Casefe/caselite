@@ -1,3 +1,4 @@
+import { emptyTaskCalendar } from '@caselite/contracts';
 import { afterEach, expect, it } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -279,7 +280,11 @@ it('preserves a populated 0014 store and rolls back interrupted 0015 before a cl
 
   const next = openTaskStore(file, migrations);
   try {
-    expect(next.execute(readTask)).toEqual(oldTask);
+    if (!oldTask.ok) throw Error(oldTask.message);
+    expect(next.execute(readTask)).toEqual({
+      ...oldTask,
+      tasks: oldTask.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+    });
     expect(list(next, project)).toMatchObject({
       id: project,
       title: '旧库合成项目',

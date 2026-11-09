@@ -358,11 +358,51 @@ it('upgrades an exact eight-migration populated database preserving all existing
       tables.map((name) => {
         const rows = connection.prepare(`SELECT * FROM ${name}`).all();
         return name === 'task_items'
-          ? rows.map(({ tags, assignee, ...task }) => {
-              expect(tags ?? '[]').toBe('[]');
-              expect(assignee === undefined ? '本人' : assignee).toBe('本人');
-              return task;
-            })
+          ? rows.map(
+              ({
+                tags,
+                assignee,
+                planned_date,
+                schedule_date,
+                schedule_start,
+                schedule_end,
+                schedule_timezone,
+                is_important,
+                important_type_id,
+                attention_source,
+                attention_date,
+                attention_time,
+                ...task
+              }) => {
+                if (planned_date !== undefined)
+                  expect({
+                    planned_date,
+                    schedule_date,
+                    schedule_start,
+                    schedule_end,
+                    schedule_timezone,
+                    is_important,
+                    important_type_id,
+                    attention_source,
+                    attention_date,
+                    attention_time,
+                  }).toEqual({
+                    planned_date: null,
+                    schedule_date: null,
+                    schedule_start: null,
+                    schedule_end: null,
+                    schedule_timezone: null,
+                    is_important: 0,
+                    important_type_id: null,
+                    attention_source: 'unknown',
+                    attention_date: null,
+                    attention_time: null,
+                  });
+                expect(tags ?? '[]').toBe('[]');
+                expect(assignee === undefined ? '本人' : assignee).toBe('本人');
+                return task;
+              },
+            )
           : rows;
       }),
     );
@@ -391,7 +431,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
   const upgraded = openToolchainProbe(file, migrations).sqlite;
   expect(snapshotOf(upgraded)).toBe(snapshot);
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 20,
+    n: 21,
   });
   expect(upgraded.pragma('foreign_key_check')).toEqual([]);
   upgraded.close();

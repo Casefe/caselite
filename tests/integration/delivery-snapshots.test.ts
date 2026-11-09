@@ -1,3 +1,4 @@
+import { emptyTaskCalendar } from '@caselite/contracts';
 import { afterEach, expect, it } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -313,8 +314,11 @@ it('upgrades the existing 17-migration database without changing old bodies, ide
     db = inspect(file);
   expect(
     ok(upgraded.app.execute({ protocol_version: 1, operation: 'read', task_id: task.id })),
-  ).toEqual(before);
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 20 });
+  ).toEqual({
+    ...before,
+    tasks: before.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+  });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 21 });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(ok(upgraded.app.execute(create(task))).snapshot_created).toBe(true);
 });

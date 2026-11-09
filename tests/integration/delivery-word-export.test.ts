@@ -1,3 +1,4 @@
+import { emptyTaskCalendar } from '@caselite/contracts';
 import { afterEach, expect, it, vi } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
 import {
@@ -449,7 +450,10 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   const upgraded = openTaskStore(file, migrations);
   closes.push(() => upgraded.close());
   const tasks = createTaskApplication(upgraded);
-  expect(good(tasks.execute(query))).toEqual(before);
+  expect(good(tasks.execute(query))).toEqual({
+    ...before,
+    tasks: before.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+  });
   const files = createDeliveryExportFiles(join(root, 'exports'), async () => '');
   const controller = createDeliveryExportApplication({
     task: tasks,
@@ -460,7 +464,7 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   });
   expect(good(await controller.execute(request(task, snapshot))).exports![0].status).toBe('ready');
   const db = openToolchainProbe(file, migrations).sqlite;
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 20 });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 21 });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(db.pragma('foreign_key_check')).toEqual([]);
   db.close();

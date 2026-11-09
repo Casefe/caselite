@@ -180,7 +180,7 @@ it('upgrades a WAL backup of a populated pre-status database without rewriting i
     expect(checked.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(checked.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 20,
+      n: 21,
     });
     checked.sqlite.close();
   }

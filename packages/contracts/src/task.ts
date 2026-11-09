@@ -15,6 +15,105 @@ const taskAssigneeSchema = z
   .nullable();
 export const tagListSchema = z.array(z.string().trim().min(1).max(40)).max(20);
 export const ordinaryDateSchema = z.iso.date().refine((value) => !value.startsWith('0000-'));
+export const calendarTypeIdSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9-]+$/);
+const calendarTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const calendarZoneSchema = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9_+\-/]*$/)
+  .min(1)
+  .max(100)
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+export const taskCalendarSchema = z
+  .object({
+    planned_date: ordinaryDateSchema.nullable(),
+    schedule: z
+      .object({
+        date: ordinaryDateSchema,
+        start: calendarTimeSchema,
+        end: calendarTimeSchema,
+        timezone: calendarZoneSchema,
+      })
+      .strict()
+      .refine((v) => v.start < v.end)
+      .nullable(),
+    important: z.boolean(),
+    type_id: calendarTypeIdSchema.nullable(),
+    attention_source: z.enum(['unknown', 'schedule', 'planned', 'due', 'custom']),
+    attention_date: ordinaryDateSchema.nullable(),
+    attention_time: calendarTimeSchema.nullable(),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      (!v.important || v.type_id !== null) &&
+      (v.attention_source === 'custom' ||
+        (v.attention_date === null && v.attention_time === null)) &&
+      (!v.attention_time || v.attention_date !== null),
+  );
+export type TaskCalendar = z.infer<typeof taskCalendarSchema>;
+export const emptyTaskCalendar: TaskCalendar = {
+  planned_date: null,
+  schedule: null,
+  important: false,
+  type_id: null,
+  attention_source: 'unknown',
+  attention_date: null,
+  attention_time: null,
+};
+export const calendarTypeSchema = z
+  .object({
+    id: calendarTypeIdSchema,
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(30)
+      .refine((v) => !v.includes('\0')),
+    enabled: z.boolean(),
+    show_home: z.boolean(),
+    version: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CalendarType = z.infer<typeof calendarTypeSchema>;
+export const defaultCalendarTypes: CalendarType[] = [
+  ['meeting', '会议'],
+  ['hearing', '开庭'],
+  ['payment', '缴费'],
+  ['court-submission', '法庭资料提交'],
+  ['evidence', '举证／证据交换'],
+  ['filing', '立案／补正'],
+  ['appraisal', '鉴定／勘验'],
+  ['negotiation', '调解／重要谈判'],
+  ['remedy', '救济程序申请'],
+  ['preservation', '保全／续保'],
+  ['execution', '执行申请／异议'],
+  ['period-check', '时效／期间核对'],
+].map(([id, name]) => ({ id, name, enabled: true, show_home: true, version: 0 }));
+export const calendarQuerySchema = z
+  .object({
+    view: z.enum(['important', 'day', 'timed', 'undated', 'counts', 'types']),
+    date: ordinaryDateSchema,
+    from: ordinaryDateSchema,
+    to: ordinaryDateSchema,
+    home: z.boolean(),
+    include_closed: z.boolean(),
+    include_overdue: z.boolean(),
+    offset: z.number().int().min(0).max(1_000_000),
+  })
+  .strict()
+  .refine((q) => q.from <= q.to && (Date.parse(q.to) - Date.parse(q.from)) / 86400000 <= 62);
+export type CalendarQuery = z.infer<typeof calendarQuerySchema>;
 export const taskListQuerySchema = z
   .object({
     scope: z.discriminatedUnion('type', [
@@ -45,6 +144,7 @@ export const taskSchema = z.object({
   due_date: ordinaryDateSchema.nullable().default(null),
   tags: tagListSchema.optional(),
   assignee: taskAssigneeSchema.optional(),
+  calendar: taskCalendarSchema.optional(),
   matter_id: taskIdSchema.nullable(),
   document_archived_at: z.string().nullable().optional(),
   matter_title: z.string().nullable().optional(),
@@ -57,6 +157,13 @@ export const taskSchema = z.object({
   updated_at: z.string(),
 });
 export const taskQuerySchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      operation: z.literal('calendar_query'),
+      protocol_version: z.literal(1),
+      query: calendarQuerySchema,
+    })
+    .strict(),
   z
     .object({
       protocol_version: z.literal(1),
@@ -142,6 +249,18 @@ const mutation = {
   idempotency_key: taskIdSchema,
 };
 export const taskMutationSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      ...mutation,
+      operation: z.literal('update_calendar'),
+      task_id: taskIdSchema,
+      expected_version: z.number().int().positive(),
+      calendar: taskCalendarSchema,
+    })
+    .strict(),
+  z
+    .object({ ...mutation, operation: z.literal('set_calendar_type'), type: calendarTypeSchema })
+    .strict(),
   z
     .object({
       ...mutation,
@@ -233,6 +352,12 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(true),
     tasks: z.array(taskSchema),
+    calendar_types: z.array(calendarTypeSchema).optional(),
+    calendar_pending_count: z.number().int().nonnegative().optional(),
+    calendar_counts: z
+      .array(z.object({ date: ordinaryDateSchema, count: z.number().int().nonnegative() }))
+      .max(63)
+      .optional(),
     state: z.array(z.number().int().min(0).max(255)).nullable(),
     receipt: taskIdSchema.nullable(),
     snapshots: z.array(deliverySnapshotSchema).max(20).optional(),

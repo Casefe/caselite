@@ -327,3 +327,5 @@ export type {
   LocalPreferencesResponse,
   WorkspaceLocations,
 } from '@caselite/contracts';
+
+export type { TaskCalendar, CalendarType, CalendarQuery } from '@caselite/contracts';

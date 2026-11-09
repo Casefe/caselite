@@ -49,3 +49,5 @@
 
 - [ADR-025](./ADR-025-fixed-snapshot-pdf-export.md) 同快照PDF、隔离打印、格式兼容与副本另存，DEV-1629。
 - [ADR-026](./ADR-026-workspace-local-preferences.md) 工作区本地个人资料、显示偏好与原键回执，DEV-1821。
+
+- [ADR-027](./ADR-027-task-calendar.md) Task日历元数据、类型与全范围共享查询，DEV-1824。

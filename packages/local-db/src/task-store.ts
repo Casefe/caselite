@@ -1,3 +1,11 @@
+import {
+  calendarColumns,
+  decodeCalendar,
+  calendarTypes,
+  calendarValues,
+  queryCalendar,
+  type CalendarRow,
+} from './task-calendar';
 import { createDocumentReviewReader } from './document-review-reader';
 import { createDeliverySnapshotStore } from './delivery-snapshot-store';
 import { createDeliveryExportStore } from './delivery-export-store';
@@ -21,12 +29,47 @@ import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
-type Row = Omit<Task, 'tags' | 'assignee'> & { tags: string; assignee: string | null };
-const decodeTask = ({ tags, ...row }: Row) => ({
-  ...row,
-  tags: tagListSchema.parse(JSON.parse(tags)),
-});
-const select = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.metadata_version AS document_metadata_version,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+type Row = Omit<Task, 'tags' | 'assignee'> & {
+  tags: string;
+  assignee: string | null;
+} & Partial<CalendarRow>;
+const decodeTask = (input: Row): Task => {
+  const {
+    tags,
+    planned_date,
+    schedule_date,
+    schedule_start,
+    schedule_end,
+    schedule_timezone,
+    is_important,
+    important_type_id,
+    attention_source,
+    attention_date,
+    attention_time,
+    ...row
+  } = input;
+  return {
+    ...row,
+    tags: tagListSchema.parse(JSON.parse(tags)),
+    ...(planned_date !== undefined
+      ? {
+          calendar: decodeCalendar({
+            planned_date,
+            schedule_date,
+            schedule_start,
+            schedule_end,
+            schedule_timezone,
+            is_important,
+            important_type_id,
+            attention_source,
+            attention_date,
+            attention_time,
+          } as CalendarRow),
+        }
+      : {}),
+  };
+};
+const baseSelect = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.metadata_version AS document_metadata_version,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -37,6 +80,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
+  const hasCalendar = (
+    db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
+  ).some((v) => v.name === 'planned_date');
+  const select = baseSelect.replace(
+    ' FROM task_items',
+    `${hasCalendar ? calendarColumns : ''} FROM task_items`,
+  );
   // 完整宿主先应用全部迁移；旧版迁移夹具尚无导出意图表，不能因此破坏已有Task读写。
   const hasExportIntents = !!db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_export_intents'")
@@ -76,6 +126,15 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     catalog: createCatalogStore(db, workspace),
     agentHistory: createAgentHistoryStore(db, workspace),
     execute(request: TaskRequest): TaskResponse {
+      if (request.operation === 'calendar_query')
+        return hasCalendar
+          ? queryCalendar(db, workspace, select, decodeTask, request.query)
+          : fail('CONFLICT', '此工作区尚未升级日历格式。');
+      if (
+        !hasCalendar &&
+        (request.operation === 'update_calendar' || request.operation === 'set_calendar_type')
+      )
+        return fail('CONFLICT', '此工作区尚未升级日历格式。');
       if (
         request.operation === 'export_snapshot' ||
         request.operation === 'save_export' ||
@@ -197,6 +256,32 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           return old.digest === digest
             ? taskResponseSchema.parse(JSON.parse(old.result))
             : fail('CONFLICT', '同一提交身份已用于不同内容，请核对原结果。');
+        if (request.operation === 'set_calendar_type') {
+          const types = calendarTypes(db, workspace),
+            previous = types.find((v) => v.id === request.type.id);
+          if ((previous?.version ?? 0) !== request.type.version)
+            return fail('CONFLICT', '类型已有更新，请核对后再保存。');
+          if (types.some((v) => v.id !== request.type.id && v.name === request.type.name))
+            return fail('INVALID_REQUEST', '类型名称已存在。');
+          db.prepare(
+            'INSERT INTO calendar_types(workspace_id,id,name,enabled,show_home,version) VALUES(?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,show_home=excluded.show_home,version=excluded.version',
+          ).run(
+            workspace,
+            request.type.id,
+            request.type.name,
+            +request.type.enabled,
+            +request.type.show_home,
+            request.type.version + 1,
+          );
+          const result = {
+            ...ok([], null, request.idempotency_key),
+            calendar_types: calendarTypes(db, workspace),
+          };
+          db.prepare(
+            'INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
+          ).run(workspace, request.idempotency_key, digest, JSON.stringify(result));
+          return result;
+        }
         let taskId: string;
         let savedSnapshots: DeliverySnapshot[] | undefined;
         let snapshotCreated: boolean | undefined;
@@ -264,6 +349,25 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             db.prepare(
               'UPDATE task_items SET title=?,objective=?,version=version+1,updated_at=? WHERE id=?',
             ).run(request.title, objective, new Date().toISOString(), taskId);
+          } else if (request.operation === 'update_calendar') {
+            if (task.version !== request.expected_version)
+              return fail('CONFLICT', '任务已更新，请重新读取后核对。');
+            const type = calendarTypes(db, workspace).find(
+              (v) => v.id === request.calendar.type_id,
+            );
+            if (
+              request.calendar.type_id &&
+              (!type ||
+                (!type.enabled &&
+                  (request.calendar.type_id !== task.calendar?.type_id ||
+                    (!task.calendar?.important && request.calendar.important))))
+            )
+              return fail('INVALID_REQUEST', '请选择启用的重要类型；原停用引用可以保留。');
+            if (JSON.stringify(task.calendar) === JSON.stringify(request.calendar))
+              return fail('INVALID_REQUEST', '日历属性没有变化。');
+            db.prepare(
+              'UPDATE task_items SET planned_date=?,schedule_date=?,schedule_start=?,schedule_end=?,schedule_timezone=?,is_important=?,important_type_id=?,attention_source=?,attention_date=?,attention_time=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
+            ).run(...calendarValues(request.calendar), new Date().toISOString(), taskId, workspace);
           } else if (request.operation === 'update_attributes') {
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
@@ -347,7 +451,10 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
         return result;
       });
       // 创建先锁定写事务，保证校验项目与归组之间不会插入并发归档。
-      return request.operation === 'create' || request.operation === 'create_snapshot'
+      return request.operation === 'create' ||
+        request.operation === 'create_snapshot' ||
+        request.operation === 'update_calendar' ||
+        request.operation === 'set_calendar_type'
         ? commit.immediate()
         : commit();
     },
