@@ -119,7 +119,12 @@ export default function InspectorLayout({
           width,
           right: Math.max(0, window.innerWidth - bounds.right),
           bottom: Math.max(0, window.innerHeight - bounds.bottom),
-          height: Math.min(bounds.height, expanded ? Math.max(240, bounds.height * 0.75) : 164),
+          height: expanded
+            ? Math.min(
+                bounds.height - Math.min(64, bounds.height * 0.2),
+                Math.max(240, bounds.height * 0.75),
+              )
+            : Math.min(bounds.height, 164),
         }}
       >
         {expanded && (
