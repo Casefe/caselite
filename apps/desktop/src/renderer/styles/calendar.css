@@ -1,9 +1,35 @@
 .calendar-workbench {
   height: 100%;
   display: grid;
-  grid-template-columns: 230px minmax(260px, 1fr) 340px;
+  grid-template-columns: var(--calendar-dates-width, 268.333333px) 6px minmax(260px, 1fr) 6px var(
+      --calendar-inspector-width,
+      340px
+    );
   min-height: 0;
   background: var(--theme-panel, #fff);
+}
+.resize-separator {
+  min-width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: var(--theme-border, #e6e7e5);
+  outline-offset: -2px;
+}
+.resize-separator:hover,
+.resize-separator:focus-visible {
+  background: var(--theme-accent, #7273ce);
+}
+.resize-separator[aria-disabled='true'] {
+  cursor: wait;
+}
+.calendar-layout-controls {
+  margin-top: 16px;
+  font-size: 11px;
+}
+.calendar-layout-controls button {
+  font-size: 11px;
+  margin: 3px 3px 3px 0;
 }
 .calendar-dates,
 .calendar-agenda,
@@ -275,7 +301,10 @@
 }
 @media (max-width: 1200px) {
   .calendar-workbench {
-    grid-template-columns: 210px minmax(260px, 1fr);
+    grid-template-columns: var(--calendar-dates-width, 268.333333px) 6px minmax(260px, 1fr);
+  }
+  .calendar-right-separator {
+    display: none;
   }
   .calendar-task-inspector {
     display: none;
@@ -287,9 +316,18 @@
     right: 0;
     top: 56px;
     bottom: 0;
-    width: min(420px, 100vw);
+    width: min(var(--calendar-inspector-width, 340px), 100vw);
     background: var(--theme-panel, #fff);
     box-shadow: -8px 0 35px #0002;
+  }
+  .calendar-task-open .calendar-right-separator {
+    display: block;
+    position: fixed;
+    z-index: 42;
+    right: calc(var(--calendar-inspector-width, 340px) - 3px);
+    top: 56px;
+    bottom: 0;
+    width: 6px;
   }
   .calendar-agenda > header {
     flex-wrap: wrap;
@@ -309,6 +347,9 @@
   .calendar-dates {
     display: none;
   }
+  .calendar-left-separator {
+    display: none;
+  }
   .calendar-dates-open .calendar-dates {
     display: block;
     position: fixed;
@@ -316,9 +357,18 @@
     left: 0;
     top: 56px;
     bottom: 0;
-    width: 270px;
+    width: min(var(--calendar-dates-width, 268.333333px), 100vw);
     background: var(--theme-panel, #fff);
     box-shadow: 10px 0 30px #0002;
+  }
+  .calendar-dates-open .calendar-left-separator {
+    display: block;
+    position: fixed;
+    z-index: 46;
+    left: calc(var(--calendar-dates-width, 268.333333px) - 3px);
+    top: 56px;
+    bottom: 0;
+    width: 6px;
   }
   .calendar-open-dates,
   .calendar-close-dates {
