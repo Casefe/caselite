@@ -132,6 +132,7 @@
   border: 0;
   box-shadow: none;
   background: transparent;
+  overflow: visible;
 }
 .document-inline-editor .document-bar {
   gap: 12px;
@@ -149,7 +150,7 @@
 }
 .document-inline-editor .document > footer {
   position: sticky;
-  top: -18px;
+  top: 0;
   z-index: 2;
   background: var(--theme-panel);
   padding: 12px 0;
