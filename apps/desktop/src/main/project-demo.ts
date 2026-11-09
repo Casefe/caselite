@@ -90,7 +90,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         const currentProperties=properties.getBoundingClientRect();
         const currentAi=ai.getBoundingClientRect();
         if(currentProperties.bottom>currentAi.top+1 || l.top<currentProperties.top-1 || l.bottom>currentProperties.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
-          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON(),ancestors:(()=>{let node=last;const rows=[];while(node&&node!==split){const style=getComputedStyle(node);rows.push({tag:node.tagName,cls:node.className,top:node.scrollTop,scrollHeight:node.scrollHeight,height:node.clientHeight,overflow:style.overflowY,rect:node.getBoundingClientRect().toJSON()});node=node.parentElement;}return rows;})()}));
+          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON(),currentAi:currentAi.toJSON(),ancestors:(()=>{let node=last;const rows=[];while(node){const style=getComputedStyle(node);rows.push({tag:node.tagName,cls:node.className,top:node.scrollTop,scrollHeight:node.scrollHeight,height:node.clientHeight,overflow:style.overflowY,rect:node.getBoundingClientRect().toJSON()});node=node.parentElement;}return rows;})()}));
       }
       properties.scrollTop=0;
       button.focus();

@@ -535,7 +535,7 @@
   background: var(--theme-subtle);
 }
 
-/* 右栏可用高度决定伸缩比例；短窗至少保留属性入口，不使用屏幕 75vh。 */
+/* 右栏可用高度决定伸缩比例；短窗至少保留属性入口。 */
 :is(.task-inspector, .project-catalog > .project-properties):has(> .inspector-split) {
   height: 100%;
   min-height: 0;
@@ -779,7 +779,8 @@
 }
 @media (max-width: 780px) {
   .task-detail .task-inspector:has(> .inspector-split) {
-    height: calc(100dvh - var(--workbench-header-height, 48px));
+    /* 工作台和任务各有一行页头；辅助栏不能伸到其实际滚动视口之外。 */
+    height: calc(100dvh - 2 * var(--workbench-header-height, 48px));
   }
 }
 
