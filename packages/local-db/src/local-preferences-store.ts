@@ -66,6 +66,9 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
             ...(request.values.editor_mode === undefined && current.editor_mode !== undefined
               ? { editor_mode: current.editor_mode }
               : {}),
+            ...(request.values.writing_skills === undefined && current.writing_skills !== undefined
+              ? { writing_skills: current.writing_skills }
+              : {}),
           });
           const next = { ...values, version: current.version + 1 };
           // 资料、版本与原键回执同事务；未知结果只能核对原键，不能换键重复写入。
