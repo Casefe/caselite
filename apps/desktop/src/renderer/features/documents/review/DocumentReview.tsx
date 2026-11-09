@@ -511,7 +511,7 @@ export default function DocumentReview({
         选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
       </p>
       {reference?.text ? (
-        <section className="document-review-text" aria-label="本轮引用">
+        <section className="document-review-reference" aria-label="本轮引用">
           <PageReference
             reference={{ title, mode: 'selection', characters: reference.text.length }}
           />
@@ -537,23 +537,6 @@ export default function DocumentReview({
           移除引用，改为插入
         </button>
       )}
-      {
-        <EditorConversation
-          messages={messages.map((message) => ({
-            id: message.id,
-            role: message.role,
-            content: message.parts.flatMap((part) =>
-              part.type === 'text' ? [{ type: 'text' as const, text: part.text }] : [],
-            ),
-          }))}
-          question={question}
-          onQuestion={setQuestion}
-          send={() => void send()}
-          stop={() => void reject()}
-          running={running}
-          disabled={!canPrepare || submitted || preparing || applying || verifyApply}
-        />
-      }
       {(preview || pagePreview) && submitted && !terminal && (running || streamed) && !error && (
         <section className="document-review-text" aria-label="流式候选">
           <h3>正在生成候选</h3>
@@ -647,6 +630,23 @@ export default function DocumentReview({
             ))}
         </details>
       )}
+      {
+        <EditorConversation
+          messages={messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.parts.flatMap((part) =>
+              part.type === 'text' ? [{ type: 'text' as const, text: part.text }] : [],
+            ),
+          }))}
+          question={question}
+          onQuestion={setQuestion}
+          send={() => void send()}
+          stop={() => void reject()}
+          running={running}
+          disabled={!canPrepare || submitted || preparing || applying || verifyApply}
+        />
+      }
     </div>
   );
 }

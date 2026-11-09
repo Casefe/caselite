@@ -51,6 +51,16 @@ export default function InspectorLayout({
       window.removeEventListener('scroll', measure, true);
     };
   }, []);
+  useLayoutEffect(() => {
+    const scroll = content.current;
+    if (!expanded || !scroll) return;
+    // 仅在展开时回到最新位置；后续阅读历史不被强制拉回，也不改变焦点或会话身份。
+    scroll.scrollTop = scroll.scrollHeight;
+    for (const viewport of scroll.querySelectorAll<HTMLElement>(
+      '.assistant-thread, .assistant-viewport, .editor-agent-viewport',
+    ))
+      viewport.scrollTop = viewport.scrollHeight;
+  }, [expanded]);
   useEffect(() => {
     const scroll = content.current;
     const panel = section.current;
@@ -119,12 +129,7 @@ export default function InspectorLayout({
           width,
           right: Math.max(0, window.innerWidth - bounds.right),
           bottom: Math.max(0, window.innerHeight - bounds.bottom),
-          height: expanded
-            ? Math.min(
-                bounds.height - Math.min(64, bounds.height * 0.2),
-                Math.max(240, bounds.height * 0.75),
-              )
-            : Math.min(bounds.height, 164),
+          height: expanded ? bounds.height * 0.85 : Math.min(bounds.height, 164),
         }}
       >
         {expanded && (

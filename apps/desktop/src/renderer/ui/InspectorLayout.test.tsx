@@ -25,15 +25,24 @@ it('floats at property width, expands on conversation click, supports keyboard w
   try {
     render(
       <InspectorLayout properties={<p>属性内容</p>}>
-        <p>点击会话区域</p>
+        <div className="assistant-viewport" data-testid="历史滚动区">
+          <p>点击会话区域</p>
+        </div>
         <textarea aria-label="草稿" defaultValue="保留输入" />
       </InspectorLayout>,
     );
     const panel = screen.getByRole('region', { name: 'AI 对话' });
+    const outer = panel.querySelector<HTMLElement>('.inspector-ai-scroll')!;
+    const history = screen.getByTestId('历史滚动区');
+    Object.defineProperty(outer, 'scrollHeight', { configurable: true, value: 900 });
+    Object.defineProperty(history, 'scrollHeight', { configurable: true, value: 640 });
     expect(panel.style.width).toBe('320px');
     expect(screen.queryByRole('separator')).toBeNull();
     fireEvent.click(screen.getByText('点击会话区域'));
     expect(panel.style.width).toBe('480px');
+    expect(panel.style.height).toBe('510px');
+    expect(outer.scrollTop).toBe(900);
+    expect(history.scrollTop).toBe(640);
     const handle = screen.getByRole('separator', { name: '调整 AI 对话宽度' });
     handle.focus();
     await userEvent.keyboard('{ArrowLeft}');

@@ -66,8 +66,17 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const expectedWidth = Math.min(r.width * 1.5, Math.max(r.width, r.right - 12));
       if (Math.abs(a.width - expectedWidth) > 2 || Math.abs(a.right - r.right) > 2 || getComputedStyle(ai).position !== 'fixed')
         throw new Error('Invalid floating AI width: '+JSON.stringify({expectedWidth,r:r.toJSON(),a:a.toJSON()}));
-      if (r.height < 100 || ratio < .73 || ratio > .81 || p.height < 30 || getComputedStyle(properties).overflowY !== 'auto')
+      if (r.height < 100 || ratio < .84 || ratio > .86 || p.height < 30 || p.bottom>a.top+1 || getComputedStyle(properties).overflowY !== 'auto')
         throw new Error('Invalid split geometry: '+JSON.stringify({r:r.toJSON(),a:a.toJSON(),p:p.toJSON(),ratio}));
+      const composer=ai.querySelector('.assistant-compose,.editor-agent-thread > form');
+      const expectedBottom=a.bottom-parseFloat(getComputedStyle(ai).paddingBottom)-parseFloat(getComputedStyle(ai).borderBottomWidth);
+      if(composer && Math.abs(composer.getBoundingClientRect().bottom-expectedBottom)>2)
+        throw new Error('Composer is not docked at the bottom: '+JSON.stringify({composer:composer.getBoundingClientRect().toJSON(),expectedBottom}));
+      for(const reference of ai.querySelectorAll('.agent-page-reference')) {
+        if(!reference.getClientRects().length) continue;
+        if(getComputedStyle(reference).borderTopWidth!=='0px' || !reference.querySelector('svg') || reference.querySelector('small') || getComputedStyle(reference.querySelector('.agent-page-reference-icon')).borderTopWidth!=='0px')
+          throw new Error('Reference must show only an unframed icon and title');
+      }
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) throw new Error('Reduced motion emulation missing');
       properties.scrollTop = properties.scrollHeight;
       const oldAiTop = a.top;
@@ -97,6 +106,11 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         if (window.__resizeInput !== input || window.__resizeConversation !== split.querySelector('.assistant-panel, .document-review') ||
           (input?.value ?? input?.textContent) !== window.__resizeDraft)
           throw new Error('Resizing remounted conversation or changed draft');
+        if(split.dataset.aiExpanded==='true') {
+          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport'))
+            if(scroll.clientHeight>0 && scroll.scrollHeight>scroll.clientHeight+2 && scroll.scrollTop+scroll.clientHeight<scroll.scrollHeight-2)
+              throw new Error('Expanded conversation did not open at the latest content');
+        }
       })()`);
       await evaluate(`(() => {
       const split = document.querySelector('${selector}');

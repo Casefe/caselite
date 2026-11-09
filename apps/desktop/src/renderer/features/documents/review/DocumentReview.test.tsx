@@ -238,7 +238,7 @@ it.each(['review', 'assistant'] as const)(
     await act(async () => {
       editor.commands.setTextSelection({ from: 1, to: 5 });
     });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+    expect(screen.getByLabelText('选区引用文件').getAttribute('aria-description')).toContain(
       '选中内容 · 4 字符',
     );
     expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
@@ -248,7 +248,7 @@ it.each(['review', 'assistant'] as const)(
     const input = screen.getByRole('textbox', { name: '本轮问题' });
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: '改写为明确条款' } });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+    expect(screen.getByLabelText('选区引用文件').getAttribute('aria-description')).toContain(
       '选中内容 · 4 字符',
     );
     expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
@@ -264,7 +264,7 @@ it.each(['review', 'assistant'] as const)(
     await act(async () => {
       editor.commands.setTextSelection({ from: 7, to: 9 });
     });
-    expect(screen.getByRole('region', { name: '本轮引用' }).textContent).toContain(
+    expect(screen.getByLabelText('选区引用文件').getAttribute('aria-description')).toContain(
       '选中内容 · 4 字符',
     );
     expect(screen.getByRole('region', { name: '本轮引用' }).textContent).not.toContain('原文条款');
