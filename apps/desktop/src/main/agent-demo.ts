@@ -65,6 +65,9 @@ export function syntheticTextStream(
     '- **缺件**：缺少签收凭证，需人工核对。\n\n',
     '> 内部沟通初稿：建议先补齐签收材料，再核对时间线。',
   ];
+  const homeContextCheck =
+    !reviewParts && JSON.stringify(_context.messages).includes('首页智能体验收');
+  if (homeContextCheck) parts.push(...Array<string>(24).fill('合成进度，等待人工核对。\n'));
   if (!reviewParts && JSON.stringify(_context.messages).includes('长文展示测试'))
     parts[4] = Array.from(
       { length: 24 },
@@ -79,7 +82,8 @@ export function syntheticTextStream(
     throw new Error('Synthetic resize stream requires an abort signal');
   const holdDeadline = Date.now() + 30_000;
   let index = 0;
-  if (reviewParts) stream.push({ type: 'start', partial: structuredClone(response) });
+  if (reviewParts || homeContextCheck)
+    stream.push({ type: 'start', partial: structuredClone(response) });
   const timer = setInterval(
     () => {
       if (holdForStop && index === 1 && !options?.signal?.aborted) {

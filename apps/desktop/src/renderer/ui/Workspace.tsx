@@ -42,6 +42,7 @@ export function WorkspaceShell({
   projectBackSlot,
   onNavigate,
   tasks,
+  importantDatesCount,
   favorites = [],
   agentDraft = false,
   onOpen,
@@ -53,6 +54,7 @@ export function WorkspaceShell({
   projectBackSlot?: Ref<HTMLDivElement>;
   onNavigate(view: WorkspaceView): void;
   tasks: Task[];
+  importantDatesCount?: number;
   favorites?: string[];
   agentDraft?: boolean;
   onOpen(id: string): void;
@@ -98,12 +100,30 @@ export function WorkspaceShell({
                     data-nav={item.id}
                     aria-label={item.label}
                     aria-current={view === item.id ? 'page' : undefined}
-                    title={collapsed ? item.label : undefined}
+                    title={
+                      collapsed
+                        ? item.id === 'calendar' && importantDatesCount !== undefined
+                          ? `日历 · ${importantDatesCount} 个重要日期`
+                          : item.label
+                        : undefined
+                    }
+                    aria-describedby={
+                      !collapsed && item.id === 'calendar' && importantDatesCount !== undefined
+                        ? 'calendar-important-count'
+                        : undefined
+                    }
                     onClick={() => onNavigate(item.id)}
                   >
                     <Icon name={item.icon} />
                     {!collapsed && <span>{item.label}</span>}
-                    {!collapsed && item.id === 'tasks' && <small>{tasks.length}</small>}
+                    {!collapsed && item.id === 'calendar' && importantDatesCount !== undefined && (
+                      <small
+                        id="calendar-important-count"
+                        aria-label={`重要日期 ${importantDatesCount} 项`}
+                      >
+                        {importantDatesCount}
+                      </small>
+                    )}
                   </button>
                 ))}
               </div>
