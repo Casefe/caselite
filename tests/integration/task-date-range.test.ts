@@ -272,3 +272,53 @@ it('rolls task, document, reminder, activity and receipts back if the initial re
   db.close();
   store.close();
 });
+
+it('creates with optional local assignee values while keeping omitted legacy request digests and replay stable', () => {
+  const path = file();
+  let store = openTaskStore(path, migrations),
+    app = createTaskApplication(store);
+  const legacy = {
+    ...identity(),
+    operation: 'create' as const,
+    title: '旧格式创建',
+    objective: '',
+  };
+  const first = ok(app.execute(legacy));
+  expect(first.tasks[0]?.assignee).toBe('本人');
+  const { request_id, ...content } = legacy;
+  void request_id;
+  const expectedDigest = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+  const check = new Database(path);
+  expect(
+    check.prepare('SELECT digest FROM task_receipts WHERE key=?').get(legacy.idempotency_key),
+  ).toEqual({ digest: expectedDigest });
+  check.close();
+  for (const assignee of ['本人', null, '  合成负责人  ']) {
+    const request = {
+      ...identity(),
+      operation: 'create' as const,
+      title: '指定负责人',
+      objective: '',
+      assignee,
+    };
+    const created = ok(app.execute(request));
+    expect(created.tasks[0]?.assignee).toBe(assignee?.trim() ?? null);
+    expect(app.execute(request)).toEqual(created);
+  }
+  for (const assignee of ['', '甲'.repeat(81), '甲\0乙', 7])
+    expect(
+      app.execute({
+        ...identity(),
+        operation: 'create',
+        title: '非法负责人',
+        objective: '',
+        assignee,
+      }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  store.close();
+  store = openTaskStore(path, migrations);
+  app = createTaskApplication(store);
+  expect(app.execute(legacy)).toEqual(first);
+  expect(ok(app.execute({ protocol_version: 1, operation: 'list' })).tasks).toHaveLength(4);
+  store.close();
+});

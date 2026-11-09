@@ -364,6 +364,7 @@ export const taskMutationSchema = z
       .object({
         ...mutation,
         operation: z.literal('create'),
+        assignee: taskAssigneeSchema.optional(),
         status: taskStatusSchema.optional(),
         priority: taskPrioritySchema.optional(),
         due_date: ordinaryDateSchema.nullable().optional(),

@@ -75,6 +75,14 @@ export async function runTaskViewsDemo(
       const expected = JSON.parse(readFileSync(join(root, 'task-views-expected.json'), 'utf8'));
       const saved = (await task({ protocol_version: 1, operation: 'read', task_id: expected.id }))
         .tasks[0]!;
+      if (phase === 'task-views-preview') {
+        await click('[data-nav=tasks]');
+        await wait(`document.querySelector('[data-row-task="${saved.id}"]')`);
+        await click(`[data-row-task="${saved.id}"]`);
+        await wait("document.querySelector('[aria-label=任务标题]')");
+        window.show();
+        return;
+      }
       if (
         saved.title !== expected.title ||
         saved.start_date !== expected.start ||
@@ -120,7 +128,6 @@ export async function runTaskViewsDemo(
           2,
         ),
       );
-      if (phase === 'task-views-preview') window.show();
       return;
     }
     stage = 'seed';

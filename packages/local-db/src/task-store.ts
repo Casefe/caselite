@@ -92,6 +92,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
+  const hasAssignee = (
+    db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
+  ).some((c) => c.name === 'assignee');
   const hasStartDate = (
     db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
   ).some((c) => c.name === 'start_date');
@@ -356,6 +359,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             return fail('INVALID_REQUEST', '任务说明超过4000字符，输入已保留。');
         }
         if (request.operation === 'create') {
+          if (request.assignee !== undefined && !hasAssignee)
+            return fail('CONFLICT', '此工作区尚未升级负责人格式。');
           if (request.start_date && request.due_date && request.start_date > request.due_date)
             return fail('INVALID_REQUEST', '开始日期不能晚于截止日期。');
           if (request.start_date && !hasStartDate)
@@ -384,6 +389,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             request.due_date ?? null,
             JSON.stringify(request.tags ?? []),
           );
+          if (request.assignee !== undefined)
+            db.prepare('UPDATE task_items SET assignee=? WHERE id=?').run(request.assignee, taskId);
           if (hasStartDate && request.start_date)
             db.prepare('UPDATE task_items SET start_date=? WHERE id=?').run(
               request.start_date,
