@@ -321,6 +321,7 @@ it('preserves a populated 0014 store and rolls back interrupted 0015 before a cl
         ...task,
         document_metadata_version: 1,
         calendar: emptyTaskCalendar,
+        start_date: null,
       })),
     });
     expect(list(next, project)).toMatchObject({
