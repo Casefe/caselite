@@ -6,7 +6,6 @@ import SidebarAgent from './SidebarAgent';
 import InspectorLayout from './InspectorLayout';
 import TagPicker from '../shared/ui/TagPicker';
 import { DocumentVersions } from '../features/documents/DocumentVersions';
-import type { FormatExample } from '../features/documents/DocumentFormatExamples';
 
 export function DocumentPropertyValues({
   revision,
@@ -46,7 +45,6 @@ export default function DocumentInspector({
   onTagDraft,
   selectedVersion = null,
   onVersion,
-  example,
 }: {
   document?: CatalogDocument;
   project?: Matter;
@@ -60,7 +58,6 @@ export default function DocumentInspector({
   onTagDraft(dirty: boolean): void;
   selectedVersion?: string | null;
   onVersion?(id: string | null): void;
-  example?: FormatExample;
 }) {
   return (
     <aside className="task-inspector" aria-label="文档属性与 AI 侧边栏">
@@ -123,27 +120,6 @@ export default function DocumentInspector({
                   : undefined
             }
           />
-        </InspectorLayout>
-      ) : example ? (
-        <InspectorLayout
-          properties={
-            <div className="inspector-content">
-              <InspectorSection title="属性">
-                <dl className="inspector-property-list">
-                  <PropertyValue label="名称">{example.title}</PropertyValue>
-                  <PropertyValue label="格式">{example.format}</PropertyValue>
-                  <PropertyValue label="来源">合成格式示例</PropertyValue>
-                </dl>
-              </InspectorSection>
-              <section className="document-versions">
-                <h3>版本</h3>
-                <p>示例版本 1</p>
-                <p className="caption">示例修改不形成已保存的文档修订。</p>
-              </section>
-            </div>
-          }
-        >
-          <p className="caption">合成示例未关联任务，不发送至AI。</p>
         </InspectorLayout>
       ) : (
         <div className="inspector-content inspector-empty">
