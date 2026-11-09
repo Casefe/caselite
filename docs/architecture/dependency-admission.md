@@ -21,6 +21,8 @@ DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，�
 
 升级时先在隔离副本验证开发态和实际打包产物、模块入口、正文与Run旧数据；失败保留证据，恢复已验证锁版后复检。同样的模型或UI供应商名称不保证跨版本兼容。不得复制AGPL/EE源代码来绕过许可审查。
 
+DEV-1820：显式使用官方 MIT `@tiptap/extension-bubble-menu@3.32.3` 的公开 `BubbleMenuPlugin`，该包原已作为 `@tiptap/react` 的锁定可选依赖存在，现登记为直接消费者。与当前 Tiptap 同版，不新增原生模块、网络或 Team 代码；仅用于共享选区浮层定位/滚动，保存回执和 Yjs 权威不变。薄 React portal/effect 适配同步注销独立插件，避免官方 React 包装器在 StrictMode 重放后的延迟清理移除新菜单。来源为官方 npm 发布包及 ueberdosis/tiptap 的 packages/extension-bubble-menu；不复制或修改第三方源码，MIT 通知沿打包许可证报告。退出撤销浮层接线及本条直接准入，不回滚数据库、正文或历史。新增原生/恢复验收以本卡真实证据为准，不以登记代表通过。
+
 DEV-1802 项目只读关系图在 Renderer 按需加载 `@xyflow/react@12.12.1`。使用 MIT 发布包及本地样式，详见 [ADR-018](../adr/ADR-018-read-only-project-graph.md)。
 
 DEV-1811 / ADR-021：Mammoth 1.13.0（BSD-2-Clause）、DOMPurify 3.4.17（选择 Apache-2.0）、TableKit 3.32.3（MIT）、xmldom 0.9.12（MIT）、yauzl 3.4.0（MIT）。分别供本地转换、白名单净化、同一编辑器表格、XML 标记检测和 ZIP 预检；均为 JS，无新原生模块或云服务。传递 BSD/ISC/Zlib 及双许可按精确版本准入，duck 的 BSD 元数据以随包 BSD-2-Clause 正文为准。通知全文 THIRD-PARTY-DOCX-NOTICES.txt 随包；回退保留原件及 Yjs 状态。
