@@ -3,6 +3,7 @@ import InspectorLayout from './ui/InspectorLayout';
 import { DocumentPropertyValues } from './ui/DocumentInspector';
 import { localDate, invalidateCalendar } from './features/calendar/calendar-query';
 import ContactsView from './features/contacts/ContactsView';
+import { projectListDefaults } from './features/projects/ProjectList';
 import ReportView from './features/reports/ReportView';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { invalidateTaskPages } from './ui/task-list-query';
@@ -1167,7 +1168,27 @@ function Workbench() {
             onTaskChanged={acceptTaskProperties}
           />
         ) : view === 'contacts' ? (
-          <ContactsView onDirty={setDirty} />
+          <ContactsView
+            onDirty={setDirty}
+            onOpenTask={(id) => void open(id)}
+            onOpenDocument={(_id, taskId) => void open(taskId, null, true)}
+            onOpenProject={(id) => {
+              if (!canLeave()) return;
+              setProjectView({
+                selected: id,
+                projectId: id,
+                section: 'overview',
+                query: '',
+                statusFilter: 'all',
+                order: 'updated',
+                columns: projectListDefaults,
+                scrollTop: 0,
+                workspaceScrollTop: 0,
+                returnTaskId: '',
+              });
+              navigate('projects');
+            }}
+          />
         ) : view === 'reports' ? (
           <ReportView
             tasks={tasks}

@@ -1,10 +1,14 @@
 import AgentPanel, { UnavailableAgentPanel } from './AgentPanel';
+import type { ReactNode } from 'react';
+import type { AgentRun } from '../../preload/caselite-api';
 
 export default function SidebarAgent({
   taskId,
   taskVersion,
   project,
   document,
+  contact,
+  renderRun,
   blocked = false,
   unavailable = '当前没有可用的关联任务。',
 }: {
@@ -12,12 +16,22 @@ export default function SidebarAgent({
   taskVersion?: number;
   project?: { id: string; version: number; archived: boolean };
   document?: { id: string; revision: number; archived: boolean };
+  contact?: { id: string; version: number };
+  renderRun?(run: AgentRun, selectForEdit?: () => void): ReactNode;
   blocked?: boolean;
   unavailable?: string;
 }) {
   return (
     <div className="sidebar-agent" inert={blocked}>
-      {project ? (
+      {contact ? (
+        <AgentPanel
+          key={`contact:${contact.id}`}
+          scope={`contact:${contact.id}`}
+          variant="compact"
+          page={{ version: String(contact.version), archived: false }}
+          renderRun={renderRun}
+        />
+      ) : project ? (
         <AgentPanel
           key={`project:${project.id}`}
           scope={`project:${project.id}`}
