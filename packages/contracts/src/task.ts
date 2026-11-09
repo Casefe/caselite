@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { deliverySnapshotSchema } from './delivery-snapshot';
 import { deliveryExportSchema, deliveryFormatSchema } from './delivery-export';
+import { exportStyleSchema } from './export-style';
 
 export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
@@ -193,10 +194,23 @@ export const taskQuerySchema = z.discriminatedUnion('operation', [
     .object({
       operation: z.literal('read_export'),
       format: deliveryFormatSchema.optional(),
+      export_style: exportStyleSchema.optional(),
+      include_history: z.boolean().optional(),
       protocol_version: z.literal(1),
       task_id: taskIdSchema,
       document_id: taskIdSchema,
       snapshot_id: taskIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal('preview_export'),
+      format: z.literal('pdf'),
+      protocol_version: z.literal(1),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      snapshot_id: taskIdSchema,
+      export_id: taskIdSchema,
     })
     .strict(),
   z
@@ -278,6 +292,7 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
       document_id: taskIdSchema,
       snapshot_id: taskIdSchema,
       format: deliveryFormatSchema,
+      export_style: exportStyleSchema.optional(),
     })
     .strict(),
   z
@@ -381,9 +396,23 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     snapshots: z.array(deliverySnapshotSchema).max(20).optional(),
     snapshot_created: z.boolean().optional(),
     exports: z.array(deliveryExportSchema).max(1).optional(),
+    export_history: z.array(deliveryExportSchema).max(20).optional(),
     export_created: z.boolean().optional(),
     export_opened: z.boolean().optional(),
     export_saved: z.boolean().optional(),
+    export_data: z
+      .instanceof(Uint8Array)
+      .refine(
+        (bytes) =>
+          bytes.byteLength > 5 &&
+          bytes.byteLength <= 20_000_000 &&
+          bytes[0] === 37 &&
+          bytes[1] === 80 &&
+          bytes[2] === 68 &&
+          bytes[3] === 70 &&
+          bytes[4] === 45,
+      )
+      .optional(),
     objective_state: richState.nullable().optional(),
     navigation: z
       .object({

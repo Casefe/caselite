@@ -8,9 +8,113 @@ import {
   useLocalPreferences,
 } from './LocalPreferences';
 import PersonalSettings from '../../ui/PersonalSettings';
+import { defaultExportStyle, localPreferenceValuesSchema } from '@caselite/contracts';
 
 afterEach(cleanup);
 const read = { ok: true, preferences: defaultLocalPreferences, receipt: null };
+it('normalizes running text before recording the request so a confirmed save does not become unknown', async () => {
+  let persisted = { ...defaultLocalPreferences };
+  const api = vi.fn(async (r: LocalPreferencesRequest) => {
+    if (r.operation === 'read') return { ok: true, preferences: persisted, receipt: null };
+    if (r.operation !== 'set') throw new Error('Unexpected recovery');
+    persisted = { ...localPreferenceValuesSchema.parse(r.values), version: r.expected_version + 1 };
+    return { ok: true, preferences: structuredClone(persisted), receipt: r.idempotency_key };
+  });
+  window.caselite = { preferences: api } as unknown as Window['caselite'];
+  function Controls() {
+    const s = useLocalPreferences();
+    return (
+      <>
+        <button
+          disabled={!s.ready}
+          onClick={() =>
+            s.change({
+              export_style: {
+                ...defaultExportStyle,
+                header: '  合成稿  ',
+                footer: '  第 {page} 页  ',
+              },
+            })
+          }
+        >
+          输入页眉
+        </button>
+        <button onClick={() => void s.save()}>保存样式</button>
+        <output aria-label="保存阶段">{s.phase}</output>
+        <output aria-label="样式草稿">{s.draft.export_style?.header}</output>
+        <output aria-label="提示">{s.notice}</output>
+      </>
+    );
+  }
+  render(
+    <LocalPreferencesProvider>
+      <Controls />
+    </LocalPreferencesProvider>,
+  );
+  const edit = screen.getByRole<HTMLButtonElement>('button', { name: '输入页眉' });
+  await waitFor(() => expect(edit.disabled).toBe(false));
+  fireEvent.click(edit);
+  fireEvent.click(screen.getByRole('button', { name: '保存样式' }));
+  await waitFor(() => expect(screen.getByLabelText('提示').textContent).toContain('已保存'));
+  expect(screen.getByLabelText('保存阶段').textContent).toBe('idle');
+  expect(screen.getByLabelText('样式草稿').textContent).toBe('合成稿');
+  const submitted = api.mock.calls.find(([r]) => r.operation === 'set')![0];
+  expect(submitted.operation === 'set' && submitted.values.export_style).toMatchObject({
+    header: '合成稿',
+    footer: '第 {page} 页',
+  });
+  expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
+  expect(api.mock.calls.some(([r]) => r.operation === 'status')).toBe(false);
+});
+
+it('does not submit or discard an unsaved export style when calendar layout saves and refreshes', async () => {
+  const style = { ...defaultExportStyle, footer: '未保存的页脚 {page}' };
+  let persisted = { ...defaultLocalPreferences, version: 1, export_style: defaultExportStyle };
+  const api = vi.fn(async (r: LocalPreferencesRequest) => {
+    if (r.operation === 'read')
+      return { ok: true, preferences: structuredClone(persisted), receipt: null };
+    if (r.operation !== 'set') throw new Error('Unexpected status');
+    persisted = { ...r.values, version: r.expected_version + 1, export_style: defaultExportStyle };
+    return { ok: true, preferences: structuredClone(persisted), receipt: r.idempotency_key };
+  });
+  window.caselite = { preferences: api } as unknown as Window['caselite'];
+  function Controls() {
+    const s = useLocalPreferences();
+    return (
+      <>
+        <button disabled={!s.ready} onClick={() => s.change({ export_style: style })}>
+          修改导出草稿
+        </button>
+        <button
+          disabled={!s.ready}
+          onClick={() => void s.saveCalendarLayout({ dates_width: 300, inspector_width: 340 })}
+        >
+          保存布局
+        </button>
+        <output aria-label="导出草稿">{s.draft.export_style?.footer}</output>
+        <output aria-label="已存导出">{s.preferences.export_style?.footer}</output>
+      </>
+    );
+  }
+  render(
+    <LocalPreferencesProvider>
+      <Controls />
+    </LocalPreferencesProvider>,
+  );
+  const edit = screen.getByRole<HTMLButtonElement>('button', { name: '修改导出草稿' });
+  await waitFor(() => expect(edit.disabled).toBe(false));
+  fireEvent.click(edit);
+  fireEvent.click(screen.getByRole('button', { name: '保存布局' }));
+  await waitFor(() => expect(persisted.version).toBe(2));
+  await waitFor(() =>
+    expect(api.mock.calls.filter(([r]) => r.operation === 'read')).toHaveLength(2),
+  );
+  expect(screen.getByLabelText('导出草稿').textContent).toBe(style.footer);
+  expect(screen.getByLabelText('已存导出').textContent).toBe('');
+  const submitted = api.mock.calls.find(([r]) => r.operation === 'set')![0];
+  expect(submitted.operation === 'set' && submitted.values.export_style?.footer).toBe('');
+  expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
+});
 function mount(api: ReturnType<typeof vi.fn>) {
   Object.defineProperty(window, 'caselite', { configurable: true, value: { preferences: api } });
   function Saved() {

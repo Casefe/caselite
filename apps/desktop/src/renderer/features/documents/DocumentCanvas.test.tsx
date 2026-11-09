@@ -13,11 +13,15 @@ vi.mock('./BodyEditor', () => ({
     disabled,
     onSaved,
     onDirty,
+    onReviewSaving,
+    reviewSaving,
   }: {
     task: Task;
     disabled: boolean;
     onSaved(t: Task, s: number[]): void;
     onDirty(v: boolean): void;
+    onReviewSaving(v: boolean): void;
+    reviewSaving: boolean;
   }) {
     useEffect(() => {
       mounted();
@@ -28,6 +32,10 @@ vi.mock('./BodyEditor', () => ({
         <button onClick={() => onSaved({ ...task, body_revision: task.body_revision + 1 }, [1])}>
           确认保存
         </button>
+        <button onClick={() => onDirty(false)}>正文已确认</button>
+        <button onClick={() => onReviewSaving(true)}>导出待核对</button>
+        <button onClick={() => onReviewSaving(false)}>导出已核对</button>
+        <output aria-label="导出锁">{String(reviewSaving)}</output>
       </>
     );
   },
@@ -114,4 +122,23 @@ it('同文档对照栏只展示只读投影，不创建第二个写入会话', a
   expect(screen.getByText('只读正文')).toBeTruthy();
   expect(s.read).toHaveBeenCalledTimes(1);
   expect(mounted).toHaveBeenCalledTimes(1);
+});
+it('干净正文导出和未知结果也锁定导航；正文与导出分别解除，卸载释放父锁', async () => {
+  const s = setup();
+  const input = await screen.findByLabelText<HTMLInputElement>('原位正文');
+  fireEvent.click(screen.getByText('导出待核对'));
+  expect(s.onDirty).toHaveBeenLastCalledWith(true);
+  expect(screen.getByLabelText('导出锁').textContent).toBe('true');
+  fireEvent.change(input, { target: { value: '草稿' } });
+  fireEvent.click(screen.getByText('导出已核对'));
+  expect(screen.getByLabelText('导出锁').textContent).toBe('false');
+  expect(s.onDirty).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByText('导出待核对'));
+  fireEvent.click(screen.getByText('正文已确认'));
+  expect(s.onDirty).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByText('导出已核对'));
+  expect(s.onDirty).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByText('导出待核对'));
+  s.unmount();
+  expect(s.onDirty).toHaveBeenLastCalledWith(false);
 });

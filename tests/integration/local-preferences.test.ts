@@ -7,7 +7,11 @@ import { tmpdir } from 'node:os';
 import { openToolchainProbe } from '../../packages/local-db/src';
 import { createLocalPreferencesStore } from '../../packages/local-db/src/local-preferences-store';
 import { createLocalPreferencesApplication } from '@caselite/application';
-import { defaultLocalPreferences, type LocalPreferencesRequest } from '@caselite/contracts';
+import {
+  defaultExportStyle,
+  defaultLocalPreferences,
+  type LocalPreferencesRequest,
+} from '@caselite/contracts';
 
 const roots: string[] = [],
   closes: Array<() => void> = [];
@@ -41,6 +45,56 @@ function set(
   };
 }
 const read = { protocol_version: 1, operation: 'read' } as const;
+it('keeps the saved export style through legacy and calendar writes, replay and SQLite reopen', () => {
+  const s = setup();
+  const first = set();
+  first.values.export_style = {
+    ...defaultExportStyle,
+    paper: 'Letter',
+    font_size: 14,
+    header: '合成审阅稿',
+    footer: '第 {page} 页',
+  };
+  const ack = s.app.execute(first);
+  expect(ack).toMatchObject({ ok: true, preferences: { export_style: first.values.export_style } });
+  const legacy = set('旧字段名称', 1);
+  legacy.values.calendar_layout = { dates_width: 280, inspector_width: 360 };
+  expect(s.app.execute(legacy)).toMatchObject({
+    ok: true,
+    preferences: { version: 2, export_style: first.values.export_style },
+  });
+  const receipt = s.sqlite
+    .prepare('SELECT digest FROM local_preference_receipts WHERE key=?')
+    .get(legacy.idempotency_key) as { digest: string };
+  const { request_id, ...originalContent } = legacy;
+  void request_id;
+  expect(receipt.digest).toBe(
+    createHash('sha256').update(JSON.stringify(originalContent)).digest('hex'),
+  );
+  expect(s.app.execute(first)).toEqual(ack);
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  expect(
+    createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace').execute(read),
+  ).toMatchObject({
+    ok: true,
+    preferences: {
+      version: 2,
+      export_style: first.values.export_style,
+      calendar_layout: legacy.values.calendar_layout,
+    },
+  });
+  const changed = set('更新页脚', 2);
+  changed.values.export_style = { ...first.values.export_style, footer: '' };
+  expect(s.app.execute(changed)).toMatchObject({
+    ok: true,
+    preferences: { version: 3, export_style: { footer: '' } },
+  });
+  expect(
+    s.app.execute({ ...first, values: { ...first.values, export_style: defaultExportStyle } }),
+  ).toMatchObject({ ok: false, code: 'CONFLICT' });
+});
+
 it('preserves calendar widths through legacy profile writes, original receipts, and SQLite reopen', () => {
   const s = setup(),
     request = set();

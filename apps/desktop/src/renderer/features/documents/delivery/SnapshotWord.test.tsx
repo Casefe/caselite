@@ -1,3 +1,6 @@
+import { LocalPreferencesProvider } from '../../../shared/data/LocalPreferences';
+import { defaultExportStyle } from '@caselite/contracts';
+import { createHash, webcrypto } from 'node:crypto';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -11,6 +14,11 @@ import type {
   TaskResponse,
   DeliveryExport,
 } from '../../../../preload/caselite-api';
+vi.mock('../../../ui/PdfReader', () => ({
+  default: ({ bytes }: { bytes: Uint8Array }) => (
+    <div aria-label="受控预览字节">{Array.from(bytes).join(',')}</div>
+  ),
+}));
 vi.mock('../../../editors/RichEditor', () => ({ DraftEditor: () => <p>固定正文预览</p> }));
 const uuid = (n: number) => `12345678-1234-4234-8234-${String(n).padStart(12, '0')}`;
 const task: Task = {
@@ -73,24 +81,54 @@ const fail = (code: Extract<TaskResponse, { ok: false }>['code']): TaskResponse 
 const clients: ReturnType<typeof createWorkbenchQueryClient>[] = [];
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   clients.splice(0).forEach((c) => c.clear());
 });
-function mount(handler: (r: TaskRequest) => Promise<TaskResponse>) {
+function mount(
+  handler: (r: TaskRequest) => Promise<TaskResponse>,
+  defaults = false,
+  readPreferences?: () => Promise<unknown>,
+) {
   const fn = vi.fn(handler),
     onBusy = vi.fn();
-  Object.defineProperty(window, 'caselite', { configurable: true, value: { task: fn } });
+  Object.defineProperty(window, 'caselite', {
+    configurable: true,
+    value: {
+      task: fn,
+      ...(defaults
+        ? {
+            exportStyleDefaults: defaultExportStyle,
+            preferences:
+              readPreferences ??
+              (async () => ({
+                ok: true,
+                preferences: {
+                  name: '合成',
+                  email: '',
+                  avatar: 'portrait',
+                  show_word_count: false,
+                  version: 0,
+                },
+                receipt: null,
+              })),
+          }
+        : {}),
+    },
+  });
   const client = createWorkbenchQueryClient();
   clients.push(client);
   render(
     <QueryClientProvider client={client}>
-      <DeliverySnapshots
-        task={task}
-        revision={2}
-        dirty={false}
-        disabled={false}
-        onBack={vi.fn()}
-        onBusy={onBusy}
-      />
+      <LocalPreferencesProvider>
+        <DeliverySnapshots
+          task={task}
+          revision={2}
+          dirty={false}
+          disabled={false}
+          onBack={vi.fn()}
+          onBusy={onBusy}
+        />
+      </LocalPreferencesProvider>
     </QueryClientProvider>,
   );
   return { fn, onBusy };
@@ -194,7 +232,7 @@ it('binds the chosen PDF format to its own record and preserves Word when switch
     return normal(r);
   });
   await screen.findByRole('button', { name: '打开Word工作副本' });
-  fireEvent.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
   const button = await screen.findByRole('button', { name: '导出此版本 PDF' });
   await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(button);
@@ -223,7 +261,7 @@ it('sends a scoped cancellation while PDF is generating and unlocks after the ca
     return normal(r);
   });
   await screen.findByRole('button', { name: '导出此版本 Word' });
-  fireEvent.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
   const button = await screen.findByRole('button', { name: '导出此版本 PDF' });
   await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(button);
@@ -235,5 +273,107 @@ it('sends a scoped cancellation while PDF is generating and unlocks after the ca
     document_id: task.document_id,
     snapshot_id: snapshot.id,
     idempotency_key: 'idempotency_key' in original ? original.idempotency_key : '',
+  });
+});
+
+it('requests the saved final PDF identity, validates its hash and never regenerates for preview', async () => {
+  vi.stubGlobal('crypto', webcrypto);
+  const bytes = new TextEncoder().encode('%PDF-synthetic-preview-ui');
+  const pdf: DeliveryExport = {
+    ...artifact,
+    format: 'pdf',
+    converter: 'electron-45.1.0-pdf-v3',
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    configuration: {
+      version: 1,
+      style: defaultExportStyle,
+      font: { family: 'Arial Unicode MS', sha256: 'a'.repeat(64) },
+      fingerprint: 'b'.repeat(64),
+    },
+  };
+  const { fn } = mount(async (r) => {
+    if (r.operation === 'read_export')
+      return ok({
+        exports: r.format === 'pdf' ? [pdf] : [],
+        export_history: r.format === 'pdf' ? [pdf] : [],
+      });
+    if (r.operation === 'preview_export') return ok({ exports: [pdf], export_data: bytes });
+    return normal(r);
+  }, true);
+  await screen.findByText('固定正文预览');
+  fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+  fireEvent.click(await screen.findByRole('button', { name: '预览最终 PDF' }));
+  await screen.findByLabelText('受控预览字节');
+  expect(fn.mock.calls.filter(([r]) => r.operation === 'preview_export')).toEqual([
+    [
+      expect.objectContaining({
+        export_id: pdf.id,
+        snapshot_id: snapshot.id,
+        task_id: task.id,
+        document_id: task.document_id,
+        format: 'pdf',
+      }),
+    ],
+  ]);
+  expect(fn.mock.calls.filter(([r]) => r.operation === 'export_snapshot')).toHaveLength(0);
+  expect(fn.mock.calls.find(([r]) => r.operation === 'read_export')?.[0]).toMatchObject({
+    export_style: defaultExportStyle,
+    include_history: true,
+  });
+});
+
+it('rejects mismatched preview bytes without opening them or regenerating the saved file', async () => {
+  vi.stubGlobal('crypto', webcrypto);
+  const bytes = new TextEncoder().encode('%PDF-bad-hash');
+  const pdf: DeliveryExport = {
+    ...artifact,
+    format: 'pdf',
+    converter: 'electron-45.1.0-pdf-v2',
+    bytes: bytes.length,
+  };
+  const { fn } = mount(async (r) => {
+    if (r.operation === 'read_export') return ok({ exports: r.format === 'pdf' ? [pdf] : [] });
+    if (r.operation === 'preview_export') return ok({ exports: [pdf], export_data: bytes });
+    return normal(r);
+  });
+  await screen.findByText('固定正文预览');
+  fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+  fireEvent.click(await screen.findByRole('button', { name: '预览最终 PDF' }));
+  await screen.findByText('无法读取或校验最终 PDF，已有产物保持不变；请重新读取。');
+  expect(screen.queryByLabelText('受控预览字节')).toBeNull();
+  expect(fn.mock.calls.filter(([r]) => r.operation === 'export_snapshot')).toHaveLength(0);
+});
+
+it('waits for saved preferences before enabling export instead of submitting default settings', async () => {
+  let release!: (value: unknown) => void;
+  const waiting = new Promise<unknown>((resolve) => {
+    release = resolve;
+  });
+  const { fn } = mount(
+    async (r) => (r.operation === 'read_export' ? ok({ exports: [] }) : normal(r)),
+    true,
+    () => waiting,
+  );
+  await screen.findByText('固定正文预览');
+  const button = screen.getByRole<HTMLButtonElement>('button', { name: '导出此版本 Word' });
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(fn.mock.calls.some(([r]) => r.operation === 'export_snapshot')).toBe(false);
+  release({
+    ok: true,
+    preferences: {
+      name: '合成',
+      email: '',
+      avatar: 'portrait',
+      show_word_count: false,
+      version: 1,
+      export_style: { ...defaultExportStyle, paper: 'Letter' },
+    },
+    receipt: null,
+  });
+  await waitFor(() => expect(button.disabled).toBe(false));
+  expect(fn.mock.calls.find(([r]) => r.operation === 'read_export')?.[0]).toMatchObject({
+    export_style: expect.objectContaining({ paper: 'Letter' }),
   });
 });

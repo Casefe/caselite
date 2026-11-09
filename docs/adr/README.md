@@ -58,3 +58,5 @@
 - [ADR-031](./ADR-031-first-launch-legal-consent.md) 专有许可、首次启动确认与本机接受记录，DEV-1844。
 
 - [ADR-032](./ADR-032-page-scoped-ai-reference.md) 页面范围 AI 与文件式整页/选区引用，DEV-1781。
+
+- [ADR-033](./ADR-033-frozen-export-style.md) 共享导出样式、固定配置与产物身份，DEV-1629。

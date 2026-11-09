@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CatalogDocument, Task } from '../../../preload/caselite-api';
 import BodyEditor from './BodyEditor';
 import DocumentPreview from './DocumentPreview';
@@ -23,6 +23,18 @@ export default function DocumentCanvas({
 }) {
   const client = useQueryClient();
   const dirtyCallback = useRef(onDirty);
+  const blockers = useRef({ body: false, review: false });
+  const [reviewSaving, setReviewSaving] = useState(false);
+  // 正文草稿与导出未知结果分别持有导航锁，任一结束不能释放另一方的保护。
+  const bodyDirty = useCallback((value: boolean) => {
+    blockers.current.body = value;
+    dirtyCallback.current(blockers.current.body || blockers.current.review);
+  }, []);
+  const reviewBusy = useCallback((value: boolean) => {
+    blockers.current.review = value;
+    setReviewSaving(value);
+    dirtyCallback.current(blockers.current.body || blockers.current.review);
+  }, []);
   useEffect(() => {
     dirtyCallback.current = onDirty;
   }, [onDirty]);
@@ -85,9 +97,9 @@ export default function DocumentCanvas({
         disabled={disabled || !!document.archived_at || stale}
         embedded
         reviewDock={null}
-        reviewSaving={false}
-        onReviewSaving={() => {}}
-        onDirty={onDirty}
+        reviewSaving={reviewSaving}
+        onReviewSaving={reviewBusy}
+        onDirty={bodyDirty}
         onSaved={(task, state) => {
           // 更新读取投影，不替换BodyEditor实例；当前Y.Doc/选区和撤销历史继续由原会话持有。
           client.setQueryData(key, { task, state });

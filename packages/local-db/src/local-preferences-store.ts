@@ -73,6 +73,9 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
             ...(request.values.writing_skills === undefined && current.writing_skills !== undefined
               ? { writing_skills: current.writing_skills }
               : {}),
+            ...(request.values.export_style === undefined && current.export_style !== undefined
+              ? { export_style: current.export_style }
+              : {}),
           });
           const next = { ...values, version: current.version + 1 };
           // 资料、版本与原键回执同事务；未知结果只能核对原键，不能换键重复写入。

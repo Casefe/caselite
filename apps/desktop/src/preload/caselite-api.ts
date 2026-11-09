@@ -1,3 +1,4 @@
+import { defaultExportStyle, type ExportStyle } from '@caselite/contracts';
 import {
   LOCAL_PREFERENCES_CHANNEL,
   localPreferencesResponseSchema,
@@ -139,6 +140,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  readonly exportStyleDefaults?: ExportStyle;
   materialBatch(request: MaterialBatchRequest): Promise<MaterialBatchResponse>;
   preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
@@ -174,6 +176,7 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    exportStyleDefaults: structuredClone(defaultExportStyle),
     async materialBatch(request) {
       // 选择器和批次逐项保存是本地长操作；结果未知时只查询原批次，不重建token。
       try {
@@ -363,7 +366,7 @@ export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
 export type { Contact, ContactsRequest } from '@caselite/contracts';
 export type { DeliverySnapshot } from '@caselite/contracts';
-export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';
+export type { DeliveryExport, DeliveryExportFormat, ExportStyle } from '@caselite/contracts';
 export type {
   LocalPreferences,
   LocalPreferenceValues,

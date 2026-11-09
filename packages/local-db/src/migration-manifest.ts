@@ -126,28 +126,33 @@ export const integrationMigrations = [
     hash: 'c5afdd3360a07602dbf908c6df151911e99200aee6d39071308efd0e6d569fe9',
   },
   {
-    tag: '0022_finance_settlements',
-    when: 1794190900000,
+    tag: '0022_export_style',
+    when: 1794235800000,
+    hash: 'b8f08776f89232c71cea8034a0191f30de87a39014fa1864f88835c3a8045f20',
+  },
+  {
+    tag: '0023_finance_settlements',
+    when: 1794235900000,
     hash: '5360e271c17f9b09a33666be70c36aff474ac3211b0bedd468743d9bb603b706',
   },
   {
-    tag: '0023_finance_invoices',
-    when: 1794191000000,
+    tag: '0024_finance_invoices',
+    when: 1794236000000,
     hash: '62b4de706a3e1d0bc7b6cebb3a00e5be548dad3156651d714e852863e77c6bc0',
   },
   {
-    tag: '0024_finance_expenses',
-    when: 1794191100000,
+    tag: '0025_finance_expenses',
+    when: 1794236100000,
     hash: '9c6e976ea63a339895731ca822025984fe13a01676408ad0381238d68c0d69d5',
   },
   {
-    tag: '0025_finance_sources',
-    when: 1794191200000,
+    tag: '0026_finance_sources',
+    when: 1794236200000,
     hash: 'edc93798e3566806ddb8f3dfa6cc2db7a5671241f0f862f41532bba57acd6e0d',
   },
   {
-    tag: '0026_customer_workspace',
-    when: 1794191300000,
+    tag: '0027_customer_workspace',
+    when: 1794236300000,
     hash: 'a0490428ddb478c0b5a366d159422e85588234738bd411cc732c220c6ac6a47e',
   },
 ] as const;

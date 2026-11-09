@@ -192,6 +192,8 @@ export const deliveryExports = sqliteTable(
       .references(() => deliverableSnapshots.id),
     format: text('format').notNull(),
     converter: text('converter').notNull(),
+    configurationJson: text('configuration_json'),
+    configurationFingerprint: text('configuration_fingerprint').notNull().default(''),
     status: text('status').notNull(),
     sha256: text('sha256'),
     bytes: integer('bytes'),
@@ -203,6 +205,7 @@ export const deliveryExports = sqliteTable(
       t.snapshotId,
       t.format,
       t.converter,
+      t.configurationFingerprint,
     ),
   ],
 );
