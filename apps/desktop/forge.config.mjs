@@ -28,6 +28,7 @@ export default {
     executableName: 'CaseLite',
     icon: localPath('./assets/branding/caselite.icns'),
     extraResource: [
+      localPath('../../legal'),
       localPath('./assets/THIRD-PARTY-DOCX-NOTICES.txt'),
       localPath('./.webpack/arm64/main/docx-worker.cjs'),
       localPath('./.webpack/arm64/main/word-export-worker.cjs'),
@@ -87,6 +88,12 @@ export default {
         config: localPath('./webpack.renderer.config.mjs'),
         nodeIntegration: false,
         entryPoints: [
+          {
+            name: 'legal_window',
+            html: localPath('./src/renderer/legal-window.html'),
+            js: localPath('./src/renderer/legal-window.ts'),
+            preload: { js: localPath('./src/preload/legal.ts') },
+          },
           {
             name: 'pdf_worker',
             html: localPath('./src/renderer/pdf-worker.html'),

@@ -21,6 +21,7 @@ class PdfSpikeAssetsPlugin {
         },
         async () => {
           const files = [
+            [localPath('./src/renderer/legal.css'), 'legal.css'],
             [join(reactPdfRoot, 'dist/Page/TextLayer.css'), 'pdf-resources/TextLayer.css'],
             [localPath('./src/renderer/pdf-spike.css'), 'pdf-resources/spike.css'],
             [localPath('./src/renderer/ui-design.css'), 'ui-design.css'],

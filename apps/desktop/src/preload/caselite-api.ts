@@ -65,6 +65,8 @@ import {
 } from '@caselite/contracts';
 
 export type IpcInvoke = (channel: string, payload: unknown) => Promise<unknown>;
+export type { LegalBundle, LegalConsentRequest, LegalConsentResponse } from '@caselite/contracts';
+export type { LegalPreloadApi } from './legal-api';
 
 export const IPC_COMMAND_TIMEOUT_MS = 15_000;
 // 仅凭据保存/重读覆盖30秒系统初始化和5家各3秒解密；付费Run与其他命令仍限15秒。
