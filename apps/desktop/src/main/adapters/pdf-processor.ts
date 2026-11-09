@@ -1,6 +1,5 @@
-import { app, BrowserWindow } from 'electron';
-import { execFile } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { BrowserWindow } from 'electron';
+import { recognizeLocalImage } from './local-vision';
 import { release } from 'node:os';
 import { MATERIAL_MAX_PAGES, textPageSchema, type TextPage } from '@caselite/contracts';
 import type { PdfProcessorPort } from '@caselite/application';
@@ -57,36 +56,6 @@ export function createPdfProcessor(): PdfProcessorPort {
       throw error;
     }
   }
-  async function vision(image: string, signal: AbortSignal): Promise<TextPage['blocks']> {
-    const executable = app.isPackaged
-      ? join(process.resourcesPath, 'caselite-vision')
-      : resolve(process.cwd(), '../../artifacts/native/caselite-vision');
-    return new Promise((done, reject) => {
-      const child = execFile(
-        executable,
-        [],
-        {
-          timeout: 60_000,
-          maxBuffer: 8 * 1024 * 1024,
-          signal,
-          env: { PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' },
-        },
-        (error, stdout) => {
-          if (error) {
-            reject(new Error('Local OCR failed'));
-            return;
-          }
-          try {
-            done(textPageSchema.shape.blocks.parse(JSON.parse(stdout)));
-          } catch {
-            reject(new Error('Invalid local OCR result'));
-          }
-        },
-      );
-      child.stdin?.on('error', () => {});
-      child.stdin?.end(Buffer.from(image, 'base64'));
-    });
-  }
   return {
     configuration: `pdfjs-6.3.289_vision-r3-accurate_zh-Hans-zh-Hant-en_v1_scale2_8MP_macos-${release()}`,
     async render(bytes, pages, signal) {
@@ -135,7 +104,10 @@ export function createPdfProcessor(): PdfProcessorPort {
           )) as TextPage & { image?: string };
           let page = textPageSchema.parse(raw);
           if (input.ocr && raw.image) {
-            const blocks = await vision(raw.image, input.signal);
+            const blocks = await recognizeLocalImage(
+              Buffer.from(raw.image, 'base64'),
+              input.signal,
+            );
             page = {
               ...page,
               text: blocks.map((block) => block.text).join('\n'),

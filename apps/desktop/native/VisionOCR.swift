@@ -2,12 +2,17 @@ import Foundation
 import Vision
 import ImageIO
 
-// 只接收宿主渲染的当前页 PNG；不接受路径、URL、Shell 或网络参数。
+// 只接收受控宿主传入的页图或照片字节；先查尺寸预算再解码，不接受路径、URL、Shell或网络参数。
 struct Block: Codable { let text: String; let box: [Double]; let confidence: Float }
 do {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     guard data.count <= 32 * 1024 * 1024,
           let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+          let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+          width.intValue > 0, height.intValue > 0,
+          width.int64Value * height.int64Value <= 9_000_000,
           let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
           image.width * image.height <= 9_000_000 else { exit(2) }
     let request = VNRecognizeTextRequest()

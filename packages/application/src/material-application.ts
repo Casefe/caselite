@@ -46,6 +46,11 @@ export interface MaterialStorePort {
   preview(id: string, scope: MaterialScope): MaterialPreview | undefined;
 }
 export interface MaterialFilesPort {
+  stagePhoto?(
+    bytes: Uint8Array,
+    scope: MaterialScope,
+    token: string,
+  ): Promise<MaterialStage & { newly_created?: boolean }>;
   stage(
     path: string,
     scope: MaterialScope,
@@ -93,9 +98,11 @@ export function createMaterialApplication(ports: {
   files: MaterialFilesPort;
   processor: PdfProcessorPort;
   docxProcessor?: PdfProcessorPort;
+  imageProcessor?: PdfProcessorPort;
   docxPreview?(bytes: Uint8Array): Promise<{ html: string; warningCount: number }>;
   createTask(token: string, name: string): string;
   taskExists(id: string): boolean;
+  scopeWritable?(scope: MaterialScope): boolean;
   id(): string;
   hash(text: string): string;
 }) {
@@ -104,9 +111,12 @@ export function createMaterialApplication(ports: {
     const kind = materialKind(name);
     if (kind === 'docx' && ports.docxProcessor) return ports.docxProcessor;
     if (kind === 'pdf') return processor;
+    if (kind === 'image' && ports.imageProcessor) return ports.imageProcessor;
     throw new Error('Unsupported material');
   }
+  const photoTickets = new Map<string, { scope: MaterialScope; expires: number }>();
   const jobs = new Map<string, { abort: AbortController; done: Promise<void> }>();
+  let capturingPhoto = false;
   let committing = false;
   let preparing = false;
   let previewing = false;
@@ -120,7 +130,7 @@ export function createMaterialApplication(ports: {
     return source;
   };
   const fail = (code: string, message: string): MaterialResponse => ({ ok: false, code, message });
-  const success = (scope: MaterialScope): MaterialResponse => {
+  const success = (scope: MaterialScope): Extract<MaterialResponse, { ok: true }> => {
     const pending = store.pending(scope);
     return {
       ok: true,
@@ -218,13 +228,22 @@ export function createMaterialApplication(ports: {
         committing = false;
       }
     },
+    canCapture(scope: MaterialScope) {
+      return (
+        (scope === 'home' || ports.taskExists(scope)) && ports.scopeWritable?.(scope) !== false
+      );
+    },
     async stage(
       path: string,
       scope: MaterialScope,
       batch?: { id: string; token: string; expected?: MaterialFileIdentity },
     ): Promise<MaterialResponse> {
       try {
-        if (scope !== 'home' && !ports.taskExists(scope)) return fail('SCOPE', '任务不存在。');
+        if (
+          (scope !== 'home' && !ports.taskExists(scope)) ||
+          ports.scopeWritable?.(scope) === false
+        )
+          return fail('SCOPE', '任务或项目不存在、已归档或只读。');
         const active = batch ? store.activeBatch?.(scope) : undefined;
         if (batch) {
           if (
@@ -251,7 +270,10 @@ export function createMaterialApplication(ports: {
         if (store.pending(scope)) return fail('STAGED_EXISTS', '请先保存或取消当前暂存文件。');
         const staged = await files.stage(path, scope, batch?.token, batch?.expected);
         // 选择器和文件读取会跨异步边界；登记前再次核对目标任务。
-        if (scope !== 'home' && !ports.taskExists(scope)) {
+        if (
+          (scope !== 'home' && !ports.taskExists(scope)) ||
+          ports.scopeWritable?.(scope) === false
+        ) {
           await files.discard(staged.token);
           return fail('SCOPE', '任务范围已变化。');
         }
@@ -270,7 +292,7 @@ export function createMaterialApplication(ports: {
       } catch {
         return fail(
           'INVALID_PDF',
-          '无法添加文件：请选择非空、20 MB 以内的本地 PDF 或 DOCX，符号链接不支持。',
+          '无法添加文件：请选择非空、20 MB 以内的本地 PDF、DOCX 或照片，符号链接不支持。',
         );
       }
     },
@@ -303,6 +325,60 @@ export function createMaterialApplication(ports: {
       }
       if (r.scope !== 'home' && !ports.taskExists(r.scope)) return fail('SCOPE', '任务不存在。');
       try {
+        if (r.operation === 'camera_permission' || r.operation === 'camera_revoke')
+          return fail('INVALID_REQUEST', '摄像头须通过可信桌面入口请求。');
+        if (
+          ['photo_ticket', 'capture_photo', 'commit'].includes(r.operation) &&
+          ports.scopeWritable?.(r.scope) === false
+        )
+          return fail('SCOPE', '归档或只读范围不能新增材料。');
+        if (r.operation === 'photo_ticket') {
+          const token = ports.id();
+          photoTickets.set(token, { scope: r.scope, expires: Date.now() + 120_000 });
+          return { ...success(r.scope), capture_token: token };
+        }
+        if (r.operation === 'capture_photo') {
+          if (!files.stagePhoto) return fail('UNSUPPORTED', '此版本尚未接入照片。');
+          if (capturingPhoto) return fail('BUSY', '另一张照片正在保存，请稍后核对原提交。');
+          capturingPhoto = true;
+          try {
+            const old = store.stage(r.token);
+            if (old && (materialKind(old.name) !== 'image' || old.bytes !== r.bytes.length))
+              return fail('CONFLICT', '照片不能复用其他材料的暂存身份。');
+            const ticket = photoTickets.get(r.token);
+            if (!old && (!ticket || ticket.scope !== r.scope || ticket.expires < Date.now()))
+              return fail('SCOPE', '照片暂存许可已失效，请重新拍摄。');
+            if (old && (old.scope !== r.scope || old.state === 'cancelled'))
+              return fail('SCOPE', '照片暂存身份不匹配。');
+            const pending = store.pending(r.scope);
+            if (pending && pending.token !== r.token)
+              return fail('STAGED_EXISTS', '请先保存或取消当前暂存材料。');
+            const staged = await files.stagePhoto(r.bytes, r.scope, r.token);
+            if (
+              (r.scope !== 'home' && !ports.taskExists(r.scope)) ||
+              ports.scopeWritable?.(r.scope) === false
+            ) {
+              // 只撤回本次新建且未登记的文件；重放不能清掉此前已保存的暂存原件。
+              if (staged.newly_created && !old && !store.stage(r.token))
+                await files.discard(staged.token);
+              return fail('SCOPE', '目标任务已变化。');
+            }
+            if (old?.state === 'committed') return success(r.scope);
+            const current = store.pending(r.scope);
+            if (current && current.token !== r.token) {
+              if (staged.newly_created && !old && !store.stage(r.token))
+                await files.discard(staged.token);
+              return fail('STAGED_EXISTS', '另一份材料已先暂存。');
+            }
+            const { newly_created: created, ...identity } = staged;
+            void created;
+            store.putStage(old ?? identity);
+            photoTickets.delete(r.token);
+            return success(r.scope);
+          } finally {
+            capturingPhoto = false;
+          }
+        }
         if (r.operation === 'docx_semantic_preview') {
           const source = allowed(r.scope, r.source_id);
           if (materialKind(source.name) !== 'docx' || !ports.docxPreview)
@@ -366,14 +442,24 @@ export function createMaterialApplication(ports: {
           try {
             const bytes = await files.placedOrStaged(r.token, staged.sha256);
             const pageCount = await processorFor(staged.name).inspect(bytes);
+            if (ports.scopeWritable?.(r.scope) === false)
+              return fail('SCOPE', '目标任务已归档或变为只读，原件暂存已保留。');
             let task = staged.task_id ?? store.task(r.scope);
             if (!task) {
               task = ports.createTask(r.token, staged.name);
               store.home(task);
             }
-            if (!ports.taskExists(task)) throw new Error('SCOPE');
+            if (!ports.taskExists(task) || ports.scopeWritable?.(task) === false)
+              return fail('SCOPE', '目标任务已变化，原件暂存已保留。');
             store.putStage({ ...staged, task_id: task });
             await files.place(r.token, staged.sha256);
+            // 文件落盘期间项目仍可能归档；保留文件和stage供恢复，不在只读范围登记新原件。
+            if (
+              !ports.taskExists(task) ||
+              ports.scopeWritable?.(r.scope) === false ||
+              ports.scopeWritable?.(task) === false
+            )
+              return fail('SCOPE', '目标任务已变化，原件已保留，恢复可写后可重试同一提交。');
             const source = store.commit(staged, task, pageCount);
             // 文字提取可失败而不撤销已经保存的原件；用户能看到独立处理状态。
             if (!jobs.size) start(source, false);
@@ -514,8 +600,9 @@ export function createMaterialApplication(ports: {
               if (images.length + visualPages.length > 12)
                 return fail('BUDGET', '本轮扫描页超过 12 页，请拆分 PDF 后发送；未漏页发送。');
               if (visualPages.length) {
-                if (!processor.render) throw new Error('NO_RENDERER');
-                const rendered = await processor.render(bytes, visualPages, abort.signal);
+                const visualProcessor = processorFor(source.name);
+                if (!visualProcessor.render) throw new Error('NO_RENDERER');
+                const rendered = await visualProcessor.render(bytes, visualPages, abort.signal);
                 if (rendered.length !== visualPages.length) throw new Error('MISSING_IMAGE');
                 for (let i = 0; i < visualPages.length; i++) {
                   imageBytes += rendered[i].length;
@@ -525,7 +612,7 @@ export function createMaterialApplication(ports: {
                     source_id: source.id,
                     page: visualPages[i],
                     sha256: ports.hash(rendered[i]),
-                    configuration: processor.configuration,
+                    configuration: visualProcessor.configuration,
                   });
                 }
               }
@@ -628,16 +715,18 @@ export function createMaterialApplication(ports: {
         const bytes = await files.read(source.asset_version_id, source.sha256);
         const planned = preview.images?.filter((image) => image.source_id === source.id) ?? [];
         if (planned.length) {
+          const visualProcessor = processorFor(source.name);
           if (
-            !processor.render ||
+            !visualProcessor.render ||
             !agentModelAcceptsImages(model) ||
             planned.some(
               (image) =>
-                image.configuration !== processor.configuration || !item.pages.includes(image.page),
+                image.configuration !== visualProcessor.configuration ||
+                !item.pages.includes(image.page),
             )
           )
             throw new Error('STALE_RENDER');
-          const rendered = await processor.render(
+          const rendered = await visualProcessor.render(
             bytes,
             planned.map((image) => image.page),
           );

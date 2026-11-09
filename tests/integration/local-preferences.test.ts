@@ -1,3 +1,4 @@
+import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { afterEach, expect, it } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -407,7 +408,7 @@ it('upgrades the actual previous 19 migrations without changing existing rows', 
   const next = openToolchainProbe(file, migrations);
   closes.push(() => next.sqlite.close());
   expect(next.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 26,
+    n: integrationMigrations.length,
   });
   expect(next.sqlite.prepare('SELECT * FROM toolchain_probe').all()).toEqual(before);
   expect(next.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');

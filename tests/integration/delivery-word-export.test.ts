@@ -1,3 +1,4 @@
+import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import {
   emptyTaskCalendar,
   defaultExportStyle,
@@ -23,7 +24,6 @@ import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as Y from 'yjs';
 import Database from 'better-sqlite3';
-import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { extractRawText, convertToHtml } from 'mammoth';
 import { fromBuffer } from 'yauzl';
 import { openTaskStore, openToolchainProbe } from '../../packages/local-db/src';
@@ -674,7 +674,9 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   });
   expect(good(await controller.execute(request(task, snapshot))).exports![0].status).toBe('ready');
   const db = openToolchainProbe(file, migrations).sqlite;
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 26 });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: integrationMigrations.length,
+  });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(db.pragma('foreign_key_check')).toEqual([]);
   db.close();
@@ -768,7 +770,9 @@ it('upgrades the released complete 25-entry schema without altering ready Word b
     const upgraded = openTaskStore(legacyFile, migrations);
     const db = openToolchainProbe(legacyFile, migrations).sqlite;
     try {
-      expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 26 });
+      expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+        n: integrationMigrations.length,
+      });
       for (const { table, columns, rows } of preserved)
         expect(db.prepare(`SELECT ${columns} FROM ${table}`).all()).toEqual(rows);
       expect(

@@ -1,6 +1,7 @@
 import { PDF_BUDGET, PDF_CANVAS_PIXELS } from '../pdf-budget';
 import type { TextPage } from '../../preload/caselite-api';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import PhotoReader from './PhotoReader';
 import { Document, Page, pdfjs } from 'react-pdf';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -16,7 +17,7 @@ const options = {
   wasmUrl: new URL('../pdf-resources/wasm/', document.baseURI).toString(),
 };
 
-export default function PdfReader({
+function PdfDocumentReader({
   bytes,
   name,
   onClose,
@@ -137,5 +138,18 @@ export default function PdfReader({
         </section>
       )}
     </section>
+  );
+}
+
+export default function PdfReader(props: ComponentProps<typeof PdfDocumentReader>) {
+  return /\.(png|jpe?g)$/i.test(props.name) ? (
+    <PhotoReader
+      bytes={props.bytes}
+      name={props.name}
+      textPages={props.textPages}
+      onClose={props.onClose}
+    />
+  ) : (
+    <PdfDocumentReader {...props} />
   );
 }

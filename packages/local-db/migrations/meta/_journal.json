@@ -183,6 +183,34 @@
       "when": 1794235800000,
       "tag": "0022_export_style",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1794235900000,
+      "tag": "0023_finance_settlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794236000000,
+      "tag": "0024_finance_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1794236100000,
+      "tag": "0025_finance_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1794236200000,
+      "tag": "0026_finance_sources",
+      "breakpoints": true
     }
   ]
 }
