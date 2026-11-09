@@ -61,7 +61,12 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   function Host() {
     const [current, setCurrent] = useState(task);
     return (
-      <TaskInspector task={current} onPropertiesBlocked={blocked} onTaskChanged={setCurrent} />
+      <TaskInspector
+        showCalendar
+        task={current}
+        onPropertiesBlocked={blocked}
+        onTaskChanged={setCurrent}
+      />
     );
   }
   render(<Host />);

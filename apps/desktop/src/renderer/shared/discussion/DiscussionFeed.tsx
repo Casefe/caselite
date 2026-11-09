@@ -27,7 +27,9 @@ export function DiscussionFeed({
   publicationFields,
   onPublished,
   onResetOptions,
+  composerPosition = 'start',
 }: {
+  composerPosition?: 'start' | 'end';
   scope: DiscussionScope;
   archived: boolean;
   disabled: boolean;
@@ -160,73 +162,74 @@ export function DiscussionFeed({
     readOnly ||
     (scope.kind === 'task_comment' && (!page || reading));
   const tooLong = draft.text.trim().length > 8000 || (draft.state?.length ?? 0) > 32768;
-  return (
-    <>
-      {compose && (!readOnly || draft.state) && (
-        <div
-          className="project-discussion-compose"
-          onCompositionStartCapture={() => {
-            composing.current = true;
-          }}
-          onCompositionEndCapture={() => {
-            composing.current = false;
-          }}
-          onBlurCapture={() => {
-            composing.current = false;
+  const composer = compose && (!readOnly || draft.state) && (
+    <div
+      className="project-discussion-compose"
+      onCompositionStartCapture={() => {
+        composing.current = true;
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false;
+      }}
+      onBlurCapture={() => {
+        composing.current = false;
+      }}
+    >
+      {publicationOptions?.(editorDisabled, (value) => {
+        setOptionsDirty(value);
+        onDirty(value || Boolean(draft.state));
+      })}
+      <DraftEditor
+        key={epoch}
+        label={label}
+        placeholder={`输入${label}…`}
+        value={draft}
+        onChange={(value) => {
+          setDraft(value);
+          setSaved(false);
+          onDirty(true);
+        }}
+        disabled={editorDisabled}
+        profile="comment"
+      />
+      <button
+        type="button"
+        className="primary"
+        disabled={editorDisabled || !draft.text.trim() || !draft.state || tooLong}
+        onClick={() => {
+          if (!composing.current && draft.state)
+            void publish(
+              catalogMutation({
+                operation: 'publish_discussion',
+                scope,
+                state: draft.state,
+                ...publicationFields,
+              }),
+            );
+        }}
+      >
+        发布{label}
+      </button>
+      {(draft.state || optionsDirty) && !unknown && (
+        <button
+          type="button"
+          disabled={disabled || pending}
+          onClick={() => {
+            if (window.confirm('放弃当前未发布的草稿？')) {
+              resetDraft();
+              setWriteError('');
+            }
           }}
         >
-          {publicationOptions?.(editorDisabled, (value) => {
-            setOptionsDirty(value);
-            onDirty(value || Boolean(draft.state));
-          })}
-          <DraftEditor
-            key={epoch}
-            label={label}
-            placeholder={`输入${label}…`}
-            value={draft}
-            onChange={(value) => {
-              setDraft(value);
-              setSaved(false);
-              onDirty(true);
-            }}
-            disabled={editorDisabled}
-            profile="comment"
-          />
-          <button
-            type="button"
-            className="primary"
-            disabled={editorDisabled || !draft.text.trim() || !draft.state || tooLong}
-            onClick={() => {
-              if (!composing.current && draft.state)
-                void publish(
-                  catalogMutation({
-                    operation: 'publish_discussion',
-                    scope,
-                    state: draft.state,
-                    ...publicationFields,
-                  }),
-                );
-            }}
-          >
-            发布{label}
-          </button>
-          {(draft.state || optionsDirty) && !unknown && (
-            <button
-              type="button"
-              disabled={disabled || pending}
-              onClick={() => {
-                if (window.confirm('放弃当前未发布的草稿？')) {
-                  resetDraft();
-                  setWriteError('');
-                }
-              }}
-            >
-              放弃草稿
-            </button>
-          )}
-          {tooLong && <p role="alert">正文超出发布大小限制。请缩短内容后再发布。</p>}
-        </div>
+          放弃草稿
+        </button>
       )}
+      {tooLong && <p role="alert">正文超出发布大小限制。请缩短内容后再发布。</p>}
+    </div>
+  );
+  return (
+    <>
+      {composerPosition === 'start' && composer}
       {readOnly && <p>项目已归档，讨论只读。</p>}
       {writeError && <p role="alert">{writeError}</p>}
       {unknown && (
@@ -279,6 +282,7 @@ export function DiscussionFeed({
           加载更早的{label}
         </button>
       )}
+      {composerPosition === 'end' && composer}
     </>
   );
 }

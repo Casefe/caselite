@@ -1,9 +1,12 @@
+import TaskInspector from './TaskInspector';
 import TaskListSummary from '../features/tasks/TaskListSummary';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
 import { TaskTable, taskOptionalColumns, type TaskOptionalColumn } from './Workspace';
-import TaskInspector from './TaskInspector';
+import InspectorLayout from './InspectorLayout';
+import SidebarAgent from './SidebarAgent';
+import TaskBulkActions from '../features/tasks/TaskBulkActions';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
 import { useTaskPage } from './task-list-query';
@@ -41,8 +44,8 @@ export default function RecordList({
   propertiesBlocked: propertyEditBlocked,
   onPropertiesBlocked,
   projectDirty = false,
-  onProjectDirty,
   onTaskChanged,
+  onProjectDirty,
 }: {
   tasks: Task[];
   viewState: TaskListState;
@@ -57,7 +60,8 @@ export default function RecordList({
 }) {
   const propertiesBlocked = propertyEditBlocked || projectDirty;
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [projects, setProjects] = useState<Matter[]>([]);
   const [catalogError, setCatalogError] = useState(''),
     [retry, setRetry] = useState(0);
@@ -130,6 +134,7 @@ export default function RecordList({
   }, [loading, q]);
   const change = (patch: Partial<TaskListQuery>) => {
     if (propertiesBlocked) return;
+    setSelectedIds([]);
     onViewState({ ...viewState, query: { ...q, ...patch, offset: 0 }, scroll: 0, selected: null });
   };
   const bound = (field: 'from' | 'to', input: HTMLInputElement) => {
@@ -154,7 +159,7 @@ export default function RecordList({
   return (
     <section
       className="list-view collection-workspace issue-collection task-query-list"
-      data-layout={previewOpen ? 'three-column' : undefined}
+      data-layout="three-column"
       data-collection="tasks"
     >
       <div className="collection-main">
@@ -167,6 +172,13 @@ export default function RecordList({
             新建任务
           </button>
         </div>
+        <p className="task-overview-description">集中管理任务与工作进度</p>
+        <TaskListSummary
+          tasks={tasks.filter((t) => q.scope.type === 'workspace' || t.matter_id === q.scope.id)}
+          variant="stats"
+          disabled={propertiesBlocked}
+          onOpen={openTask}
+        />
         <div className="task-list-viewbar">
           <div className="task-view-switcher" role="group" aria-label="任务视图">
             {(
@@ -305,6 +317,31 @@ export default function RecordList({
             ))}
           </select>
           <select
+            aria-label="筛选任务负责人"
+            disabled={propertiesBlocked}
+            value={q.assignee === undefined ? '__all__' : (q.assignee ?? '__none__')}
+            onChange={(e) =>
+              change({
+                assignee:
+                  e.target.value === '__all__'
+                    ? undefined
+                    : e.target.value === '__none__'
+                      ? null
+                      : e.target.value,
+              })
+            }
+          >
+            <option value="__all__">全部负责人</option>
+            <option value="__none__">未分配</option>
+            {[...new Set(['本人', ...tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))])].map(
+              (v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ),
+            )}
+          </select>
+          <select
             aria-label="筛选任务优先级"
             disabled={propertiesBlocked}
             value={q.priority ?? 'all'}
@@ -388,7 +425,26 @@ export default function RecordList({
             <option value="written">已写正文</option>
             <option value="empty">未写正文</option>
           </select>
+          <button
+            type="button"
+            disabled={propertiesBlocked}
+            onClick={() => {
+              setText('');
+              setDateErrors({ from: false, to: false });
+              change({ ...initialTaskListState.query, view: q.view });
+            }}
+          >
+            清除筛选
+          </button>
         </div>
+        <TaskBulkActions
+          tasks={rows}
+          selected={selectedIds.filter((id) => rows.some((t) => t.id === id))}
+          disabled={propertiesBlocked}
+          onSelection={setSelectedIds}
+          onBlocked={onPropertiesBlocked}
+          onChanged={onTaskChanged}
+        />
         {(dateErrors.from || dateErrors.to) && (
           <p role="alert">日期筛选尚未应用：请输入完整有效日期，或明确清空。</p>
         )}
@@ -433,7 +489,7 @@ export default function RecordList({
                 <TaskTable
                   tasks={group.rows}
                   hiddenColumns={hiddenColumns}
-                  selectedId={previewOpen ? selected?.id : (viewState.selected ?? undefined)}
+                  selectedId={selected?.id}
                   onSelect={
                     previewOpen
                       ? (id) => {
@@ -441,6 +497,10 @@ export default function RecordList({
                         }
                       : undefined
                   }
+                  selectedIds={selectedIds}
+                  onSelection={(ids) => {
+                    if (!propertiesBlocked) setSelectedIds(ids);
+                  }}
                   onOpen={openTask}
                 />
               </section>
@@ -483,14 +543,13 @@ export default function RecordList({
           </div>
         </footer>
       </div>
-      {previewOpen && (
-        <div className="task-list-sidebar">
-          <TaskListSummary tasks={tasks} disabled={propertiesBlocked} onOpen={openTask} />
+      <aside className="task-summary-sidebar" aria-label="任务辅助栏">
+        {previewOpen ? (
           <TaskInspector
             key={selected?.id ?? 'empty'}
             task={error ? null : selected}
-            suggestions={[...new Set(tasks.flatMap((item) => item.tags ?? []))]}
-            assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
+            suggestions={[...new Set(tasks.flatMap((t) => t.tags ?? []))]}
+            assigneeSuggestions={tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
             onPropertiesBlocked={onPropertiesBlocked}
             propertiesDisabled={projectDirty}
             projectDisabled={propertyEditBlocked || loading}
@@ -499,8 +558,30 @@ export default function RecordList({
             onProjectChanged={onTaskChanged}
             onTaskChanged={onTaskChanged}
           />
-        </div>
-      )}
+        ) : (
+          <InspectorLayout
+            blocked={propertiesBlocked}
+            properties={
+              <div className="task-important-information">
+                <h2>重要信息</h2>
+                <TaskListSummary
+                  tasks={tasks}
+                  variant="deadlines"
+                  disabled={propertiesBlocked}
+                  onOpen={openTask}
+                />
+              </div>
+            }
+          >
+            <SidebarAgent
+              taskId={selected?.id}
+              taskVersion={selected?.version}
+              blocked={propertiesBlocked}
+              unavailable="新建或选择任务后可使用 AI 对话。"
+            />
+          </InspectorLayout>
+        )}
+      </aside>
     </section>
   );
 }

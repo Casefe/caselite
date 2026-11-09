@@ -1,3 +1,4 @@
+import { runTaskViewsDemo } from './task-views-demo';
 import { runExportStyleDemo } from './export-style-demo';
 import { performanceApplication, seedPerformance, runPerformance } from './performance-demo';
 import { runFinanceDemo } from './finance-demo';
@@ -165,6 +166,7 @@ async function createWindow(
     process.env.CASELITE_TASK_DEMO?.startsWith('agent-home-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('customer-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('task-views-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-scheme-') ||
@@ -654,6 +656,9 @@ if (taskDemoPhase) {
       'editor-scheme-preview',
       'credential-preflight',
       'credential-preflight-ui',
+      'task-views-write',
+      'task-views-read',
+      'task-views-preview',
       'task-status-write',
       'task-status-read',
       'reminder-write',
@@ -1048,6 +1053,7 @@ app
             );
           }
         : undefined;
+    const taskViewsDemo = taskDemoPhase?.startsWith('task-views-');
     const customerDemo = taskDemoPhase?.startsWith('customer-');
     const financeDemo = taskDemoPhase?.startsWith('finance-');
     if (financeDemo) materialDemoKeys.clear();
@@ -1072,6 +1078,7 @@ app
       performanceDemo ||
       documentReviewDemo ||
       customerDemo ||
+      taskViewsDemo ||
       financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
@@ -1234,7 +1241,7 @@ app
                 ? createSyntheticCustomerStream(taskDemoRoot!)
                 : taskDemoPhase?.startsWith('important-date-')
                   ? syntheticImportantDateStream
-                  : performanceDemo
+                  : performanceDemo || taskViewsDemo
                     ? syntheticAgentStream
                     : documentReviewDemo
                       ? syntheticReviewStream
@@ -1399,6 +1406,11 @@ app
         initialCredentialRead,
       );
       if (taskDemoPhase === 'real-agent-dry') app.exit(0);
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase?.startsWith('task-views-')) {
+      await runTaskViewsDemo(() => createWindow(false), taskDemoRoot, taskDemoPhase, materials);
+      if (taskDemoPhase !== 'task-views-preview') app.exit(0);
       return;
     }
     if (

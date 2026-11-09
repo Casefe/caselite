@@ -1,3 +1,4 @@
+import { Icon } from '../shared/ui/Icon';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Reminder, ReminderResponse } from '../../preload/caselite-api';
 export const reminderCoverage =
@@ -26,12 +27,15 @@ function ReminderEditorState({
   disabled = false,
   onBlocked,
   onChanged,
+  compact = false,
 }: {
   taskId: string;
+  compact?: boolean;
   disabled?: boolean;
   onBlocked?(value: boolean): void;
   onChanged?(): void;
 }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const [current, setCurrent] = useState<Reminder | null>(null),
     [loaded, setLoaded] = useState(false),
     [editing, setEditing] = useState(false);
@@ -46,6 +50,11 @@ function ReminderEditorState({
     [readError, setReadError] = useState(''),
     [unknown, setUnknown] = useState(false),
     [committed, setCommitted] = useState(false);
+  useEffect(() => {
+    if (!compact) return;
+    if (editing) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [compact, editing]);
   const dateInput = useRef<HTMLInputElement>(null),
     timeInput = useRef<HTMLInputElement>(null);
   const pending = useRef<Command | null>(null),
@@ -224,7 +233,7 @@ function ReminderEditorState({
       if (alive.current) setBusy(false);
     }
   }
-  return (
+  const content = (
     <section className="reminder-editor" aria-label="本机提醒设置">
       <h3>本机提醒</h3>
       {current && (
@@ -326,6 +335,11 @@ function ReminderEditorState({
               </>
             )}
           </fieldset>
+          {compact && current?.status === 'scheduled' && !unknown && !committed && (
+            <button type="button" disabled={busy || disabled} onClick={() => void send('cancel')}>
+              清除提醒
+            </button>
+          )}
           {!unknown && !committed && (
             <button
               className="primary"
@@ -388,6 +402,62 @@ function ReminderEditorState({
         </div>
       )}
     </section>
+  );
+  if (!compact) return content;
+  return (
+    <>
+      <div className="inspector-property-row task-reminder-field">
+        <span className="inspector-property-label">提醒</span>
+        <button
+          type="button"
+          className="task-date-trigger"
+          aria-label="设置任务提醒"
+          disabled={!loaded || busy || disabled}
+          onClick={() => {
+            setDate(current?.date ?? '');
+            setTime(current?.time ?? '09:00');
+            setZone(current?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+            change();
+            block(true);
+          }}
+        >
+          <Icon name="bell" size={16} />
+          <span>
+            {current?.status === 'scheduled'
+              ? `${current.date} ${current.time}`
+              : readError
+                ? '读取失败，请重试'
+                : '设置日期和时间'}
+          </span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+        {readError && (
+          <button
+            type="button"
+            onClick={() => void load().catch(() => setReadError('提醒读取仍失败'))}
+          >
+            重新读取提醒
+          </button>
+        )}
+      </div>
+      <dialog
+        ref={dialog}
+        className="task-property-dialog task-reminder-dialog"
+        aria-label="任务提醒"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!busy && !unknown && !committed) {
+            block(false);
+            setError('');
+          }
+        }}
+      >
+        <header>
+          <h2>提醒</h2>
+        </header>
+        {content}
+      </dialog>
+    </>
   );
 }
 

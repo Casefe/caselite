@@ -1,3 +1,4 @@
+import TaskDatePicker from '../features/tasks/TaskDatePicker';
 import { PropertyRow } from '../shared/ui/PropertyRow';
 import { InspectorSection } from '../shared/ui/InspectorSection';
 import type { ReactNode } from 'react';
@@ -11,6 +12,7 @@ type Command = Extract<TaskRequest, { operation: 'change_status' | 'update_attri
 type Attributes = {
   priority: number;
   due_date: string | null;
+  start_date: string | null;
   tags: string[];
   assignee: string | null;
 };
@@ -19,12 +21,14 @@ type Failure = { kind: 'unknown' | 'read' | 'conflict' | 'write'; message: strin
 const attributes = (task: Task): Attributes => ({
   priority: task.priority ?? 0,
   due_date: task.due_date ?? null,
+  start_date: task.start_date ?? null,
   tags: task.tags ?? [],
   assignee: task.assignee === undefined ? '本人' : task.assignee,
 });
 const sameAttributes = (left: Attributes, right: Attributes) =>
   left.priority === right.priority &&
   left.due_date === right.due_date &&
+  left.start_date === right.start_date &&
   left.assignee === right.assignee &&
   JSON.stringify(left.tags) === JSON.stringify(right.tags);
 
@@ -35,6 +39,7 @@ export default function TaskProperties({
   assigneeSuggestions = [],
   groupTags = false,
   project,
+  reminder,
   onBlocked,
   onChanged,
 }: {
@@ -44,6 +49,7 @@ export default function TaskProperties({
   assigneeSuggestions?: string[];
   groupTags?: boolean;
   project?: ReactNode;
+  reminder?: ReactNode;
   onBlocked(value: boolean): void;
   onChanged(task: Task, objectiveState: number[] | null): void;
 }) {
@@ -52,8 +58,7 @@ export default function TaskProperties({
   const [failure, setFailure] = useState<Failure | null>(null);
   const [confirmed, setConfirmed] = useState(task);
   const [tagDraft, setTagDraft] = useState(false);
-  const [date, setDate] = useState<string | null>(null);
-  const [dateInvalid, setDateInvalid] = useState(false);
+  const [dateEditing, setDateEditing] = useState(false);
   const [assigneeDraft, setAssigneeDraft] = useState<string | null>(null);
   const assigneeButton = useRef<HTMLButtonElement>(null);
   const focusAssigneeInput = useCallback((input: HTMLInputElement | null) => input?.focus(), []);
@@ -63,12 +68,11 @@ export default function TaskProperties({
   const running = useRef(false);
   const command = useRef<Command | null>(null);
   const base = useRef(task);
-  const composing = useRef(false);
   const alive = useRef(true);
   const blocked =
     pending ||
     edits.length > 0 ||
-    date !== null ||
+    dateEditing ||
     Boolean(assigneeDraft) ||
     assigneeInComposition ||
     tagDraft ||
@@ -109,9 +113,8 @@ export default function TaskProperties({
         base.current = current;
         setConfirmed(current);
         setEdits([]);
-        setDate(null);
+        setDateEditing(false);
         setAssigneeDraft(null);
-        setDateInvalid(false);
         onChanged(current, description);
         setFailure(null);
         return;
@@ -142,6 +145,7 @@ export default function TaskProperties({
                   operation: 'update_attributes' as const,
                   priority: next.priority,
                   due_date: next.due_date,
+                  start_date: next.start_date,
                   tags: next.tags,
                   ...('assignee' in edit ? { assignee: next.assignee } : {}),
                 }),
@@ -182,6 +186,10 @@ export default function TaskProperties({
               : !sameAttributes(attributes(saved), {
                   priority: original.priority,
                   due_date: original.due_date,
+                  start_date:
+                    original.start_date === undefined
+                      ? attributes(previous).start_date
+                      : original.start_date,
                   tags: original.tags ?? [],
                   assignee:
                     original.assignee === undefined
@@ -233,22 +241,6 @@ export default function TaskProperties({
   const latest = confirmed.version > task.version ? confirmed : task;
   const shown = Object.assign({ status: latest.status ?? 'todo', ...attributes(latest) }, ...edits);
   const locked = disabled || Boolean(failure);
-  const finishDate = (input: HTMLInputElement) => {
-    if (locked || composing.current || date === null) return;
-    if (
-      !input.validity.valid ||
-      !input.value ||
-      input.value.length !== 10 ||
-      input.value.startsWith('0000-')
-    ) {
-      setDateInvalid(true);
-      return;
-    }
-    setDate(null);
-    setDateInvalid(false);
-    enqueue({ due_date: input.value });
-  };
-
   const finishAssignee = (value?: string | null) => {
     if (assigneeComposing.current) return;
     setAssigneeDraft(null);
@@ -301,56 +293,6 @@ export default function TaskProperties({
           ))}
         </select>
       </PropertyRow>
-      <PropertyRow compact={groupTags} label={groupTags ? '日期' : '普通截止日期'}>
-        <input
-          aria-label="普通截止日期"
-          type="date"
-          min="0001-01-01"
-          max="9999-12-31"
-          value={date ?? shown.due_date ?? ''}
-          disabled={locked}
-          aria-invalid={dateInvalid}
-          onInput={(event) => {
-            setDate(event.currentTarget.value);
-            setDateInvalid(false);
-            onBlocked(true);
-          }}
-          onCompositionStart={() => {
-            composing.current = true;
-          }}
-          onCompositionEnd={() => {
-            composing.current = false;
-          }}
-          onBlur={(event) => finishDate(event.currentTarget)}
-          onKeyDown={(event) => {
-            if (composing.current || event.nativeEvent.isComposing) return;
-            if (event.key === 'Enter') finishDate(event.currentTarget);
-            if (event.key === 'Escape') {
-              setDate(null);
-              setDateInvalid(false);
-            }
-          }}
-        />
-      </PropertyRow>
-      {(shown.due_date || date !== null) && (
-        <button
-          type="button"
-          disabled={locked}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            setDate(null);
-            setDateInvalid(false);
-            enqueue({ due_date: null });
-          }}
-        >
-          清空截止日期
-        </button>
-      )}
-      {dateInvalid && (
-        <p role="alert">
-          请输入完整有效的日期（YYYY-MM-DD），或选择清空截止日期。按 Esc 可取消编辑。
-        </p>
-      )}
       {groupTags ? (
         <>
           <div className="inspector-property-row">
@@ -460,18 +402,19 @@ export default function TaskProperties({
               </div>
             </div>
           )}
-          {project ?? (
-            <div className="inspector-property-row">
-              <span className="inspector-property-label">项目</span>
-              <span className="inspector-property-text">
-                {task.matter_title ?? (task.matter_id ? '已归组' : '未归组')}
-              </span>
-            </div>
-          )}
         </>
-      ) : (
-        tags
-      )}
+      ) : null}
+      <div className="inspector-property-row">
+        <span className="inspector-property-label">日期</span>
+        <TaskDatePicker
+          value={shown}
+          disabled={locked}
+          onEditing={setDateEditing}
+          onChange={(dates) => enqueue(dates)}
+        />
+      </div>
+      {reminder}
+      {!groupTags && tags}
       {pending && <p role="status">正在保存任务属性…</p>}
       {failure && (
         <div className="task-property-recovery">
@@ -512,6 +455,10 @@ export default function TaskProperties({
       <section className="project-inspector-section task-label-section" aria-label="标签">
         <h3>标签</h3>
         {tags}
+      </section>
+      <section className="project-inspector-section task-project-section" aria-label="项目">
+        <h3>项目</h3>
+        {project ?? <p>{task.matter_title ?? (task.matter_id ? '已归组' : '独立任务')}</p>}
       </section>
     </>
   );
