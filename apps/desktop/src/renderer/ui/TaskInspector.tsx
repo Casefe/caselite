@@ -1,3 +1,4 @@
+import TaskAttachments from './TaskAttachments';
 import TaskCalendarEditor from '../features/calendar/TaskCalendarEditor';
 import { useCallback, useState, useRef, type ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
@@ -113,6 +114,11 @@ export default function TaskInspector({
             onChanged={onTaskChanged}
           />
         )}
+        <TaskAttachments
+          key={`attachments:${task.id}`}
+          taskId={task.id}
+          disabled={propertiesDisabled || reminderEditing || editing || calendarEditing}
+        />
         <section aria-label="AI 对话" className="project-inspector-section">
           <h3>AI 对话</h3>
           {editorAssistantDock ? (

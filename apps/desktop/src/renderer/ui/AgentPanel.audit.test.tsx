@@ -120,7 +120,23 @@ it('opens and closes a saved attachment while the audit composer remains absent'
   });
   const material = vi.fn<Window['caselite']['material']>().mockImplementation(async (request) => ({
     ok: true,
-    materials: [],
+    materials:
+      request.operation === 'read'
+        ? [
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              task_id: '33333333-3333-4333-8333-333333333333',
+              asset_version_id: '44444444-4444-4444-8444-444444444444',
+              name: '合成附件.pdf',
+              sha256: 'a'.repeat(64),
+              bytes: 3,
+              page_count: 1,
+              derivation_id: null,
+              status: 'imported',
+              pages: [],
+            },
+          ]
+        : [],
     ...(request.operation === 'read' ? { data: new Uint8Array([1, 2, 3]) } : {}),
   }));
   window.caselite = { agent, material } as unknown as Window['caselite'];

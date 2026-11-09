@@ -478,3 +478,82 @@
   padding-inline-start: 6px;
   color: var(--muted);
 }
+
+/* 附件列表有界滚动，保留窄属性栏及下方 AI 控件的可达性。 */
+.task-attachments {
+  margin-block: 14px;
+  font-size: 12px;
+  min-width: 0;
+}
+.task-attachments > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-attachments h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-attachments h3 small,
+.task-attachments p {
+  color: var(--muted);
+  font-weight: 400;
+}
+.task-attachments > header button,
+.task-attachment-recovery button {
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.task-attachments ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.task-attachments li > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+.task-attachments li > button:hover,
+.task-attachments li > button[aria-pressed='true'] {
+  background: var(--theme-hover);
+  border-color: var(--line);
+}
+.task-attachment-format {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.task-attachment-label {
+  min-width: 0;
+}
+.task-attachment-label strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.task-attachment-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.task-attachment-recovery p,
+.task-attachments [role='alert'] {
+  overflow-wrap: anywhere;
+}

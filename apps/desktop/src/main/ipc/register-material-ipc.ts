@@ -61,7 +61,9 @@ export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplica
         selecting = false;
       }
     }
-    return materialResponseSchema.parse(await app.execute(input));
+    const result = await app.execute(input);
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+    return materialResponseSchema.parse(result);
   });
   for (const channel of [MATERIAL_PICK_CHANNEL, MATERIAL_DROP_CHANNEL])
     ipcMain.handle(channel, async (event, input: unknown) => {
@@ -80,10 +82,13 @@ export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplica
             properties: ['openFile'],
             filters: [{ name: '分析附件', extensions: ['pdf', 'docx'] }],
           });
+          if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
           if (result.canceled) return { ok: true, materials: [], staged: null };
           path = result.filePaths[0];
         }
-        return materialResponseSchema.parse(await app.stage(path!, scope));
+        const result = await app.stage(path!, scope);
+        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        return materialResponseSchema.parse(result);
       } catch {
         return { ok: false, code: 'UNAVAILABLE', message: '无法选择文件，请重试。' };
       } finally {

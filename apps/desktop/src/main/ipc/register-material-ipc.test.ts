@@ -2,20 +2,26 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const mock = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, input: unknown) => Promise<unknown>>(),
   save: vi.fn(),
+  pick: vi.fn(),
+  trusted: vi.fn(),
   write: vi.fn(),
 }));
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => ({}) },
-  dialog: { showSaveDialog: mock.save },
+  dialog: { showSaveDialog: mock.save, showOpenDialog: mock.pick },
   ipcMain: {
     handle: (name: string, handler: (event: unknown, input: unknown) => Promise<unknown>) =>
       mock.handlers.set(name, handler),
   },
 }));
 vi.mock('node:fs/promises', () => ({ writeFile: mock.write }));
-vi.mock('./register-application-ipc', () => ({ isTrustedDesktopSender: () => true }));
+vi.mock('./register-application-ipc', () => ({ isTrustedDesktopSender: mock.trusted }));
 import { registerMaterialIpc } from './register-material-ipc';
-import { MATERIAL_CHANNEL } from '@caselite/contracts';
+import {
+  MATERIAL_CHANNEL,
+  MATERIAL_PICK_CHANNEL,
+  MATERIAL_DROP_CHANNEL,
+} from '@caselite/contracts';
 const project = '11111111-1111-4111-8111-111111111111',
   source = '22222222-2222-4222-8222-222222222222';
 const read = {
@@ -25,6 +31,8 @@ const read = {
 };
 beforeEach(() => {
   mock.handlers.clear();
+  mock.trusted.mockReset().mockReturnValue(true);
+  mock.pick.mockReset().mockResolvedValue({ canceled: false, filePaths: ['/synthetic/通知.pdf'] });
   mock.save.mockReset();
   mock.write.mockReset();
   mock.save.mockResolvedValue({ canceled: false, filePath: '/synthetic/合同副本.docx' });
@@ -85,3 +93,50 @@ it('rejects a changed original and releases the dialog lock without writing', as
   expect(await save()).toMatchObject({ ok: true });
   expect(mock.write).not.toHaveBeenCalled();
 });
+
+it('does not return fixed bytes if the sender changes while a read is pending', async () => {
+  const execute = vi.fn(async () => {
+    mock.trusted.mockReturnValue(false);
+    return read;
+  });
+  registerMaterialIpc({ execute } as unknown as Parameters<typeof registerMaterialIpc>[0]);
+  expect(
+    await mock.handlers.get(MATERIAL_CHANNEL)!(
+      { sender: {} },
+      { protocol_version: 1, operation: 'read', scope: project, source_id: source },
+    ),
+  ).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+});
+it('does not stage after the picker sender is revoked and releases its selection lock', async () => {
+  const stage = vi.fn();
+  registerMaterialIpc({ stage } as unknown as Parameters<typeof registerMaterialIpc>[0]);
+  mock.pick.mockImplementationOnce(async () => {
+    mock.trusted.mockReturnValue(false);
+    return { canceled: false, filePaths: ['/synthetic/通知.pdf'] };
+  });
+  const pick = () => mock.handlers.get(MATERIAL_PICK_CHANNEL)!({ sender: {} }, { scope: project });
+  expect(await pick()).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+  expect(stage).not.toHaveBeenCalled();
+  mock.trusted.mockReturnValue(true);
+  mock.pick.mockResolvedValueOnce({ canceled: true });
+  expect(await pick()).toMatchObject({ ok: true, staged: null });
+});
+it.each([MATERIAL_PICK_CHANNEL, MATERIAL_DROP_CHANNEL])(
+  'rejects late staging output on %s after sender revocation',
+  async (channel) => {
+    const stage = vi.fn(async () => {
+      mock.trusted.mockReturnValue(false);
+      return { ok: true, materials: [] };
+    });
+    registerMaterialIpc({ stage } as unknown as Parameters<typeof registerMaterialIpc>[0]);
+    expect(
+      await mock.handlers.get(channel)!(
+        { sender: {} },
+        {
+          scope: project,
+          ...(channel === MATERIAL_DROP_CHANNEL ? { path: '/synthetic/通知.pdf' } : {}),
+        },
+      ),
+    ).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+  },
+);

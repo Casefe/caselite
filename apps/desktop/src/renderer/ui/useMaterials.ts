@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   Material,
   MaterialScope,
@@ -18,6 +18,14 @@ type DraftFiles = {
   error: string;
   importError?: string;
   name?: string;
+  selectImport?: boolean;
+  items: Material[];
+  revision: number;
+  listeners: Set<() => void>;
+  stopPolling?: () => void;
+  generation: number;
+  loaded: boolean;
+  readError: string;
 };
 export function isDocx(name: string) {
   return /\.docx$/i.test(name);
@@ -37,26 +45,103 @@ export function pageRange(value: string, count: number): number[] | null {
   return [...result].sort((a, b) => a - b);
 }
 function getDraft(scope: string) {
-  if (!drafts.has(scope)) drafts.set(scope, { ids: new Set(), sections: new Map(), error: '' });
+  if (!drafts.has(scope))
+    drafts.set(scope, {
+      ids: new Set(),
+      sections: new Map(),
+      error: '',
+      items: [],
+      revision: 0,
+      listeners: new Set(),
+      generation: 0,
+      loaded: false,
+      readError: '',
+    });
   return drafts.get(scope)!;
 }
-export function useMaterials(scope: MaterialScope, enabled = true) {
+function notify(draft: DraftFiles) {
+  draft.revision++;
+  draft.listeners.forEach((listener) => listener());
+}
+function subscribeMaterials(scope: MaterialScope, listener: () => void) {
   const draft = getDraft(scope);
-  const [items, setItems] = useState<Material[]>([]);
-  const [, update] = useState(0);
+  draft.listeners.add(listener);
+  if (!draft.stopPolling) {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      const generation = draft.generation;
+      try {
+        const result = await window.caselite.material({
+          protocol_version: 1,
+          operation: 'list',
+          scope,
+        });
+        if (stopped || generation !== draft.generation) return;
+        if (!result.ok) throw new Error(result.message);
+        draft.items = result.materials;
+        if (!draft.upload) draft.staged = result.staged ?? undefined;
+        draft.loaded = true;
+        draft.readError = '';
+        notify(draft);
+      } catch (error) {
+        if (stopped || generation !== draft.generation) return;
+        draft.readError = error instanceof Error ? error.message : '材料列表暂不可读取。';
+        notify(draft);
+      } finally {
+        if (!stopped) timer = setTimeout(() => void poll(), 500);
+      }
+    }
+    draft.stopPolling = () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+    void poll();
+  }
+  return () => {
+    draft.listeners.delete(listener);
+    if (!draft.listeners.size) {
+      draft.stopPolling?.();
+      draft.stopPolling = undefined;
+      // 查询只是投影；重新进入时先按原 scope 回读，不显示上次授权范围的缓存。
+      draft.items = [];
+      draft.loaded = false;
+      draft.readError = '';
+    }
+  };
+}
+export function useMaterials(scope: MaterialScope, enabled = true, selectImports = true) {
+  const draft = getDraft(scope);
+  const available = enabled && typeof window.caselite?.material === 'function';
+  const subscribe = useCallback(
+    (listener: () => void) => (available ? subscribeMaterials(scope, listener) : () => {}),
+    [scope, available],
+  );
+  const snapshot = useCallback(() => getDraft(scope).revision, [scope]);
+  useSyncExternalStore(subscribe, snapshot);
+  const items = draft.items;
   const [reading, setReading] = useState<{
+    scope: string;
     id: string;
     name: string;
     task: string;
     bytes: Uint8Array;
     material?: Material;
   } | null>(null);
+  const [readPending, setReadPending] = useState(false);
   const [copyError, setCopyError] = useState('');
+  const [readingError, setReadingError] = useState('');
   const alive = useRef(true);
-  const available = enabled && typeof window.caselite?.material === 'function';
-  const render = () => {
-    if (alive.current) update((n) => n + 1);
-  };
+  const readSequence = useRef(0);
+  useEffect(() => {
+    alive.current = true;
+    const sequence = readSequence;
+    return () => {
+      alive.current = false;
+      sequence.current++;
+    };
+  }, [scope]);
+  const render = () => notify(draft);
   async function command(
     request: Omit<MaterialRequest, 'protocol_version' | 'scope'>,
     readScope = scope,
@@ -67,56 +152,45 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       ...request,
     } as MaterialRequest);
     if (!result.ok) throw new Error(result.message);
-    if (alive.current && readScope === scope) setItems(result.materials);
+    if (
+      readScope === scope &&
+      request.operation !== 'save_original' &&
+      request.operation !== 'docx_semantic_preview' &&
+      request.operation !== 'read'
+    ) {
+      // 动作回执优先于先前发出的轮询；异步旧列表不能覆盖刚保存的固定来源。
+      draft.generation++;
+      draft.items = result.materials;
+      draft.loaded = true;
+      draft.readError = '';
+      notify(draft);
+    }
     return result;
   }
-  useEffect(() => {
-    const draft = getDraft(scope);
-    alive.current = true;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      if (!available) return;
-      try {
-        const result = await window.caselite.material({
-          protocol_version: 1,
-          operation: 'list',
-          scope,
-        });
-        if (stopped) return;
-        if (result.ok) {
-          setItems(result.materials);
-          if (!draft.upload && result.staged) draft.staged = result.staged;
-          update((n) => n + 1);
-        }
-      } catch {
-        /* 轮询失败不覆盖输入或导入回执；发送时重新核对。 */
-      }
-      if (!stopped) timer = setTimeout(() => void poll(), 500);
-    }
-    void poll();
-    return () => {
-      stopped = true;
-      alive.current = false;
-      clearTimeout(timer);
-    };
-  }, [scope, available]);
   async function importFile(file?: File, retry = false) {
     if (draft.upload) return draft.upload;
+    setReadingError('');
+    if (!retry && draft.staged) {
+      setReadingError('上次附件尚未完成，请重试或移除后添加。');
+      return;
+    }
     draft.error = '';
     draft.importError = '';
     draft.name = file?.name ?? draft.staged?.name;
+    draft.selectImport ??= selectImports;
     const work = (async () => {
       try {
         let staged = draft.staged;
-        if (!retry && staged) throw new Error('上次附件尚未完成，请重试或移除后添加。');
         if (!staged) {
           const result = await (file
             ? window.caselite.dropPdf(file, scope)
             : window.caselite.pickPdf(scope));
           if (!result.ok) throw new Error(result.message);
           staged = result.staged ?? undefined;
-          if (!staged) return;
+          if (!staged) {
+            draft.selectImport = undefined;
+            return;
+          }
           draft.staged = staged;
           draft.name = staged.name;
           render();
@@ -130,7 +204,8 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
           !result.materials.some((item) => item.id === (staged!.restore_source_id ?? staged!.token))
         )
           throw new Error('尚未确认附件导入，请重试原附件。');
-        if (!staged.restore_source_id) draft.ids.add(staged.token);
+        if (!staged.restore_source_id && draft.selectImport) draft.ids.add(staged.token);
+        draft.selectImport = undefined;
         draft.staged = undefined;
         window.dispatchEvent(new Event('caselite:material-task-saved'));
       } catch (error) {
@@ -149,6 +224,9 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
   return {
     available,
     items,
+    loaded: draft.loaded,
+    readError: draft.readError,
+    readPending,
     sections: draft.sections,
     toggleSection(id: string, page: number) {
       const selected = draft.sections.get(id) ?? [];
@@ -173,11 +251,11 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       }
     },
     copyError,
-    reading,
+    reading: reading?.scope === scope ? reading : null,
     busy: Boolean(draft.upload),
-    staged: draft.staged,
-    uploadingName: draft.name,
-    error: draft.error,
+    staged: !selectImports || draft.selectImport !== false ? draft.staged : undefined,
+    uploadingName: !selectImports || draft.selectImport !== false ? draft.name : undefined,
+    error: (!selectImports || draft.selectImport !== false ? draft.error : '') || readingError,
     selected: Object.fromEntries([...draft.ids].map((id) => [id, ''])),
     async prepareRecovery(attachments: NonNullable<AgentRun['attachments']>) {
       const empty = () => !draft.ids.size && !draft.upload && !draft.staged && !draft.importError;
@@ -213,6 +291,9 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       };
     },
     clearReading() {
+      setReadingError('');
+      readSequence.current++;
+      setReadPending(false);
       setReading(null);
       setCopyError('');
     },
@@ -234,6 +315,8 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
             'scope' | 'protocol_version'
           >);
         draft.staged = undefined;
+        draft.selectImport = undefined;
+        setReadingError('');
         draft.error = '';
         draft.importError = '';
         render();
@@ -325,6 +408,12 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
       await work;
     },
     async readReference(id: string, task: string, name: string) {
+      const sequence = ++readSequence.current;
+      setReadPending(true);
+      setReadingError('');
+      setReading(null);
+      setCopyError('');
+      const expected = items.find((item) => item.id === id);
       try {
         const result = await command(
           { operation: 'read', source_id: id } as Omit<
@@ -333,19 +422,30 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
           >,
           task,
         );
-        if (alive.current && result.data)
-          setReading({
-            id,
-            name,
-            task,
-            bytes: result.data,
-            material: result.materials.find((item) => item.id === id),
-          });
-        draft.error = draft.importError ?? '';
-        render();
+        if (!alive.current || sequence !== readSequence.current) return;
+        const current = result.materials.find((item) => item.id === id);
+        if (
+          !result.data ||
+          !current ||
+          current.task_id !== task ||
+          (expected &&
+            (expected.asset_version_id !== current.asset_version_id ||
+              expected.sha256 !== current.sha256))
+        )
+          throw new Error('附件版本或归属已变化，请重新读取。');
+        setReading({
+          scope,
+          id,
+          name,
+          task,
+          bytes: result.data,
+          material: result.materials.find((item) => item.id === id),
+        });
       } catch (error) {
-        draft.error = error instanceof Error ? error.message : '无法打开附件。';
-        render();
+        if (!alive.current || sequence !== readSequence.current) return;
+        setReadingError(error instanceof Error ? error.message : '无法打开附件。');
+      } finally {
+        if (alive.current && sequence === readSequence.current) setReadPending(false);
       }
     },
     async preview(
@@ -372,9 +472,11 @@ export function useMaterials(scope: MaterialScope, enabled = true) {
           signal?.removeEventListener('abort', stop);
         }
       };
-      await wait(draft.upload ?? Promise.resolve());
+      // 只有聊天附件属于这次发送。属性栏另存的材料不会拖住或阻断原来的 AI 输入。
+      await wait((draft.selectImport !== false ? draft.upload : undefined) ?? Promise.resolve());
       cancelled();
-      if (draft.error || draft.staged) throw new Error(draft.error || '附件尚未导入完成，请重试。');
+      if (draft.selectImport !== false && (draft.error || draft.staged))
+        throw new Error(draft.error || '附件尚未导入完成，请重试。');
       const ids = [...draft.ids];
       if (!ids.length) return undefined;
       const result = await wait(command({ operation: 'list' }));
