@@ -230,6 +230,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       if (
         request.operation === 'export_snapshot' ||
         request.operation === 'save_export' ||
+        request.operation === 'preview_export' ||
         request.operation === 'cancel_export' ||
         request.operation === 'open_export' ||
         request.operation === 'read_export'

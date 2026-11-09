@@ -234,20 +234,18 @@ export default function BodyEditor({
         {!embedded && (
           <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
         )}
-        {!embedded && (
-          <button
-            type="button"
-            className="delivery-entry"
-            disabled={disabled || annotationDraft || busy || hasPending || reviewSaving}
-            onClick={() => setDeliveryOpen(true)}
-          >
-            交付版本
-          </button>
-        )}
+        <button
+          type="button"
+          className="delivery-entry"
+          disabled={disabled || annotationDraft || busy || hasPending || reviewSaving}
+          onClick={() => setDeliveryOpen(true)}
+        >
+          交付版本
+        </button>
       </section>
       {deliveryOpen && (
         <DeliverySnapshots
-          task={task}
+          task={{ ...task, editor_schema: editorSchema }}
           revision={revision}
           dirty={dirty}
           disabled={disabled || busy || hasPending || !!task.document_archived_at}

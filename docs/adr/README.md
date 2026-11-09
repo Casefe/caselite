@@ -59,4 +59,6 @@
 
 - [ADR-032](./ADR-032-page-scoped-ai-reference.md) 页面范围 AI 与文件式整页/选区引用，DEV-1781。
 
+- [ADR-033](./ADR-033-frozen-export-style.md) 共享导出样式、固定配置与产物身份，DEV-1629。
+
 - [ADR-034](./ADR-034-document-annotation-format.md) 文档高亮/批注正文格式2、恢复与旧版本兼容，DEV-1851。

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { exportStyleSchema } from './export-style';
 
 export const LOCAL_PREFERENCES_CHANNEL = 'caselite:local-preferences:v1';
 export const writingSkillSchema = z
@@ -58,6 +59,8 @@ export const localPreferenceValuesSchema = z
       .optional(),
     // 缺省保留旧请求摘要；空数组明确表示用户移除了全部技能。
     writing_skills: writingSkillsSchema.optional(),
+    // 省略时保留旧请求形状与已保存样式；缺省展示值不能注入旧幂等摘要。
+    export_style: exportStyleSchema.optional(),
   })
   .strict();
 export const localPreferencesSchema = localPreferenceValuesSchema.extend({

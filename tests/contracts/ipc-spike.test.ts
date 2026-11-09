@@ -115,6 +115,7 @@ describe('typed preload to main IPC Spike', () => {
       'createAnchor',
       'createMatter',
       'dropPdf',
+      'exportStyleDefaults',
       'finance',
       'material',
       'materialBatch',
@@ -124,6 +125,15 @@ describe('typed preload to main IPC Spike', () => {
       'reminder',
       'task',
     ]);
+  });
+
+  it('exposes only a copied fixed export default value, without mutating host defaults', () => {
+    const first = createCaseLitePreloadApi(async () => undefined);
+    const second = createCaseLitePreloadApi(async () => undefined);
+    expect(first.exportStyleDefaults?.paper).toBe('A4');
+    expect(first.exportStyleDefaults).not.toBe(second.exportStyleDefaults);
+    first.exportStyleDefaults!.margins.top = 30;
+    expect(second.exportStyleDefaults?.margins.top).toBe(20);
   });
 
   it('uses only the fixed material batch channel and rejects malformed or unknown replies', async () => {

@@ -116,3 +116,51 @@ it('applies only the confirmed scheme and recovers the same submission after an 
   expect(screen.getByLabelText<HTMLInputElement>('技能 1 名称').value).toBe('恢复后的技能');
   expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
 });
+
+it('saves shared export settings only on explicit save and restores the same values after reopening', async () => {
+  const { defaultExportStyle } = await import('@caselite/contracts');
+  let persisted = { ...initialLocalPreferences };
+  const preferences = vi.fn(async (request: LocalPreferencesRequest) => {
+    if (request.operation === 'set')
+      persisted = localPreferencesSchema.parse({
+        ...request.values,
+        version: request.expected_version + 1,
+      });
+    return {
+      ok: true,
+      preferences: persisted,
+      receipt: request.operation === 'set' ? request.idempotency_key : null,
+    };
+  });
+  Object.defineProperty(window, 'caselite', {
+    configurable: true,
+    value: { preferences, exportStyleDefaults: defaultExportStyle },
+  });
+  const mount = () =>
+    render(
+      <LocalPreferencesProvider>
+        <EditorSettings />
+      </LocalPreferencesProvider>,
+    );
+  let view = mount();
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLSelectElement>('导出纸张').disabled).toBe(false),
+  );
+  fireEvent.change(screen.getByLabelText('导出纸张'), { target: { value: 'Letter' } });
+  fireEvent.change(screen.getByLabelText('导出字号'), { target: { value: '14' } });
+  fireEvent.change(screen.getByLabelText('导出页脚'), {
+    target: { value: '合成稿 {page}/{pages}' },
+  });
+  expect(persisted.export_style).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: '保存编辑器设置' }));
+  await waitFor(() => expect(persisted.export_style?.paper).toBe('Letter'));
+  expect(persisted.export_style).toMatchObject({ font_size: 14, footer: '合成稿 {page}/{pages}' });
+  view.unmount();
+  view = mount();
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLInputElement>('导出页脚').value).toBe('合成稿 {page}/{pages}'),
+  );
+  expect(screen.getByLabelText<HTMLSelectElement>('导出纸张').value).toBe('Letter');
+  expect(preferences.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
+  view.unmount();
+});

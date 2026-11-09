@@ -356,3 +356,40 @@ it('separates save-dialog cancel, successful exclusive copy and existing-target 
   selected = join(s.root, 'exports', 'unsafe.pdf');
   expect(await app.execute(command)).toMatchObject({ ok: false, code: 'READ_FAILED' });
 });
+
+it('previews only checked ready PDF bytes at the same scoped identity without rendering again', async () => {
+  const s = setup(),
+    { t, snapshot } = seed(s);
+  const bytes = new Uint8Array(Buffer.from('%PDF-synthetic-preview-port'));
+  s.render.mockResolvedValueOnce(bytes);
+  const created = good(
+    await s.app.execute({
+      ...identity(),
+      operation: 'export_snapshot',
+      format: 'pdf',
+      task_id: t.id,
+      document_id: t.document_id,
+      snapshot_id: snapshot.id,
+    }),
+  );
+  const row = created.exports![0];
+  const query = {
+    protocol_version: 1 as const,
+    operation: 'preview_export' as const,
+    format: 'pdf' as const,
+    task_id: t.id,
+    document_id: t.document_id,
+    snapshot_id: snapshot.id,
+    export_id: row.id,
+  };
+  expect(good(await s.app.execute(query)).export_data).toEqual(bytes);
+  expect(s.render).toHaveBeenCalledTimes(1);
+  expect(await s.app.execute({ ...query, task_id: randomUUID() })).toMatchObject({ ok: false });
+  expect(await s.app.execute({ ...query, export_id: randomUUID() })).toMatchObject({
+    ok: false,
+    code: 'READ_FAILED',
+  });
+  writeFileSync(join(s.root, 'exports', 'fixed', row.id + '.pdf'), '%PDF-corrupted');
+  expect(await s.app.execute(query)).toMatchObject({ ok: false, code: 'READ_FAILED' });
+  expect(s.render).toHaveBeenCalledTimes(1);
+});

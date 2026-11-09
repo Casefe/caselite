@@ -3,6 +3,10 @@ import type Database from 'better-sqlite3';
 import {
   deliveryExportSchema,
   deliveryConverters,
+  configuredDeliveryConverters,
+  exportConfigurationSchema,
+  exportConfigurationContent,
+  type ExportConfiguration,
   type DeliveryExportFormat,
   taskResponseSchema,
   type DeliveryExport,
@@ -11,75 +15,137 @@ import {
 } from '@caselite/contracts';
 
 type Request = Extract<TaskRequest, { operation: 'export_snapshot' }>;
-const columns = 'id,snapshot_id,format,converter,status,sha256,bytes,created_at';
+const columns =
+  'id,snapshot_id,format,converter,status,sha256,bytes,created_at,configuration_json,configuration_fingerprint';
 const digest = ({ request_id, ...content }: Request) => {
   void request_id;
   return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 };
 export function createDeliveryExportStore(db: Database.Database, workspace: string) {
+  const parse = (value: unknown): DeliveryExport => {
+    const { configuration_json, configuration_fingerprint, ...row } = value as Record<
+      string,
+      unknown
+    >;
+    const configuration =
+      configuration_json === null
+        ? undefined
+        : exportConfigurationSchema.parse(JSON.parse(String(configuration_json)));
+    if (
+      configuration_fingerprint !== (configuration?.fingerprint ?? '') ||
+      (configuration &&
+        createHash('sha256').update(exportConfigurationContent(configuration)).digest('hex') !==
+          configuration.fingerprint)
+    )
+      throw new Error('Export configuration mismatch');
+    return deliveryExportSchema.parse({ ...row, ...(configuration ? { configuration } : {}) });
+  };
   const read = (
     snapshot: string,
     format: DeliveryExportFormat = 'docx',
     exportId?: string,
+    configurationFingerprint?: string,
   ): DeliveryExport | undefined => {
+    const selected = configurationFingerprint !== undefined;
     const row = db
       .prepare(
-        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? ${exportId ? 'AND id=?' : "ORDER BY (status='ready') DESC,(converter=?) DESC,created_at DESC LIMIT 1"}`,
+        `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? ${exportId ? 'AND id=?' : selected ? 'AND converter=? AND configuration_fingerprint=? LIMIT 1' : "AND configuration_fingerprint='' ORDER BY (status='ready') DESC,(converter=?) DESC,created_at DESC LIMIT 1"}`,
       )
-      .get(workspace, snapshot, format, exportId ?? deliveryConverters[format]);
-    return row ? deliveryExportSchema.parse(row) : undefined;
+      .get(
+        ...(exportId
+          ? [workspace, snapshot, format, exportId]
+          : selected
+            ? [
+                workspace,
+                snapshot,
+                format,
+                configuredDeliveryConverters[format],
+                configurationFingerprint!,
+              ]
+            : [workspace, snapshot, format, deliveryConverters[format]]),
+      );
+    return row ? parse(row) : undefined;
+  };
+  const readIntent = (request: Request): DeliveryExport | undefined => {
+    const previous = db
+      .prepare('SELECT digest FROM task_receipts WHERE workspace_id=? AND key=?')
+      .get(workspace, request.idempotency_key) as { digest: string } | undefined;
+    const intent = db
+      .prepare(
+        'SELECT digest,export_id FROM delivery_export_intents WHERE workspace_id=? AND key=?',
+      )
+      .get(workspace, request.idempotency_key) as { digest: string; export_id: string } | undefined;
+    if (
+      (previous && previous.digest !== digest(request)) ||
+      (intent && intent.digest !== digest(request))
+    )
+      throw new Error('IDEMPOTENCY_CONFLICT');
+    if (!intent) {
+      if (previous) throw new Error('Missing export intent');
+      return undefined;
+    }
+    const row = read(request.snapshot_id, request.format, intent.export_id);
+    if (!row) throw new Error('Missing export intent');
+    return row;
   };
   return {
     read,
-    reserve(request: Request): DeliveryExport {
+    readIntent,
+    list(snapshot: string, format: DeliveryExportFormat): DeliveryExport[] {
+      return db
+        .prepare(
+          `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? ORDER BY created_at DESC,id DESC LIMIT 20`,
+        )
+        .all(workspace, snapshot, format)
+        .map(parse);
+    },
+    reserve(request: Request, incomingConfiguration?: ExportConfiguration): DeliveryExport {
+      const configuration = incomingConfiguration
+        ? exportConfigurationSchema.parse(incomingConfiguration)
+        : undefined;
+      if (
+        Boolean(request.export_style) !== Boolean(configuration) ||
+        (configuration &&
+          (createHash('sha256').update(exportConfigurationContent(configuration)).digest('hex') !==
+            configuration.fingerprint ||
+            JSON.stringify(configuration.style) !== JSON.stringify(request.export_style)))
+      )
+        throw new Error('Export configuration mismatch');
+      const converter = configuration
+        ? configuredDeliveryConverters[request.format]
+        : deliveryConverters[request.format];
       return db
         .transaction(() => {
-          const previous = db
-            .prepare('SELECT digest FROM task_receipts WHERE workspace_id=? AND key=?')
-            .get(workspace, request.idempotency_key) as { digest: string } | undefined;
-          const intent = db
-            .prepare(
-              'SELECT digest,export_id FROM delivery_export_intents WHERE workspace_id=? AND key=?',
-            )
-            .get(workspace, request.idempotency_key) as
-            { digest: string; export_id: string } | undefined;
-          if (
-            (previous && previous.digest !== digest(request)) ||
-            (intent && intent.digest !== digest(request))
-          )
-            throw new Error('IDEMPOTENCY_CONFLICT');
-          // 原键继续指向原转换器；只有新的提交身份才能创建新版产物，不能重写旧文件或回执。
-          const current = intent
-            ? undefined
-            : db
-                .prepare(
-                  `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? AND converter=?`,
-                )
-                .get(
-                  workspace,
-                  request.snapshot_id,
-                  request.format,
-                  deliveryConverters[request.format],
-                );
-          let row = intent
-            ? read(request.snapshot_id, request.format, intent.export_id)
-            : current
-              ? deliveryExportSchema.parse(current)
-              : undefined;
-          if (intent && !row) throw new Error('Missing export intent');
+          // 原键继续指向原转换器；只有新提交身份才能选择新的有效配置。
+          let row = readIntent(request);
+          if (!row) {
+            const current = db
+              .prepare(
+                `SELECT ${columns} FROM delivery_exports WHERE workspace_id=? AND snapshot_id=? AND format=? AND converter=? AND configuration_fingerprint=?`,
+              )
+              .get(
+                workspace,
+                request.snapshot_id,
+                request.format,
+                converter,
+                configuration?.fingerprint ?? '',
+              );
+            row = current ? parse(current) : undefined;
+          }
           if (!row) {
             row = {
               id: randomUUID(),
               snapshot_id: request.snapshot_id,
               format: request.format,
-              converter: deliveryConverters[request.format],
+              converter,
+              ...(configuration ? { configuration } : {}),
               status: 'pending',
               sha256: null,
               bytes: null,
               created_at: new Date().toISOString(),
             };
             db.prepare(
-              `INSERT INTO delivery_exports(workspace_id,${columns}) VALUES(?,?,?,?,?,?,?,?,?)`,
+              `INSERT INTO delivery_exports(workspace_id,${columns}) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
             ).run(
               workspace,
               row.id,
@@ -90,6 +156,8 @@ export function createDeliveryExportStore(db: Database.Database, workspace: stri
               null,
               null,
               row.created_at,
+              configuration ? JSON.stringify(configuration) : null,
+              configuration?.fingerprint ?? '',
             );
           }
           db.prepare(

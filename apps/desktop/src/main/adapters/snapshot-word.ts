@@ -1,8 +1,15 @@
 import * as Y from 'yjs';
 import { validateBody } from '@caselite/local-db';
-import type { DeliverySnapshot } from '@caselite/contracts';
+import {
+  exportConfigurationSchema,
+  type ExportConfiguration,
+  type DeliverySnapshot,
+} from '@caselite/contracts';
 import {
   Document,
+  Header,
+  Footer,
+  PageNumber,
   Packer,
   Paragraph,
   TextRun,
@@ -34,10 +41,45 @@ const invalidXml = (value: string) =>
 export async function renderSnapshotWord(
   snapshot: DeliverySnapshot,
   state: Uint8Array,
+  configuration?: ExportConfiguration,
 ): Promise<Uint8Array> {
   if (state.length > 2_000_000 || snapshot.source_refs.length)
     throw new Error('Unsupported export input');
   if (invalidXml(snapshot.title)) throw new Error('Unsupported title character');
+  const configured = configuration ? exportConfigurationSchema.parse(configuration) : undefined;
+  const style = configured?.style,
+    font = configured?.font.family ?? '宋体';
+  const twips = (mm: number) => Math.round((mm * 1440) / 25.4);
+  const paper =
+    style?.paper === 'Letter' ? { width: 12240, height: 15840 } : { width: 11906, height: 16838 };
+  const margin = style
+    ? {
+        top: twips(style.margins.top),
+        right: twips(style.margins.right),
+        bottom: twips(style.margins.bottom),
+        left: twips(style.margins.left),
+        header: twips(6),
+        footer: twips(6),
+      }
+    : { top: 1440, right: 1440, bottom: 1440, left: 1440 };
+  const running = (value: string) =>
+    new Paragraph({
+      children: value
+        .split(/(\{pages?\})/)
+        .filter(Boolean)
+        .map(
+          (part) =>
+            new TextRun({
+              font,
+              size: 18,
+              ...(part === '{page}'
+                ? { children: [PageNumber.CURRENT] }
+                : part === '{pages}'
+                  ? { children: [PageNumber.TOTAL_PAGES] }
+                  : { text: part }),
+            }),
+        ),
+    });
   validateBody(state, true);
   const doc = new Y.Doc();
   try {
@@ -61,7 +103,7 @@ export async function renderSnapshotWord(
                 italics: a.italic ? true : undefined,
                 strike: a.strike ? true : undefined,
                 underline: a.underline ? {} : undefined,
-                font: a.code ? 'Menlo' : '宋体',
+                font: a.code ? 'Menlo' : font,
               };
               return new TextRun(opts);
             });
@@ -157,7 +199,10 @@ export async function renderSnapshotWord(
             throw new Error('Nested or indented tables not supported');
           return [
             new Table({
-              width: { size: 9026, type: WidthType.DXA },
+              width: {
+                size: style ? paper.width - margin.left - margin.right : 9026,
+                type: WidthType.DXA,
+              },
               rows: node.toArray().map((row) => {
                 if (!(row instanceof Y.XmlElement) || row.nodeName !== 'tableRow')
                   throw new Error('Invalid table row');
@@ -202,7 +247,7 @@ export async function renderSnapshotWord(
           description: `snapshot=${snapshot.id};body_revision=${snapshot.body_revision};sha256=${snapshot.content_sha256}`,
           numbering: { config: numbering },
           styles: {
-            default: { document: { run: { font: '宋体', size: 24 } } },
+            default: { document: { run: { font, size: (style?.font_size ?? 12) * 2 } } },
             paragraphStyles: [
               { id: 'CodeBlock', name: 'CodeBlock', basedOn: 'Normal', run: { font: 'Menlo' } },
             ],
@@ -211,10 +256,16 @@ export async function renderSnapshotWord(
             {
               properties: {
                 page: {
-                  size: { width: 11906, height: 16838 },
-                  margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+                  size: paper,
+                  margin,
                 },
               },
+              ...(style?.header
+                ? { headers: { default: new Header({ children: [running(style.header)] }) } }
+                : {}),
+              ...(style?.footer
+                ? { footers: { default: new Footer({ children: [running(style.footer)] }) } }
+                : {}),
               children: [
                 new Paragraph({
                   children: [new TextRun({ text: '草稿 · 未经法律核验', color: '777777' })],
