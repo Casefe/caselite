@@ -177,6 +177,7 @@ export async function runTaskViewsDemo(
       '[data-testid=task-objective]',
       '整理合同履行时间与材料缺口，形成供人工审阅的初稿。',
     );
+    await input('[aria-label=任务负责人]', '');
     await click('[aria-label=设置任务日期]');
     await wait("document.querySelector('[aria-label=任务日期][open]')");
     await input('[aria-label=开始日期]', '2030-11-10');
@@ -196,7 +197,12 @@ export async function runTaskViewsDemo(
     const created = (await task({ protocol_version: 1, operation: 'list' })).tasks.find(
       (t) => t.title === '示例 · 三页真实验收',
     );
-    if (!created || created.start_date !== '2030-11-10' || created.due_date !== '2030-11-12')
+    if (
+      !created ||
+      created.assignee !== null ||
+      created.start_date !== '2030-11-10' ||
+      created.due_date !== '2030-11-12'
+    )
       throw Error('Created date range did not persist');
     const r = await evaluate(
       `window.caselite.reminder({protocol_version:1,operation:'list',task_id:${JSON.stringify(created.id)}})`,
