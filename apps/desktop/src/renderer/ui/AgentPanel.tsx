@@ -269,7 +269,7 @@ export default function AgentPanel({
     },
   });
   // 专用日期历史不投影成聊天；active仍来自全部Run，不能因隐藏JSON而放开重复发送。
-  const latest = runs.findLast(isConversationRun);
+  const latest = runs.filter(isConversationRun).at(-1);
   const homeComposer = scope === 'home' || variant === 'compact';
   const actions = (
     <>
