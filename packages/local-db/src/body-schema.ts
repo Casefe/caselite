@@ -138,7 +138,9 @@ function validateTable(table: Y.XmlElement) {
 }
 
 // 仅任务成果正文允许表格，其他富文本消费者保持原节点范围。
-export function validateBody(state: Uint8Array, allowTables = false) {
+export function validateBody(state: Uint8Array, allowTables = false, editorSchema = 1) {
+  if (editorSchema !== 1 && editorSchema !== 2) throw new Error('Unsupported editor schema');
+  const comments = new Map<string, string>();
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, state);
@@ -154,12 +156,34 @@ export function validateBody(state: Uint8Array, allowTables = false) {
       if (node instanceof Y.XmlText) {
         if (!['paragraph', 'heading', 'codeBlock'].includes(parent))
           throw new Error('Invalid text position');
-        for (const delta of node.toDelta())
-          if (
-            typeof delta.insert !== 'string' ||
-            Object.keys(delta.attributes ?? {}).some((key) => !marks.has(key))
-          )
-            throw new Error('Unsupported mark');
+        for (const delta of node.toDelta()) {
+          if (typeof delta.insert !== 'string') throw new Error('Unsupported text');
+          for (const [key, value] of Object.entries(delta.attributes ?? {})) {
+            if (marks.has(key)) continue;
+            if (editorSchema !== 2 || parent === 'codeBlock') throw new Error('Unsupported mark');
+            if (!value || typeof value !== 'object' || Array.isArray(value))
+              throw new Error('Invalid annotation');
+            const attrs = value as Record<string, unknown>;
+            if (key === 'highlight' && Object.keys(attrs).length === 0) continue;
+            if (
+              key !== 'comment' ||
+              Object.keys(attrs).length !== 2 ||
+              typeof attrs.id !== 'string' ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+                attrs.id,
+              ) ||
+              typeof attrs.text !== 'string' ||
+              !attrs.text.trim() ||
+              attrs.text !== attrs.text.trim() ||
+              attrs.text.length > 4000
+            )
+              throw new Error('Invalid comment');
+            if (comments.has(attrs.id) && comments.get(attrs.id) !== attrs.text)
+              throw new Error('Inconsistent comment');
+            comments.set(attrs.id, attrs.text);
+            if (comments.size > 200) throw new Error('Too many comments');
+          }
+        }
         return;
       }
       const name = node.nodeName;
@@ -223,8 +247,8 @@ export function validateBody(state: Uint8Array, allowTables = false) {
 }
 
 // 仅派生列表/检索用文字；格式与块结构仍由已验证的Yjs二进制唯一持有。
-export function bodyPlainText(state: Uint8Array, allowTables = false) {
-  validateBody(state, allowTables);
+export function bodyPlainText(state: Uint8Array, allowTables = false, editorSchema = 1) {
+  validateBody(state, allowTables, editorSchema);
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, state);

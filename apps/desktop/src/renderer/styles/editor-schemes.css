@@ -259,6 +259,63 @@
   font-size: 12px;
 }
 
+.document-highlight {
+  background: #ffe591;
+  color: inherit;
+}
+.document-comment-anchor {
+  border-bottom: 2px solid #d49536;
+  background: #fff5dd;
+}
+.annotation-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border, #e5e5e5);
+  flex-wrap: wrap;
+}
+.annotation-tools button[aria-pressed='true'] {
+  background: #ffe591;
+}
+.annotation-composer,
+.annotation-list {
+  margin: 8px 14px;
+  padding: 10px;
+  border-left: 2px solid #d49536;
+  background: #fffcf4;
+}
+.annotation-composer textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+}
+.annotation-composer blockquote {
+  margin: 0 0 8px;
+  color: #777;
+}
+.annotation-list {
+  max-height: 220px;
+  overflow: auto;
+}
+.annotation-list article {
+  padding: 8px 0;
+  border-bottom: 1px solid #e8dfcc;
+}
+.annotation-list p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.annotation-quote {
+  max-width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.annotation-compatibility {
+  padding: 0 14px;
+}
+
 .export-style-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));

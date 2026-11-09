@@ -8,13 +8,13 @@ export function createAgentPageReader(
   workspace: string,
   getTask: (id: string) => Task | null,
 ) {
-  const body = (id: string, revision: number) => {
+  const body = (id: string, revision: number, editorSchema = 1) => {
     if (!revision) return '';
     const row = db
       .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
       .get(id, revision) as { state: Buffer } | undefined;
     if (!row) throw new Error('Missing committed page body');
-    return bodyPlainText(row.state, true);
+    return bodyPlainText(row.state, true, editorSchema);
   };
   return {
     read(scope: string) {
@@ -63,7 +63,9 @@ export function createAgentPageReader(
           : String(task.version),
         archived: !!task.document_archived_at,
         text: document
-          ? [task.title, body(task.body_id, task.body_revision)].filter(Boolean).join('\n\n')
+          ? [task.title, body(task.body_id, task.body_revision, task.editor_schema)]
+              .filter(Boolean)
+              .join('\n\n')
           : [
               task.title,
               task.objective,

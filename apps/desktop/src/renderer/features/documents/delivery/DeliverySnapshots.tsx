@@ -256,6 +256,11 @@ export default function DeliverySnapshots({
           </button>
         )}
       </div>
+      {task.editor_schema === 2 && (
+        <p className="caption">
+          含高亮或批注的正文暂不支持新建固定交付版本；已有固定版本仍可查看和导出。
+        </p>
+      )}
       <DeliveryVersions
         noteDisabled={phase !== 'idle'}
         versions={versions.map((item) => ({
@@ -272,6 +277,7 @@ export default function DeliverySnapshots({
         busy={list.isFetching || writing || phase === 'verify' || word.busy}
         result={word.result ?? feedback}
         captureDisabled={
+          task.editor_schema === 2 ||
           disabled ||
           list.isError ||
           phase !== 'idle' ||

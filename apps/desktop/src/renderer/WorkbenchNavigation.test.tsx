@@ -5,7 +5,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest } from '../preload/caselite-api';
 import App from './App';
 import { ModelSettingsNavigation } from './shared/navigation/ModelSettingsNavigation';
-vi.mock('@tiptap/react', () => ({ useEditor: () => null }));
+vi.mock('@tiptap/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tiptap/react')>()),
+  useEditor: () => null,
+}));
 vi.mock('./ui/Appearance', () => ({
   AppearanceProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
