@@ -12,6 +12,7 @@ const desktop = {
   '@earendil-works/pi-ai': '1.5.0',
   '@tanstack/react-query': '5.107.1', // DEV-1800/1801/1803：本地列表读取
   '@tanstack/react-table': '8.21.3', // DEV-1323/1803：文件与工作台列表投影
+  '@tiptap/extension-bubble-menu': '3.32.3', // DEV-1820：官方MIT选区定位，保留正文与保存。
   '@tiptap/extension-collaboration': '3.32.3',
   // DEV-1811：本地 DOCX worker 与 HTML 净化。
   '@xmldom/xmldom': '0.9.12',

@@ -39,4 +39,21 @@ describe('production dependency admission', () => {
     expect(runtimeDependencyViolation(manifest, 'tesseract.js')).toContain('requires production');
     expect(runtimeDependencyViolation(manifest, 'electron')).toBeNull();
   });
+
+  it('limits BubbleMenu to the approved desktop version and excludes Team extensions', () => {
+    expect(
+      dependencyViolations([
+        { folder: 'apps/desktop', dependencies: { '@tiptap/extension-bubble-menu': '3.32.3' } },
+      ]),
+    ).toEqual([]);
+    for (const manifest of [
+      { folder: 'apps/desktop', dependencies: { '@tiptap/extension-bubble-menu': '^3.32.3' } },
+      {
+        folder: 'packages/application',
+        dependencies: { '@tiptap/extension-bubble-menu': '3.32.3' },
+      },
+      { folder: 'apps/desktop', dependencies: { '@tiptap-pro/extension-pages': '3.32.3' } },
+    ])
+      expect(dependencyViolations([manifest])).toHaveLength(1);
+  });
 });

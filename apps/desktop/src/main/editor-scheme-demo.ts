@@ -54,6 +54,20 @@ export async function runEditorSchemeDemo(
   const task = list.tasks.find((item) => item.title.includes('合成文档甲'))!;
   const body = "document.querySelector('[data-testid=body-editor]')";
   const surface = "document.querySelector('.rich-editor[data-editor-scheme]')";
+  const selectionMenu = "document.querySelector('.selection-tools')";
+  const selectParagraph = async () => {
+    app.focus({ steal: true });
+    window.focus();
+    wc.focus();
+    await wait('document.hasFocus()');
+    await evaluate(
+      `(()=>{${body}.parentElement.scrollTop=0;const p=${body}.querySelector('p');${body}.focus();const r=document.createRange();r.selectNodeContents(p);getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));})()`,
+    );
+    await wait(`${selectionMenu} && getComputedStyle(${selectionMenu}).visibility==='visible'`);
+    await wait(
+      `(()=>{const r=${selectionMenu}.getBoundingClientRect();return r.width>0 && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;})()`,
+    );
+  };
   const open = async () => {
     await click('[data-nav=documents]');
     await click(`[data-document-id="${task.document_id}"]`);
@@ -110,7 +124,12 @@ export async function runEditorSchemeDemo(
         windowsVirtualKeyCode: 13,
       });
       await command('Input.insertText', {
-        text: '合成验收正文：切换方案后，条款内容与已有格式应完整保留。',
+        text:
+          '合成验收正文：切换方案后，条款内容与已有格式应完整保留。\n' +
+          Array.from(
+            { length: 32 },
+            (_, i) => `滚动样本${i + 1}：内部滚动不应让格式浮层脱离选区，也不应写入新修订。`,
+          ).join('\n'),
       });
       await click('[data-testid=save-body]:not(:disabled)');
       await wait(
@@ -119,10 +138,20 @@ export async function runEditorSchemeDemo(
       const before = tasks.execute({ protocol_version: 1, operation: 'read', task_id: task.id });
       await scheme('word');
       await wait("document.querySelector('.simple-toolbar [aria-label=段落样式]')");
-      await evaluate(
-        `(()=>{const p=${body}.querySelector('p');${body}.focus();const r=document.createRange();r.selectNodeContents(p);getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));})()`,
-      );
-      await click('.simple-toolbar [aria-label=加粗]');
+      await selectParagraph();
+      await capture('selection-menu-wide.png');
+      const menuTop = await evaluate(`${selectionMenu}.getBoundingClientRect().top`);
+      await evaluate(`${body}.parentElement.scrollTop=12`);
+      await wait(`Math.abs(${body}.parentElement.scrollTop-12)<1`);
+      await wait(`Math.abs(${selectionMenu}.getBoundingClientRect().top-${menuTop})>4`);
+      await capture('selection-menu-scrolled.png');
+      await selectParagraph();
+      const selected = tasks.execute({ protocol_version: 1, operation: 'read', task_id: task.id });
+      if (JSON.stringify(before) !== JSON.stringify(selected))
+        throw new Error('Showing selection menu changed saved body or receipt');
+      await evaluate("document.querySelector('.selection-tools [aria-label=加粗]').focus()");
+      await wait(`${selectionMenu} && getComputedStyle(${selectionMenu}).visibility==='visible'`);
+      await click('.selection-tools [aria-label=加粗]');
       await wait(`${body}.querySelector('strong')`);
       await click('.simple-toolbar [aria-label=撤销]:not(:disabled)');
       await wait(`!${body}.querySelector('strong')`);
@@ -157,13 +186,22 @@ export async function runEditorSchemeDemo(
       const after = tasks.execute({ protocol_version: 1, operation: 'read', task_id: task.id });
       if (JSON.stringify(saved) !== JSON.stringify(after) || !before.ok || !saved.ok)
         throw new Error('Scheme switch changed durable body');
+      window.setContentSize(900, 760);
       await command('Emulation.setDeviceMetricsOverride', {
         width: 900,
         height: 760,
         deviceScaleFactor: 1,
         mobile: false,
       });
+      await selectParagraph();
       await capture('document-word-narrow.png');
+      const afterSelection = tasks.execute({
+        protocol_version: 1,
+        operation: 'read',
+        task_id: task.id,
+      });
+      if (JSON.stringify(saved) !== JSON.stringify(afterSelection))
+        throw new Error('Narrow selection menu changed saved body or receipt');
       writeFileSync(
         join(root, 'editor-scheme-write.json'),
         JSON.stringify({
@@ -173,6 +211,13 @@ export async function runEditorSchemeDemo(
           markdownShortcut: true,
           undoRedo: true,
           schemePreservesBody: true,
+          selectionMenu: {
+            wide: true,
+            narrow: true,
+            innerScroll: true,
+            formatting: true,
+            noSaveSideEffect: true,
+          },
           modelCalls: runs().length,
         }),
       );
