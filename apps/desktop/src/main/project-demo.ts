@@ -454,7 +454,7 @@ export async function runProjectDemo(
       textarea.dispatchEvent(new Event('input',{bubbles:true}));
     })()`);
     await evaluate(
-      "window.__dashboardInput=document.querySelector('[data-testid=assistant-input]')",
+      "void(window.__dashboardInput=document.querySelector('[data-testid=assistant-input]'))",
     );
     await evaluate("document.querySelector('.project-ai-actions summary').click()");
     await wait("document.querySelector('.project-ai-actions').open");
