@@ -22,6 +22,14 @@ export const localPreferenceValuesSchema = z
     show_word_count: z.boolean(),
     // 保持旧请求和回执的字段形状，缺省方案由界面解释，不在解析时注入摘要。
     editor_mode: z.enum(['markdown', 'word']).optional(),
+    // 可选字段不改写旧请求摘要；布局仍归当前工作区的同一偏好记录。
+    calendar_layout: z
+      .object({
+        dates_width: z.number().min(220).max(460),
+        inspector_width: z.number().min(280).max(560),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export const localPreferencesSchema = localPreferenceValuesSchema.extend({

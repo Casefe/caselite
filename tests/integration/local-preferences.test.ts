@@ -40,6 +40,42 @@ function set(
   };
 }
 const read = { protocol_version: 1, operation: 'read' } as const;
+it('preserves calendar widths through legacy profile writes, original receipts, and SQLite reopen', () => {
+  const s = setup(),
+    request = set();
+  request.values.calendar_layout = { dates_width: (230 * 7) / 6, inspector_width: 420 };
+  const ack = s.app.execute(request);
+  expect(ack).toMatchObject({
+    ok: true,
+    preferences: { calendar_layout: request.values.calendar_layout },
+  });
+  expect(s.app.execute(set('第二个名称', 1))).toMatchObject({
+    ok: true,
+    preferences: {
+      name: '第二个名称',
+      calendar_layout: request.values.calendar_layout,
+      version: 2,
+    },
+  });
+  expect(s.app.execute(request)).toEqual(ack);
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  expect(
+    createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace').execute(read),
+  ).toMatchObject({
+    ok: true,
+    preferences: { calendar_layout: request.values.calendar_layout, version: 2 },
+  });
+  for (const layout of [
+    { dates_width: 0, inspector_width: 340 },
+    { dates_width: 270, inspector_width: 900 },
+    { dates_width: 270, inspector_width: 340, path: '/outside' },
+  ]) {
+    expect(
+      s.app.execute({ ...set('越界', 2), values: { ...request.values, calendar_layout: layout } }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  }
+});
 it('reads defaults without writing and keeps versioned preferences after reopening', () => {
   const s = setup();
   expect(s.app.execute(read)).toEqual({
