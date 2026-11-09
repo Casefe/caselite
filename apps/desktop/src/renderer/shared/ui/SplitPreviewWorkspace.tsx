@@ -19,8 +19,14 @@ export function useSplitPreviewSelection() {
   return {
     ...state,
     selectedId: state[state.active],
+    reset() {
+      setState((current) => ({ ...current, primary: null, secondary: null, active: 'primary' }));
+    },
     select(id: string | null) {
       setState((current) => ({ ...current, [current.active]: id }));
+    },
+    pin(pane: PreviewPane, id: string) {
+      setState((current) => (current[pane] ? current : { ...current, [pane]: id }));
     },
     activate(active: PreviewPane) {
       setState((current) =>

@@ -5,6 +5,8 @@ import type { CatalogDocument, Matter } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import InspectorLayout from './InspectorLayout';
 import TagPicker from '../shared/ui/TagPicker';
+import { DocumentVersions } from '../features/documents/DocumentVersions';
+import type { FormatExample } from '../features/documents/DocumentFormatExamples';
 
 export function DocumentPropertyValues({
   revision,
@@ -42,6 +44,9 @@ export default function DocumentInspector({
   suggestions,
   onTags,
   onTagDraft,
+  selectedVersion = null,
+  onVersion,
+  example,
 }: {
   document?: CatalogDocument;
   project?: Matter;
@@ -53,6 +58,9 @@ export default function DocumentInspector({
   suggestions: string[];
   onTags(tags: string[], added?: boolean): void;
   onTagDraft(dirty: boolean): void;
+  selectedVersion?: string | null;
+  onVersion?(id: string | null): void;
+  example?: FormatExample;
 }) {
   return (
     <aside className="task-inspector" aria-label="文档属性与 AI 侧边栏">
@@ -67,6 +75,14 @@ export default function DocumentInspector({
                 taskTitle={document.title}
                 documentId={document.id}
               />
+              {onVersion && (
+                <DocumentVersions
+                  document={document}
+                  selected={selectedVersion}
+                  disabled={blocked}
+                  onSelect={onVersion}
+                />
+              )}
               <section
                 className="project-inspector-section task-label-section"
                 aria-label="文档标签"
@@ -97,10 +113,37 @@ export default function DocumentInspector({
               revision: document.body_revision,
               archived: !!document.archived_at,
             }}
-            taskId={document.archived_at ? undefined : document.task_id}
-            blocked={blocked}
-            unavailable={document.archived_at ? '文档已归档，恢复后可使用 AI 对话。' : undefined}
+            taskId={document.archived_at || selectedVersion ? undefined : document.task_id}
+            blocked={blocked || !!selectedVersion}
+            unavailable={
+              selectedVersion
+                ? '当前查看固定版本，返回工作稿后可使用 AI 对话。'
+                : document.archived_at
+                  ? '文档已归档，恢复后可使用 AI 对话。'
+                  : undefined
+            }
           />
+        </InspectorLayout>
+      ) : example ? (
+        <InspectorLayout
+          properties={
+            <div className="inspector-content">
+              <InspectorSection title="属性">
+                <dl className="inspector-property-list">
+                  <PropertyValue label="名称">{example.title}</PropertyValue>
+                  <PropertyValue label="格式">{example.format}</PropertyValue>
+                  <PropertyValue label="来源">合成格式示例</PropertyValue>
+                </dl>
+              </InspectorSection>
+              <section className="document-versions">
+                <h3>版本</h3>
+                <p>示例版本 1</p>
+                <p className="caption">示例修改不形成已保存的文档修订。</p>
+              </section>
+            </div>
+          }
+        >
+          <p className="caption">合成示例未关联任务，不发送至AI。</p>
         </InspectorLayout>
       ) : (
         <div className="inspector-content inspector-empty">

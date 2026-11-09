@@ -21,6 +21,7 @@ export default function BodyEditor({
   reviewSaving,
   onReviewSaving,
   reviewVariant = 'review',
+  embedded = false,
 }: {
   task: Task;
   initial: number[] | null;
@@ -31,6 +32,7 @@ export default function BodyEditor({
   reviewSaving: boolean;
   onReviewSaving(value: boolean): void;
   reviewVariant?: 'review' | 'assistant';
+  embedded?: boolean;
 }) {
   const { preferences } = useLocalPreferences();
   const [doc] = useState(() => {
@@ -100,10 +102,20 @@ export default function BodyEditor({
       editor_schema: 1,
       state: Array.from(Y.encodeStateAsUpdate(doc)),
     };
+    const reconciling = !!pending.current;
     pending.current = { request, sequence };
     setHasPending(true);
     try {
-      let result = await window.caselite.task(request);
+      // 已有待确认提交先核对原键；只有明确不存在回执时才重试同一请求。
+      let result = reconciling
+        ? await window.caselite.task({
+            protocol_version: 1,
+            operation: 'status',
+            idempotency_key: 'idempotency_key' in request ? request.idempotency_key : '',
+          })
+        : await window.caselite.task(request);
+      if (reconciling && !result.ok && result.code === 'NOT_FOUND')
+        result = await window.caselite.task(request);
       if (!result.ok && result.code === 'RESULT_UNKNOWN') {
         result = await window.caselite.task({
           protocol_version: 1,
@@ -134,7 +146,8 @@ export default function BodyEditor({
       <section className="document" hidden={deliveryOpen}>
         <div className="document-bar">
           <span>
-            <Icon name="file" size={16} /> 内部沟通初稿 <small className="draft-badge">草稿</small>
+            <Icon name="file" size={16} /> {embedded ? task.title : '内部沟通初稿'}{' '}
+            <small className="draft-badge">草稿</small>
           </span>
           <span>
             修订 <b data-testid="revision">{revision}</b>
@@ -183,15 +196,19 @@ export default function BodyEditor({
             {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
           </button>
         </footer>
-        <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
-        <button
-          type="button"
-          className="delivery-entry"
-          disabled={disabled || busy || hasPending || reviewSaving}
-          onClick={() => setDeliveryOpen(true)}
-        >
-          交付版本
-        </button>
+        {!embedded && (
+          <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
+        )}
+        {!embedded && (
+          <button
+            type="button"
+            className="delivery-entry"
+            disabled={disabled || busy || hasPending || reviewSaving}
+            onClick={() => setDeliveryOpen(true)}
+          >
+            交付版本
+          </button>
+        )}
       </section>
       {deliveryOpen && (
         <DeliverySnapshots

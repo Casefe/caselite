@@ -1,0 +1,273 @@
+/* DEV-1850：应用目录分组不代表磁盘文件夹或持续同步。 */
+.document-workspace > .collection-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.document-folder-tree {
+  flex: 0 1 auto;
+  max-height: 48%;
+  overflow: auto;
+  padding: 12px 10px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.document-folder-tree h2 {
+  font-size: 12px;
+  margin: 0 8px 10px;
+}
+.document-folder-tree summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 5px;
+}
+.document-folder-tree summary::before {
+  content: '›';
+  color: #6889a7;
+  width: 9px;
+}
+.document-folder-tree details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.document-folder-tree summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+.document-folder-tree summary em {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  font-style: normal;
+  color: var(--muted);
+}
+.document-folder-tree summary[aria-current='page'],
+.document-folder-row[aria-pressed='true'] {
+  background: var(--active);
+}
+.document-folder-tree svg {
+  color: #3489d1;
+  flex-shrink: 0;
+}
+.document-folder-tree details > div {
+  padding-left: 18px;
+}
+.document-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 6px;
+  border-radius: 5px;
+}
+.document-folder-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.document-folder-row small,
+.document-folder-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+.document-example-list {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.document-example-list h2 {
+  font-size: 11px;
+  margin: 0 0 7px;
+}
+.document-example-list h2 small {
+  font-weight: 400;
+  color: var(--muted);
+}
+.document-example-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  width: 100%;
+  padding: 6px 0;
+  text-align: left;
+  font-size: 11px;
+  background: transparent;
+}
+.document-example-list button > span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.document-example-list button[aria-pressed='true'] {
+  background: var(--active);
+}
+.document-format-badge {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  border-radius: 3px;
+  background: #edf2f8;
+  color: #2769a3;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+.document-example-list button:last-child .document-format-badge {
+  color: #a1453e;
+  background: #f6eeee;
+}
+.document-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 5px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.document-list-heading button {
+  font-size: 11px;
+  padding: 4px 7px;
+}
+.document-directory-search {
+  margin: 4px 12px 8px;
+  width: calc(100% - 24px);
+  min-width: 0;
+  font-size: 12px;
+  padding: 7px 8px;
+  flex-shrink: 0;
+}
+.document-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 7px 10px;
+  font-size: 10px;
+  border-top: 1px solid var(--line);
+}
+.document-pagination button {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+.document-inline-editor .document {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.document-inline-editor .document-bar {
+  gap: 12px;
+  padding: 0 0 12px;
+  flex-wrap: wrap;
+}
+.document-inline-editor .document-bar > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.document-inline-editor .rich-editor {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.document-inline-editor .document > footer {
+  position: sticky;
+  bottom: -18px;
+  z-index: 2;
+  background: var(--theme-panel);
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+.document-readonly-note {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 10px;
+  background: var(--theme-subtle);
+  border-radius: 5px;
+  line-height: 1.7;
+}
+.document-versions {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.document-versions h3 {
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.document-version-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 5px;
+  gap: 4px;
+  text-align: left;
+  background: transparent;
+}
+.document-version-row[aria-pressed='true'] {
+  background: var(--active);
+}
+.document-version-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.document-version-row span,
+.document-version-row small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.document-format-example .rich-editor,
+.document-format-example .material-reader {
+  min-width: 0;
+}
+.document-format-example .material-reader > header,
+.document-format-example .material-reader > header > div {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.document-workspace[data-collection='knowledge'] {
+  grid-template-columns: 248px minmax(280px, 1fr) 296px;
+}
+@media (max-width: 900px) {
+  .collection-workspace.document-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 32vh);
+  }
+  .document-workspace .document-folder-tree {
+    max-height: 42%;
+  }
+  .document-workspace[data-directory-view='preview'] > .collection-main {
+    display: none;
+  }
+  .document-workspace[data-directory-view='list'] > .document-center-workspace {
+    display: none;
+  }
+  .collection-workspace.document-workspace[data-directory-view='preview'] {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 32vh);
+  }
+  .document-workspace[data-directory-view='preview'] > .document-directory-sidebar {
+    display: block;
+  }
+  .document-workspace[data-directory-view='preview'] > .document-center-workspace {
+    display: block;
+  }
+}

@@ -10,6 +10,22 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CatalogDocument, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import DocumentLibrary from './DocumentLibrary';
 
+vi.mock('../features/documents/BodyEditor', () => ({
+  default: ({
+    task,
+    disabled,
+    onDirty,
+  }: {
+    task: { title: string };
+    disabled: boolean;
+    onDirty(v: boolean): void;
+  }) => (
+    <>
+      <p data-testid="inline-body">{task.title}原位编辑</p>
+      <input aria-label="模拟正文输入" disabled={disabled} onChange={() => onDirty(true)} />
+    </>
+  ),
+}));
 vi.mock('./AgentPanel', () => ({ default: () => null }));
 beforeEach(() => {
   vi.stubGlobal(
@@ -87,7 +103,7 @@ it('保留明确失败的标签输入，允许使用原文本重试', async () =
   await screen.findByText('保存失败');
   expect(input.value).toBe('合成标签');
   expect(onDirty).toHaveBeenLastCalledWith(true);
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: '打开正文' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '双栏预览' }).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '添加', exact: true }));
   await screen.findByRole('button', { name: '移除标签 合成标签' });
   expect(screen.queryByRole('textbox', { name: '新标签' })).toBeNull();
@@ -136,8 +152,8 @@ it('未知时核对原键，确认后读取失败只允许重读目录', async (
 });
 
 it('提交确认晚于切页时，新页面仍读回同一份目录', async () => {
-  const original = { ...entry, in_library: false };
-  const saved = { ...original, in_library: true, version: original.version + 1 };
+  const original = { ...entry };
+  const saved = { ...original, tags: ['迟到标签'], version: original.version + 1 };
   let current = original;
   let confirm: (() => void) | undefined;
   const catalog = vi.fn(async (request: CatalogRequest): Promise<CatalogResponse> => {
@@ -163,17 +179,21 @@ it('提交确认晚于切页时，新页面仍读回同一份目录', async () =
   const projectKey = ['catalog', 'project-properties'];
   client.setQueryData(projectKey, projection(original));
   const { rerender } = render(view(false));
-  fireEvent.click(await screen.findByRole('button', { name: '加入知识库' }));
+  await draft('迟到标签');
   await waitFor(() => expect(confirm).toBeDefined());
   rerender(view(true));
-  expect(screen.getByText(/知识库暂无选定文档/)).toBeTruthy();
+  await screen.findByRole('row', { name: /合成文档/ });
   confirm!();
-  expect(await screen.findByRole('button', { name: '移出知识库' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: '移除标签 迟到标签' })).toBeTruthy();
   expect(client.getQueryState(projectKey)?.isInvalidated).toBe(true);
 
   function ProjectDirectory() {
     const read = useProjectCatalog();
-    return <p>{read.data?.documents[0]?.in_library ? '项目目录已读到新版本' : '旧版本'}</p>;
+    return (
+      <p>
+        {read.data?.documents[0]?.tags.includes('迟到标签') ? '项目目录已读到新版本' : '旧版本'}
+      </p>
+    );
   }
   rerender(
     <QueryClientProvider client={client}>
@@ -237,6 +257,8 @@ it('按项目分组，快速切换后只显示当前文档的读取结果，版�
           document_id: b.id,
           matter_id: b.matter_id,
           body_revision: b.body_revision + 1,
+          body_id: b.body_id,
+          title: b.title,
         },
       ],
       state: null,
@@ -249,8 +271,8 @@ it('按项目分组，快速切换后只显示当前文档的读取结果，版�
       <DocumentLibrary onOpen={onOpen} onDirty={vi.fn()} />
     </QueryClientProvider>,
   );
-  expect(await screen.findByRole('rowheader', { name: '合成项目' })).toBeTruthy();
-  expect(screen.getByRole('rowheader', { name: '未归组' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /合成项目/ })).toBeTruthy();
+  expect(screen.getByText('我的文档')).toBeTruthy();
   fireEvent.click(screen.getByText('合成甲', { selector: 'td' }));
   await waitFor(() => expect(finishA).toBeDefined());
   fireEvent.click(screen.getByText('合成乙', { selector: 'td' }));
@@ -259,12 +281,12 @@ it('按项目分组，快速切换后只显示当前文档的读取结果，版�
   expect(screen.queryByText('甲的迟到错误')).toBeNull();
 
   revision += 1;
-  fireEvent.click(screen.getByRole('button', { name: '重新读取文档' }));
-  await screen.findByText('此文档尚无已保存的正文。');
-  fireEvent.click(screen.getByRole('button', { name: '打开编辑' }));
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith(b.task_id);
+  fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+  await screen.findByText('合成乙原位编辑');
+  expect(screen.queryByRole('button', { name: '打开编辑' })).toBeNull();
+  expect(onOpen).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole('button', { name: '返回文档列表' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回文件夹' }));
   expect(container.querySelector('[data-directory-view="list"]')).toBeTruthy();
 });
 
@@ -280,12 +302,10 @@ it('paginates by stable document identity and resets filtering without losing pe
   await screen.findByText('第 1 / 2 页 · 共 25 份');
   expect(document.querySelectorAll('[data-document-id]')).toHaveLength(20);
   fireEvent.click(screen.getByText('合同25', { selector: 'td' }));
-  fireEvent.change(screen.getByLabelText('文档排序'), { target: { value: 'name' } });
-  expect(screen.getByText('第 2 / 2 页 · 共 25 份')).toBeTruthy();
+  expect(screen.getByText('第 1 / 2 页 · 共 25 份')).toBeTruthy();
   expect(document.querySelector('[aria-selected="true"]')?.getAttribute('data-document-id')).toBe(
     docs[24].id,
   );
-  fireEvent.click(screen.getByRole('button', { name: '上一页' }));
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
   expect(screen.getByText('第 2 / 2 页 · 共 25 份')).toBeTruthy();
   expect(document.querySelectorAll('[data-document-id]')).toHaveLength(5);
@@ -321,6 +341,8 @@ it('双预览分别读取固定Document，属性和打开编辑跟随活动栏�
           document_id: doc.id,
           matter_id: doc.matter_id,
           body_revision: doc.body_revision,
+          body_id: doc.body_id,
+          title: doc.title,
         },
       ],
       state: null,
@@ -348,8 +370,9 @@ it('双预览分别读取固定Document，属性和打开编辑跟随活动栏�
     expect(task).toHaveBeenCalledWith(expect.objectContaining({ task_id: b.task_id })),
   );
   expect(screen.getByLabelText('文档属性').textContent).toContain(b.id);
-  fireEvent.click(screen.getByRole('button', { name: '打开编辑' }));
-  expect(onOpen).toHaveBeenLastCalledWith(b.task_id);
+  await within(secondary).findByText('合成乙原位编辑');
+  expect(screen.queryByRole('button', { name: '打开编辑' })).toBeNull();
+  expect(onOpen).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
   fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '待保存标签' } });
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '主预览' }).disabled).toBe(true);
@@ -378,8 +401,52 @@ it('归档筛选后不会从另一预览栏继续展示已离开当前筛选的�
   fireEvent.click(screen.getByRole('button', { name: '双栏预览' }));
   fireEvent.click(screen.getByRole('button', { name: '副预览' }));
   fireEvent.click(screen.getByText('合成当前稿', { selector: 'td' }));
-  fireEvent.click(screen.getByRole('button', { name: '已归档', exact: true }));
+  expect(screen.queryByRole('button', { name: '已归档', exact: true })).toBeNull();
+  fireEvent.change(screen.getByLabelText('搜索文档'), { target: { value: '不存在' } });
   expect(screen.getByText('没有符合条件的文档。')).toBeTruthy();
   expect(screen.getByRole('region', { name: '主预览' }).textContent).not.toContain('合成当前稿');
   expect(screen.getByRole('region', { name: '副预览' }).textContent).not.toContain('合成当前稿');
+});
+
+it('目录刷新期间锁正文，迟到读取不会重挂载用户刚输入的正文', async () => {
+  let finish: ((value: CatalogResponse) => void) | undefined;
+  let delayed = false;
+  const catalog = vi.fn(async () =>
+    delayed
+      ? new Promise<CatalogResponse>((resolve) => {
+          finish = resolve;
+        })
+      : projection(entry),
+  );
+  vi.stubGlobal('caselite', {
+    catalog,
+    task: vi.fn(async () => ({
+      ok: true,
+      tasks: [
+        {
+          id: entry.task_id,
+          document_id: entry.id,
+          body_id: entry.body_id,
+          body_revision: entry.body_revision,
+          matter_id: null,
+        },
+      ],
+      state: null,
+    })),
+  });
+  render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={vi.fn()} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  const input = await screen.findByLabelText<HTMLInputElement>('模拟正文输入');
+  delayed = true;
+  fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+  await waitFor(() => expect(input.disabled).toBe(true));
+  await act(async () => finish?.(projection(entry)));
+  const refreshed = await screen.findByLabelText<HTMLInputElement>('模拟正文输入');
+  await waitFor(() => expect(refreshed.disabled).toBe(false));
+  fireEvent.change(refreshed, { target: { value: '刷新完成后的新输入' } });
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '刷新' }).disabled).toBe(true);
+  expect(refreshed.value).toBe('刷新完成后的新输入');
 });
