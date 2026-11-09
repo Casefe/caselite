@@ -103,12 +103,14 @@ describe('durable project UI receipts and target identity', () => {
     await within(table).findByRole('button', { name: '乙项目' });
     expect(within(table).getAllByRole('row')[1].textContent).toContain('乙项目');
     const preview = screen.getByRole('button', { name: '项目预览' });
-    expect(screen.queryByRole('complementary', { name: '项目辅助栏' })).toBeNull();
+    expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'AI 对话' })).toBeTruthy();
+    expect(screen.queryByLabelText('侧栏项目名称')).toBeNull();
     fireEvent.click(preview);
     expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
     fireEvent.click(preview);
-    expect(screen.queryByRole('complementary', { name: '项目辅助栏' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '筛选项目' }));
+    expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
+    expect(screen.queryByLabelText('侧栏项目名称')).toBeNull();
     fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'status' } });
     expect(within(table).getAllByRole('row')[1].textContent).toContain('甲项目');
     fireEvent.change(screen.getByLabelText('筛选项目状态'), { target: { value: 'active' } });
@@ -121,6 +123,9 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.click(display);
     expect(display.parentElement!.hasAttribute('open')).toBe(true);
     const tasksColumn = screen.getByRole('checkbox', { name: '任务', exact: true });
+    expect(within(table).queryByRole('columnheader', { name: '任务' })).toBeNull();
+    fireEvent.click(tasksColumn);
+    expect(within(table).getByRole('columnheader', { name: '任务' })).toBeTruthy();
     fireEvent.click(tasksColumn);
     expect(within(table).queryByRole('columnheader', { name: '任务' })).toBeNull();
     fireEvent.keyDown(tasksColumn, { key: 'Escape' });
@@ -434,6 +439,7 @@ describe('durable project UI receipts and target identity', () => {
     });
     window.caselite = { catalog } as unknown as Window['caselite'];
     show();
+    fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
     // 归档后关闭编辑能力，同一项目保留只读属性与恢复入口。
     const status = (await screen.findByLabelText('项目状态')) as HTMLSelectElement;
     fireEvent.change(status, { target: { value: 'archived' } });
@@ -874,4 +880,122 @@ it('keeps an unknown description receipt owned by the description until original
     idempotency_key: (writes[0] as Extract<CatalogRequest, { operation: 'update_project' }>)
       .idempotency_key,
   });
+});
+
+it('keeps real totals independent of filters and resets paging on search', async () => {
+  const projects = Array.from({ length: 11 }, (_, index) => ({
+    ...project(crypto.randomUUID(), `项目${String(index).padStart(2, '0')}`),
+    updated_at: `2026-11-10T00:00:${String(30 - index).padStart(2, '0')}Z`,
+    status: index < 6 ? ('active' as const) : index < 9 ? ('planned' as const) : ('done' as const),
+  }));
+  projects.push({ ...project(crypto.randomUUID(), '已归档样本'), archived_at: '2026-11-10' });
+  let resolve!: (value: CatalogResponse) => void;
+  const initial = new Promise<CatalogResponse>((done) => {
+    resolve = done;
+  });
+  window.caselite = {
+    catalog: vi.fn(async (request: CatalogRequest) =>
+      request.operation === 'read_project'
+        ? response(
+            projects.filter((item) => item.id === request.id),
+            request.id,
+          )
+        : initial,
+    ),
+    task: vi.fn(async () => ({
+      ok: true,
+      tasks: [],
+      calendar_types: [],
+      page: { total: 0, has_more: false },
+    })),
+  } as unknown as Window['caselite'];
+  show();
+  const metrics = screen.getByRole('region', { name: '项目统计' });
+  expect(
+    [...metrics.querySelectorAll('dd:not(.project-metric-hint)')].map((node) => node.textContent),
+  ).toEqual(['—', '—', '—', '—']);
+  await act(async () => resolve(response(projects)));
+  await screen.findByRole('button', { name: '项目00', exact: true });
+  const totals = () =>
+    [...metrics.querySelectorAll('dd:not(.project-metric-hint)')].map((node) => node.textContent);
+  expect(totals()).toEqual(['11', '6', '3', '2']);
+  expect(document.querySelectorAll('[data-project-id]')).toHaveLength(8);
+  fireEvent.click(screen.getByRole('button', { name: '项目下一页' }));
+  expect(document.querySelectorAll('[data-project-id]')).toHaveLength(3);
+  expect(screen.getByText('显示 9–11 条，共 11 条')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '项目00' } });
+  expect(screen.getByRole('button', { name: '项目00', exact: true })).toBeTruthy();
+  expect(screen.getByText('显示 1–1 条，共 1 条')).toBeTruthy();
+  expect(totals()).toEqual(['11', '6', '3', '2']);
+  fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '' } });
+  expect(screen.getByText('显示 1–8 条，共 11 条')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: projects[10].id } });
+  expect(screen.getByRole('button', { name: '项目10', exact: true })).toBeTruthy();
+});
+
+it('opens authoritative important task IDs and offers guarded quick actions only inside expanded AI', async () => {
+  const p = project();
+  const important = {
+    id: crypto.randomUUID(),
+    title: '受控查询的重要日程',
+    matter_id: p.id,
+    status: 'todo',
+    calendar: {
+      important: true,
+      type_id: 'hearing',
+      attention_source: 'custom',
+      attention_date: '2026-11-12',
+    },
+  } as Task;
+  const open = vi.fn(),
+    calendar = vi.fn(),
+    newTask = vi.fn();
+  const catalog = vi.fn(async () => response([p]));
+  const agent = vi.fn(async () => ({
+    ok: true,
+    configured: false,
+    model: 'gpt-4.1-mini',
+    providers: {},
+    runs: [],
+  }));
+  window.caselite = { catalog, agent } as unknown as Window['caselite'];
+  renderProject(
+    <ProjectCatalog
+      tasks={[]}
+      onOpen={open}
+      onCalendar={calendar}
+      importantInfo={({ onOpen }) => (
+        <button onClick={() => onOpen(important.id)}>{important.title}</button>
+      )}
+      onNewTask={newTask}
+      onDirty={vi.fn()}
+      onChanged={vi.fn()}
+    />,
+  );
+  const reminder = await screen.findByText('受控查询的重要日程');
+  fireEvent.click(reminder);
+  expect(open.mock.calls[0][0]).toBe(important.id);
+  expect(screen.queryByText('快速操作')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+  const actions = screen.getByText('快速操作').closest('details')!;
+  expect(actions.open).toBe(false);
+  fireEvent.click(screen.getByText('快速操作'));
+  fireEvent.click(within(actions).getByRole('button', { name: '新建任务' }));
+  expect(newTask).toHaveBeenCalledOnce();
+  fireEvent.click(within(actions).getByRole('button', { name: '查看日历' }));
+  expect(calendar).toHaveBeenCalledOnce();
+  fireEvent.keyDown(actions.querySelector('button')!, { key: 'Escape' });
+  expect(actions.open).toBe(false);
+  expect(screen.getByRole('button', { name: '收起 AI 对话' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+  expect(screen.queryByText('快速操作')).toBeNull();
+  expect(
+    agent.mock.calls.every(
+      (args) =>
+        !['register', 'dispatch'].includes(
+          ((args as unknown[])[0] as { operation: string } | undefined)?.operation ?? '',
+        ),
+    ),
+  ).toBe(true);
+  expect(catalog.mock.calls).toHaveLength(1);
 });

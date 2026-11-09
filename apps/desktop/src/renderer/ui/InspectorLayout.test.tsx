@@ -16,6 +16,23 @@ vi.stubGlobal(
   },
 );
 afterEach(cleanup);
+it('shows optional quick actions only after expansion while preserving the same conversation input', () => {
+  const action = vi.fn();
+  render(
+    <InspectorLayout properties={null} expandedActions={<button onClick={action}>快速操作</button>}>
+      <textarea aria-label="原会话输入" defaultValue="未发出的要求" />
+    </InspectorLayout>,
+  );
+  const input = screen.getByLabelText('原会话输入');
+  expect(screen.queryByRole('button', { name: '快速操作' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+  fireEvent.click(screen.getByRole('button', { name: '快速操作' }));
+  expect(action).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+  expect(screen.queryByRole('button', { name: '快速操作' })).toBeNull();
+  expect(screen.getByLabelText('原会话输入')).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe('未发出的要求');
+});
 it('floats at property width, expands on conversation click, supports keyboard width and resets on minimize', async () => {
   const geometry = vi
     .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')

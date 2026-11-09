@@ -89,3 +89,49 @@ it('keeps each project identity and keyboard navigation across status groups', (
   fireEvent.keyDown(rows[1], { key: 'Enter' });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(active);
 });
+
+it('shows the earliest confirmed important date only from a complete project task projection', () => {
+  const project = {
+    ...projects[0],
+    task_count: 4,
+    attributes: { target_date: '2026-01-01' },
+  } as Matter;
+  const task = (id: string, date: string | null, status = 'todo', important = true) =>
+    ({
+      id,
+      matter_id: project.id,
+      status,
+      due_date: '2025-01-01',
+      calendar: { important, attention_source: 'custom', attention_date: date },
+    }) as import('../../../preload/caselite-api').Task;
+  const rows = [
+    task('first', '2026-11-15'),
+    task('second', '2026-11-12'),
+    task('closed', '2026-01-01', 'done'),
+    task('ordinary', '2026-01-02', 'todo', false),
+  ];
+  const ui = (tasks: typeof rows, unavailable = false) => (
+    <ProjectList
+      projects={[project]}
+      tasks={tasks}
+      datesUnavailable={unavailable}
+      columns={{ ...projectListDefaults, nextDate: true }}
+      disabled={false}
+      order="updated"
+      onOrder={vi.fn()}
+      onSelect={vi.fn()}
+      onOpen={vi.fn()}
+      onPreview={vi.fn()}
+    />
+  );
+  const view = render(ui(rows.slice(0, 3)));
+  expect(screen.getByText('正在更新')).toBeTruthy();
+  expect(screen.queryByText('2026-11-12')).toBeNull();
+  view.rerender(ui(rows));
+  expect(screen.getByText('2026-11-12')).toBeTruthy();
+  expect(screen.queryByText('2026-11-15')).toBeNull();
+  expect(screen.queryByText('2025-01-01')).toBeNull();
+  view.rerender(ui(rows, true));
+  expect(screen.getByText('正在更新')).toBeTruthy();
+  expect(screen.queryByText('2026-11-12')).toBeNull();
+});

@@ -7,9 +7,22 @@ import BodyEditor from './BodyEditor';
 const harness = vi.hoisted(() => ({
   update: () => {},
   create: () => {},
-  editor: { setEditable: vi.fn() },
+  editor: { setEditable: vi.fn(), state: { doc: { descendants: () => {} } } },
 }));
-vi.mock('@tiptap/react', () => ({
+vi.mock('../../editors/DocumentAnnotations', () => ({
+  default: ({ onDraft }: { onDraft(open: boolean): void }) => (
+    <button
+      onClick={() => {
+        harness.update();
+        onDraft(false);
+      }}
+    >
+      合成批注确认
+    </button>
+  ),
+}));
+vi.mock('@tiptap/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tiptap/react')>()),
   useEditor: (options: { onCreate(): void; onUpdate(): void }) => {
     harness.update = options.onUpdate;
     harness.create = options.onCreate;
@@ -54,6 +67,7 @@ const task = {
   body_id: 'body',
   title: '合成稿',
   body_revision: 3,
+  editor_schema: 1,
 } as Task;
 const success = { ok: true, tasks: [{ ...task, body_revision: 4 }], state: null };
 function setup(api: (r: TaskRequest) => Promise<unknown>) {
@@ -118,6 +132,26 @@ it('明确查不到回执才重试冻结的原请求，网络失败时保留输�
   expect(api.mock.calls.map(([r]) => r.operation)).toEqual(['save', 'status', 'save']);
   expect(api.mock.calls[2][0]).toBe(api.mock.calls[0][0]);
   expect(s.onDirty).toHaveBeenLastCalledWith(false);
+});
+
+it('批注命令同步修改正文后关闭输入框，不能清除未保存导航保护', () => {
+  vi.stubGlobal('caselite', { task: vi.fn() });
+  const onDirty = vi.fn();
+  render(
+    <BodyEditor
+      task={task}
+      initial={null}
+      onSaved={vi.fn()}
+      onDirty={onDirty}
+      embedded
+      reviewDock={null}
+      reviewSaving={false}
+      onReviewSaving={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '合成批注确认' }));
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  expect(screen.getByTestId<HTMLButtonElement>('save-body').disabled).toBe(false);
 });
 it('内联文档可打开固定交付，传递当前修订和未保存状态，返回后保留输入', async () => {
   const api = vi.fn(async () => success);
