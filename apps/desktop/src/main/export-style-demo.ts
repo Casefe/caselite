@@ -174,6 +174,9 @@ export async function runExportStyleDemo(
       if (!saved.ok) throw new Error('New working draft save failed');
     }
     await wait("document.querySelector('.delivery-version-row[aria-pressed=true]')");
+    // 窄容器先显示版本列表；必须像用户一样选定版本，不能在隐藏详情中操作并冒称可见。
+    await click('.delivery-version-row[aria-pressed=true]');
+    await wait("document.querySelector('.delivery-detail')?.checkVisibility()");
     if (phase === 'export-style-write') {
       await button('导出此版本 Word');
       await wait(
@@ -191,6 +194,9 @@ export async function runExportStyleDemo(
       "document.querySelector('.react-pdf__Page__canvas') && document.querySelector('.react-pdf__Page__textContent')?.textContent.includes('付款期限为十日')",
     );
     await evaluate("document.querySelector('.material-reader').scrollIntoView({block:'center'})");
+    await wait(
+      "(()=>{const canvas=document.querySelector('.react-pdf__Page__canvas');if(!canvas?.checkVisibility())return false;const r=canvas.getBoundingClientRect(),pane=canvas.closest('.split-preview-scroll').getBoundingClientRect();const left=Math.max(r.left,pane.left,0),right=Math.min(r.right,pane.right,innerWidth),top=Math.max(r.top,pane.top,0),bottom=Math.min(r.bottom,pane.bottom,innerHeight);return right-left>120&&bottom-top>120&&document.elementFromPoint((left+right)/2,(top+bottom)/2)?.closest('.material-reader');})()",
+    );
     await capture('export-pdf-' + phase);
     const evidence = await evaluate(
       `(async()=>{const prefs=await window.caselite.preferences({protocol_version:1,operation:'read'});const list=await window.caselite.task({protocol_version:1,operation:'list_snapshots',task_id:'${task.id}',document_id:'${task.document_id}',offset:0});const snapshot=list.snapshots[0];const records=[];for(const format of ['docx','pdf']){const r=await window.caselite.task({protocol_version:1,operation:'read_export',task_id:'${task.id}',document_id:'${task.document_id}',snapshot_id:snapshot.id,format,export_style:prefs.preferences.export_style,include_history:true});if(!r.ok||r.exports?.[0]?.status!=='ready')throw Error('Missing ready '+format);records.push(r.exports[0]);}return {preferences:prefs.preferences,snapshot,records};})()`,
