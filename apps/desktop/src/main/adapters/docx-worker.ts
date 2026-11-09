@@ -172,6 +172,8 @@ parentPort?.once('message', async (input: { bytes: Uint8Array; semantic: boolean
         {
           externalFileAccess: false,
           includeEmbeddedStyleMap: false,
+          // 语义稿支持下划线；Mammoth默认会忽略它，只配置公开映射，不启用文档自带样式规则。
+          styleMap: ['u => u'],
           // 本轮只验文字和表格，图片继续留在固定原件。
           convertImage: images.imgElement(async () => ({ src: '' })),
         },
