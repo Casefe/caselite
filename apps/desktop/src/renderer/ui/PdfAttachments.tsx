@@ -1,5 +1,8 @@
 import { DocxOriginalReader } from './DocxOriginalReader';
 import { DocxDraftPreview } from './DocxDraftPreview';
+import MaterialBatchImport from './MaterialBatchImport';
+import { materialSize } from './material-size';
+export { materialSize } from './material-size';
 import { Icon } from '../shared/ui/Icon';
 import {
   lazy,
@@ -24,11 +27,6 @@ export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | nul
 function validateMaterialFile(file: Pick<File, 'name' | 'size'>) {
   if (!isDocx(file.name)) return validatePdfFile(file);
   return !file.size || file.size > 20 * 1024 * 1024 ? '请选择非空且不超过 20 MB 的 DOCX。' : null;
-}
-export function materialSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Number((bytes / 1024).toFixed(2))} KB`;
-  return `${Number((bytes / (1024 * 1024)).toFixed(2))} MB`;
 }
 function PaperclipIcon() {
   return (
@@ -61,6 +59,7 @@ export default function PdfAttachments({
   controller: MaterialController;
 }) {
   const [over, setOver] = useState(false);
+  const [batchMode, setBatchMode] = useState<'files' | 'folder' | null>(null);
   const [layer, setLayer] = useState<'closed' | 'commands' | 'library'>('closed');
   const menuOpen = layer === 'commands' || (showSavedMaterials && layer === 'library');
   const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -333,6 +332,16 @@ export default function PdfAttachments({
         </ul>
       )}
       {children}
+      {c.scope && (
+        <MaterialBatchImport
+          key={c.scope}
+          scope={c.scope}
+          mode={batchMode}
+          onRequested={() => setBatchMode(null)}
+          disabled={disabled || c.busy}
+          onSelect={(ids) => ids.forEach((id) => c.select(id, true))}
+        />
+      )}
       <div className="assistant-actions">
         <div
           className="material-menu"
@@ -396,6 +405,36 @@ export default function PdfAttachments({
               <span id={`${menuId}-capability`} hidden>
                 支持 PDF 和 DOCX，每份不超过 20 MB。
               </span>
+              {c.scope && typeof window.caselite?.materialBatch === 'function' && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    disabled={disabled || c.busy}
+                    onClick={() => {
+                      closeMenu(true);
+                      setBatchMode('files');
+                    }}
+                  >
+                    <PaperclipIcon />
+                    <span>批量保存文件</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    disabled={disabled || c.busy}
+                    onClick={() => {
+                      closeMenu(true);
+                      setBatchMode('folder');
+                    }}
+                  >
+                    <Icon name="folder" size={16} />
+                    <span>保存文件夹</span>
+                  </button>
+                </>
+              )}
               {showSavedMaterials && c.items.some((item) => !(item.id in c.selected)) && (
                 <button
                   type="button"

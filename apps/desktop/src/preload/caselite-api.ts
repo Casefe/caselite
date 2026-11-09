@@ -32,6 +32,12 @@ import {
   type MaterialResponse,
 } from '@caselite/contracts';
 import {
+  MATERIAL_BATCH_CHANNEL,
+  materialBatchResponseSchema,
+  type MaterialBatchRequest,
+  type MaterialBatchResponse,
+} from '@caselite/contracts';
+import {
   APPEARANCE_CHANNEL,
   appearanceResponseSchema,
   type AppearanceRequest,
@@ -131,6 +137,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  materialBatch(request: MaterialBatchRequest): Promise<MaterialBatchResponse>;
   preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
@@ -165,6 +172,22 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    async materialBatch(request) {
+      // 选择器和批次逐项保存是本地长操作；结果未知时只查询原批次，不重建token。
+      try {
+        const result = materialBatchResponseSchema.safeParse(
+          await invoke(MATERIAL_BATCH_CHANNEL, request),
+        );
+        if (result.success) return result.data;
+      } catch {
+        /* 原批次由SQLite保留，界面可重新读取。 */
+      }
+      return {
+        ok: false,
+        code: 'RESULT_UNKNOWN',
+        message: '无法确认批次结果，请重新读取；不要重新导入已保存项。',
+      };
+    },
     async preferences(request) {
       const result = localPreferencesResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, LOCAL_PREFERENCES_CHANNEL, request),
@@ -324,6 +347,12 @@ export type {
   MaterialRequest,
   MaterialPreview,
   TextPage,
+} from '@caselite/contracts';
+export type {
+  MaterialBatch,
+  MaterialBatchItem,
+  MaterialBatchRequest,
+  MaterialBatchResponse,
 } from '@caselite/contracts';
 
 export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/contracts';
