@@ -3,6 +3,7 @@ import {
   APPEARANCE_CHANNEL,
   FINANCE_CHANNEL,
   CONTACTS_CHANNEL,
+  MATERIAL_BATCH_CHANNEL,
   IPC_PROTOCOL_VERSION,
   createAnchorRequestSchema,
   createMatterRequestSchema,
@@ -116,12 +117,29 @@ describe('typed preload to main IPC Spike', () => {
       'dropPdf',
       'finance',
       'material',
+      'materialBatch',
       'offlineProbe',
       'pickPdf',
       'preferences',
       'reminder',
       'task',
     ]);
+  });
+
+  it('uses only the fixed material batch channel and rejects malformed or unknown replies', async () => {
+    const request = { protocol_version: 1, operation: 'list', scope: 'home' } as const;
+    const invoke = vi.fn(async () => ({ ok: true, batch: { id: 'not-an-identity' } }));
+    const api = createCaseLitePreloadApi(invoke);
+    await expect(api.materialBatch(request)).resolves.toMatchObject({
+      ok: false,
+      code: 'RESULT_UNKNOWN',
+    });
+    expect(invoke).toHaveBeenCalledExactlyOnceWith(MATERIAL_BATCH_CHANNEL, request);
+    invoke.mockRejectedValueOnce(new Error('synthetic IPC disconnect'));
+    await expect(api.materialBatch(request)).resolves.toMatchObject({
+      ok: false,
+      code: 'RESULT_UNKNOWN',
+    });
   });
 
   it('uses the fixed contacts channel and rejects malformed replies', async () => {

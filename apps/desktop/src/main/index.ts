@@ -19,6 +19,10 @@ import {
 import { syntheticDocxStream } from './agent-demo';
 import { runMaterialDemo } from './material-demo';
 import { createMaterialApplication } from '@caselite/application';
+import { createMaterialBatchApplication } from '@caselite/application';
+import { registerMaterialBatchIpc } from './ipc/register-material-batch-ipc';
+import { validateMaterialBatchPath } from './adapters/material-batch-files';
+import { runMaterialBatchDemo } from './material-batch-demo';
 import { createDocxProcessor, readDocxSemanticHtml } from './adapters/docx-processor';
 import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
@@ -603,6 +607,8 @@ if (taskDemoPhase) {
       'read',
       'materials',
       'materials-read',
+      'materials-batch',
+      'materials-batch-read',
       'important-date-write',
       'important-date-read',
       'important-date-preview',
@@ -896,6 +902,14 @@ app
       },
     });
     registerMaterialIpc(materials);
+    const materialBatches = createMaterialBatchApplication({
+      store: taskStore.materials,
+      materials,
+      id: randomUUID,
+      taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+      validatePath: validateMaterialBatchPath,
+    });
+    registerMaterialBatchIpc(materialBatches);
     app.on('will-quit', () => materials.close());
     // 合成材料联调不访问系统凭据；仅在已验证的临时演示目录启用。
     let materialDemoModel: import('@caselite/contracts').AgentModel = 'gpt-4.1-mini';
@@ -1300,6 +1314,16 @@ app
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
+      if (taskDemoPhase.startsWith('materials-batch')) {
+        await runMaterialBatchDemo(
+          () => createWindow(),
+          taskDemoRoot,
+          taskDemoPhase,
+          materialBatches,
+        );
+        app.exit(0);
+        return;
+      }
       if (taskDemoPhase.startsWith('materials-docx')) {
         // 测试包在宿主系统网络隔离下运行，不能只靠 Chromium 拦截。
         const denied = await new Promise<boolean>((resolve) => {

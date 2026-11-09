@@ -95,6 +95,24 @@ it('shares one scope poll with AI, imports fixed attachments without authorizing
   expect(f.material.mock.calls.some(([r]) => r.operation === 'preview')).toBe(false);
   expect(f.agent).not.toHaveBeenCalled();
 });
+it('does not expose batch controls or poll the retired batch feature', async () => {
+  const f = fixture();
+  const materialBatch = vi.fn(async () => ({
+    ok: false,
+    code: 'INVALID_REQUEST',
+    message: '批次请求无效。',
+  }));
+  window.caselite.materialBatch = materialBatch as Window['caselite']['materialBatch'];
+  render(<TaskAttachments taskId={f.task} />);
+  await screen.findByText(f.file.name);
+  expect(screen.queryByRole('button', { name: '批量添加' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '导入文件夹' })).toBeNull();
+  expect(screen.queryByLabelText('材料批次')).toBeNull();
+  expect(materialBatch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '添加附件' }));
+  await screen.findByText('新附件.docx');
+  expect(f.pickPdf).toHaveBeenCalledWith(f.task);
+});
 it('keeps one periodic list request for two mounted consumers and retains explicit AI import selection', async () => {
   vi.useFakeTimers();
   const f = fixture();

@@ -436,3 +436,47 @@
   border: 1px solid currentColor;
   padding: 5px 9px;
 }
+
+.material-batch:empty {
+  display: none;
+}
+.material-batch {
+  margin-block: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #c8c8c8);
+  border-radius: 8px;
+  max-width: 100%;
+}
+.material-batch header,
+.material-batch li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.material-batch p,
+.material-batch small {
+  font-size: 12px;
+}
+.material-batch ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.material-batch li {
+  padding-block: 7px;
+}
+.material-batch li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.material-batch small {
+  display: block;
+  opacity: 0.75;
+}
+.material-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

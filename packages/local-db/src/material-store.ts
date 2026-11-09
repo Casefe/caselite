@@ -5,6 +5,8 @@ import {
   type Material,
   type MaterialPreview,
   type MaterialScope,
+  materialBatchSchema,
+  type MaterialBatch,
 } from '@caselite/contracts';
 export type StagedMaterial = {
   token: string;
@@ -15,11 +17,14 @@ export type StagedMaterial = {
   state: 'staged' | 'committed' | 'cancelled';
   task_id?: string;
   restored_source_id?: string;
+  batch_id?: string;
 };
 export function createMaterialStore(db: Database.Database, workspace: string) {
   const stage = (token: string): StagedMaterial | undefined => {
     const row = db
-      .prepare('SELECT payload FROM material_stages WHERE token=? AND workspace_id=?')
+      .prepare(
+        "SELECT payload FROM material_stages WHERE token=? AND workspace_id=? AND json_extract(payload,'$.kind') IS NOT 'batch'",
+      )
       .get(token, workspace) as { payload: string } | undefined;
     return row ? (JSON.parse(row.payload) as StagedMaterial) : undefined;
   };
@@ -50,6 +55,20 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
       : undefined;
   };
   return {
+    activeBatch(scope: MaterialScope): MaterialBatch | undefined {
+      const row = db
+        .prepare(
+          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.kind')='batch' AND json_extract(payload,'$.scope')=? AND json_extract(payload,'$.batch.state')<>'dismissed' ORDER BY rowid DESC LIMIT 1",
+        )
+        .get(workspace, scope) as { payload: string } | undefined;
+      return row ? materialBatchSchema.parse(JSON.parse(row.payload).batch) : undefined;
+    },
+    putBatch(value: MaterialBatch) {
+      const batch = materialBatchSchema.parse(value);
+      db.prepare(
+        'INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id',
+      ).run(batch.id, workspace, JSON.stringify({ kind: 'batch', scope: batch.scope, batch }));
+    },
     stage,
     putStage,
     task,
@@ -89,7 +108,7 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     pending(scope: MaterialScope) {
       const row = db
         .prepare(
-          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.scope')=? AND json_extract(payload,'$.state')='staged' ORDER BY rowid DESC LIMIT 1",
+          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.scope')=? AND json_extract(payload,'$.state')='staged' AND json_extract(payload,'$.batch_id') IS NULL ORDER BY rowid DESC LIMIT 1",
         )
         .get(workspace, scope) as { payload: string } | undefined;
       return row ? (JSON.parse(row.payload) as StagedMaterial) : undefined;

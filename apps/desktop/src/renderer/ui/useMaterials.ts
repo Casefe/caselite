@@ -237,6 +237,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
     return work;
   }
   return {
+    scope,
     available,
     items,
     loaded: draft.loaded,

@@ -1,5 +1,7 @@
 import { DocxOriginalReader } from './DocxOriginalReader';
 import { DocxDraftPreview } from './DocxDraftPreview';
+import { materialSize } from './material-size';
+export { materialSize } from './material-size';
 import { Icon } from '../shared/ui/Icon';
 import {
   lazy,
@@ -24,11 +26,6 @@ export function validatePdfFile(file: Pick<File, 'name' | 'size'>): string | nul
 function validateMaterialFile(file: Pick<File, 'name' | 'size'>) {
   if (!isDocx(file.name)) return validatePdfFile(file);
   return !file.size || file.size > 20 * 1024 * 1024 ? '请选择非空且不超过 20 MB 的 DOCX。' : null;
-}
-export function materialSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Number((bytes / 1024).toFixed(2))} KB`;
-  return `${Number((bytes / (1024 * 1024)).toFixed(2))} MB`;
 }
 function PaperclipIcon() {
   return (
