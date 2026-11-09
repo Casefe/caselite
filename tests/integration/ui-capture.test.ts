@@ -87,6 +87,7 @@ describe('bounded local UI capture', () => {
       new URL('../fixtures/ui-capture/reference.html', import.meta.url),
       'utf8',
     );
+    let cancelNavigation: (() => void) | undefined;
     const server = createServer((req, res) => {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       if (req.url === '/redirect') {
@@ -122,6 +123,7 @@ describe('bounded local UI capture', () => {
         );
       else if (req.url === '/timeout') {
         /* 合成悬挂请求，验证导航超时与清理。 */
+        cancelNavigation?.();
       } else if (req.url === '/unreachable') {
         res.statusCode = 503;
         res.end();
@@ -161,12 +163,15 @@ describe('bounded local UI capture', () => {
       child.stderr.on('data', (chunk) => {
         output += chunk.toString();
       });
-      const timer = terminate ? setTimeout(() => child.kill('SIGTERM'), 800) : undefined;
+      // 进入导航才证明子进程已装好取消处理器；固定延时会在整套测试负载下抢先杀死启动进程。
+      if (terminate) cancelNavigation = () => child.kill('SIGTERM');
+      const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
       const code = await new Promise<number | null>((resolve, reject) => {
         child.on('error', reject);
         child.on('close', resolve);
       });
       clearTimeout(timer);
+      cancelNavigation = undefined;
       results.push({
         name,
         command: 'node scripts/capture-ui.mjs PLAN PRIVATE_ROOT NEW_OUTPUT',
