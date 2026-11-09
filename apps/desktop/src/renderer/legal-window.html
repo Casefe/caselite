@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <link rel="stylesheet" href="../legal.css" />
+    <title>CaseLite · 软件许可与使用协议</title>
+  </head>
+  <body>
+    <main class="legal-shell">
+      <header class="legal-header">
+        <div class="legal-brand">CaseLite <span>法律工作台</span></div>
+        <h1>开始之前，请阅读两份协议</h1>
+        <p>
+          允许律师正常办案、提供收费法律服务及交付成果。软件销售、对外分发、改名经营和外部托管须另获授权。
+        </p>
+      </header>
+      <div class="legal-layout">
+        <nav aria-label="协议列表" role="tablist">
+          <button
+            id="legal-tab-license"
+            role="tab"
+            aria-controls="legal-document"
+            aria-selected="true"
+          >
+            专有软件许可证 <span id="license-status">待读</span>
+          </button>
+          <button
+            id="legal-tab-eula"
+            role="tab"
+            aria-controls="legal-document"
+            aria-selected="false"
+          >
+            最终用户许可协议 <span id="eula-status">待读</span>
+          </button>
+          <p class="legal-note">两份协议均为完整离线正文。生效日期：2026年11月9日。</p>
+        </nav>
+        <section class="legal-reading">
+          <div id="legal-document" role="tabpanel" aria-labelledby="legal-tab-license" tabindex="0">
+            <p>正在加载协议全文…</p>
+          </div>
+          <div class="legal-reading-footer">
+            <span id="legal-read-hint">请阅读至文末</span>
+            <button id="legal-mark-read" disabled>我已阅读本份协议</button>
+          </div>
+        </section>
+      </div>
+      <footer class="legal-actions">
+        <p id="legal-error" role="alert" hidden></p>
+        <button id="legal-retry" hidden>重新读取</button>
+        <label class="legal-confirm"
+          ><input id="legal-confirm" type="checkbox" disabled />我已阅读并同意《CaseLite
+          专有软件许可证》和《CaseLite 最终用户许可协议》</label
+        >
+        <div class="legal-action-row">
+          <span>请分别阅读两份协议后，主动勾选确认。</span>
+          <div>
+            <button id="legal-decline">不同意并退出</button
+            ><button id="legal-accept" disabled>同意并进入 CaseLite</button>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>
