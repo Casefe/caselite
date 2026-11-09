@@ -5,12 +5,22 @@ import {
   useProjectCatalog,
 } from '../shared/data/ordinary-catalog-query';
 import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CatalogDocument, CatalogRequest, CatalogResponse } from '../../preload/caselite-api';
 import DocumentLibrary from './DocumentLibrary';
 
 vi.mock('./AgentPanel', () => ({ default: () => null }));
+beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -289,4 +299,87 @@ it('paginates by stable document identity and resets filtering without losing pe
   fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
   fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '尚未提交' } });
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '下一页' }).disabled).toBe(true);
+});
+
+it('双预览分别读取固定Document，属性和打开编辑跟随活动栏，未保存标签阻止换栏', async () => {
+  const a = { ...entry, title: '合成甲', updated_at: '2026-11-09T10:00:00Z' };
+  const b = {
+    ...entry,
+    id: crypto.randomUUID(),
+    task_id: crypto.randomUUID(),
+    title: '合成乙',
+    updated_at: '2026-11-09T09:00:00Z',
+  };
+  const documents = [a, b];
+  const task = vi.fn(async (request: { task_id: string }) => {
+    const doc = documents.find((value) => value.task_id === request.task_id)!;
+    return {
+      ok: true,
+      tasks: [
+        {
+          id: doc.task_id,
+          document_id: doc.id,
+          matter_id: doc.matter_id,
+          body_revision: doc.body_revision,
+        },
+      ],
+      state: null,
+    };
+  });
+  vi.stubGlobal('caselite', {
+    catalog: vi.fn(async () => ({ ...projection(a), documents })),
+    task,
+  });
+  const onOpen = vi.fn();
+  render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={onOpen} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByText('合成甲', { selector: 'td' }));
+  fireEvent.click(screen.getByRole('button', { name: '双栏预览' }));
+  fireEvent.click(screen.getByRole('button', { name: '副预览' }));
+  fireEvent.click(screen.getByText('合成乙', { selector: 'td' }));
+  const primary = screen.getByRole('region', { name: '主预览' }),
+    secondary = screen.getByRole('region', { name: '副预览' });
+  expect(within(primary).getByText('合成甲')).toBeTruthy();
+  expect(within(secondary).getByText('合成乙')).toBeTruthy();
+  await waitFor(() =>
+    expect(task).toHaveBeenCalledWith(expect.objectContaining({ task_id: b.task_id })),
+  );
+  expect(screen.getByLabelText('文档属性').textContent).toContain(b.id);
+  fireEvent.click(screen.getByRole('button', { name: '打开编辑' }));
+  expect(onOpen).toHaveBeenLastCalledWith(b.task_id);
+  fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  fireEvent.change(screen.getByLabelText('新标签'), { target: { value: '待保存标签' } });
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '主预览' }).disabled).toBe(true);
+  fireEvent.pointerDown(primary);
+  expect(screen.getByLabelText('文档属性').textContent).toContain(b.id);
+  expect(within(secondary).getByText('合成乙')).toBeTruthy();
+});
+
+it('归档筛选后不会从另一预览栏继续展示已离开当前筛选的正文', async () => {
+  const a = { ...entry, title: '合成当前稿' };
+  const catalog = vi.fn(async () => projection(a));
+  const task = vi.fn(async () => ({
+    ok: true,
+    tasks: [
+      { id: a.task_id, document_id: a.id, matter_id: a.matter_id, body_revision: a.body_revision },
+    ],
+    state: null,
+  }));
+  vi.stubGlobal('caselite', { catalog, task });
+  render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={vi.fn()} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByText('合成当前稿', { selector: 'td' }));
+  fireEvent.click(screen.getByRole('button', { name: '双栏预览' }));
+  fireEvent.click(screen.getByRole('button', { name: '副预览' }));
+  fireEvent.click(screen.getByText('合成当前稿', { selector: 'td' }));
+  fireEvent.click(screen.getByRole('button', { name: '已归档', exact: true }));
+  expect(screen.getByText('没有符合条件的文档。')).toBeTruthy();
+  expect(screen.getByRole('region', { name: '主预览' }).textContent).not.toContain('合成当前稿');
+  expect(screen.getByRole('region', { name: '副预览' }).textContent).not.toContain('合成当前稿');
 });

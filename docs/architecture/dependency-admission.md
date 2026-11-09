@@ -1,5 +1,7 @@
 # 生产依赖准入与退出
 
+DEV-1849：用户2026-11-09验收文档三栏/共享双预览样机并批准复用清单，准入 `react-resizable-panels@4.21.0`（MIT）。仅Renderer的 `shared/ui/SplitPreviewWorkspace.tsx` 消费公开Group/Panel/Separator，保留现有React19/Forge；不增加正文、存储、网络或运行内核。发布包SHA-512与锁文件一致，实际包无额外生产依赖、原生文件或安装生命周期脚本；MIT全文在 `legal/THIRD-PARTY-SPLIT-PREVIEW-NOTICES.txt`，沿现有legal资源整体打包。指定MIT测试场景按已批准来源改编，完整通知同上；不复制内部状态或上游Harness。接线/依赖审计/桌面实测以本卡证据为准，本条不代替验收；退出撤销本卡依赖与布局接线，无数据迁移，保留原件、Yjs与快照。
+
 DEV-1569 的生产消费者规则在 `scripts/lib/dependency-admission.mjs`，由现有 `pnpm architecture:check` 执行。未登记的包、消费者或版本，包括 root、optional、peer 入口，均失败；不创建第二流水线。此表不授予安装候选或调用付费服务的权限。开发工具、传递依赖、安装脚本仍由锁文件、许可证、安全和实际构建检查负责，本检查不冒充全部供应链审计。
 
 | 消费者与责任                   | 已锁定生产依赖                                                     | 来源与许可                                                                                                               | 能力证据及退出                                                                                                                          |

@@ -12,3 +12,5 @@
 @import './styles/task-properties.css';
 @import './styles/project-document.css';
 @import './styles/calendar.css';
+@import './styles/split-preview-workspace.css';
+@import './styles/document-workspace.css';

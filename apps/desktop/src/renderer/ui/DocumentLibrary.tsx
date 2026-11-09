@@ -1,4 +1,7 @@
 import DocumentPreview from '../features/documents/DocumentPreview';
+import SplitPreviewWorkspace, {
+  useSplitPreviewSelection,
+} from '../shared/ui/SplitPreviewWorkspace';
 import ReadTable from '../shared/ui/ReadTable';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
@@ -19,8 +22,10 @@ export default function DocumentLibrary({
 }) {
   const read = useOrdinaryCatalog();
   const c = useCatalog(false, read);
-  const [selected, setSelected] = useState<string | null>(null),
-    [filter, setFilter] = useState('active');
+  const selection = useSplitPreviewSelection();
+  const selected = selection.selectedId;
+  const setSelected = selection.select;
+  const [filter, setFilter] = useState('active');
   const [text, setText] = useState('');
   const [page, setPage] = useState(0);
   const [group, setGroup] = useState('');
@@ -64,11 +69,13 @@ export default function DocumentLibrary({
   const currentPage =
     selectedIndex >= 0 ? Math.floor(selectedIndex / 20) : Math.min(page, pages - 1);
   const visible = docs.slice(currentPage * 20, (currentPage + 1) * 20);
+  const findDocument = (id: string | null) =>
+    id === null ? undefined : docs.find((doc) => doc.id === id);
+  const primary = selection.primary === null ? visible[0] : findDocument(selection.primary);
+  const secondary = findDocument(selection.secondary);
   const d =
-    selected === null
-      ? visible[0]
-      : (docs[selectedIndex] ??
-        (dirty ? allDocuments.find((doc) => doc.id === selected) : undefined));
+    (selection.active === 'primary' ? primary : secondary) ??
+    (dirty ? allDocuments.find((doc) => doc.id === selected) : undefined);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -102,7 +109,7 @@ export default function DocumentLibrary({
   };
   return (
     <section
-      className={`collection-workspace catalog-view ${library ? 'knowledge-view' : ''}`}
+      className={`collection-workspace catalog-view ${library ? 'knowledge-view' : 'document-workspace'}`}
       data-layout="three-column"
       data-collection={library ? 'knowledge' : 'documents'}
       data-directory-view={preview && d ? 'preview' : 'list'}
@@ -294,23 +301,7 @@ export default function DocumentLibrary({
                       accessorFn: (doc: CatalogDocument) => (doc.favorite ? '★' : '☆'),
                     },
                   ]
-                : [
-                    {
-                      id: 'project',
-                      header: '关联项目',
-                      accessorFn: (doc: CatalogDocument) =>
-                        projectNames.get(doc.matter_id ?? '') ?? '—',
-                    },
-                    { id: 'owner', header: '所有者', cell: () => null },
-                    {
-                      id: 'modified',
-                      header: '修改时间',
-                      accessorFn: (doc: CatalogDocument) =>
-                        new Date(doc.updated_at).toLocaleString('zh-CN'),
-                    },
-                    { accessorKey: 'body_revision', header: '版本' },
-                    { id: 'sharing', header: '共享状态', cell: () => null },
-                  ]),
+                : [{ accessorKey: 'body_revision', header: '版本' }]),
             ]}
             rowProps={(doc) => ({
               tabIndex: 0,
@@ -440,67 +431,76 @@ export default function DocumentLibrary({
           {docs.length} 份文档 · 仅此设备 · 单击查看，双击打开
         </footer>
       </div>
-      <div className="document-directory-sidebar">
-        {!library && d && (
-          <section className="document-directory-preview" aria-label="文档预览">
-            {preview && (
-              <button
-                className="document-directory-back"
-                onClick={() => {
-                  setPreview(false);
-                  requestAnimationFrame(() => directoryHeading.current?.focus());
-                }}
-              >
-                返回文档列表
-              </button>
-            )}
-            <h2>{d.title}</h2>
-            <div className="view-tabs">
-              <button aria-pressed={preview} disabled={blocked} onClick={() => setPreview(true)}>
-                预览
-              </button>
-              <button aria-pressed={!preview} onClick={() => setPreview(false)}>
-                属性
-              </button>
-            </div>
-            {preview && !blocked && <DocumentPreview key={d.id} document={d} />}
-            {preview && (
-              <div className="document-preview-actions">
-                <button disabled={blocked} onClick={() => onOpen(d.task_id)}>
-                  {d.archived_at ? '打开只读正文' : '打开编辑'}
+      {!library && (
+        <div className="document-center-workspace">
+          <SplitPreviewWorkspace
+            split={selection.split}
+            activePane={selection.active}
+            disabled={blocked}
+            onActivate={(pane) => {
+              if (!blocked) selection.activate(pane);
+            }}
+            onToggle={() => selection.toggle(primary?.id ?? null)}
+            primary={
+              primary
+                ? {
+                    title: primary.title,
+                    content: <DocumentPreview key={primary.id} document={primary} />,
+                  }
+                : null
+            }
+            secondary={
+              secondary
+                ? {
+                    title: secondary.title,
+                    content: <DocumentPreview key={secondary.id} document={secondary} />,
+                  }
+                : null
+            }
+            actions={
+              <>
+                <button
+                  type="button"
+                  className="document-directory-back"
+                  onClick={() => {
+                    setPreview(false);
+                    requestAnimationFrame(() => directoryHeading.current?.focus());
+                  }}
+                >
+                  返回文档列表
                 </button>
+                {d && (
+                  <button disabled={blocked} onClick={() => onOpen(d.task_id)}>
+                    {d.archived_at ? '打开只读正文' : '打开编辑'}
+                  </button>
+                )}
                 <button disabled={blocked} onClick={() => void c.load()}>
                   重新读取文档
                 </button>
-              </div>
-            )}
-          </section>
-        )}
-        {(!preview || library || tagDraft) && (
-          <DocumentInspector
-            key={d?.id ?? 'empty'}
-            document={d}
-            project={c.data?.projects.find((project) => project.id === d?.matter_id)}
-            blocked={blocked}
-            tagDraft={tagDraft}
-            tagsDisabled={
-              read.isFetching ||
-              editing ||
-              c.pending ||
-              c.unknown ||
-              awaitingRead ||
-              !!d?.archived_at
+              </>
             }
-            tagsLocked={c.pending || c.unknown}
-            tagEditor={tagEditor}
-            suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}
-            onTags={(tags, added) => d && void organize(d, { tags }, added)}
-            onTagDraft={(dirty) => {
-              if (dirty && d) setSelected(d.id);
-              setTagDraft(dirty);
-            }}
           />
-        )}
+        </div>
+      )}
+      <div className="document-directory-sidebar">
+        <DocumentInspector
+          key={d?.id ?? 'empty'}
+          document={d}
+          project={c.data?.projects.find((project) => project.id === d?.matter_id)}
+          blocked={blocked}
+          tagDraft={tagDraft}
+          tagsDisabled={
+            read.isFetching || editing || c.pending || c.unknown || awaitingRead || !!d?.archived_at
+          }
+          tagsLocked={c.pending || c.unknown}
+          tagEditor={tagEditor}
+          suggestions={[...new Set(c.data?.documents.flatMap((doc) => doc.tags))]}
+          onTags={(tags, added) => d && void organize(d, { tags }, added)}
+          onTagDraft={(dirty) => {
+            if (dirty && d) setSelected(d.id);
+            setTagDraft(dirty);
+          }}
+        />
       </div>
     </section>
   );
