@@ -157,7 +157,7 @@ export const taskSchema = z.object({
   document_metadata_version: z.number().int().positive().optional(),
   body_id: taskIdSchema,
   body_revision: z.number().int().nonnegative(),
-  editor_schema: z.literal(1),
+  editor_schema: z.union([z.literal(1), z.literal(2)]),
   updated_at: z.string(),
 });
 export const taskQuerySchema = z.discriminatedUnion('operation', [
@@ -360,7 +360,7 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
       document_id: taskIdSchema,
       body_id: taskIdSchema,
       expected_revision: z.number().int().nonnegative(),
-      editor_schema: z.literal(1),
+      editor_schema: z.union([z.literal(1), z.literal(2)]),
       state: z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000),
     })
     .strict(),

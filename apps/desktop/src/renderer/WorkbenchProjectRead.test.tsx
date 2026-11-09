@@ -10,7 +10,10 @@ import type {
   TaskResponse,
 } from '../preload/caselite-api';
 import App from './App';
-vi.mock('@tiptap/react', () => ({ useEditor: () => null }));
+vi.mock('@tiptap/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tiptap/react')>()),
+  useEditor: () => null,
+}));
 vi.mock('./ui/Appearance', () => ({
   AppearanceProvider: ({ children }: { children: React.ReactNode }) => children,
 }));

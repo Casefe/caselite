@@ -1,3 +1,5 @@
+import DocumentAnnotations from '../../editors/DocumentAnnotations';
+import { hasDocumentAnnotations } from '../../editors/document-annotation-marks';
 import { editorProfiles, reviewUpdateOrigin } from '../../editors/editor-config';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -40,6 +42,8 @@ export default function BodyEditor({
     if (initial) Y.applyUpdate(d, Uint8Array.from(initial));
     return d;
   });
+  const [editorSchema, setEditorSchema] = useState(task.editor_schema);
+  const [annotationDraft, setAnnotationDraft] = useState(false);
   const [revision, setRevision] = useState(task.body_revision);
   const [status, setStatus] = useState('已保存到此设备');
   const [busy, setBusy] = useState(false);
@@ -49,6 +53,7 @@ export default function BodyEditor({
   const skillHandle = useRef<WritingSkillHandle>(null);
   const [skillAvailable, setSkillAvailable] = useState(false);
   const changes = useRef(0);
+  const bodyDirty = useRef(false);
   const reviewHydrating = useRef(false);
   const editorReady = useRef(false);
   const pending = useRef<{ request: TaskRequest; sequence: number } | null>(null);
@@ -57,7 +62,7 @@ export default function BodyEditor({
     {
       injectCSS: false,
       editable: !task.document_archived_at && !disabled,
-      extensions: localExtensions(doc, true),
+      extensions: localExtensions(doc, true, true),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
       },
@@ -67,6 +72,7 @@ export default function BodyEditor({
       onUpdate: () => {
         if (!editorReady.current || reviewHydrating.current) return;
         changes.current++;
+        bodyDirty.current = true;
         setDirty(true);
         onDirty(true);
         setStatus('有未保存修改');
@@ -76,8 +82,11 @@ export default function BodyEditor({
   );
   useEffect(() => {
     // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
-    editor?.setEditable(!task.document_archived_at && !disabled && !reviewSaving, false);
-  }, [editor, task.document_archived_at, disabled, reviewSaving]);
+    editor?.setEditable(
+      !task.document_archived_at && !disabled && !reviewSaving && !annotationDraft,
+      false,
+    );
+  }, [editor, task.document_archived_at, disabled, reviewSaving, annotationDraft]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -88,7 +97,7 @@ export default function BodyEditor({
     };
   }, [doc]);
   async function save() {
-    if (!editor || busy || disabled || reviewSaving) return;
+    if (!editor || busy || disabled || reviewSaving || annotationDraft) return;
     setBusy(true);
     setStatus('正在保存…');
     const sequence = pending.current?.sequence ?? changes.current;
@@ -99,7 +108,7 @@ export default function BodyEditor({
       document_id: task.document_id,
       body_id: task.body_id,
       expected_revision: revision,
-      editor_schema: 1,
+      editor_schema: editorSchema === 2 || hasDocumentAnnotations(editor) ? 2 : 1,
       state: Array.from(Y.encodeStateAsUpdate(doc)),
     };
     const reconciling = !!pending.current;
@@ -128,9 +137,11 @@ export default function BodyEditor({
       if (!alive.current) return;
       pending.current = null;
       setHasPending(false);
+      setEditorSchema(saved.editor_schema);
       setRevision(saved.body_revision);
       onSaved(saved, request.operation === 'save' ? request.state : []);
       const unchanged = sequence === changes.current;
+      bodyDirty.current = !unchanged;
       setDirty(!unchanged);
       onDirty(!unchanged);
       setStatus(unchanged ? '已保存到此设备' : '较早修订已保存，仍有未保存修改');
@@ -150,7 +161,12 @@ export default function BodyEditor({
         className="primary"
         data-testid="save-body"
         disabled={
-          disabled || reviewSaving || !!task.document_archived_at || busy || (!dirty && !hasPending)
+          disabled ||
+          annotationDraft ||
+          reviewSaving ||
+          !!task.document_archived_at ||
+          busy ||
+          (!dirty && !hasPending)
         }
         onClick={() => void save()}
       >
@@ -171,8 +187,25 @@ export default function BodyEditor({
           </span>
         </div>
         {embedded && saveControls}
+        {editor && (
+          <DocumentAnnotations
+            editor={editor}
+            disabled={disabled || busy || hasPending || reviewSaving || !!task.document_archived_at}
+            onDraft={(open) => {
+              setAnnotationDraft(open);
+              onDirty(open || bodyDirty.current || pending.current !== null);
+            }}
+          />
+        )}
+        {(editorSchema === 2 || dirty) && (
+          <p className="caption annotation-compatibility">
+            高亮和批注随正文保存。保存标记后，此工作稿暂不支持新建固定交付版本或单段 AI
+            写回；已有固定版本仍可查看和导出。
+          </p>
+        )}
         <EditorSurface
           editor={editor}
+          disabled={disabled || annotationDraft || reviewSaving || !!task.document_archived_at}
           mode={editorProfiles.document.mode}
           documentScheme={embedded ? 'word' : (preferences.editor_mode ?? 'markdown')}
           selectionActions={
@@ -182,6 +215,8 @@ export default function BodyEditor({
                 editor={editor}
                 revision={revision}
                 enabled={
+                  editorSchema === 1 &&
+                  !annotationDraft &&
                   skillAvailable &&
                   !dirty &&
                   !busy &&
@@ -203,7 +238,7 @@ export default function BodyEditor({
           <button
             type="button"
             className="delivery-entry"
-            disabled={disabled || busy || hasPending || reviewSaving}
+            disabled={disabled || annotationDraft || busy || hasPending || reviewSaving}
             onClick={() => setDeliveryOpen(true)}
           >
             交付版本
@@ -237,6 +272,8 @@ export default function BodyEditor({
                 revision,
               }}
               blocked={
+                editorSchema === 2 ||
+                annotationDraft ||
                 deliveryOpen ||
                 disabled ||
                 !!task.document_archived_at ||
