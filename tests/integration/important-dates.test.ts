@@ -758,3 +758,73 @@ it('keeps date Runs in their owner history without crowding five ordinary conver
   ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
   expect(s.store.agentHistory.load()).toHaveLength(11);
 });
+
+it('preserves three legacy date pins and confirmation while enforcing three ordinary pins after reopen', async () => {
+  const s = await setup(samples[0], 'pdf');
+  await s.send();
+  const dateIds = [s.start.run_id];
+  for (let i = 0; i < 2; i++) {
+    const id = randomUUID();
+    dateIds.push(id);
+    ok<AgentResponse>(await s.app.execute({ ...s.start, run_id: id }, 'window'));
+    s.callbacks().onText(
+      JSON.stringify({ candidates: mockImportantDateFacts(s.source, s.pages, samples[0].pdf) }),
+    );
+    s.callbacks().onEnd({ status: 'succeeded', usage: null, message: 'MOCK_ONLY' });
+  }
+  // 复现旧版已经写入的三个日期置顶，不能用清理旧数据来释放新聊天配额。
+  for (const id of dateIds) expect(s.store.agentHistory.setPinned(id, true)).toBe('OK');
+  const saved = ok<AgentResponse>(await s.app.execute(s.command(), 'window')).date_saved!;
+  const dateSnapshot = s.store.agentHistory.load().filter((r) => r.purpose === 'important_dates');
+  expect(dateSnapshot.every((r) => r.pinned)).toBe(true);
+  const ordinaryIds: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const id = randomUUID();
+    ordinaryIds.push(id);
+    ok<AgentResponse>(
+      await s.app.execute(
+        {
+          protocol_version: 1,
+          operation: 'start',
+          scope: s.task.id,
+          run_id: id,
+          model: 'gpt-4.1-mini',
+          prompt: `普通置顶对话${i}`,
+          confirmed: true,
+        },
+        'window',
+      ),
+    );
+    s.callbacks().onText(`普通置顶回答${i}`);
+    s.callbacks().onEnd({ status: 'succeeded', usage: null, message: 'MOCK_ONLY' });
+  }
+  const pin = (id: string) =>
+    ({ protocol_version: 1, operation: 'pin_history', run_id: id, pinned: true }) as const;
+  for (const id of ordinaryIds.slice(0, 3))
+    ok<AgentResponse>(await s.app.execute(pin(id), 'window'));
+  expect(await s.app.execute(pin(ordinaryIds[3]), 'window')).toMatchObject({
+    ok: false,
+    code: 'LIMIT',
+  });
+  expect(s.store.agentHistory.load().filter((r) => r.purpose === 'important_dates')).toEqual(
+    dateSnapshot,
+  );
+  expect(s.store.dates.confirmations(s.task.id)).toEqual([saved.confirmation]);
+  s.app.release();
+  s.store.close();
+  const reopened = openTaskStore(s.file, migrations);
+  close.push(reopened.close);
+  expect(reopened.agentHistory.load().filter((r) => r.purpose === 'important_dates')).toEqual(
+    dateSnapshot,
+  );
+  expect(reopened.dates.confirmations(s.task.id)).toEqual([saved.confirmation]);
+  expect(reopened.agentHistory.pinnedIds().sort()).toEqual(
+    [...dateIds, ...ordinaryIds.slice(0, 3)].sort(),
+  );
+  expect(reopened.agentHistory.setPinned(ordinaryIds[3], true)).toBe('LIMIT');
+  expect(reopened.agentHistory.setPinned(ordinaryIds[0], false)).toBe('OK');
+  expect(reopened.agentHistory.setPinned(ordinaryIds[3], true)).toBe('OK');
+  expect(reopened.agentHistory.load().filter((r) => r.purpose === 'important_dates')).toEqual(
+    dateSnapshot,
+  );
+});
