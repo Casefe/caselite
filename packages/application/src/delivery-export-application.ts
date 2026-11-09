@@ -5,6 +5,9 @@ import {
   type DeliverySnapshot,
   type TaskRequest,
   type TaskResponse,
+  exportConfigurationSchema,
+  type ExportConfiguration,
+  type ExportStyle,
 } from '@caselite/contracts';
 
 type Request = Extract<TaskRequest, { operation: 'export_snapshot' }>;
@@ -13,8 +16,11 @@ export interface DeliveryExportStorePort {
     snapshot: string,
     format?: DeliveryExportFormat,
     exportId?: string,
+    configurationFingerprint?: string,
   ): DeliveryExport | undefined;
-  reserve(request: Request): DeliveryExport;
+  readIntent?(request: Request): DeliveryExport | undefined;
+  list?(snapshot: string, format: DeliveryExportFormat): DeliveryExport[];
+  reserve(request: Request, configuration?: ExportConfiguration): DeliveryExport;
   stage(row: DeliveryExport, hash: string, bytes: number): DeliveryExport;
   complete(request: Request, row: DeliveryExport): TaskResponse;
 }
@@ -28,12 +34,14 @@ export function createDeliveryExportApplication(ports: {
   task: { execute(input: unknown): TaskResponse };
   store: DeliveryExportStorePort;
   files: DeliveryExportFilesPort;
+  configuration?: { resolve(style: ExportStyle): Promise<ExportConfiguration> };
   render(
     snapshot: DeliverySnapshot,
     state: number[],
     format: DeliveryExportFormat,
     signal?: AbortSignal,
     converter?: DeliveryExport['converter'],
+    configuration?: ExportConfiguration,
   ): Promise<Uint8Array>;
   hash(bytes: Uint8Array): string;
 }) {
@@ -88,14 +96,37 @@ export function createDeliveryExportApplication(ports: {
       const snapshot = original.snapshots?.[0];
       if (!snapshot || !original.state) throw new Error('Missing fixed snapshot');
       signal?.throwIfAborted();
+      if (request.operation === 'export_snapshot') {
+        // 先核原请求摘要和已落盘字节；已保存产物的恢复不依赖当前字体仍然可用。
+        const prior = ports.store.readIntent?.(request);
+        if (prior) {
+          const placed = await ports.files.verify(prior);
+          signal?.throwIfAborted();
+          if (placed) return ports.store.complete(request, prior);
+          if (prior.status === 'ready')
+            return failure('READ_FAILED', `已保存${label}文件缺失，未重新生成或覆盖，请检查存储。`);
+        }
+      }
+      const style = 'export_style' in request ? request.export_style : undefined;
+      if (style && !ports.configuration)
+        return { ok: false, code: 'INVALID_REQUEST', message: '此版本尚未接通可配置导出。' };
+      const configuration = style
+        ? exportConfigurationSchema.parse(await ports.configuration!.resolve(style))
+        : undefined;
+      signal?.throwIfAborted();
       if (request.operation === 'read_export') {
-        const row = ports.store.read(snapshot.id, format);
+        const row = ports.store.read(snapshot.id, format, undefined, configuration?.fingerprint);
         if (row?.status === 'ready' && !(await ports.files.verify(row)))
           return failure(
             'READ_FAILED',
             `已保存${label}文件缺失，未重新生成或覆盖，请保留记录并检查存储。`,
           );
-        return success({ exports: row ? [row] : [] });
+        return success({
+          exports: row ? [row] : [],
+          ...(request.include_history
+            ? { export_history: ports.store.list?.(snapshot.id, format) ?? [] }
+            : {}),
+        });
       }
       if (request.operation === 'open_export' || request.operation === 'save_export') {
         const row = ports.store.read(snapshot.id, format, request.export_id);
@@ -108,13 +139,23 @@ export function createDeliveryExportApplication(ports: {
         await ports.files.open(row);
         return success({ exports: [row], export_opened: true });
       }
-      let row = ports.store.reserve(request);
+      let row = ports.store.reserve(request, configuration);
       const placed = await ports.files.verify(row);
       signal?.throwIfAborted();
       if (!placed) {
         if (row.status === 'ready')
           return failure('READ_FAILED', `已保存${label}文件缺失，未重新生成或覆盖，请检查存储。`);
-        const bytes = await ports.render(snapshot, original.state, format, signal, row.converter);
+        // 原键仍绑定原字体；资源变化不能让恢复中的旧身份悄悄生成另一份文件。
+        if (row.configuration && row.configuration.fingerprint !== configuration?.fingerprint)
+          throw new Error('EXPORT_FONT_CHANGED');
+        const bytes = await ports.render(
+          snapshot,
+          original.state,
+          format,
+          signal,
+          row.converter,
+          row.configuration,
+        );
         signal?.throwIfAborted();
         if (!bytes.length || bytes.length > 20_000_000) throw new Error('Export size limit');
         row = ports.store.stage(row, ports.hash(bytes), bytes.length);
@@ -130,17 +171,22 @@ export function createDeliveryExportApplication(ports: {
         return failure('CANCELLED', `${label}生成已取消，原快照与已保存文件保留。`);
       if (
         error instanceof Error &&
-        ['UNSUPPORTED_WORD_CONTENT', 'UNSUPPORTED_PDF_CONTENT', 'PDF_FONT_UNAVAILABLE'].includes(
-          error.message,
-        )
+        [
+          'UNSUPPORTED_WORD_CONTENT',
+          'UNSUPPORTED_PDF_CONTENT',
+          'PDF_FONT_UNAVAILABLE',
+          'EXPORT_FONT_CHANGED',
+        ].includes(error.message)
       )
         return {
           ok: false,
           code: 'INVALID_REQUEST',
           message:
-            error.message === 'PDF_FONT_UNAVAILABLE'
-              ? '本机中文字体不可用，未保存PDF；请检查字体后重试。'
-              : `此固定版本含暂不支持的${label}格式或超出生成规模限制，未生成交付文件；请保留快照并核对工作稿。`,
+            error.message === 'EXPORT_FONT_CHANGED'
+              ? '字体资源已变化，未按旧配置重建；请保留原产物并发起新的导出。'
+              : error.message === 'PDF_FONT_UNAVAILABLE'
+                ? '本机中文字体不可用，未保存PDF；请检查字体后重试。'
+                : `此固定版本含暂不支持的${label}格式或超出生成规模限制，未生成交付文件；请保留快照并核对工作稿。`,
         };
       if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT')
         return failure('CONFLICT', '该提交身份与原导出不同，请核对原提交。');

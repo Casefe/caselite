@@ -4,7 +4,12 @@ const runningText = z
   .string()
   .trim()
   .max(120)
-  .refine((value) => !/[\p{Cc}]/u.test(value));
+  .refine((value) => !/[\p{Cc}\u2028\u2029\uD800-\uDFFF\uFFFE\uFFFF]/u.test(value));
+
+export const exportFontFamilies = {
+  'arial-unicode': 'Arial Unicode MS',
+  pingfang: 'PingFang SC',
+} as const;
 
 // 这里只表达可校验的样式值；字体文件身份与配置指纹由宿主冻结，不由 Renderer 指定。
 export const exportStyleSchema = z
@@ -44,3 +49,33 @@ export const defaultExportStyle: ExportStyle = {
   header: '',
   footer: '',
 };
+
+export const exportConfigurationPayloadSchema = z
+  .object({
+    version: z.literal(1),
+    style: exportStyleSchema,
+    font: z
+      .object({
+        family: z.enum(['Arial Unicode MS', 'PingFang SC']),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const exportConfigurationSchema = exportConfigurationPayloadSchema
+  .extend({ fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+  .refine((value) => value.font.family === exportFontFamilies[value.style.font]);
+export type ExportConfiguration = z.infer<typeof exportConfigurationSchema>;
+export type ExportConfigurationPayload = z.infer<typeof exportConfigurationPayloadSchema>;
+
+// 规范化后再序列化，固定键序与单位；哈希函数只在宿主/存储层执行。
+export function exportConfigurationContent(configuration: ExportConfigurationPayload): string {
+  return JSON.stringify(
+    exportConfigurationPayloadSchema.parse({
+      version: configuration.version,
+      style: configuration.style,
+      font: configuration.font,
+    }),
+  );
+}
