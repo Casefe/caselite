@@ -313,6 +313,72 @@
   color: var(--muted, #89959a);
   font-weight: normal;
 }
+.home-agent-item + .home-agent-item {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.home-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.home-agent-indicator {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--theme-accent, #478673);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent, #478673) 12%, transparent);
+}
+.home-agent-summary {
+  flex: 1;
+  min-width: 0;
+}
+.home-agent-summary strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.home-agent-summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.home-agents .home-agent-progress {
+  margin: 4px 0 0 16px;
+  overflow-wrap: anywhere;
+}
+.home-agent-row[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+.home-agent-detail {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0 16px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.home-agent-detail small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.home-agent-detail > button {
+  justify-self: start;
+}
 .home-recent-row {
   display: flex;
   width: 100%;

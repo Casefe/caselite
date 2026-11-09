@@ -74,23 +74,22 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
       onOpen={onOpen}
     />,
   );
-  await waitFor(() => expect(screen.getByText('示例项目')).toBeTruthy());
-  expect(screen.queryByText('已归档项目')).toBeNull();
-  expect(screen.getByText('2 个任务')).toBeTruthy();
-  const tasks = screen.getByRole('region', { name: '最近任务' });
-  const projects = screen.getByRole('region', { name: '最近项目' });
-  expect(screen.getByLabelText('Agent 工作上下文').contains(tasks)).toBe(true);
-  expect(screen.getByLabelText('Agent 工作上下文').contains(projects)).toBe(true);
-  expect(tasks.compareDocumentPosition(projects) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await screen.findByText('暂无运行中的智能体');
+  const agents = screen.getByRole('region', { name: '智能体' });
+  const reminders = screen.getByLabelText('Agent 工作上下文');
+  expect(reminders.contains(agents)).toBe(true);
+  expect(screen.queryByRole('region', { name: '最近任务' })).toBeNull();
+  expect(screen.queryByRole('region', { name: '最近项目' })).toBeNull();
+  expect(screen.queryByText('重要文档')).toBeNull();
+  expect(screen.queryByText('示例项目')).toBeNull();
+  expect(window.caselite.catalog).not.toHaveBeenCalled();
+  expect(Array.from(reminders.querySelectorAll('h3'), (h) => h.textContent?.trim())).toEqual([
+    '重要日程',
+    '智能体0 运行中',
+  ]);
   expect(screen.queryByText('工作提醒')).toBeNull();
   expect(screen.getByLabelText('Agent 首页').querySelector('.agent-topline')).toBeNull();
-  expect(screen.getByLabelText('Agent 工作上下文').style.borderLeft).toBe('0px');
-  const reminders = screen.getByLabelText('Agent 工作上下文');
-  expect(
-    Array.from(reminders.querySelectorAll('h3'), (heading) => heading.textContent?.trim()),
-  ).toEqual(['重要日程', '最近任务1', '最近项目1', '重要文档']);
-  fireEvent.click(screen.getByRole('button', { name: '示例任务' }));
-  expect(onOpen).toHaveBeenCalledWith('t1');
+  expect(reminders.style.borderLeft).toBe('0px');
   fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
   expect(screen.getByRole('button', { name: '创建任务' }).getAttribute('aria-pressed')).toBe(
     'true',
@@ -100,10 +99,10 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
   );
   expect(onNavigate).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: '新建任务' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '最近任务' }));
-  fireEvent.click(screen.getByRole('button', { name: '最近项目' }));
+  fireEvent.click(screen.getByRole('button', { name: '重要日程' }));
+  expect(reminders.querySelector('header > button')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '历史对话' }));
-  expect(onNavigate.mock.calls).toEqual([['tasks'], ['projects'], ['agent-history']]);
+  expect(onNavigate.mock.calls).toEqual([['calendar'], ['agent-history']]);
   expect(screen.getByRole('button', { name: '创建项目' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '生成文书' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '合同审查' })).toBeTruthy();
@@ -117,9 +116,8 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
   expect(screen.getByRole('button', { name: '返回对话' }).getAttribute('aria-expanded')).toBe(
     'true',
   );
-  expect(screen.getByLabelText('Agent 工作上下文').contains(tasks)).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: '示例任务' }));
-  expect(onOpen).toHaveBeenLastCalledWith('t1');
+  expect(screen.getByLabelText('Agent 工作上下文').contains(agents)).toBe(true);
+  expect(onOpen).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '返回对话' }));
   expect(screen.getByRole('textbox', { name: '演示草稿' })).toBe(draft);
   expect((draft as HTMLTextAreaElement).value).toBe('保留待发送草稿');
@@ -166,6 +164,7 @@ it('shows stored rounds, opens details, and sends only a pin command', async () 
     expect(screen.getByRole('button', { name: '取消置顶：示例问题' })).toBeTruthy(),
   );
   expect(agent.mock.calls.map(([request]) => request.operation)).toEqual([
+    'active_runs',
     'history',
     'pin_history',
   ]);

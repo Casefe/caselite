@@ -40,6 +40,7 @@ import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-p
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
+import { runHomeContextDemo } from './home-context-demo';
 import {
   runAgentDemo,
   runAgentHistoryProbe,
@@ -161,6 +162,7 @@ async function createWindow(
     entry.searchParams.set('audit-agent', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('agent-home-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('customer-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
@@ -691,6 +693,8 @@ if (taskDemoPhase) {
       'project-activity-read',
       'agent',
       'agent-preview',
+      'agent-home-check',
+      'agent-home-read',
       'agent-crash',
       'agent-read',
       'agent-credential-read',
@@ -1075,6 +1079,7 @@ app
       taskDemoPhase?.startsWith('important-date-') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase?.startsWith('agent-home-') ||
       taskDemoPhase === 'typography' ||
       taskDemoPhase === 'agent-crash-synthetic' ||
       taskDemoPhase === 'agent-read-synthetic'
@@ -1483,6 +1488,11 @@ app
     }
     if (taskDemoRoot && taskDemoPhase === 'agent') {
       await runAgentDemo(() => createWindow(), taskDemoRoot);
+      app.exit(0);
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase?.startsWith('agent-home-')) {
+      await runHomeContextDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
       app.exit(0);
       return;
     }

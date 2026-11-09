@@ -6,7 +6,7 @@ import type { AgentRun, Task } from '../../preload/caselite-api';
 
 import AgentPanel from './AgentPanel';
 import BrandLogo from './BrandLogo';
-import { useCatalog } from './useCatalog';
+import ActiveAgents from './ActiveAgents';
 import { isConversationRun } from '../features/agent/agent-messages';
 
 const starters = [
@@ -53,8 +53,6 @@ export default function AgentHome({
   const draft = useRef<DraftEditorHandle>(null);
   const [showNotice, setShowNotice] = useState(true);
   const [selectedStarter, setSelectedStarter] = useState<string | null>(null);
-  const catalog = useCatalog();
-  const projects = catalog.data?.projects.filter((project) => !project.archived_at) ?? [];
   const [history, setHistory] = useState<AgentRun[] | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
@@ -254,54 +252,7 @@ export default function AgentHome({
       >
         <div className="home-context-panel">
           <ImportantSchedules home onOpen={onOpen} onCalendar={() => onNavigate('calendar')} />
-          <section className="home-reminder-card home-recent-card" aria-label="最近任务">
-            <h3>
-              <Icon name="check" size={16} />
-              <button className="home-section-link" onClick={() => onNavigate('tasks')}>
-                最近任务
-              </button>
-              <span className="home-recent-count">{tasks.length}</span>
-            </h3>
-            {tasks.length ? (
-              tasks.slice(0, 5).map((task) => (
-                <button className="home-recent-row" key={task.id} onClick={() => onOpen(task.id)}>
-                  <span>{task.title}</span>
-                  <Icon name="chevron" size={13} />
-                </button>
-              ))
-            ) : (
-              <p>还没有任务，可在“任务”中创建。</p>
-            )}
-          </section>
-          <section className="home-reminder-card home-recent-card" aria-label="最近项目">
-            <h3>
-              <Icon name="folder" size={16} />
-              <button className="home-section-link" onClick={() => onNavigate('projects')}>
-                最近项目
-              </button>
-              {catalog.data && <span className="home-recent-count">{projects.length}</span>}
-            </h3>
-            {catalog.error ? (
-              <p>项目读取失败：{catalog.error}</p>
-            ) : !catalog.data ? (
-              <p>正在读取项目…</p>
-            ) : projects.length ? (
-              projects.slice(0, 5).map((project) => (
-                <div className="home-recent-row" key={project.id}>
-                  <span>{project.title}</span>
-                  <small>{project.task_count} 个任务</small>
-                </div>
-              ))
-            ) : (
-              <p>还没有项目，可在“项目”中创建。</p>
-            )}
-          </section>
-          <section className="home-reminder-card">
-            <h3>
-              <Icon name="file" size={16} /> 重要文档
-            </h3>
-            <p>重要文档尚未接入，暂不能显示。</p>
-          </section>
+          <ActiveAgents tasks={tasks} onOpen={onOpen} />
         </div>
       </aside>
     </section>
