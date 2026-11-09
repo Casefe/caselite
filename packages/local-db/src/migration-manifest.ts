@@ -140,4 +140,9 @@ export const integrationMigrations = [
     when: 1794191100000,
     hash: '9c6e976ea63a339895731ca822025984fe13a01676408ad0381238d68c0d69d5',
   },
+  {
+    tag: '0025_finance_sources',
+    when: 1794191200000,
+    hash: 'edc93798e3566806ddb8f3dfa6cc2db7a5671241f0f862f41532bba57acd6e0d',
+  },
 ] as const;
