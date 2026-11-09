@@ -108,9 +108,11 @@ export default function DocumentReview({
       )
         return;
       setQuestion(request.skill.instruction);
-      setNotice(`已选择「${request.skill.name}」，请核对指令后发送。`);
-      // 聚焦现有输入框同时展开原右栏；选择技能不准备Run、不调用模型、不写正文。
+      const range = editorSelection(editor);
+      if (!range) return;
+      // 点击技能即明确发送当前指令与选区；直接传入快照，不能读到尚未更新的question。
       root.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+      void send(request.skill.instruction, { range, doc: request.doc });
     },
   }));
 
@@ -158,9 +160,8 @@ export default function DocumentReview({
     };
   }, [scope, stop]);
 
-  async function prepare() {
+  async function prepare(captured = selected) {
     if (lock.current || blocked || running || !editor || editor.view.composing) return;
-    const captured = selected;
     const selection = captured?.range;
     if (
       !selection ||
@@ -209,18 +210,18 @@ export default function DocumentReview({
     }
   }
 
-  async function send() {
-    if (blocked || lock.current || running || submitted || !question.trim() || composing.current)
+  async function send(prompt = question, captured = selected) {
+    if (blocked || lock.current || running || submitted || !prompt.trim() || composing.current)
       return;
     // 选区变化只更新本机引用卡；明确发送时才固定经可信端验证的输入。
-    const prepared = await prepare();
+    const prepared = await prepare(captured);
     if (!prepared || !alive.current || current.current.blocked) return;
     lock.current = true;
     setNotice('');
     setSubmitted(true);
     try {
       await sendMessage(
-        { text: question.trim() },
+        { text: prompt.trim() },
         { body: { id: prepared.id, model: prepared.model } },
       );
     } finally {
@@ -357,7 +358,7 @@ export default function DocumentReview({
         <p className="caption">合成演示 · MOCK_ONLY</p>
       )}
       <p className="caption">
-        选中文字自动作为本轮引用；只在发送时交给模型。候选接受前不改变正文。
+        选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
       </p>
       {reference ? (
         <section className="document-review-text" aria-label="本轮引用">
@@ -436,7 +437,7 @@ export default function DocumentReview({
               type="button"
               className="primary"
               data-sidebar-expand
-              onClick={send}
+              onClick={() => void send()}
               disabled={
                 !canPrepare ||
                 !question.trim() ||

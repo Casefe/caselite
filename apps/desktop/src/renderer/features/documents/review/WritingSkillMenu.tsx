@@ -40,6 +40,19 @@ export default function WritingSkillMenu({
     editor.isEditable &&
     !editor.view.composing &&
     Boolean(editorSelection(editor)?.text);
+  const runSkill = (skill: WritingSkill, original: typeof captured.current) => {
+    // 快捷项与更多菜单共用同一选区校验；展开菜单不运行，明确点击技能才派发。
+    if (
+      !original ||
+      !eligible() ||
+      original.doc !== editor.state.doc ||
+      original.from !== editor.state.selection.from ||
+      original.to !== editor.state.selection.to
+    )
+      return;
+    onPick({ id: crypto.randomUUID(), skill: { ...skill }, ...original, revision });
+    setPosition(undefined);
+  };
   const open = useCallback(
     (x: number, y: number) => {
       setPortalTarget(trigger.current?.closest('.selection-tools') ?? null);
@@ -60,7 +73,8 @@ export default function WritingSkillMenu({
     const context = (event: MouseEvent) => {
       if (editor.view.composing || editor.state.selection.empty) return;
       event.preventDefault();
-      open(event.clientX, event.clientY);
+      setPosition(undefined);
+      editor.commands.focus();
     };
     const close = () => setPosition(undefined);
     element.addEventListener('contextmenu', context);
@@ -98,7 +112,40 @@ export default function WritingSkillMenu({
     };
   }, [position]);
   return (
-    <>
+    <section className="writing-skills-shortcuts" aria-label="常用写作技能">
+      <div className="writing-skills-shortcuts-heading">
+        <span>技能</span>
+        {openSettings && (
+          <button
+            type="button"
+            aria-label="管理自定义技能"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={openSettings}
+          >
+            ⚙
+          </button>
+        )}
+      </div>
+      {skills.slice(0, 3).map((skill) => (
+        <button
+          key={skill.id}
+          type="button"
+          className="writing-skill-quick"
+          disabled={!eligible()}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() =>
+            runSkill(skill, {
+              doc: editor.state.doc,
+              from: editor.state.selection.from,
+              to: editor.state.selection.to,
+            })
+          }
+        >
+          {skill.name}
+          <span aria-hidden="true">↗</span>
+        </button>
+      ))}
+      {!skills.length && <p>可在编辑器设置中添加技能。</p>}
       <button
         ref={trigger}
         type="button"
@@ -114,7 +161,7 @@ export default function WritingSkillMenu({
           }
         }}
       >
-        ✧ 技能
+        更多技能…
       </button>
       {position &&
         createPortal(
@@ -154,20 +201,7 @@ export default function WritingSkillMenu({
                 type="button"
                 role="menuitem"
                 disabled={!eligible()}
-                onClick={() => {
-                  const original = captured.current;
-                  // 只将同一修订的原选区交给右栏；菜单打开后的编辑或选区变化不能错用旧坐标。
-                  if (
-                    !original ||
-                    !eligible() ||
-                    original.doc !== editor.state.doc ||
-                    original.from !== editor.state.selection.from ||
-                    original.to !== editor.state.selection.to
-                  )
-                    return;
-                  onPick({ id: crypto.randomUUID(), skill: { ...skill }, ...original, revision });
-                  setPosition(undefined);
-                }}
+                onClick={() => runSkill(skill, captured.current)}
               >
                 {skill.name}
                 <span aria-hidden="true">↗</span>
@@ -194,6 +228,6 @@ export default function WritingSkillMenu({
           // 子菜单仍属于当前选区浮层，避免焦点转移触发父浮层注销和Yjs重投影。
           portalTarget ?? document.body,
         )}
-    </>
+    </section>
   );
 }
