@@ -163,6 +163,58 @@ describe('typed preload to main IPC Spike', () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith(CONTACTS_CHANNEL, request);
   });
 
+  it('normalizes legacy contacts at the actual preload boundary and rejects invalid details', async () => {
+    const contact = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: '合成客户',
+      kind: 'person',
+      phone: '',
+      email: '',
+      project_ids: [],
+      version: 1,
+      updated_at: '2026-11-10T00:00:00Z',
+    };
+    let reply: unknown = { ok: true, contacts: [contact], receipt: null };
+    const api = createCaseLitePreloadApi(async () => reply);
+    const request = { protocol_version: 1, operation: 'list' } as const;
+    await expect(api.contacts(request)).resolves.toMatchObject({
+      ok: true,
+      contacts: [
+        {
+          ...contact,
+          wechat: '',
+          company: '',
+          position: '',
+          city: '',
+          relationship: '',
+          tags: [],
+          last_contact: null,
+        },
+      ],
+    });
+    for (const invalid of [{ wechat: 42 }, { tags: ['重复', '重复'] }, { city: '坏\u0000值' }]) {
+      reply = { ok: true, contacts: [{ ...contact, ...invalid }], receipt: null };
+      await expect(api.contacts(request)).resolves.toMatchObject({
+        ok: false,
+        code: 'RESULT_UNKNOWN',
+      });
+    }
+    reply = {
+      ok: true,
+      contacts: [contact],
+      receipt: null,
+      detail: {
+        contact_id: contact.id,
+        entries: [{ id: contact.id }],
+        task_ids: [],
+        document_ids: [],
+      },
+    };
+    await expect(
+      api.contacts({ protocol_version: 1, operation: 'read', contact_id: contact.id }),
+    ).resolves.toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  });
+
   it('routes appearance only through its fixed channel and rejects malformed responses', async () => {
     const invoke = vi.fn(async (channel: string) => {
       expect(channel).toBe(APPEARANCE_CHANNEL);

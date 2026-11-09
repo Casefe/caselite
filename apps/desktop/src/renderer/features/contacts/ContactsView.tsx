@@ -1,109 +1,98 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import type { Contact, ContactsRequest } from '../../../preload/caselite-api';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import type { Contact } from '../../../preload/caselite-api';
 import { useOrdinaryCatalog } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
+import { Icon } from '../../shared/ui/Icon';
+import ContactInspector from './ContactInspector';
+import { contactsKey } from './useContactsWrite';
 
-type Draft = Pick<Contact, 'name' | 'kind' | 'phone' | 'email' | 'project_ids'>;
-type Save = Extract<ContactsRequest, { operation: 'save' }>;
 const names = { person: '个人', organization: '组织' };
-const blank: Draft = { name: '', kind: 'person', phone: '', email: '', project_ids: [] };
-const listKey = ['contacts', 'local'] as const;
-
-export default function ContactsView({ onDirty }: { onDirty(value: boolean): void }) {
-  const client = useQueryClient();
+export default function ContactsView({
+  onDirty,
+  onOpenProject,
+  onOpenTask,
+  onOpenDocument,
+}: {
+  onDirty(value: boolean): void;
+  onOpenProject?(id: string): void;
+  onOpenTask?(id: string): void;
+  onOpenDocument?(id: string, taskId: string): void;
+}) {
   const catalog = useOrdinaryCatalog();
   const read = useQuery({
-    queryKey: listKey,
+    queryKey: contactsKey,
     queryFn: async () => {
       const result = await window.caselite.contacts({ protocol_version: 1, operation: 'list' });
       if (!result.ok) throw new Error(result.message);
       return result.contacts;
     },
   });
-  const [text, setText] = useState('');
-  const [kind, setKind] = useState<keyof typeof names | ''>('');
-  const [projectFilter, setProjectFilter] = useState('');
-  const [page, setPage] = useState(0);
-  const [selected, setSelected] = useState<string>();
-  const [form, setForm] = useState<{ id: string; version: number; draft: Draft }>();
-  const [pending, setPending] = useState<Save>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [conflict, setConflict] = useState(false);
-  const inFlight = useRef(false);
-  const dirty = Boolean(form || busy);
+  const [text, setText] = useState(''),
+    [kind, setKind] = useState<keyof typeof names | ''>('');
+  const [projectFilter, setProjectFilter] = useState(''),
+    [relationship, setRelationship] = useState(''),
+    [tag, setTag] = useState('');
+  const [page, setPage] = useState(0),
+    [selected, setSelected] = useState<string>();
+  const [creating, setCreating] = useState(false),
+    [blocked, setBlocked] = useState(false),
+    [recent, setRecent] = useState(false);
   useEffect(() => {
-    onDirty(dirty);
+    onDirty(blocked);
     return () => onDirty(false);
-  }, [dirty, onDirty]);
-
+  }, [blocked, onDirty]);
   const contacts = read.error ? [] : (read.data ?? []);
   const projects = catalog.error ? [] : (catalog.data?.projects ?? []);
-  const projectNames = new Map(projects.map((item) => [item.id, item.title]));
+  const documents = catalog.error ? [] : (catalog.data?.documents ?? []);
   const lookup = text.trim().toLocaleLowerCase();
   const rows = contacts
     .filter(
       (contact) =>
-        (!kind || kind === contact.kind) &&
+        (!kind || contact.kind === kind) &&
         (!projectFilter || contact.project_ids.includes(projectFilter)) &&
-        [contact.name, contact.phone, contact.email].some((value) =>
-          value.toLocaleLowerCase().includes(lookup),
-        ),
+        (!relationship || contact.relationship === relationship) &&
+        (!tag || contact.tags.includes(tag)) &&
+        [
+          contact.name,
+          contact.phone,
+          contact.email,
+          contact.company,
+          contact.wechat,
+          contact.city,
+        ].some((value) => value.toLocaleLowerCase().includes(lookup)),
     )
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id));
-  const pageSize = 15;
-  const lastPage = Math.max(0, Math.ceil(rows.length / pageSize) - 1);
-  const currentPage = Math.min(page, lastPage);
-  const visible = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const contact = visible.find((item) => item.id === selected) ?? visible[0];
-
-  async function save(request: Save) {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError('');
-    setPending(request);
-    try {
-      const response = await window.caselite.contacts(request);
-      if (!response.ok) {
-        setError(response.message);
-        if (response.code === 'CONFLICT') setConflict(true);
-        if (response.code !== 'RESULT_UNKNOWN' && response.code !== 'UNAVAILABLE')
-          setPending(undefined);
-        return;
-      }
-      const confirmed = response.contacts[0];
-      if (
-        response.receipt !== request.receipt ||
-        confirmed?.id !== request.contact_id ||
-        confirmed.version <= request.expected_version
-      ) {
-        setError('无法确认联系人回执，请核对原提交。');
-        return;
-      }
-      // 原回执确认后才能更新目录缓存，阻止迟到的旧查询覆盖该版本。
-      await client.cancelQueries({ queryKey: listKey, exact: true });
-      client.setQueryData<Contact[]>(listKey, (items = []) => [
-        ...items.filter((item) => item.id !== confirmed.id),
-        confirmed,
-      ]);
-      void client.invalidateQueries({ queryKey: listKey, exact: true, refetchType: 'none' });
-      setSelected(confirmed.id);
-      setText('');
-      setKind('');
-      setProjectFilter('');
-      setPage(0);
-      setPending(undefined);
-      setForm(undefined);
-    } catch {
-      setError('无法确认联系人结果，请核对原提交。');
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
+    .sort(
+      (a, b) =>
+        (recent ? (b.last_contact ?? '').localeCompare(a.last_contact ?? '') : 0) ||
+        a.name.localeCompare(b.name, 'zh-CN') ||
+        a.id.localeCompare(b.id),
+    );
+  const lastPage = Math.max(0, Math.ceil(rows.length / 15) - 1),
+    currentPage = Math.min(page, lastPage);
+  const visible = rows.slice(currentPage * 15, (currentPage + 1) * 15);
+  const contact = rows.find((row) => row.id === selected) ?? visible[0];
+  const select = (id: string) => {
+    if (!blocked) {
+      setSelected(id);
+      setCreating(false);
     }
+  };
+  const filter = (change: () => void) => {
+    change();
+    setPage(0);
+    setSelected(undefined);
+  };
+  function created(row: Contact) {
+    setSelected(row.id);
+    setCreating(false);
+    setText('');
+    setKind('');
+    setProjectFilter('');
+    setRelationship('');
+    setTag('');
+    setPage(0);
   }
-
   return (
     <section
       className="collection-workspace catalog-view contacts-workbench"
@@ -111,124 +100,180 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
     >
       <div className="collection-main">
         <header className="collection-heading">
-          <h1>联系人</h1>
+          <h1>客户</h1>
           <button
             type="button"
             className="primary"
-            disabled={dirty || Boolean(read.error) || !read.data}
-            onClick={() => {
-              setError('');
-              setForm({ id: crypto.randomUUID(), version: 0, draft: blank });
-            }}
+            disabled={blocked || Boolean(read.error) || !read.data}
+            onClick={() => setCreating(true)}
           >
-            新建联系人
+            ＋ 新建客户
           </button>
         </header>
-        <p className="workbench-list-caption">管理本机个人、组织及其关联项目。</p>
+        <p className="workbench-list-caption">管理客户资料，记录每次沟通。</p>
         <div className="view-tabs contacts-tabs">
           {(['', 'person', 'organization'] as const).map((value) => (
             <button
-              key={value || 'all'}
               type="button"
-              disabled={dirty}
+              key={value || 'all'}
+              disabled={blocked}
               aria-pressed={kind === value}
-              onClick={() => {
-                setKind(value);
-                setPage(0);
-              }}
+              onClick={() => filter(() => setKind(value))}
             >
-              {value ? names[value] : '全部'} (
-              {contacts.filter((item) => !value || item.kind === value).length})
+              {value ? names[value] : '全部'}{' '}
+              <small>{contacts.filter((row) => !value || row.kind === value).length}</small>
             </button>
           ))}
         </div>
-        <div className="document-directory-filters">
-          <input
-            aria-label="搜索联系人"
-            placeholder="搜索姓名、邮箱或电话…"
-            value={text}
-            disabled={dirty}
-            onChange={(event) => {
-              setText(event.target.value);
-              setPage(0);
-            }}
-          />
+        <div className="customer-list-filters">
+          <label className="customer-search">
+            <Icon name="search" size={16} />
+            <input
+              aria-label="搜索客户"
+              placeholder="搜索姓名、单位、电话或邮箱…"
+              value={text}
+              disabled={blocked}
+              onChange={(event) => filter(() => setText(event.target.value))}
+            />
+          </label>
+          <select
+            aria-label="筛选客户关系"
+            disabled={blocked}
+            value={relationship}
+            onChange={(e) => filter(() => setRelationship(e.target.value))}
+          >
+            <option value="">关系</option>
+            {[...new Set(contacts.map((row) => row.relationship).filter(Boolean))].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+          <select
+            aria-label="筛选客户标签"
+            disabled={blocked}
+            value={tag}
+            onChange={(e) => filter(() => setTag(e.target.value))}
+          >
+            <option value="">标签</option>
+            {[...new Set(contacts.flatMap((row) => row.tags))].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
           <select
             aria-label="筛选关联项目"
+            disabled={blocked || Boolean(catalog.error)}
             value={projectFilter}
-            disabled={dirty}
-            onChange={(event) => {
-              setProjectFilter(event.target.value);
-              setPage(0);
-            }}
+            onChange={(e) => filter(() => setProjectFilter(e.target.value))}
           >
-            <option value="">所有关联项目</option>
-            {projects.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
+            <option value="">关联项目</option>
+            {projects.map((row) => (
+              <option value={row.id} key={row.id}>
+                {row.title}
               </option>
             ))}
           </select>
         </div>
+        <div className="customer-list-views">
+          <button
+            type="button"
+            aria-pressed={!recent}
+            disabled={blocked}
+            onClick={() => filter(() => setRecent(false))}
+          >
+            全部客户
+          </button>
+          <button
+            type="button"
+            aria-pressed={recent}
+            disabled={blocked}
+            onClick={() => filter(() => setRecent(true))}
+          >
+            最近联系
+          </button>
+        </div>
         {read.error ? (
           <p role="alert">
-            {read.error.message}{' '}
+            {read.error.message}
             <button type="button" onClick={() => void read.refetch()}>
               重新读取
             </button>
           </p>
         ) : !read.data ? (
-          <p role="status">正在读取联系人…</p>
+          <p role="status">正在读取客户…</p>
         ) : (
           <div className="collection-scroll">
             <ReadTable
               data={visible}
-              getRowId={(item) => item.id}
-              label="联系人列表"
-              className="catalog-table document-directory-table"
-              rowProps={(item) => ({ 'aria-selected': item.id === contact?.id })}
+              getRowId={(row) => row.id}
+              label="客户列表"
+              className="catalog-table customer-table"
+              rowProps={(row) => ({ 'aria-selected': row.id === contact?.id })}
               columns={[
                 {
                   id: 'name',
-                  header: '姓名',
-                  cell: ({ row: { original: item } }) => (
+                  header: '姓名／名称',
+                  cell: ({ row: { original: row } }) => (
                     <button
-                      className="project-title-link"
                       type="button"
-                      disabled={dirty}
-                      onClick={() => setSelected(item.id)}
+                      className="customer-name"
+                      disabled={blocked}
+                      onClick={() => select(row.id)}
                     >
-                      {item.name}
+                      <span className="customer-avatar" aria-hidden="true">
+                        {row.name.slice(0, 1)}
+                      </span>
+                      <span>
+                        <strong>{row.name}</strong>
+                        {row.company && (
+                          <small>{[row.company, row.position].filter(Boolean).join(' · ')}</small>
+                        )}
+                      </span>
                     </button>
                   ),
                 },
-                { id: 'kind', header: '类型', accessorFn: (item) => names[item.kind] },
-                { accessorKey: 'phone', header: '电话' },
-                { accessorKey: 'email', header: '电子邮箱' },
+                {
+                  id: 'relationship',
+                  header: '关系',
+                  cell: ({ row: { original: row } }) => (
+                    <span className="customer-pill">{row.relationship || names[row.kind]}</span>
+                  ),
+                },
+                {
+                  id: 'contact',
+                  header: '联系方式',
+                  accessorFn: (row) => row.phone || row.email || row.wechat || '—',
+                },
                 {
                   id: 'projects',
                   header: '关联项目',
-                  accessorFn: (item) => item.project_ids.length,
+                  accessorFn: (row) =>
+                    row.project_ids.length ? `${row.project_ids.length}个项目` : '未关联',
                 },
-                { id: 'last-contact', header: '上次联系', cell: () => null },
+                {
+                  id: 'last-contact',
+                  header: '上次联系',
+                  accessorFn: (row) => row.last_contact ?? '—',
+                },
               ]}
             />
-            {!rows.length && <p className="catalog-empty">暂无符合条件的联系人。</p>}
+            {!rows.length && <p className="catalog-empty">暂无符合条件的客户，可新建客户。</p>}
           </div>
         )}
         <footer className="collection-footer">
-          <span>共 {rows.length} 条联系人</span>
+          <span>共{rows.length}位客户</span>
           <div>
             <button
               type="button"
-              disabled={dirty || currentPage === 0}
+              disabled={blocked || currentPage === 0}
               onClick={() => setPage(currentPage - 1)}
             >
               上一页
             </button>
+            <span>
+              {currentPage + 1} / {lastPage + 1}
+            </span>
             <button
               type="button"
-              disabled={dirty || currentPage === lastPage}
+              disabled={blocked || currentPage === lastPage}
               onClick={() => setPage(currentPage + 1)}
             >
               下一页
@@ -236,179 +281,20 @@ export default function ContactsView({ onDirty }: { onDirty(value: boolean): voi
           </div>
         </footer>
       </div>
-      <aside className="contacts-inspector" aria-label="联系人详情">
-        {error && <p role="alert">{error}</p>}
-        {conflict && (
-          <p>
-            草稿已保留。重读后请取消旧草稿，再从最新版本编辑。
-            <button type="button" disabled={read.isFetching} onClick={() => void read.refetch()}>
-              重新读取最新联系人
-            </button>
-          </p>
-        )}
-        {form ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (conflict) return;
-              if (pending) {
-                void save(pending);
-                return;
-              }
-              void save({
-                ...form.draft,
-                operation: 'save',
-                protocol_version: 1,
-                contact_id: form.id,
-                expected_version: form.version,
-                receipt: crypto.randomUUID(),
-              });
-            }}
-          >
-            <h2>{form.version ? '编辑联系人' : '新建联系人'}</h2>
-            <fieldset disabled={busy || Boolean(pending)}>
-              <label>
-                姓名
-                <input
-                  aria-label="联系人姓名"
-                  required
-                  maxLength={120}
-                  value={form.draft.name}
-                  onChange={(event) =>
-                    setForm({ ...form, draft: { ...form.draft, name: event.target.value } })
-                  }
-                />
-              </label>
-              <label>
-                类型
-                <select
-                  value={form.draft.kind}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      draft: {
-                        ...form.draft,
-                        kind: event.target.value === 'person' ? 'person' : 'organization',
-                      },
-                    })
-                  }
-                >
-                  <option value="person">个人</option>
-                  <option value="organization">组织</option>
-                </select>
-              </label>
-              <label>
-                电话
-                <input
-                  type="tel"
-                  maxLength={64}
-                  value={form.draft.phone}
-                  onChange={(event) =>
-                    setForm({ ...form, draft: { ...form.draft, phone: event.target.value } })
-                  }
-                />
-              </label>
-              <label>
-                电子邮箱
-                <input
-                  type="email"
-                  maxLength={254}
-                  value={form.draft.email}
-                  onChange={(event) =>
-                    setForm({ ...form, draft: { ...form.draft, email: event.target.value } })
-                  }
-                />
-              </label>
-              <label>
-                关联项目
-                <select
-                  multiple
-                  disabled={Boolean(catalog.error) || !catalog.data}
-                  value={form.draft.project_ids}
-                  onChange={(event) => {
-                    setForm({
-                      ...form,
-                      draft: {
-                        ...form.draft,
-                        project_ids: Array.from(
-                          event.target.selectedOptions,
-                          (option) => option.value,
-                        ),
-                      },
-                    });
-                  }}
-                >
-                  {projects.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.title}
-                      {item.archived_at ? '（归档）' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </fieldset>
-            <div className="contacts-actions">
-              <button type="submit" className="primary" disabled={busy || conflict}>
-                {pending ? '核对原提交' : '保存联系人'}
-              </button>
-              <button
-                type="button"
-                disabled={busy || Boolean(pending)}
-                onClick={() => {
-                  setForm(undefined);
-                  setError('');
-                  setConflict(false);
-                }}
-              >
-                取消
-              </button>
-            </div>
-          </form>
-        ) : contact ? (
-          <>
-            <h2>{contact.name}</h2>
-            <p>{names[contact.kind]}</p>
-            <button
-              type="button"
-              onClick={() => {
-                setError('');
-                setConflict(false);
-                setForm({
-                  id: contact.id,
-                  version: contact.version,
-                  draft: {
-                    name: contact.name,
-                    kind: contact.kind,
-                    phone: contact.phone,
-                    email: contact.email,
-                    project_ids: contact.project_ids,
-                  },
-                });
-              }}
-            >
-              编辑
-            </button>
-            <dl>
-              <dt>电话</dt>
-              <dd>{contact.phone || '—'}</dd>
-              <dt>电子邮箱</dt>
-              <dd>{contact.email || '—'}</dd>
-            </dl>
-            <h3>关联项目</h3>
-            {catalog.error ? (
-              <p role="status">关联项目暂不可用。</p>
-            ) : (
-              <ul>
-                {contact.project_ids.map((id) => (
-                  <li key={id}>{projectNames.get(id) ?? '项目暂不可读'}</li>
-                ))}
-              </ul>
-            )}
-          </>
-        ) : (
-          <p>选择联系人查看详情，或新建联系人。</p>
-        )}
-      </aside>
+      <ContactInspector
+        key={creating ? 'new' : (contact?.id ?? 'empty')}
+        contact={creating ? undefined : contact}
+        creating={creating}
+        projects={projects}
+        documents={documents}
+        catalogReady={Boolean(catalog.data) && !catalog.error}
+        onDirty={setBlocked}
+        onCreated={created}
+        onCancel={() => setCreating(false)}
+        onOpenProject={onOpenProject}
+        onOpenTask={onOpenTask}
+        onOpenDocument={onOpenDocument}
+      />
     </section>
   );
 }

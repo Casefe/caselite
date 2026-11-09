@@ -16,6 +16,7 @@ import {
   useRef,
   type ComponentProps,
   type RefObject,
+  type ReactNode,
 } from 'react';
 import {
   AssistantRuntimeProvider,
@@ -35,6 +36,7 @@ import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
+const RunContent = createContext<(id: string) => ReactNode>(() => undefined);
 function Message() {
   const attachments = useAuiState(
     (state) => state.message.metadata.custom?.attachments,
@@ -45,6 +47,8 @@ function Message() {
     | undefined;
   const [copyState, setCopyState] = useState('复制');
   const read = useContext(AttachmentReader);
+  const renderRun = useContext(RunContent);
+  const custom = role === 'assistant' && run ? renderRun(run.id) : undefined;
   return (
     <MessagePrimitive.Root className={`assistant-message assistant-message--${role}`}>
       <header className="assistant-message-heading">
@@ -73,9 +77,11 @@ function Message() {
           ))}
         </div>
       ) : null}
-      <MessagePrimitive.Parts
-        components={role === 'assistant' ? { Text: AssistantMarkdown } : undefined}
-      />
+      {custom ?? (
+        <MessagePrimitive.Parts
+          components={role === 'assistant' ? { Text: AssistantMarkdown } : undefined}
+        />
+      )}
       {role === 'assistant' && run && run.status !== 'running' && (
         <footer className="assistant-message-footer">
           <span>{run.status === 'succeeded' ? '待人工核对' : run.message}</span>
@@ -210,6 +216,7 @@ export default function AgentPanel({
   onConversationChange,
   project,
   page,
+  renderRun,
 }: {
   scope: string;
   variant?: 'default' | 'compact';
@@ -220,8 +227,12 @@ export default function AgentPanel({
   onConversationChange?(hasRuns: boolean): void;
   project?: { version: number; archived: boolean };
   page?: { version: string; archived: boolean };
+  renderRun?(run: AgentRun, selectForEdit?: () => void): ReactNode;
 }) {
   const {
+    contactReference,
+    selectContactRecord,
+    removeContactRecord,
     pageReference,
     pageLoading,
     loadPageReference,
@@ -404,7 +415,13 @@ export default function AgentPanel({
           ref={panel}
           className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${messages.length ? ' assistant-panel--conversation' : ''}`}
           aria-label={
-            project ? '项目 AI 对话' : scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'
+            project
+              ? '项目 AI 对话'
+              : scope.startsWith('contact:')
+                ? '客户 AI 对话'
+                : scope === 'home'
+                  ? '首页 AI Agent'
+                  : '任务 AI 辅助栏'
           }
           onFocusCapture={page ? undefined : openProjectPreview}
           onClickCapture={page ? undefined : openProjectPreview}
@@ -443,7 +460,19 @@ export default function AgentPanel({
           {(!project || messages.length > 0) && (
             <ThreadPrimitive.Root className="assistant-thread">
               <ThreadPrimitive.Viewport className="assistant-viewport">
-                <ThreadPrimitive.Messages components={{ Message }} />
+                <RunContent.Provider
+                  value={(id) => {
+                    const run = runs.find((value) => value.id === id);
+                    return run
+                      ? renderRun?.(
+                          run,
+                          pending || unknown || active ? undefined : () => selectContactRecord(run),
+                        )
+                      : undefined;
+                  }}
+                >
+                  <ThreadPrimitive.Messages components={{ Message }} />
+                </RunContent.Provider>
                 <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
                   回到最新回答 ↓
                 </ThreadPrimitive.ScrollToBottom>
@@ -557,9 +586,22 @@ export default function AgentPanel({
                 composingRef.current = false;
               }}
             >
+              {contactReference && (
+                <div className="agent-page-reference" aria-label="已引用联系记录候选">
+                  <span>修改候选：{contactReference.title}</span>
+                  <button
+                    type="button"
+                    aria-label="移除候选引用"
+                    disabled={pending || unknown}
+                    onClick={removeContactRecord}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               {pageReference && <PageReference reference={pageReference} />}
               {pageLoading && <span className="caption">正在引用当前页面…</span>}
-              {project || scope.startsWith('document:') ? (
+              {project || scope.startsWith('document:') || scope.startsWith('contact:') ? (
                 <div className="material-composer">
                   {composer}
                   <div className="assistant-actions">{actions}</div>

@@ -18,6 +18,21 @@ export function createAgentPageReader(
   };
   return {
     read(scope: string) {
+      if (scope.startsWith('contact:')) {
+        const row = db
+          .prepare('SELECT name,kind,version FROM contacts WHERE workspace_id=? AND id=?')
+          .get(workspace, scope.slice(8)) as
+          { name: string; kind: string; version: number } | undefined;
+        // 客户页只引用界面可见的名称/分类；联系方式、联系记录及关联材料不自动进入模型。
+        return row
+          ? {
+              title: row.name,
+              version: String(row.version),
+              archived: false,
+              text: JSON.stringify({ name: row.name, kind: row.kind }),
+            }
+          : undefined;
+      }
       if (scope.startsWith('project:')) {
         const row = db
           .prepare(

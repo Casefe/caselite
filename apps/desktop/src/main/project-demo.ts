@@ -3073,8 +3073,8 @@ export async function runProjectDemo(
       const syntheticContact = '合成验收联系人';
       await evaluate("document.querySelector('[data-nav=contacts]').click()");
       if (phase === 'project-files') {
-        await button('新建联系人');
-        await input('联系人姓名', syntheticContact);
+        await button('＋ 新建客户');
+        await input('客户姓名', syntheticContact);
         await wait(`[...(document.querySelector('.contacts-inspector select[multiple]')?.options ?? [])]
           .some(item => item.value === ${JSON.stringify(projectId)})`);
         await evaluate(`(() => {
@@ -3084,10 +3084,17 @@ export async function runProjectDemo(
           option.selected = true;
           select.dispatchEvent(new Event('change',{bubbles:true}));
         })()`);
-        await button('保存联系人');
+        await button('保存客户');
       }
-      await wait(`document.querySelector('.contacts-inspector h2')?.textContent === ${JSON.stringify(syntheticContact)}
-        && document.querySelector('.contacts-inspector li')?.textContent === '独立任务转项目验收'`);
+      await wait(
+        `document.querySelector('.contacts-inspector h2')?.textContent === ${JSON.stringify(syntheticContact)}`,
+      );
+      await evaluate(
+        "document.querySelector('.contacts-inspector [role=tab][aria-label^=项目]').click()",
+      );
+      await wait(
+        "document.querySelector('.contacts-inspector .customer-linked-list')?.textContent.includes('独立任务转项目验收')",
+      );
       await captureRenderer('dev-1806-contacts.png');
       if (phase === 'project-files-read') {
         await wait("!document.querySelector('[data-nav=reports]')");

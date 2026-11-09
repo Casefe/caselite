@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { contactRecordCandidateSchema } from './contacts';
 import { matterSchema, projectProfessionalTypeSchema } from './catalog';
 import { ordinaryDateSchema, taskSchema } from './task';
 import {
@@ -41,7 +42,14 @@ const validProviderKey = (provider: AgentProvider, key: string) =>
 export const AGENT_CHANNEL = 'caselite:agent:v1';
 const projectScope = z.templateLiteral(['project:', z.string().uuid()]);
 const documentScope = z.templateLiteral(['document:', z.string().uuid()]);
-const scope = z.union([z.literal('home'), z.string().uuid(), projectScope, documentScope]);
+const contactScope = z.templateLiteral(['contact:', z.string().uuid()]);
+const scope = z.union([
+  z.literal('home'),
+  z.string().uuid(),
+  projectScope,
+  documentScope,
+  contactScope,
+]);
 export const agentPageReferenceSchema = z.strictObject({
   id: z.string().uuid(),
   title: z.string().min(1).max(160),
@@ -178,6 +186,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       confirmed: z.literal(true),
       context_id: z.string().uuid().optional(),
       page_context_id: z.string().uuid().optional(),
+      contact_record_context_id: z.string().uuid().optional(),
       project_fingerprint: projectFingerprint.optional(),
       purpose: z.literal('important_dates').optional(),
       date_types: z.array(z.string().min(1).max(80)).min(1).max(24).optional(),
@@ -193,6 +202,7 @@ export const agentRunSchema = z.object({
   scope,
   prompt: z.string(),
   output: z.string(),
+  contact_record_candidate: contactRecordCandidateSchema.optional(),
   output_incomplete: z.boolean().optional(),
   attachments: z
     .array(
@@ -207,6 +217,7 @@ export const agentRunSchema = z.object({
     .optional(),
   context_id: z.string().uuid().optional(),
   page_context_id: z.string().uuid().optional(),
+  contact_record_context_id: z.string().uuid().optional(),
   page_reference: agentPageReferenceSchema.optional(),
   purpose: z.literal('important_dates').optional(),
   date_binding: dateBindingSchema.optional(),
