@@ -24,7 +24,26 @@ vi.mock('../../editors/RichEditor', () => ({
   EditorSurface: () => <input aria-label="测试输入" onChange={() => harness.update()} />,
 }));
 vi.mock('./review/DocumentReview', () => ({ default: () => null, WritingSkillMenu: () => null }));
-vi.mock('./delivery/DeliverySnapshots', () => ({ default: () => null }));
+vi.mock('./delivery/DeliverySnapshots', () => ({
+  default: ({
+    task,
+    revision,
+    dirty,
+    onBack,
+  }: {
+    task: Task;
+    revision: number;
+    dirty: boolean;
+    onBack(): void;
+  }) => (
+    <section aria-label="测试交付版本">
+      <output>
+        {task.document_id}:{revision}:{String(dirty)}
+      </output>
+      <button onClick={onBack}>返回编辑</button>
+    </section>
+  ),
+}));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -99,4 +118,18 @@ it('明确查不到回执才重试冻结的原请求，网络失败时保留输�
   expect(api.mock.calls.map(([r]) => r.operation)).toEqual(['save', 'status', 'save']);
   expect(api.mock.calls[2][0]).toBe(api.mock.calls[0][0]);
   expect(s.onDirty).toHaveBeenLastCalledWith(false);
+});
+it('内联文档可打开固定交付，传递当前修订和未保存状态，返回后保留输入', async () => {
+  const api = vi.fn(async () => success);
+  setup(api);
+  fireEvent.click(screen.getByRole('button', { name: '交付版本' }));
+  expect(screen.getByRole('region', { name: '测试交付版本' }).textContent).toContain('doc:3:true');
+  expect(api).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '返回编辑' }));
+  expect(screen.getByLabelText<HTMLInputElement>('测试输入').value).toBe('输入保留');
+  fireEvent.click(screen.getByTestId('save-body'));
+  await screen.findByText('已保存到此设备');
+  fireEvent.click(screen.getByRole('button', { name: '交付版本' }));
+  expect(screen.getByRole('region', { name: '测试交付版本' }).textContent).toContain('doc:4:false');
+  expect(api).toHaveBeenCalledTimes(1);
 });

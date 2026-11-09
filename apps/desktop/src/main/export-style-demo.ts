@@ -146,7 +146,6 @@ export async function runExportStyleDemo(
     await capture('export-settings-' + phase);
     await click('[data-nav=documents]');
     await click(`[data-document-id="${task.document_id}"]`);
-    await button('打开正文');
     await button('交付版本');
     if (phase === 'export-style-write') {
       await button('固定当前修订');
