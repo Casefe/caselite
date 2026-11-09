@@ -27,10 +27,11 @@ export default function MaterialBatchImport({
   const picking = useRef(false);
   const available = typeof window.caselite?.materialBatch === 'function';
   useLayoutEffect(() => {
+    const pendingGeneration = generation;
     context.current = scope;
     return () => {
       context.current = null;
-      generation.current++;
+      pendingGeneration.current++;
     };
   }, [scope]);
   const command = useCallback(async (request: MaterialBatchRequest) => {
