@@ -11,6 +11,7 @@ import ReminderDraftPicker, { type ReminderDraft } from './ReminderDraftPicker';
 export type CreateProperties = TaskDates & {
   status: Task['status'];
   priority: number;
+  assignee: string | null;
   tags: string[];
   matter_id: string;
 };
@@ -27,6 +28,7 @@ export default function TaskCreateDialog({
   projectState,
   onRetryProjects,
   suggestions,
+  assigneeSuggestions,
   onTagDraft,
   onFieldEditing,
   busy,
@@ -47,6 +49,7 @@ export default function TaskCreateDialog({
   projectState: 'loading' | 'ready' | 'failed';
   onRetryProjects(): void;
   suggestions: string[];
+  assigneeSuggestions: string[];
   onTagDraft(value: boolean): void;
   onFieldEditing(value: boolean): void;
   busy: boolean;
@@ -169,6 +172,22 @@ export default function TaskCreateDialog({
                 {Object.entries(taskPriorityNames).map(([v, n]) => (
                   <option key={v} value={v}>
                     {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="create-choice">
+              <Icon name="person" size={16} />
+              <span>负责人</span>
+              <select
+                aria-label="任务负责人"
+                value={properties.assignee ?? ''}
+                onChange={(e) => onProperties({ ...properties, assignee: e.target.value || null })}
+              >
+                <option value="">未分配</option>
+                {[...new Set(['本人', ...assigneeSuggestions])].map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>

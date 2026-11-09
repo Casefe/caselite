@@ -195,6 +195,7 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     任务内容: '保留的说明',
     任务状态: 'in_progress',
     任务优先级: '2',
+    任务负责人: '',
     截止日期: '2027-01-15',
   };
   const read = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
@@ -226,6 +227,7 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     objective_state: [1],
     status: values.任务状态,
     priority: 2,
+    assignee: null,
     due_date: values.截止日期,
   });
   expect(creates[0].idempotency_key).not.toBe(creates[1].idempotency_key);

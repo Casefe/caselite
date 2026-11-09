@@ -60,6 +60,7 @@ type TaskPosition = NonNullable<Extract<TaskResponse, { ok: true }>['navigation'
 const defaultCreateProperties = {
   status: 'todo' as Task['status'],
   priority: 0,
+  assignee: '本人' as string | null,
   start_date: null as string | null,
   due_date: null as string | null,
   tags: [] as string[],
@@ -173,6 +174,7 @@ function Workbench() {
       objective.state ||
       createProperties.status !== defaultCreateProperties.status ||
       createProperties.priority ||
+      createProperties.assignee !== defaultCreateProperties.assignee ||
       createProperties.due_date ||
       createProperties.start_date ||
       createReminder ||
@@ -464,6 +466,7 @@ function Workbench() {
       objective: objective.text,
       status: createProperties.status,
       priority: createProperties.priority,
+      assignee: createProperties.assignee,
       due_date: createProperties.due_date || null,
       start_date: createProperties.start_date || null,
       ...(createReminder ? { initial_reminder: createReminder } : {}),
@@ -507,6 +510,8 @@ function Workbench() {
         receiptTask.objective !== command.objective ||
         receiptTask.status !== (command.status ?? 'todo') ||
         receiptTask.priority !== (command.priority ?? 0) ||
+        (receiptTask.assignee === undefined ? '本人' : receiptTask.assignee) !==
+          (command.assignee === undefined ? '本人' : command.assignee) ||
         receiptTask.due_date !== (command.due_date ?? null) ||
         JSON.stringify(receiptTask.tags ?? []) !== JSON.stringify(command.tags ?? []) ||
         receiptTask.matter_id !== (command.matter_id ?? null) ||
@@ -724,6 +729,7 @@ function Workbench() {
               setProjectOptionsAttempt((n) => n + 1);
             }}
             suggestions={tagSuggestions}
+            assigneeSuggestions={tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
             onTagDraft={setCreateTagDraft}
             onFieldEditing={setCreateFieldEditing}
             busy={busy}
