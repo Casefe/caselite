@@ -581,6 +581,22 @@ export default function ProjectCatalog({
             </select>
             <details
               className="project-display-menu"
+              onToggle={(event) => {
+                const menu = event.currentTarget;
+                const panel = menu.querySelector<HTMLElement>('div');
+                const trigger = menu.querySelector('summary');
+                const center = workspace.current?.querySelector('.collection-main');
+                if (!menu.open || !panel || !trigger || !center) return;
+                // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
+                panel.style.position = 'fixed';
+                panel.style.right = 'auto';
+                panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
+                const anchor = trigger.getBoundingClientRect();
+                const bounds = center.getBoundingClientRect();
+                const rect = panel.getBoundingClientRect();
+                panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
+                panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
                   event.currentTarget.open = false;
