@@ -1,6 +1,16 @@
 // @vitest-environment jsdom
+import { useCalendarCommit } from './useCalendarCommit';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  act,
+  renderHook,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { emptyTaskCalendar, defaultCalendarTypes } from '@caselite/contracts';
@@ -226,4 +236,58 @@ it('saves stable type ID/expected version and keeps draft controls locked until 
   expect(api.mock.calls.find(([r]) => r.operation === 'set_calendar_type')?.[0]).toMatchObject({
     type: { id: 'hearing', version: 0, name: '庭审安排', enabled: false, show_home: false },
   });
+});
+
+it('retains the original unknown key when status read fails and forbids clear until a later confirmed ACK, without a second mutation', async () => {
+  const initial = task('合成未知恢复'),
+    calendar = { ...emptyTaskCalendar, planned_date: '2026-11-10' },
+    saved = { ...initial, version: 2, calendar };
+  const command = {
+    protocol_version: 1 as const,
+    operation: 'update_calendar' as const,
+    request_id: crypto.randomUUID(),
+    idempotency_key: crypto.randomUUID(),
+    task_id: initial.id,
+    expected_version: 1,
+    calendar,
+  };
+  let lookups = 0;
+  const api = vi.fn(async (r: TaskRequest): Promise<TaskResponse> => {
+    if (r.operation === 'update_calendar')
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '合成原写未知' };
+    if (r.operation === 'status') {
+      lookups++;
+      return lookups === 1
+        ? { ok: false, code: 'READ_FAILED', message: '合成原键暂不可读' }
+        : success([saved], command.idempotency_key);
+    }
+    throw Error('Unexpected calendar recovery operation');
+  });
+  window.caselite = { task: api } as unknown as Window['caselite'];
+  const confirm = vi.fn(async () => {});
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { result } = renderHook(() => useCalendarCommit(confirm), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+  await act(() => result.current.save(command));
+  expect(result.current.phase).toBe('unknown');
+  expect(result.current.clear()).toBe(false);
+  await act(() => result.current.recover());
+  expect(result.current.error).toBe('合成原键暂不可读');
+  expect(result.current.phase).toBe('unknown');
+  expect(result.current.locked).toBe(true);
+  expect(result.current.clear()).toBe(false);
+  expect(confirm).not.toHaveBeenCalled();
+  await act(() => result.current.recover());
+  expect(result.current.phase).toBe('idle');
+  expect(result.current.locked).toBe(false);
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(api.mock.calls.filter(([r]) => r.operation === 'update_calendar')).toHaveLength(1);
+  expect(
+    api.mock.calls
+      .filter(([r]) => r.operation === 'status')
+      .map(([r]) => (r.operation === 'status' ? r.idempotency_key : null)),
+  ).toEqual([command.idempotency_key, command.idempotency_key]);
 });

@@ -30,17 +30,27 @@ export function useCalendarCommit(confirm: (command: Command) => Promise<void>) 
     let stage: 'unknown' | 'write' | 'read' = 'unknown';
     try {
       if (phase !== 'read') {
+        let checkingOriginal = recovering;
         let response = await window.caselite.task(
           recovering
             ? { protocol_version: 1, operation: 'status', idempotency_key: request.idempotency_key }
             : request,
         );
         // 只有用户触发恢复且原键明确不存在时，才重发原请求；迟到ACK不能产生第二键。
-        if (recovering && !response.ok && response.code === 'NOT_FOUND')
+        if (recovering && !response.ok && response.code === 'NOT_FOUND') {
+          checkingOriginal = false;
           response = await window.caselite.task(request);
+        }
         if (!alive.current) return;
         if (!response.ok) {
-          stage = response.code === 'RESULT_UNKNOWN' ? 'unknown' : 'write';
+          // 查询失败不能证明原写入失败，必须保留原键和未知锁。
+          // 只有初次写入或原键明确不存在后同键重发的已知失败，才允许放弃输入。
+          stage =
+            checkingOriginal ||
+            response.code === 'RESULT_UNKNOWN' ||
+            response.code === 'READ_FAILED'
+              ? 'unknown'
+              : 'write';
           throw Error(response.message);
         }
         const r: Success = response;
