@@ -134,7 +134,8 @@ it('shows only timed Tasks in the lower sidebar, including explicit important po
       onSettings={vi.fn()}
     />,
   );
-  const left = screen.getByRole('region', { name: '本日工作安排' });
+  // 历史测试名保留为回归标识；DEV-1830把相同的时段消费者留在中央，左下展示已取消。
+  const left = screen.getByRole('region', { name: '当日工作安排' });
   await within(left).findByText('重要时点');
   fireEvent.click(screen.getByLabelText('显示已完成／已取消'));
   await waitFor(() =>

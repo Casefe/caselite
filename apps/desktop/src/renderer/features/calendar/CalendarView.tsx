@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../../../preload/caselite-api';
 import { calendarQuery, localDate, shiftDate, useCalendar } from './calendar-query';
 import ImportantSchedules from './ImportantSchedules';
 import { taskPriorityNames } from '../../ui/task-priority';
+import ResizeSeparator from '../../ui/ResizeSeparator';
+import { useCalendarLayout } from './useCalendarLayout';
 
 function TimeLabel({ task, date }: { task: Task; date: string }) {
   const c = task.calendar;
@@ -36,8 +38,6 @@ export default function CalendarView({
   blocked,
   onOpen,
   onClose,
-  onReminders,
-  onSettings,
 }: {
   date: string;
   onDate(date: string): void;
@@ -49,6 +49,8 @@ export default function CalendarView({
   onReminders(): void;
   onSettings(): void;
 }) {
+  const layoutRoot = useRef<HTMLElement>(null);
+  const layout = useCalendarLayout(layoutRoot);
   const [datesOpen, setDatesOpen] = useState(false),
     [offset, setOffset] = useState(0),
     [timedOffset, setTimedOffset] = useState(0),
@@ -120,6 +122,8 @@ export default function CalendarView({
   }
   return (
     <section
+      ref={layoutRoot}
+      style={layout.style}
       className={`calendar-workbench ${datesOpen ? 'calendar-dates-open' : ''} ${selected ? 'calendar-task-open' : ''}`}
       aria-label="日历工作台"
     >
@@ -183,21 +187,56 @@ export default function CalendarView({
           返回今日
         </button>
         <ImportantSchedules onOpen={onOpen} />
-        <section aria-label="本日工作安排" className="calendar-timed-summary">
-          <h3>本日工作安排</h3>
-          <small>{date} · 仅具体时刻</small>
-          {rows(timed.data?.tasks ?? [], true)}
-          {!timed.data?.tasks.length && !timed.isPending && !timed.error && (
-            <p>本日尚无具体时间安排</p>
+        <div className="calendar-layout-controls" aria-label="日历布局偏好">
+          <button disabled={layout.pending} onClick={layout.reset}>
+            重置布局
+          </button>
+          <button disabled={layout.pending} onClick={() => void layout.preferences.reload()}>
+            重读布局偏好
+          </button>
+          {layout.preferences.notice && <small role="status">{layout.preferences.notice}</small>}
+          {layout.preferences.error && <p role="alert">{layout.preferences.error}</p>}
+          {layout.preferences.phase === 'verify' && (
+            <button
+              disabled={layout.preferences.pending}
+              onClick={() => void layout.preferences.verify()}
+            >
+              核对布局保存结果
+            </button>
           )}
-          {page(timed, timedOffset, setTimedOffset)}
-        </section>
-        <button onClick={onReminders}>提醒收件箱</button>
-        <button onClick={onSettings}>日历与类型设置</button>
+          {layout.preferences.phase === 'retry' && (
+            <button
+              disabled={layout.preferences.pending}
+              onClick={() => void layout.preferences.retry()}
+            >
+              重试原布局提交
+            </button>
+          )}
+          {layout.preferences.error && layout.preferences.phase === 'idle' && (
+            <>
+              {layout.dirty && (
+                <button disabled={layout.pending} onClick={layout.save}>
+                  保存当前布局
+                </button>
+              )}
+            </>
+          )}
+        </div>
         <p className="calendar-caption">
           按记录日期归组，不作跨时区投影。数量按Task去重；日期识别需从附件明确触发并人工确认。外部同步尚未接入。
         </p>
       </aside>
+      <ResizeSeparator
+        label="调整日期区宽度"
+        className="calendar-left-separator"
+        value={layout.limits.dates}
+        min={220}
+        max={layout.limits.datesMax}
+        disabled={layout.pending}
+        onPreview={(value) => layout.change('dates_width', value)}
+        onCommit={(value) => layout.commit('dates_width', value)}
+        onCancel={layout.cancel}
+      />
       <main className="calendar-agenda">
         <header>
           <button className="calendar-open-dates" onClick={() => setDatesOpen(true)}>
@@ -256,6 +295,18 @@ export default function CalendarView({
           {page(undated, undatedOffset, setUndatedOffset)}
         </section>
       </main>
+      <ResizeSeparator
+        label="调整任务属性栏宽度"
+        className="calendar-right-separator"
+        value={layout.limits.inspector}
+        min={280}
+        max={layout.limits.inspectorMax}
+        direction={-1}
+        disabled={layout.pending}
+        onPreview={(value) => layout.change('inspector_width', value)}
+        onCommit={(value) => layout.commit('inspector_width', value)}
+        onCancel={layout.cancel}
+      />
       <div className="calendar-task-inspector" aria-label="日历所选任务">
         {selected ? (
           <>

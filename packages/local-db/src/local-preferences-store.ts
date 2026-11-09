@@ -66,6 +66,10 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
             ...(request.values.editor_mode === undefined && current.editor_mode !== undefined
               ? { editor_mode: current.editor_mode }
               : {}),
+            ...(request.values.calendar_layout === undefined &&
+            current.calendar_layout !== undefined
+              ? { calendar_layout: current.calendar_layout }
+              : {}),
             ...(request.values.writing_skills === undefined && current.writing_skills !== undefined
               ? { writing_skills: current.writing_skills }
               : {}),
