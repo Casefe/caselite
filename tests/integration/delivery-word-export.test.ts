@@ -662,6 +662,7 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
       ...task,
       subscribed: false,
       calendar: emptyTaskCalendar,
+      start_date: null,
     })),
   });
   const files = createDeliveryExportFiles(join(root, 'exports'), async () => '');

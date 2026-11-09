@@ -362,6 +362,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
         return name === 'task_items'
           ? rows.map(
               ({
+                start_date,
                 tags,
                 subscribed,
                 assignee,
@@ -403,6 +404,7 @@ it('upgrades an exact eight-migration populated database preserving all existing
                     attention_date: null,
                     attention_time: null,
                   });
+                if (start_date !== undefined) expect(start_date).toBeNull();
                 expect(subscribed ?? 0).toBe(0);
                 expect(tags ?? '[]').toBe('[]');
                 expect(assignee === undefined ? '本人' : assignee).toBe('本人');
