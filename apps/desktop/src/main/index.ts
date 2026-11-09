@@ -1,3 +1,4 @@
+import { performanceApplication, seedPerformance, runPerformance } from './performance-demo';
 import { runFinanceDemo } from './finance-demo';
 import { createDeliveryExportApplication } from '@caselite/application';
 import { createDeliveryExportFiles } from './adapters/delivery-export-files';
@@ -135,6 +136,7 @@ async function createWindow(
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-scheme-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('performance-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('important-date-')
   )
     entry.searchParams.set('mock-agent', '1');
@@ -565,6 +567,9 @@ if (taskDemoPhase) {
       'editor-interaction-write',
       'editor-interaction-read',
       'editor-interaction-preview',
+      'performance-seed',
+      'performance-run',
+      'performance-start',
       'editor-scheme-write',
       'editor-scheme-read',
       'editor-scheme-preview',
@@ -749,7 +754,9 @@ app
       (taskStore.agentHistory.load().length || taskStore.materials.list('home').length)
     )
       throw new Error('Original zero-dispatch database is not empty');
-    const tasks = createTaskApplication(taskStore);
+    const performanceDemo = taskDemoPhase?.startsWith('performance-');
+    const baseTasks = createTaskApplication(taskStore);
+    const tasks = performanceDemo ? performanceApplication('task', baseTasks) : baseTasks;
     registerLocalPreferencesIpc(
       createLocalPreferencesApplication(taskStore.localPreferences, {
         database_file: join(taskRoot, 'caselite.sqlite'),
@@ -797,7 +804,8 @@ app
     );
     registerReminderIpc(reminders, reminderScheduler.tick);
     app.on('will-quit', reminderScheduler.stop);
-    const catalog = createCatalogApplication(taskStore.catalog);
+    const baseCatalog = createCatalogApplication(taskStore.catalog);
+    const catalog = performanceDemo ? performanceApplication('catalog', baseCatalog) : baseCatalog;
     const catalogQueryProbe =
       taskDemoRoot &&
       taskDemoPhase === 'task-status-write' &&
@@ -805,8 +813,14 @@ app
         ? createCatalogQueryProbe(catalog)
         : undefined;
     registerCatalogIpc(catalogQueryProbe?.application ?? catalog);
-    registerFinanceIpc(createFinanceApplication(taskStore.finance));
-    registerContactsIpc(createContactsApplication(taskStore.contacts));
+    const baseFinance = createFinanceApplication(taskStore.finance);
+    const finance = performanceDemo ? performanceApplication('finance', baseFinance) : baseFinance;
+    const baseContacts = createContactsApplication(taskStore.contacts);
+    const contacts = performanceDemo
+      ? performanceApplication('contacts', baseContacts)
+      : baseContacts;
+    registerFinanceIpc(finance);
+    registerContactsIpc(contacts);
     const materials = createMaterialApplication({
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
@@ -888,6 +902,7 @@ app
       });
     };
     const baseAgentCredentials =
+      performanceDemo ||
       documentReviewDemo ||
       financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
@@ -1046,49 +1061,61 @@ app
           : createPiRuntime(
               taskDemoPhase?.startsWith('important-date-')
                 ? syntheticImportantDateStream
-                : documentReviewDemo
-                  ? syntheticReviewStream
-                  : financeDemo ||
-                      taskDemoPhase === 'typography' ||
-                      credentialUi ||
-                      taskDemoPhase?.startsWith('reminder') ||
-                      (taskDemoPhase?.startsWith('project-') &&
-                        taskDemoPhase !== 'project-agent-write') ||
-                      taskDemoPhase === 'task-status-write' ||
-                      taskDemoPhase === 'task-status-read' ||
-                      taskDemoPhase === 'agent-read' ||
-                      taskDemoPhase === 'agent-credential-read' ||
-                      taskDemoPhase === 'agent-read-synthetic' ||
-                      taskDemoPhase === 'materials-read'
-                    ? () => {
-                        if (credentialUi) {
-                          credentialRuntimeAttempts++;
-                          recordCredentialUi();
-                        }
-                        writeFileSync(
-                          join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                          'unexpected dispatch',
-                        );
-                        throw new Error('Unexpected restart dispatch');
-                      }
-                    : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
-                      ? (model, context, options) => {
+                : performanceDemo
+                  ? syntheticAgentStream
+                  : documentReviewDemo
+                    ? syntheticReviewStream
+                    : financeDemo ||
+                        taskDemoPhase === 'typography' ||
+                        credentialUi ||
+                        taskDemoPhase?.startsWith('reminder') ||
+                        (taskDemoPhase?.startsWith('project-') &&
+                          taskDemoPhase !== 'project-agent-write') ||
+                        taskDemoPhase === 'task-status-write' ||
+                        taskDemoPhase === 'task-status-read' ||
+                        taskDemoPhase === 'agent-read' ||
+                        taskDemoPhase === 'agent-credential-read' ||
+                        taskDemoPhase === 'agent-read-synthetic' ||
+                        taskDemoPhase === 'materials-read'
+                      ? () => {
+                          if (credentialUi) {
+                            credentialRuntimeAttempts++;
+                            recordCredentialUi();
+                          }
                           writeFileSync(
-                            join(taskDemoRoot!, 'material-pi-context.json'),
-                            JSON.stringify(context, null, 2),
+                            join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                            'unexpected dispatch',
                           );
-                          return taskDemoPhase?.startsWith('materials-docx')
-                            ? syntheticDocxStream(model, context, options)
-                            : syntheticAgentStream(model, context, options);
+                          throw new Error('Unexpected restart dispatch');
                         }
-                      : taskDemoPhase === 'project-agent-write' ||
-                          taskDemoPhase?.startsWith('agent')
-                        ? syntheticAgentStream
-                        : undefined,
+                      : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
+                        ? (model, context, options) => {
+                            writeFileSync(
+                              join(taskDemoRoot!, 'material-pi-context.json'),
+                              JSON.stringify(context, null, 2),
+                            );
+                            return taskDemoPhase?.startsWith('materials-docx')
+                              ? syntheticDocxStream(model, context, options)
+                              : syntheticAgentStream(model, context, options);
+                          }
+                        : taskDemoPhase === 'project-agent-write' ||
+                            taskDemoPhase?.startsWith('agent')
+                          ? syntheticAgentStream
+                          : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
+    if (performanceDemo && taskDemoRoot) {
+      if (taskDemoPhase === 'performance-seed')
+        seedPerformance(taskDemoRoot, tasks, catalog, contacts, finance);
+      else await runPerformance(() => createWindow(), taskDemoRoot, taskDemoPhase!);
+      agent.release();
+      materials.close();
+      taskStore.close();
+      app.exit(0);
+      return;
+    }
     app.on('will-quit', () => agent.release());
     if (taskDemoRoot && taskDemoPhase?.startsWith('important-date-')) {
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
