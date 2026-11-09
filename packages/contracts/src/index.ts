@@ -16,6 +16,7 @@ export * from './agent-input';
 export * from './appearance';
 
 export * from './material';
+export * from './material-batch';
 
 export * from './reminder';
 export * from './finance';

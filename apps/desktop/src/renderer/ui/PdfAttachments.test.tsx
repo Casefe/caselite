@@ -44,6 +44,28 @@ function controller(extra: Partial<MaterialController> = {}): MaterialController
   };
 }
 const pdf = { name: '合同.pdf', size: 100 } as File;
+it('keeps normal file upload without batch actions or background batch errors', async () => {
+  const materialBatch = vi.fn(async () => ({
+    ok: false,
+    code: 'INVALID_REQUEST',
+    message: '批次请求无效。',
+  }));
+  Object.defineProperty(window, 'caselite', { configurable: true, value: { materialBatch } });
+  const c = controller({ scope: 'home' });
+  render(
+    <PdfAttachments controller={c}>
+      <textarea defaultValue="工作要求" />
+    </PdfAttachments>,
+  );
+  await userEvent.click(screen.getByRole('button', { name: '添加文件与材料' }));
+  expect(screen.queryByRole('menuitem', { name: '批量保存文件' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: '保存文件夹' })).toBeNull();
+  expect(screen.queryByLabelText('材料批次')).toBeNull();
+  expect(screen.queryByText('批次请求无效。')).toBeNull();
+  await userEvent.click(screen.getByRole('menuitem', { name: '文件' }));
+  expect(c.add).toHaveBeenCalledTimes(1);
+  expect(materialBatch).not.toHaveBeenCalled();
+});
 it('sends only a real single-file drop to the controlled port and preserves the editor', () => {
   const c = controller(),
     view = render(

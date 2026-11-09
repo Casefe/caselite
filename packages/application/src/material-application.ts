@@ -10,6 +10,7 @@ import {
   type MaterialScope,
   type MaterialResponse,
   type TextPage,
+  type MaterialBatch,
 } from '@caselite/contracts';
 import type { AgentContext, AgentImage } from './agent-application';
 export type MaterialStage = {
@@ -22,8 +23,10 @@ export type MaterialStage = {
   task_id?: string;
   restored_source_id?: string;
   restore_source_id?: string;
+  batch_id?: string;
 };
 export interface MaterialStorePort {
+  activeBatch?(scope: MaterialScope): MaterialBatch | undefined;
   stage(token: string): MaterialStage | undefined;
   pending(scope: MaterialScope): MaterialStage | undefined;
   putStage(stage: MaterialStage): void;
@@ -43,13 +46,19 @@ export interface MaterialStorePort {
   preview(id: string, scope: MaterialScope): MaterialPreview | undefined;
 }
 export interface MaterialFilesPort {
-  stage(path: string, scope: MaterialScope): Promise<MaterialStage>;
+  stage(
+    path: string,
+    scope: MaterialScope,
+    token?: string,
+    expected?: MaterialFileIdentity,
+  ): Promise<MaterialStage>;
   placedOrStaged(token: string, sha: string): Promise<Uint8Array>;
   place(token: string, sha: string): Promise<void>;
   read(id: string, sha: string): Promise<Uint8Array>;
   discard(token: string): Promise<void>;
   restore(token: string, id: string, sha: string): Promise<void>;
 }
+export type MaterialFileIdentity = { dev: number; ino: number; size: number; mtimeMs: number };
 export interface PdfProcessorPort {
   inspect(bytes: Uint8Array): Promise<number>;
   process(
@@ -186,12 +195,73 @@ export function createMaterialApplication(ports: {
     jobs.set(source.id, { abort, done });
   };
   return {
-    async stage(path: string, scope: MaterialScope): Promise<MaterialResponse> {
+    async discardBatchStage(
+      scope: MaterialScope,
+      batchId: string,
+      token: string,
+    ): Promise<MaterialResponse> {
+      const batch = store.activeBatch?.(scope);
+      if (!batch || batch.id !== batchId || !batch.items.some((item) => item.token === token))
+        return fail('SCOPE', '暂存不属于当前批次。');
+      const staged = store.stage(token);
+      if (staged && (staged.scope !== scope || staged.batch_id !== batchId))
+        return fail('SCOPE', '暂存身份不匹配。');
+      if (staged?.state === 'committed') return success(scope);
+      if (committing) return fail('BUSY', '另一份材料正在提交，请稍后重试。');
+      committing = true;
+      try {
+        if (staged) store.putStage({ ...staged, state: 'cancelled' });
+        // 也清理落盘后、暂存登记前中断的已知token；FilesPort只删staging，绝不删原件。
+        await files.discard(token);
+        return success(scope);
+      } finally {
+        committing = false;
+      }
+    },
+    async stage(
+      path: string,
+      scope: MaterialScope,
+      batch?: { id: string; token: string; expected?: MaterialFileIdentity },
+    ): Promise<MaterialResponse> {
       try {
         if (scope !== 'home' && !ports.taskExists(scope)) return fail('SCOPE', '任务不存在。');
+        const active = batch ? store.activeBatch?.(scope) : undefined;
+        if (batch) {
+          if (
+            !active ||
+            active.id !== batch.id ||
+            !active.items.some((item) => item.token === batch.token)
+          )
+            return fail('SCOPE', '材料不在当前批次中。');
+          const existing = store.stage(batch.token);
+          if (existing) {
+            if (
+              existing.scope !== scope ||
+              existing.batch_id !== batch.id ||
+              existing.state === 'cancelled'
+            )
+              return fail('SCOPE', '暂存身份不匹配。');
+            return {
+              ok: true,
+              materials: store.list(scope),
+              staged: { token: existing.token, name: existing.name, bytes: existing.bytes },
+            };
+          }
+        }
         if (store.pending(scope)) return fail('STAGED_EXISTS', '请先保存或取消当前暂存文件。');
-        const staged = await files.stage(path, scope);
-        store.putStage(staged);
+        const staged = await files.stage(path, scope, batch?.token, batch?.expected);
+        // 选择器和文件读取会跨异步边界；登记前再次核对目标任务。
+        if (scope !== 'home' && !ports.taskExists(scope)) {
+          await files.discard(staged.token);
+          return fail('SCOPE', '任务范围已变化。');
+        }
+        const currentBatch = batch ? store.activeBatch?.(scope) : undefined;
+        // 批量入口已移除；旧清单不能阻断普通附件，批次内部仍核对原批次身份。
+        if ((batch && currentBatch?.id !== batch.id) || store.pending(scope)) {
+          await files.discard(staged.token);
+          return fail('BUSY', '另一项导入已先登记，请先处理当前材料。');
+        }
+        store.putStage({ ...staged, ...(batch ? { batch_id: batch.id } : {}) });
         return {
           ok: true,
           materials: store.list(scope),
@@ -257,7 +327,14 @@ export function createMaterialApplication(ports: {
           return success(r.scope);
         }
         if (r.operation === 'new_home') {
-          if (r.scope !== 'home' || committing || preparing || jobs.size || store.pending('home'))
+          if (
+            r.scope !== 'home' ||
+            committing ||
+            preparing ||
+            jobs.size ||
+            store.pending('home') ||
+            store.activeBatch?.('home')
+          )
             return fail('BUSY', '请先保存或取消待导入文件，并等待当前识别完成。');
           store.newHome();
           return success(r.scope);
@@ -271,9 +348,14 @@ export function createMaterialApplication(ports: {
             return fail('CANCELLED', '该次导入已取消，请重新选择文件。');
           if (committing) return fail('BUSY', '另一份材料正在提交，请稍后重试。');
           if (r.operation === 'discard') {
-            store.putStage({ ...staged, state: 'cancelled' });
-            await files.discard(r.token);
-            return success(r.scope);
+            committing = true;
+            try {
+              store.putStage({ ...staged, state: 'cancelled' });
+              await files.discard(r.token);
+              return success(r.scope);
+            } finally {
+              committing = false;
+            }
           }
           if (staged.restore_source_id)
             return fail(

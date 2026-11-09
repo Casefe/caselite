@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { open, mkdir, rename, unlink, lstat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { MATERIAL_MAX_BYTES, materialKind, type MaterialKind } from '@caselite/contracts';
-import type { MaterialFilesPort } from '@caselite/application';
+import type { MaterialFilesPort, MaterialFileIdentity } from '@caselite/application';
 const validId = (value: string) => {
   if (!/^[a-f0-9-]{36}$/.test(value)) throw new Error('Invalid identity');
   return value;
@@ -36,10 +36,18 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
       if (!st.isDirectory() || st.isSymbolicLink()) throw new Error('Invalid file root');
     }
   }
-  async function read(file: string, sha?: string) {
+  async function read(file: string, sha?: string, expected?: MaterialFileIdentity) {
     const fd = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const before = await fd.stat();
+      if (
+        expected &&
+        (before.dev !== expected.dev ||
+          before.ino !== expected.ino ||
+          before.size !== expected.size ||
+          before.mtimeMs !== expected.mtimeMs)
+      )
+        throw new Error('Selected file changed');
       if (!before.isFile() || before.size < 8 || before.size > MATERIAL_MAX_BYTES)
         throw new Error('File budget');
       const bytes = await fd.readFile();
@@ -76,13 +84,25 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
     }
   }
   return {
-    async stage(source, scope) {
+    async stage(source, scope, identity, expected) {
       await setup();
       const kind = materialKind(basename(source));
       if (!kind) throw new Error('Unsupported type');
-      const bytes = await read(source),
-        token = randomUUID();
+      const bytes = await read(source, undefined, expected),
+        token = identity ?? randomUUID();
       if (materialSignature(bytes) !== kind) throw new Error('Unexpected file format');
+      if (await exists(path(staged, token, kind))) {
+        // 批次在文件落盘后、登记回执前中断时，沿原token校验复用，不能再建一份原件。
+        await read(path(staged, token, kind), createHash('sha256').update(bytes).digest('hex'));
+        return {
+          token,
+          scope,
+          name: basename(source),
+          bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          state: 'staged',
+        };
+      }
       const fd = await open(path(staged, token, kind), 'wx', 0o600);
       try {
         await fd.writeFile(bytes);

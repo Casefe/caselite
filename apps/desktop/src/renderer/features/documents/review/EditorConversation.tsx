@@ -77,7 +77,7 @@ export default function EditorConversation({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="editor-agent-thread">
-        <ThreadPrimitive.Viewport>
+        <ThreadPrimitive.Viewport className="editor-agent-viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>
         <ComposerPrimitive.Root>

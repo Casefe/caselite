@@ -6,6 +6,7 @@ export * from './agent-application';
 export * from './catalog-application';
 export * from './appearance-application';
 export * from './material-application';
+export * from './material-batch-application';
 
 export * from './reminder-application';
 export * from './finance-application';
