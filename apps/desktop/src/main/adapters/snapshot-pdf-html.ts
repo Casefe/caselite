@@ -1,6 +1,10 @@
 import * as Y from 'yjs';
 import { validateBody } from '@caselite/local-db';
-import type { DeliverySnapshot } from '@caselite/contracts';
+import {
+  exportConfigurationSchema,
+  type ExportConfiguration,
+  type DeliverySnapshot,
+} from '@caselite/contracts';
 
 const escape = (value: string) =>
   value
@@ -19,6 +23,7 @@ export function renderSnapshotPdfHtml(
   state: Uint8Array,
   nonce: string,
   legacyFont = false,
+  configuration?: ExportConfiguration,
 ) {
   if (
     !/^[a-f0-9]{32}$/.test(nonce) ||
@@ -27,6 +32,10 @@ export function renderSnapshotPdfHtml(
     invalidXml(snapshot.title)
   )
     throw new Error('UNSUPPORTED_PDF_CONTENT');
+  const style = configuration ? exportConfigurationSchema.parse(configuration).style : undefined;
+  const fontFace = style
+    ? `@font-face{font-family:CaseLiteCJK;src:url("https://caselite-print.invalid/${nonce}/font.ttf");font-weight:normal;font-style:normal}`
+    : undefined;
   validateBody(state, true);
   const doc = new Y.Doc();
   try {
@@ -121,9 +130,9 @@ export function renderSnapshotPdfHtml(
       .toArray()
       .map((node) => visit(node as Y.XmlElement, 0))
       .join('');
-    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'nonce-${nonce}'; style-src-attr 'none'; font-src 'none'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>${escape(snapshot.title)}（草稿）</title><style nonce="${nonce}">
-${legacyFont ? '@font-face{font-family:CaseLiteCJK;src:local("Songti SC Regular"),local("STSongti-SC-Regular");font-weight:normal;font-style:normal}@font-face{font-family:CaseLiteCJK;src:local("Songti SC Bold"),local("STSongti-SC-Bold");font-weight:bold;font-style:normal}' : '@font-face{font-family:CaseLiteCJK;src:local("Arial Unicode MS"),local("ArialUnicodeMS");font-weight:normal;font-style:normal}'}
-@page{size:A4;margin:20mm}*{box-sizing:border-box}body{font:12pt/1.65 CaseLiteCJK,"Songti SC",serif;overflow-wrap:anywhere;color:#111}h1{font-size:22pt}h2{font-size:18pt}h3{font-size:16pt}h4,h5,h6{font-size:13pt}h1,h2,h3,h4,h5,h6{break-after:avoid;margin:16pt 0 8pt}p{white-space:pre-wrap;margin:0 0 8pt}li>p{margin:0}ul,ol{padding-left:24pt}blockquote{border-left:2pt solid #999;padding-left:12pt;margin:12pt}pre,code{font-family:${legacyFont ? 'monospace' : 'Menlo,CaseLiteCJK,monospace'};white-space:pre-wrap}table{border-collapse:collapse;width:100%;table-layout:fixed;margin:12pt 0}th,td{border:0.6pt solid #555;padding:5pt;vertical-align:top}th{background:#eee}td p,th p{margin:0}tr{break-inside:avoid}thead{display:table-header-group}.draft,.provenance{font-size:9pt;color:#666}.provenance{margin-top:16pt;border-top:0.5pt solid #aaa;padding-top:6pt}
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'nonce-${nonce}'; style-src-attr 'none'; font-src ${style ? 'https://caselite-print.invalid' : "'none'"}; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>${escape(snapshot.title)}（草稿）</title><style nonce="${nonce}">
+${fontFace ?? (legacyFont ? '@font-face{font-family:CaseLiteCJK;src:local("Songti SC Regular"),local("STSongti-SC-Regular");font-weight:normal;font-style:normal}@font-face{font-family:CaseLiteCJK;src:local("Songti SC Bold"),local("STSongti-SC-Bold");font-weight:bold;font-style:normal}' : '@font-face{font-family:CaseLiteCJK;src:local("Arial Unicode MS"),local("ArialUnicodeMS");font-weight:normal;font-style:normal}')}
+@page{size:${style?.paper ?? 'A4'};margin:${style ? `${style.margins.top}mm ${style.margins.right}mm ${style.margins.bottom}mm ${style.margins.left}mm` : '20mm'}}*{box-sizing:border-box}body{${style ? 'margin:0;' : ''}font:${style?.font_size ?? 12}pt/1.65 ${style ? 'CaseLiteCJK' : 'CaseLiteCJK,"Songti SC",serif'};overflow-wrap:anywhere;color:#111}h1{font-size:22pt}h2{font-size:18pt}h3{font-size:16pt}h4,h5,h6{font-size:13pt}h1,h2,h3,h4,h5,h6{break-after:avoid;margin:16pt 0 8pt}p{white-space:pre-wrap;margin:0 0 8pt}li>p{margin:0}ul,ol{padding-left:24pt}blockquote{border-left:2pt solid #999;padding-left:12pt;margin:12pt}pre,code{font-family:${style ? 'CaseLiteCJK' : legacyFont ? 'monospace' : 'Menlo,CaseLiteCJK,monospace'};white-space:pre-wrap}table{border-collapse:collapse;width:100%;table-layout:fixed;margin:12pt 0}th,td{border:0.6pt solid #555;padding:5pt;vertical-align:top}th{background:#eee}td p,th p{margin:0}tr{break-inside:avoid}thead{display:table-header-group}.draft,.provenance{font-size:9pt;color:#666}.provenance{margin-top:16pt;border-top:0.5pt solid #aaa;padding-top:6pt}
 </style></head><body><p class="draft">草稿 · 未经法律核验</p><h1>${escape(snapshot.title)}</h1>${body}<p class="provenance">快照 ${snapshot.id} · 正文修订 ${snapshot.body_revision}<br>正文摘要 ${snapshot.content_sha256}</p></body></html>`;
   } finally {
     doc.destroy();

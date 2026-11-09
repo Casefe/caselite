@@ -74,7 +74,17 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     setDraft((old) => {
       if (!base) return fields(value);
       const edited = Object.fromEntries(
-        (['name', 'email', 'avatar', 'show_word_count', 'editor_mode', 'writing_skills'] as const)
+        (
+          [
+            'name',
+            'email',
+            'avatar',
+            'show_word_count',
+            'editor_mode',
+            'writing_skills',
+            'export_style',
+          ] as const
+        )
           .filter((key) => preferenceJson(old[key]) !== preferenceJson(base[key]))
           .map((key) => [key, old[key]]),
       );
@@ -194,6 +204,13 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     )
       return false;
     const values = { ...draft, name: draft.name.trim(), email: draft.email.trim() };
+    if (values.export_style) {
+      values.export_style = {
+        ...values.export_style,
+        header: values.export_style.header.trim(),
+        footer: values.export_style.footer.trim(),
+      };
+    }
     if (values.writing_skills) {
       values.writing_skills = values.writing_skills.map(({ id, name, instruction, enabled }) => ({
         id,

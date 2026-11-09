@@ -73,6 +73,27 @@ export function createDeliveryExportFiles(
     return join(await folder('fixed'), `${id(row)}.${row.format}`);
   }
   return {
+    async read(row) {
+      if (row.format !== 'pdf' || row.status !== 'ready') throw new Error('Invalid preview');
+      const path = await location(row);
+      if (!(await checked(path, row))) throw new Error('Missing fixed export');
+      const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const stat = await file.stat();
+        if (!stat.isFile() || stat.nlink !== 1 || stat.size !== row.bytes || stat.size > 20_000_000)
+          throw new Error('Invalid preview file');
+        const bytes = await file.readFile();
+        if (
+          bytes.length !== row.bytes ||
+          bytes.subarray(0, 5).toString() !== '%PDF-' ||
+          createHash('sha256').update(bytes).digest('hex') !== row.sha256
+        )
+          throw new Error('Preview hash mismatch');
+        return new Uint8Array(bytes);
+      } finally {
+        await file.close();
+      }
+    },
     async save(row) {
       const source = await location(row);
       if (!(await checked(source, row)) || !choosePath)

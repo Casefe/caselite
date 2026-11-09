@@ -1,11 +1,12 @@
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
-import type { DeliverySnapshot } from '@caselite/contracts';
+import type { ExportConfiguration, DeliverySnapshot } from '@caselite/contracts';
 
 export function generateSnapshotWord(
   snapshot: DeliverySnapshot,
   state: number[],
   signal?: AbortSignal,
+  configuration?: ExportConfiguration,
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Export cancelled'));
@@ -39,6 +40,6 @@ export function generateSnapshotWord(
     worker.once('message', finish);
     worker.once('error', () => finish());
     worker.once('exit', () => finish());
-    worker.postMessage({ snapshot, state: new Uint8Array(state) });
+    worker.postMessage({ snapshot, state: new Uint8Array(state), configuration });
   });
 }
