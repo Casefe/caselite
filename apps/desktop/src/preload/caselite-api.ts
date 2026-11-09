@@ -335,6 +335,7 @@ export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';
 export type {
   LocalPreferences,
   LocalPreferenceValues,
+  WritingSkill,
   LocalPreferencesRequest,
   LocalPreferencesResponse,
   WorkspaceLocations,

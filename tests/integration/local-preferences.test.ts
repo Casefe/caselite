@@ -40,6 +40,75 @@ function set(
   };
 }
 const read = { protocol_version: 1, operation: 'read' } as const;
+it('persists ordered writing skills, preserves them across legacy writes, and distinguishes empty from omitted', () => {
+  const s = setup();
+  const first = set();
+  first.values.writing_skills = [
+    {
+      id: 'custom-skill',
+      name: '客户沟通',
+      instruction: '将选区改为客户能读懂的说明。',
+      enabled: false,
+    },
+    { id: 'second', name: '摘要', instruction: '保留限定条件，生成摘要。', enabled: true },
+  ];
+  const ack = s.app.execute(first);
+  expect(ack).toMatchObject({
+    ok: true,
+    preferences: { writing_skills: first.values.writing_skills },
+  });
+  expect(s.app.execute(set('旧窗口', 1))).toMatchObject({
+    ok: true,
+    preferences: { version: 2, writing_skills: first.values.writing_skills },
+  });
+  expect(s.app.execute(first)).toEqual(ack);
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  expect(
+    createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace').execute(read),
+  ).toMatchObject({
+    ok: true,
+    preferences: { version: 2, writing_skills: first.values.writing_skills },
+  });
+  const empty = set('清空技能', 2);
+  empty.values.writing_skills = [];
+  expect(s.app.execute(empty)).toMatchObject({ ok: true, preferences: { writing_skills: [] } });
+  expect(s.app.execute(set('旧窗口再次保存', 3))).toMatchObject({
+    ok: true,
+    preferences: { writing_skills: [] },
+  });
+});
+it('rejects malformed skills before persisting and keeps skill values atomic with receipts', () => {
+  const s = setup();
+  const skill = { id: 'custom', name: '技能', instruction: '整理选区。', enabled: true };
+  for (const writing_skills of [
+    [{ ...skill, name: '  ' }],
+    [{ ...skill, instruction: '  ' }],
+    [{ ...skill, instruction: 'a'.repeat(3001) }],
+    [{ ...skill, name: 'a'.repeat(41) }],
+    [skill, skill],
+    Array.from({ length: 21 }, (_, i) => ({ ...skill, id: 'skill-' + i })),
+    [{ ...skill, script: 'doSomething' }],
+    [{ ...skill, enabled: 'yes' }],
+  ])
+    expect(s.app.execute({ ...set(), values: { ...set().values, writing_skills } })).toMatchObject({
+      ok: false,
+      code: 'INVALID_REQUEST',
+    });
+  expect(s.app.execute(read)).toMatchObject({ ok: true, preferences: { version: 0 } });
+  const request = set();
+  request.values.writing_skills = [skill];
+  s.sqlite.exec(
+    "CREATE TRIGGER fail_skill_receipt BEFORE INSERT ON local_preference_receipts BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
+  );
+  expect(s.app.execute(request)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  expect(s.app.execute(read)).toMatchObject({ ok: true, preferences: { version: 0 } });
+  s.sqlite.exec('DROP TRIGGER fail_skill_receipt');
+  expect(s.app.execute(request)).toMatchObject({
+    ok: true,
+    preferences: { version: 1, writing_skills: [skill] },
+  });
+});
 it('reads defaults without writing and keeps versioned preferences after reopening', () => {
   const s = setup();
   expect(s.app.execute(read)).toEqual({
