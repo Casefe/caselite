@@ -60,7 +60,13 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
               code: 'CONFLICT',
               message: '设置已被其他窗口修改，请重新读取；本次输入已保留。',
             };
-          const values = localPreferenceValuesSchema.parse(request.values);
+          const values = localPreferenceValuesSchema.parse({
+            ...request.values,
+            // 旧客户端只提交原有字段时保留已选方案；摘要仍绑定原请求。
+            ...(request.values.editor_mode === undefined && current.editor_mode !== undefined
+              ? { editor_mode: current.editor_mode }
+              : {}),
+          });
           const next = { ...values, version: current.version + 1 };
           // 资料、版本与原键回执同事务；未知结果只能核对原键，不能换键重复写入。
           db.prepare(

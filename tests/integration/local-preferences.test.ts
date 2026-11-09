@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -130,6 +130,60 @@ it('rejects untrusted extra scope and invalid values before storage', () => {
     expect(s.app.execute(invalid)).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
   }
   expect(s.sqlite.prepare('SELECT count(*) AS n FROM local_preferences').get()).toEqual({ n: 0 });
+});
+it('keeps legacy receipt digests unchanged and persists the editor scheme through reopen and legacy writes', () => {
+  const s = setup();
+  const legacy = set();
+  const { request_id, ...content } = legacy;
+  void request_id;
+  const ack = {
+    ok: true,
+    preferences: { ...legacy.values, version: 1 },
+    receipt: legacy.idempotency_key,
+  };
+  // 使用旧版本实际序列化形状建立回执，防止可选字段默认值改写摘要。
+  s.sqlite
+    .prepare('INSERT INTO local_preferences(workspace_id,value,version) VALUES(?,?,?)')
+    .run('synthetic-workspace', JSON.stringify(legacy.values), 1);
+  s.sqlite
+    .prepare(
+      'INSERT INTO local_preference_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
+    )
+    .run(
+      'synthetic-workspace',
+      legacy.idempotency_key,
+      createHash('sha256').update(JSON.stringify(content)).digest('hex'),
+      JSON.stringify(ack),
+    );
+  expect(s.app.execute({ ...legacy, request_id: randomUUID() })).toEqual(ack);
+  expect(s.app.execute(read)).toEqual({ ...ack, receipt: null });
+  const word = set('Word方案', 1);
+  word.values.editor_mode = 'word';
+  expect(s.app.execute(word)).toMatchObject({
+    ok: true,
+    preferences: { editor_mode: 'word', version: 2 },
+  });
+  expect(s.app.execute(set('旧字段更新', 2))).toMatchObject({
+    ok: true,
+    preferences: { editor_mode: 'word', version: 3 },
+  });
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  const store = createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace');
+  expect(store.execute(read)).toMatchObject({
+    ok: true,
+    preferences: { editor_mode: 'word', version: 3 },
+  });
+  expect(store.execute(legacy)).toEqual(ack);
+  const markdown = set('Markdown方案', 3);
+  markdown.values.editor_mode = 'markdown';
+  expect(store.execute(markdown)).toMatchObject({
+    ok: true,
+    preferences: { editor_mode: 'markdown', version: 4 },
+  });
+  expect(
+    s.app.execute({ ...set('非法方案', 4), values: { ...legacy.values, editor_mode: 'html' } }),
+  ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
 });
 it('upgrades the actual previous 19 migrations without changing existing rows', () => {
   const root = mkdtempSync(join(tmpdir(), 'caselite-preferences-upgrade-'));
