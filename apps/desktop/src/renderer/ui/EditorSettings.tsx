@@ -1,4 +1,5 @@
 import { useLocalPreferences } from '../shared/data/LocalPreferences';
+import ExportStyleSettings from './ExportStyleSettings';
 import WritingSkillsSettings from './WritingSkillsSettings';
 
 export default function EditorSettings() {
@@ -41,8 +42,10 @@ export default function EditorSettings() {
         </div>
       </fieldset>
       <p className="editor-settings-note">
-        保存后生效，正文和已有格式会保留。Word 当前为连续纸张视图，尚不提供自动分页、页眉或页脚。
+        保存后生效，正文和已有格式会保留。Word
+        当前为连续纸张视图，尚不提供编辑时自动分页。导出页眉页脚在下方独立设置。
       </p>
+      <ExportStyleSettings disabled={disabled} />
       <WritingSkillsSettings disabled={disabled} />
       {s.error && <p role="alert">{s.error}</p>}
       {s.notice && <p role="status">{s.notice}</p>}

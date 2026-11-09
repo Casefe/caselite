@@ -29,6 +29,7 @@ export interface DeliveryExportFilesPort {
   put(row: DeliveryExport, bytes: Uint8Array): Promise<void>;
   open(row: DeliveryExport): Promise<void>;
   save?(row: DeliveryExport): Promise<boolean>;
+  read?(row: DeliveryExport): Promise<Uint8Array>;
 }
 export function createDeliveryExportApplication(ports: {
   task: { execute(input: unknown): TaskResponse };
@@ -85,7 +86,8 @@ export function createDeliveryExportApplication(ports: {
       request.operation !== 'export_snapshot' &&
       request.operation !== 'open_export' &&
       request.operation !== 'read_export' &&
-      request.operation !== 'save_export'
+      request.operation !== 'save_export' &&
+      request.operation !== 'preview_export'
     )
       return ports.task.execute(request);
     const format = request.format ?? 'docx',
@@ -128,10 +130,18 @@ export function createDeliveryExportApplication(ports: {
             : {}),
         });
       }
-      if (request.operation === 'open_export' || request.operation === 'save_export') {
+      if (
+        request.operation === 'open_export' ||
+        request.operation === 'save_export' ||
+        request.operation === 'preview_export'
+      ) {
         const row = ports.store.read(snapshot.id, format, request.export_id);
         if (!row || row.id !== request.export_id || row.status !== 'ready')
           return failure('READ_FAILED', `所选${label}尚未确认保存。`);
+        if (request.operation === 'preview_export') {
+          if (!ports.files.read) throw new Error('Preview not available');
+          return success({ exports: [row], export_data: await ports.files.read(row) });
+        }
         if (request.operation === 'save_export') {
           if (!ports.files.save) throw new Error('Save not available');
           return success({ exports: [row], export_saved: await ports.files.save(row) });
@@ -175,6 +185,7 @@ export function createDeliveryExportApplication(ports: {
           'UNSUPPORTED_WORD_CONTENT',
           'UNSUPPORTED_PDF_CONTENT',
           'PDF_FONT_UNAVAILABLE',
+          'PDF_GLYPH_UNAVAILABLE',
           'EXPORT_FONT_CHANGED',
         ].includes(error.message)
       )
@@ -182,11 +193,13 @@ export function createDeliveryExportApplication(ports: {
           ok: false,
           code: 'INVALID_REQUEST',
           message:
-            error.message === 'EXPORT_FONT_CHANGED'
-              ? '字体资源已变化，未按旧配置重建；请保留原产物并发起新的导出。'
-              : error.message === 'PDF_FONT_UNAVAILABLE'
-                ? '本机中文字体不可用，未保存PDF；请检查字体后重试。'
-                : `此固定版本含暂不支持的${label}格式或超出生成规模限制，未生成交付文件；请保留快照并核对工作稿。`,
+            error.message === 'PDF_GLYPH_UNAVAILABLE'
+              ? '所选字体不支持文稿中的部分字符，未生成 PDF。请保留原稿并检查稀有字或符号。'
+              : error.message === 'EXPORT_FONT_CHANGED'
+                ? '字体资源已变化，未按旧配置重建；请保留原产物并发起新的导出。'
+                : error.message === 'PDF_FONT_UNAVAILABLE'
+                  ? '本机中文字体不可用，未保存PDF；请检查字体后重试。'
+                  : `此固定版本含暂不支持的${label}格式或超出生成规模限制，未生成交付文件；请保留快照并核对工作稿。`,
         };
       if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT')
         return failure('CONFLICT', '该提交身份与原导出不同，请核对原提交。');
@@ -238,9 +251,13 @@ export function createDeliveryExportApplication(ports: {
       }
       if (
         parsed.success &&
-        !['export_snapshot', 'read_export', 'open_export', 'save_export'].includes(
-          parsed.data.operation,
-        )
+        ![
+          'export_snapshot',
+          'read_export',
+          'open_export',
+          'save_export',
+          'preview_export',
+        ].includes(parsed.data.operation)
       )
         return Promise.resolve(ports.task.execute(input));
       if (parsed.success && parsed.data.operation === 'export_snapshot') {

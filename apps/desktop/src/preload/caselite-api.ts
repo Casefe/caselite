@@ -1,3 +1,4 @@
+import { defaultExportStyle, type ExportStyle } from '@caselite/contracts';
 import {
   LOCAL_PREFERENCES_CHANNEL,
   localPreferencesResponseSchema,
@@ -131,6 +132,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  readonly exportStyleDefaults?: ExportStyle;
   preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
@@ -165,6 +167,7 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    exportStyleDefaults: structuredClone(defaultExportStyle),
     async preferences(request) {
       const result = localPreferencesResponseSchema.safeParse(
         await invokeBusinessCommand(invoke, LOCAL_PREFERENCES_CHANNEL, request),
@@ -332,7 +335,7 @@ export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
 export type { Contact, ContactsRequest } from '@caselite/contracts';
 export type { DeliverySnapshot } from '@caselite/contracts';
-export type { DeliveryExport, DeliveryExportFormat } from '@caselite/contracts';
+export type { DeliveryExport, DeliveryExportFormat, ExportStyle } from '@caselite/contracts';
 export type {
   LocalPreferences,
   LocalPreferenceValues,

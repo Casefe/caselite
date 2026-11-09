@@ -1,7 +1,9 @@
+import { runExportStyleDemo } from './export-style-demo';
 import { performanceApplication, seedPerformance, runPerformance } from './performance-demo';
 import { runFinanceDemo } from './finance-demo';
 import { createDeliveryExportApplication } from '@caselite/application';
 import { createDeliveryExportFiles } from './adapters/delivery-export-files';
+import { createExportConfigurationResolver } from './adapters/export-configuration';
 import { generateSnapshotPdf } from './adapters/pdf-export-processor';
 import { generateSnapshotWord } from './adapters/word-export-processor';
 import { runReminderDemo } from './reminder-demo';
@@ -143,6 +145,7 @@ async function createWindow(
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-scheme-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('export-style-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('performance-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('important-date-')
   )
@@ -587,6 +590,9 @@ if (taskDemoPhase) {
       'performance-seed',
       'performance-run',
       'performance-start',
+      'export-style-write',
+      'export-style-read',
+      'export-style-preview',
       'editor-scheme-write',
       'editor-scheme-read',
       'editor-scheme-preview',
@@ -821,6 +827,7 @@ app
       process.env.CASELITE_TASK_QUERY_PROBE === '1'
         ? createTaskQueryProbe(tasks)
         : undefined;
+    const exportConfiguration = createExportConfigurationResolver();
     registerTaskIpc(
       createDeliveryExportApplication({
         task: taskQueryProbe?.application ?? tasks,
@@ -842,10 +849,38 @@ app
             return result.canceled ? null : (result.filePath ?? null);
           },
         ),
-        render: (snapshot, state, format, signal, converter) =>
-          format === 'pdf'
-            ? generateSnapshotPdf(snapshot, state, signal, converter)
-            : generateSnapshotWord(snapshot, state, signal),
+        configuration: exportConfiguration,
+        render: async (snapshot, state, format, signal, converter, configuration) => {
+          const fontData =
+            configuration && format === 'pdf'
+              ? await exportConfiguration.readFont(configuration)
+              : undefined;
+          if (configuration && format === 'docx') await exportConfiguration.verify(configuration);
+          try {
+            return await (format === 'pdf'
+              ? generateSnapshotPdf(snapshot, state, signal, converter, configuration, fontData)
+              : generateSnapshotWord(snapshot, state, signal, configuration));
+          } catch (error) {
+            // 仅校验过的临时合成探针留诊断；正式数据、凭据和正文不进入日志。
+            if (taskDemoRoot && taskDemoPhase?.startsWith('export-style-'))
+              writeFileSync(
+                join(taskDemoRoot, 'export-render-error.json'),
+                JSON.stringify(
+                  {
+                    format,
+                    message: error instanceof Error ? error.message : 'UNKNOWN',
+                    cause:
+                      error instanceof Error && error.cause instanceof Error
+                        ? error.cause.message
+                        : undefined,
+                  },
+                  null,
+                  2,
+                ),
+              );
+            throw error;
+          }
+        },
         hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
       }),
     );
@@ -941,7 +976,8 @@ app
     const documentReviewDemo =
       taskDemoPhase?.startsWith('document-review-') ||
       taskDemoPhase?.startsWith('editor-interaction-') ||
-      taskDemoPhase?.startsWith('editor-scheme-');
+      taskDemoPhase?.startsWith('editor-scheme-') ||
+      taskDemoPhase?.startsWith('export-style-');
     let initialCredentialRead = Promise.resolve();
     const openSystemCredentials = async (root: string) => {
       let settled!: () => void;
@@ -1218,9 +1254,16 @@ app
       if (
         taskDemoPhase !== 'document-review-read' &&
         taskDemoPhase !== 'editor-interaction-read' &&
-        taskDemoPhase !== 'editor-scheme-read'
+        taskDemoPhase !== 'editor-scheme-read' &&
+        taskDemoPhase !== 'export-style-read' &&
+        taskDemoPhase !== 'export-style-preview'
       )
         seedDocumentReview(tasks);
+      if (taskDemoPhase?.startsWith('export-style-')) {
+        await runExportStyleDemo(() => createWindow(), taskDemoRoot, taskDemoPhase, tasks);
+        if (taskDemoPhase !== 'export-style-preview') app.exit(0);
+        return;
+      }
       if (
         taskDemoPhase === 'document-review-preview' ||
         taskDemoPhase === 'editor-interaction-preview' ||

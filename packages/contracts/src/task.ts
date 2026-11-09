@@ -204,6 +204,17 @@ export const taskQuerySchema = z.discriminatedUnion('operation', [
     .strict(),
   z
     .object({
+      operation: z.literal('preview_export'),
+      format: z.literal('pdf'),
+      protocol_version: z.literal(1),
+      task_id: taskIdSchema,
+      document_id: taskIdSchema,
+      snapshot_id: taskIdSchema,
+      export_id: taskIdSchema,
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal('open_export'),
       format: deliveryFormatSchema.optional(),
       protocol_version: z.literal(1),
@@ -389,6 +400,19 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     export_created: z.boolean().optional(),
     export_opened: z.boolean().optional(),
     export_saved: z.boolean().optional(),
+    export_data: z
+      .instanceof(Uint8Array)
+      .refine(
+        (bytes) =>
+          bytes.byteLength > 5 &&
+          bytes.byteLength <= 20_000_000 &&
+          bytes[0] === 37 &&
+          bytes[1] === 80 &&
+          bytes[2] === 68 &&
+          bytes[3] === 70 &&
+          bytes[4] === 45,
+      )
+      .optional(),
     objective_state: richState.nullable().optional(),
     navigation: z
       .object({

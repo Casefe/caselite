@@ -1,3 +1,4 @@
+import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { emptyTaskCalendar } from '@caselite/contracts';
 import { afterEach, expect, it } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
@@ -322,7 +323,9 @@ it('upgrades the existing 17-migration database without changing old bodies, ide
       calendar: emptyTaskCalendar,
     })),
   });
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 25 });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: integrationMigrations.length,
+  });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(ok(upgraded.app.execute(create(task))).snapshot_created).toBe(true);
 });

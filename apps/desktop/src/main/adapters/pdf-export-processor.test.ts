@@ -1,6 +1,11 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import type { DeliverySnapshot } from '@caselite/contracts';
+import {
+  defaultExportStyle,
+  type ExportConfiguration,
+  type DeliverySnapshot,
+} from '@caselite/contracts';
 const fake = vi.hoisted(() => {
   const window = {
     loadURL: vi.fn(),
@@ -14,6 +19,7 @@ const fake = vi.hoisted(() => {
     },
   };
   const session = {
+    protocol: { handle: vi.fn(), unhandle: vi.fn() },
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
     on: vi.fn(),
@@ -25,6 +31,7 @@ const fake = vi.hoisted(() => {
   });
   return { window, session, constructor };
 });
+vi.mock('./export-font-coverage', () => ({ assertExportFontCoverage: vi.fn() }));
 vi.mock('electron', () => ({
   BrowserWindow: fake.constructor,
   session: { fromPartition: () => fake.session },
@@ -98,4 +105,53 @@ it('closes a hung print on cancellation and on timeout without returning PDF byt
   await vi.advanceTimersByTimeAsync(15001);
   await timeout;
   expect(fake.window.destroy).toHaveBeenCalledTimes(2);
+});
+
+it('passes one frozen shared style to CSS and native PDF paper, margins and escaped page templates', async () => {
+  const fontData = new Uint8Array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const configuration: ExportConfiguration = {
+    version: 1,
+    style: {
+      ...defaultExportStyle,
+      paper: 'Letter',
+      font: 'pingfang',
+      font_size: 14,
+      margins: { top: 18, right: 24, bottom: 22, left: 26 },
+      header: '<合成&页眉> {page}/{pages}',
+      footer: '仅供合成验收',
+    },
+    font: { family: 'PingFang SC', sha256: createHash('sha256').update(fontData).digest('hex') },
+    fingerprint: 'b'.repeat(64),
+  };
+  await generateSnapshotPdf(
+    snapshot,
+    state(),
+    undefined,
+    'electron-45.1.0-pdf-v3',
+    configuration,
+    fontData,
+  );
+  const handler = fake.session.protocol.handle.mock.calls[0][1];
+  const documentUrl = fake.window.loadURL.mock.calls[0][0];
+  const html = await handler({ method: 'GET', url: documentUrl }).text();
+  expect(handler({ method: 'GET', url: 'https://example.com/' }).status).toBe(403);
+  expect(handler({ method: 'POST', url: documentUrl }).status).toBe(405);
+  expect(fake.session.protocol.unhandle).toHaveBeenCalledWith('https');
+  expect(html).toContain('size:Letter;margin:18mm 24mm 22mm 26mm');
+  expect(html).toContain('font:14pt/1.65');
+  expect(html).toContain('https://caselite-print.invalid/');
+  expect(html).not.toContain('src:local(');
+  expect(fake.window.webContents.printToPDF).toHaveBeenCalledWith(
+    expect.objectContaining({
+      pageSize: 'Letter',
+      margins: { top: 18 / 25.4, right: 24 / 25.4, bottom: 22 / 25.4, left: 26 / 25.4 },
+      displayHeaderFooter: true,
+      headerTemplate: expect.stringContaining(
+        '&lt;合成&amp;页眉&gt; <span class="pageNumber"></span>/<span class="totalPages"></span>',
+      ),
+    }),
+  );
+  await expect(
+    generateSnapshotPdf(snapshot, state(), undefined, 'electron-45.1.0-pdf-v2', configuration),
+  ).rejects.toThrow('UNSUPPORTED_PDF_CONTENT');
 });

@@ -258,3 +258,26 @@
   color: var(--theme-secondary);
   font-size: 12px;
 }
+
+.export-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.export-style-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.export-style-settings input,
+.export-style-settings select {
+  width: 100%;
+  min-width: 0;
+}
+.export-style-settings small {
+  display: block;
+  color: var(--text-muted);
+  line-height: 1.6;
+}

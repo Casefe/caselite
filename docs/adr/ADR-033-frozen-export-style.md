@@ -25,3 +25,11 @@ PDF仍沿隔离、禁网、保留Electron沙箱的printToPDF。先生成、验�
 0022仅为delivery_exports追加两个配置列并扩展原唯一索引；旧ready行自动得到NULL配置和空指纹，旧文件/原快照/意图/回执不变。遵循ADR029维护入口：原25份SQL/tag/when/hash逐项保持，只在冻结manifest/journal末尾追加经批准的新项并更新marker摘要，不修改桥接算法。真实旧25项库、原A/B各前缀均回归；新索引创建失败要证明本次DDL/记录回滚，重开能正常升级。不能为新字段放宽未知迁移拒绝。
 
 公开接口参考：[Electron printToPDF](https://www.electronjs.org/docs/latest/api/web-contents#contentsprinttopdfoptions)。实际参数与docx本地类型/现有渲染代码逐项核验，不因最新版文档存在引入新依赖。
+
+配置化PDF将通过宿主白名单读取并复核SHA256的字体字节纳入本次隔离打印，不再按local同名字体查找；字体只存在于临时打印内存，不复制进安装包或工作区。当前仅开放待同包验证的单face Arial Unicode MS。苹方系统TTC包含多face，精确SC face尚未验证，因此界面暂不提供；合同保留枚举但宿主拒绝未验证资源，不能静默选择HK等其他face。DOCX继续引用同一家族名称，未嵌入字体，不承诺跨机器排版一致。偏好未读到时不得按默认值启动新导出，读取失败提供原入口重读，不锁住页面导航。
+
+字体通过本次独占隔离Session的protocol.handle拦截两个精确HTTPS形状地址（document/font），直接返回内存HTML/已核字体Response；其他URL/方法拒绝，绝无net.fetch或网络回退，也不注册全局协议/监听端口。此做法避免23MB字体扩为31MB data导航URL触及Chromium IPC限制。script/connect仍禁用，font-src仅此固定虚拟origin；结束后撤销handler并销毁打印窗口。旧无配置PDF-v1/v2路径保持原行为。
+
+配置化PDF打印前读取可信单face字体的Unicode cmap（4/12）验证本次实际字符集；未覆盖的稀有字、表情或符号明确拒绝并保全正文/快照，不允许浏览器悄悄fallback到未冻结资源。此为保守失败边界，不承诺覆盖所有姓名；后续扩大字库须独立验证资源、预算与退出方式。普通正文编辑和现有Word出口不因此禁用。跨平台单元夹具验证cmap边界；真实字体/中文/长表格/页眉页脚必须由同包原生样本验收，不用条件跳过单元门禁代替。
+
+同包试验发现页眉页脚模板引用外部font-face会触发Electron“Printing failed”，因此运行模板保留公开headerTemplate/footerTemplate，仅引用白名单家族名（与DOCX一致），正文仍由私有Session提供实际已核字体。真实合成5页输出已逐页查到页眉、页脚及页码，PDF字体表为ArialUnicodeMS，仍不宣称模板跨机器的二进制字库嵌入保真。原失败、调整和文件检查证据保留；不得为通过关闭沙箱、CSP、网络白名单或改用云转换。

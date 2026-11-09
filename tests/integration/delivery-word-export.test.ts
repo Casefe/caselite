@@ -160,6 +160,45 @@ it('replays durable configured exports without resolving unavailable fonts and k
   expect(readFileSync(join(s.filesRoot, 'fixed', first.exports![0].id + '.docx'))).toEqual(bytes);
 });
 
+it('renders the shared Letter layout, font, margins and page fields into real DOCX parts', async () => {
+  const s = setup(),
+    task = seed(s.task),
+    snapshot = fixed(s.task, task);
+  const fixedRead = good(
+    s.task.execute({
+      protocol_version: 1,
+      operation: 'read_snapshot',
+      task_id: task.id,
+      document_id: task.document_id,
+      snapshot_id: snapshot.id,
+    }),
+  );
+  const selected = configuration({
+    ...defaultExportStyle,
+    paper: 'Letter',
+    font_size: 14,
+    margins: { top: 18, right: 24, bottom: 22, left: 26 },
+    header: '<合成页眉> {page}/{pages}',
+    footer: '合成页脚',
+  });
+  const output = Buffer.from(
+    await renderSnapshotWord(snapshot, new Uint8Array(fixedRead.state!), selected),
+  );
+  const xml = await xmlPart(output, 'word/document.xml');
+  expect(xml).toContain('w:w="12240" w:h="15840"');
+  for (const [side, mm] of Object.entries(selected.style.margins))
+    expect(xml).toContain(`w:${side}="${Math.round((mm * 1440) / 25.4)}"`);
+  const styles = await xmlPart(output, 'word/styles.xml');
+  expect(styles).toContain('Arial Unicode MS');
+  expect(styles).toContain('w:val="28"');
+  const header = await xmlPart(output, 'word/header1.xml');
+  expect(header).toContain('&lt;合成页眉&gt;');
+  expect(header).toContain('PAGE');
+  expect(header).toContain('NUMPAGES');
+  expect(await xmlPart(output, 'word/footer1.xml')).toContain('合成页脚');
+  expect((await extractRawText({ buffer: output })).value).toContain('十日');
+});
+
 it('keeps a pending request bound to its original font resource instead of silently regenerating it', async () => {
   const s = setup();
   const task = seed(s.task),

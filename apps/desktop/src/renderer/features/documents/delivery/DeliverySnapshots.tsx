@@ -286,7 +286,7 @@ export default function DeliverySnapshots({
         }}
         onCreate={(note) => submit('create', note)}
         onBack={onBack}
-        exportAvailable={!fixedRead.isError && !!fixedRead.data}
+        exportAvailable={!fixedRead.isError && !!fixedRead.data && word.canGenerate}
         format={format}
         onFormatChange={setFormat}
         exportControls={word.controls}
