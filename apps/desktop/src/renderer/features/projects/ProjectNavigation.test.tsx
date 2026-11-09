@@ -74,7 +74,7 @@ it('returns to the exact section and current project, preserving list preference
     query: '来源',
     order: 'title',
     statusFilter: 'active',
-    columns: { updated: false },
+    columns: { updated: true },
     scrollTop: 80,
   });
   first.unmount();
@@ -96,7 +96,7 @@ it('returns to the exact section and current project, preserving list preference
   expect((screen.getByLabelText('搜索项目') as HTMLInputElement).value).toBe('来源');
   expect((screen.getByLabelText('项目排序') as HTMLSelectElement).value).toBe('title');
   expect((screen.getByRole('checkbox', { name: '更新时间' }) as HTMLInputElement).checked).toBe(
-    false,
+    true,
   );
 });
 const source: ProjectViewState = {

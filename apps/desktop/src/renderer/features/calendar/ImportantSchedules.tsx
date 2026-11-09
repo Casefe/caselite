@@ -61,10 +61,12 @@ export default function ImportantSchedules({
   home = false,
   onOpen,
   onCalendar,
+  title = '重要日程',
 }: {
   home?: boolean;
   onOpen(id: string): void;
   onCalendar?(): void;
+  title?: string;
 }) {
   const [expanded, setExpanded] = useState(false),
     [offset, setOffset] = useState(0),
@@ -77,7 +79,10 @@ export default function ImportantSchedules({
   return (
     <section className="important-schedules" aria-label={home ? '首页重要日程' : '跨日期重要日程'}>
       <header>
-        <h3>重要日程{read.data && <small> {read.data.page?.total ?? 0}</small>}</h3>
+        <h3>
+          {title}
+          {read.data && <small> {read.data.page?.total ?? 0}</small>}
+        </h3>
         {onCalendar && <button onClick={onCalendar}>日历</button>}
       </header>
       {read.isPending && <p role="status">正在读取重要日程…</p>}

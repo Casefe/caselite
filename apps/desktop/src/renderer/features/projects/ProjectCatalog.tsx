@@ -1,4 +1,5 @@
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
+import ProjectMetrics from './ProjectMetrics';
 import ProjectList, {
   projectListDefaults,
   projectListProperties,
@@ -11,7 +12,16 @@ import { taskStatusNames } from '../../ui/task-status';
 import { createPortal } from 'react-dom';
 import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useRef,
+  type ComponentType,
+} from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
 
@@ -53,12 +63,16 @@ export type ProjectViewState = {
   workspaceScrollTop: number;
   returnTaskId: string;
   documentId?: string;
+  page?: number;
+  pageSize?: number;
 };
 export default function ProjectCatalog({
   tasks,
   onOpen,
   onNewTask,
   onFinance,
+  onCalendar,
+  importantInfo: ImportantInfo,
   onDirty,
   onChanged,
   initialView,
@@ -68,6 +82,8 @@ export default function ProjectCatalog({
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
   onFinance?(projectId: string): void;
+  onCalendar?(): void;
+  importantInfo?: ComponentType<{ onOpen(id: string): void; onCalendar?(): void; title?: string }>;
   onNewTask?(source: ProjectViewState): void;
   initialView?: ProjectViewState | null;
   backSlot?: HTMLDivElement | null;
@@ -90,7 +106,6 @@ export default function ProjectCatalog({
     [assigning, setAssigning] = useState('');
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<Record<string, boolean>>({});
   const [listInspectorOpen, setListInspectorOpen] = useState(false);
-  const [listFiltersOpen, setListFiltersOpen] = useState(false);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
@@ -103,7 +118,29 @@ export default function ProjectCatalog({
   const [typeFilter, setTypeFilter] = useState(initialView?.typeFilter ?? '');
   const [order, setOrder] = useState(initialView?.order ?? 'updated');
   const [groupByStatus, setGroupByStatus] = useState(initialView?.groupByStatus ?? false);
-  const [columns, setColumns] = useState({ ...projectListDefaults, ...initialView?.columns });
+  const [columns, setColumns] = useState({
+    ...projectListDefaults,
+    status: false,
+    priority: false,
+    client: true,
+    nextDate: true,
+    targetDate: false,
+    tasks: false,
+    updated: false,
+    ...initialView?.columns,
+  });
+  const [pageSize, setPageSize] = useState(initialView?.pageSize ?? 8);
+  const listKey = JSON.stringify([
+    query,
+    statusFilter,
+    ownerFilter,
+    typeFilter,
+    order,
+    groupByStatus,
+    pageSize,
+  ]);
+  const [pagination, setPagination] = useState({ key: listKey, index: initialView?.page ?? 0 });
+  if (pagination.key !== listKey) setPagination({ key: listKey, index: 0 });
   const workspace = useRef<HTMLElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const returnProjectId = useRef<string | null>(null);
@@ -119,6 +156,14 @@ export default function ProjectCatalog({
     return () => {
       alive.current = false;
     };
+  }, []);
+  useEffect(() => {
+    const closeDisplayMenu = () => {
+      const menu = workspace.current?.querySelector<HTMLDetailsElement>('.project-display-menu');
+      if (menu) menu.open = false;
+    };
+    window.addEventListener('resize', closeDisplayMenu);
+    return () => window.removeEventListener('resize', closeDisplayMenu);
   }, []);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const [discussionDirty, setDiscussionDirty] = useState(false);
@@ -150,7 +195,8 @@ export default function ProjectCatalog({
     .filter(
       (p) =>
         (statusFilter === 'all' ? !p.archived_at : projectStatus(p) === statusFilter) &&
-        p.title.toLocaleLowerCase().includes(normalizedQuery) &&
+        (p.title.toLocaleLowerCase().includes(normalizedQuery) ||
+          p.id.toLowerCase().includes(normalizedQuery)) &&
         (!ownerFilter || p.attributes?.assignee === ownerFilter) &&
         (!typeFilter ||
           (p.attributes?.professional_type ?? p.attributes?.project_type) === typeFilter),
@@ -167,14 +213,17 @@ export default function ProjectCatalog({
       }
       return b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id);
     });
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+  const page = Math.min(pageCount - 1, pagination.key === listKey ? pagination.index : 0);
+  const visibleProjects = list.slice(page * pageSize, (page + 1) * pageSize);
   const p = editor
     ? (projects.find((x) => x.id === editor.project.id && x.version >= editor.project.version) ??
       editor.project)
     : initialView?.projectId && (reading || sourceUnavailable)
       ? undefined
-      : (list.find((x) => x.id === selected) ??
+      : (visibleProjects.find((x) => x.id === selected) ??
         (propertyDirty ? projects.find((x) => x.id === selected) : undefined) ??
-        list[0]);
+        visibleProjects[0]);
   const members = tasks.filter((task) => task.matter_id === p?.id);
   const activityRevision = JSON.stringify([
     p?.version,
@@ -299,6 +348,8 @@ export default function ProjectCatalog({
     order,
     columns,
     groupByStatus,
+    page,
+    pageSize,
     scrollTop: scroll.current?.scrollTop ?? 0,
     workspaceScrollTop: workspace.current?.scrollTop ?? 0,
     returnTaskId: id,
@@ -377,16 +428,24 @@ export default function ProjectCatalog({
       aria-busy={navigationPending}
       className="collection-workspace catalog-view project-catalog"
       data-project-view={editor ? section : 'list'}
-      data-layout={editor || listInspectorOpen ? 'three-column' : undefined}
+      data-layout="three-column"
       data-testid="project-catalog"
     >
       <div className="collection-main">
         {backSlot && createPortal(backButton, backSlot)}
         <div className="collection-heading project-catalog-heading">
           {!backSlot && backButton}
-          <Icon name="folder" size={16} />
-          <h1>{editor ? (p ?? editor.project).title : '项目'}</h1>
-          {!editor && <span>{list.length}</span>}
+          {editor ? (
+            <>
+              <Icon name="folder" size={16} />
+              <h1>{(p ?? editor.project).title}</h1>
+            </>
+          ) : (
+            <div className="project-dashboard-title">
+              <h1>项目管理</h1>
+              <p>集中管理案件与项目，跟踪进展、重要日期与团队协作。</p>
+            </div>
+          )}
           <button className="work-list-create" disabled={blocked} onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> 创建项目
           </button>
@@ -402,13 +461,13 @@ export default function ProjectCatalog({
                 setStatusFilter('all');
               }}
             >
-              未归档
+              全部项目 <span>{projects.filter((item) => !item.archived_at).length}</span>
             </button>
             {(
               [
-                ['active', '开放'],
-                ['planned', '待开案'],
-                ['done', '已结案'],
+                ['active', '进行中'],
+                ['planned', '待启动'],
+                ['done', '已结项'],
               ] as const
             ).map(([status, label]) => (
               <button
@@ -441,51 +500,6 @@ export default function ProjectCatalog({
               </button>
             )}
             <button
-              type="button"
-              className="workbench-filter-toggle"
-              aria-label="筛选项目"
-              aria-controls="project-list-filters"
-              aria-expanded={listFiltersOpen}
-              onClick={() => setListFiltersOpen((open) => !open)}
-            >
-              <Icon name="filter" size={16} />
-            </button>
-            <details
-              className="project-display-menu"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.currentTarget.open = false;
-                  event.currentTarget.querySelector('summary')?.focus();
-                }
-              }}
-            >
-              <summary>
-                <Icon name="list" size={15} /> 显示
-              </summary>
-              <div>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={groupByStatus}
-                    disabled={blocked}
-                    onChange={(event) => setGroupByStatus(event.target.checked)}
-                  />
-                  按状态分组
-                </label>
-                <p>显示属性 · 本次会话</p>
-                {Object.entries(projectListProperties).map(([id, label]) => (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={columns[id as keyof typeof columns]}
-                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </details>
-            <button
               className="project-list-inspector-toggle"
               type="button"
               aria-label="项目预览"
@@ -498,18 +512,21 @@ export default function ProjectCatalog({
           </div>
         )}
         {!editor && (
+          <ProjectMetrics projects={projects} unavailable={!c.data || Boolean(c.error)} />
+        )}
+        {!editor && <h2 className="project-dashboard-list-title">项目列表</h2>}
+        {!editor && (
           <div
             className="project-list-controls"
             id="project-list-filters"
             aria-label="项目列表选项"
-            hidden={!listFiltersOpen}
           >
             <label className="project-list-search">
               <Icon name="search" size={15} />
               <input
                 disabled={dirty || creating || reading || c.pending || c.unknown}
                 aria-label="搜索项目"
-                placeholder="搜索项目…"
+                placeholder="搜索项目名称或编号…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -570,6 +587,57 @@ export default function ProjectCatalog({
               <option value="title">名称</option>
               <option value="status">状态</option>
             </select>
+            <details
+              className="project-display-menu"
+              onToggle={(event) => {
+                const menu = event.currentTarget;
+                const panel = menu.querySelector<HTMLElement>('div');
+                const trigger = menu.querySelector('summary');
+                const center = workspace.current?.querySelector('.collection-main');
+                if (!menu.open || !panel || !trigger || !center) return;
+                // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
+                panel.style.position = 'fixed';
+                panel.style.right = 'auto';
+                panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
+                const anchor = trigger.getBoundingClientRect();
+                const bounds = center.getBoundingClientRect();
+                const rect = panel.getBoundingClientRect();
+                panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
+                panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector('summary')?.focus();
+                }
+              }}
+            >
+              <summary>
+                <Icon name="list" size={15} /> 显示
+              </summary>
+              <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={groupByStatus}
+                    disabled={blocked}
+                    onChange={(event) => setGroupByStatus(event.target.checked)}
+                  />
+                  按状态分组
+                </label>
+                <p>显示属性 · 本次会话</p>
+                {Object.entries(projectListProperties).map(([id, label]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={columns[id as keyof typeof columns]}
+                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </details>
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}
@@ -1042,7 +1110,9 @@ export default function ProjectCatalog({
           ) : (
             <>
               <ProjectList
-                projects={list}
+                projects={visibleProjects}
+                tasks={tasks}
+                datesUnavailable={navigationPending || Boolean(c.error)}
                 groupByStatus={groupByStatus}
                 columns={columns}
                 selectedId={p?.id}
@@ -1076,94 +1146,190 @@ export default function ProjectCatalog({
           )}
         </div>
         <footer className="collection-footer">
-          {editor ? '真实本地项目 · 仅此设备' : `${list.length} 个项目 · Enter 打开 · 空格预览`}
+          {editor ? (
+            '真实本地项目 · 仅此设备'
+          ) : (
+            <>
+              <span>
+                显示 {list.length ? page * pageSize + 1 : 0}–
+                {Math.min((page + 1) * pageSize, list.length)} 条，共 {list.length} 条
+              </span>
+              <nav aria-label="项目分页">
+                <button
+                  type="button"
+                  aria-label="项目上一页"
+                  disabled={blocked || page === 0}
+                  onClick={() => setPagination({ key: listKey, index: page - 1 })}
+                >
+                  ‹
+                </button>
+                <span>
+                  {page + 1} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  aria-label="项目下一页"
+                  disabled={blocked || page + 1 >= pageCount}
+                  onClick={() => setPagination({ key: listKey, index: page + 1 })}
+                >
+                  ›
+                </button>
+                <select
+                  aria-label="每页项目数"
+                  disabled={blocked}
+                  value={pageSize}
+                  onChange={(event) => setPageSize(Number(event.target.value))}
+                >
+                  {[8, 20, 50].map((size) => (
+                    <option key={size} value={size}>
+                      每页 {size} 条
+                    </option>
+                  ))}
+                </select>
+              </nav>
+            </>
+          )}
         </footer>
       </div>
-      <aside
-        className="project-properties"
-        aria-label="项目辅助栏"
-        hidden={!editor && !listInspectorOpen}
-      >
-        {p && !sourceUnavailable ? (
+      <aside className="project-properties" aria-label="项目辅助栏">
+        {!sourceUnavailable ? (
           <InspectorLayout
             className="project-ai-content"
             blocked={blocked}
-            properties={
-              <div className="project-sidebar-properties">
-                <ProjectPropertyEditor
-                  key={p.id}
-                  project={p}
-                  sidebar={!editor}
-                  pending={c.pending}
-                  disabled={
-                    navigationPending ||
-                    reading ||
-                    creating ||
-                    bodyCommand ||
-                    discussionDirty ||
-                    planningDirty ||
-                    (!propertyDirty && (c.pending || c.unknown))
-                  }
-                  unknown={c.unknown && !bodyCommand}
-                  bodyDirty={bodyDirty}
-                  onDirty={(value, lifecycle = false) => {
-                    setLifecycleDraft(value && lifecycle);
-                    if (value) setSelected(p.id);
-                    setPropertyDirty(value);
-                  }}
-                  onReload={c.load}
-                  onRetry={c.retry}
-                  onSave={(base, values, onCommitted) =>
-                    command(
-                      catalogMutation({
-                        operation: 'update_project' as const,
-                        id: base.id,
-                        expected_version: base.version,
-                        expected_body_revision: base.body_revision,
-                        ...values,
-                      }),
-                      (r) => onCommitted(acknowledge(r, base)),
-                    )
-                  }
-                  onArchive={(base, archived, onCommitted) =>
-                    command(
-                      catalogMutation({
-                        operation: 'archive_project' as const,
-                        id: base.id,
-                        expected_version: base.version,
-                        archived,
-                      }),
-                      (r) => {
-                        const confirmed = acknowledge(r, base);
-                        if (confirmed && !editor) setStatusFilter(archived ? 'archived' : 'all');
-                        onCommitted(confirmed);
-                      },
-                    )
-                  }
-                />
-                {editor && (
-                  <ProjectPlanning
-                    key={p.id}
-                    project={p}
-                    tasks={members}
-                    disabled={
-                      navigationPending ||
-                      reading ||
-                      creating ||
-                      bodyDirty ||
-                      propertyDirty ||
-                      discussionDirty
+            expandedActions={
+              !editor && (
+                <details
+                  className="project-ai-actions"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && event.currentTarget.open) {
+                      event.preventDefault();
+                      event.currentTarget.open = false;
+                      event.currentTarget.querySelector('summary')?.focus();
                     }
-                    pending={c.pending || c.unknown}
-                    onDirty={setPlanningDirty}
-                    execute={command}
-                  />
+                  }}
+                >
+                  <summary>
+                    <Icon name="plus" size={14} /> 快速操作
+                  </summary>
+                  <div>
+                    {p && <p>当前项目：{p.title}</p>}
+                    <button type="button" disabled={blocked} onClick={() => setCreating(true)}>
+                      <Icon name="folder" size={15} />
+                      新建项目
+                    </button>
+                    {onNewTask && (
+                      <button
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => onNewTask(sourceView(''))}
+                      >
+                        <Icon name="check" size={15} />
+                        新建任务
+                      </button>
+                    )}
+                    {onCalendar && (
+                      <button type="button" disabled={blocked} onClick={onCalendar}>
+                        <Icon name="calendar" size={15} />
+                        查看日历
+                      </button>
+                    )}
+                  </div>
+                </details>
+              )
+            }
+            properties={
+              <>
+                {!editor && (
+                  <div className="project-dashboard-important" inert={blocked}>
+                    {ImportantInfo ? (
+                      <ImportantInfo title="重要事项" onOpen={openTask} onCalendar={onCalendar} />
+                    ) : (
+                      <p>重要事项暂不可用。</p>
+                    )}
+                  </div>
                 )}
-              </div>
+                {p && (editor || listInspectorOpen) && (
+                  <div className="project-sidebar-properties">
+                    <ProjectPropertyEditor
+                      key={p.id}
+                      project={p}
+                      sidebar={!editor}
+                      pending={c.pending}
+                      disabled={
+                        navigationPending ||
+                        reading ||
+                        creating ||
+                        bodyCommand ||
+                        discussionDirty ||
+                        planningDirty ||
+                        (!propertyDirty && (c.pending || c.unknown))
+                      }
+                      unknown={c.unknown && !bodyCommand}
+                      bodyDirty={bodyDirty}
+                      onDirty={(value, lifecycle = false) => {
+                        setLifecycleDraft(value && lifecycle);
+                        if (value) setSelected(p.id);
+                        setPropertyDirty(value);
+                      }}
+                      onReload={c.load}
+                      onRetry={c.retry}
+                      onSave={(base, values, onCommitted) =>
+                        command(
+                          catalogMutation({
+                            operation: 'update_project' as const,
+                            id: base.id,
+                            expected_version: base.version,
+                            expected_body_revision: base.body_revision,
+                            ...values,
+                          }),
+                          (r) => onCommitted(acknowledge(r, base)),
+                        )
+                      }
+                      onArchive={(base, archived, onCommitted) =>
+                        command(
+                          catalogMutation({
+                            operation: 'archive_project' as const,
+                            id: base.id,
+                            expected_version: base.version,
+                            archived,
+                          }),
+                          (r) => {
+                            const confirmed = acknowledge(r, base);
+                            if (confirmed && !editor)
+                              setStatusFilter(archived ? 'archived' : 'all');
+                            onCommitted(confirmed);
+                          },
+                        )
+                      }
+                    />
+                    {editor && (
+                      <ProjectPlanning
+                        key={p.id}
+                        project={p}
+                        tasks={members}
+                        disabled={
+                          navigationPending ||
+                          reading ||
+                          creating ||
+                          bodyDirty ||
+                          propertyDirty ||
+                          discussionDirty
+                        }
+                        pending={c.pending || c.unknown}
+                        onDirty={setPlanningDirty}
+                        execute={command}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
             }
           >
             <SidebarAgent
-              project={{ id: p.id, version: p.version, archived: Boolean(p.archived_at) }}
+              project={
+                p ? { id: p.id, version: p.version, archived: Boolean(p.archived_at) } : undefined
+              }
+              unavailable="暂无可用项目，新建或选择项目后开始对话。"
               blocked={blocked}
             />
           </InspectorLayout>

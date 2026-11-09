@@ -27,6 +27,7 @@ import type {
 import EngineeringApp from './EngineeringApp';
 import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './features/projects/ProjectCatalog';
+import ImportantSchedules from './features/calendar/ImportantSchedules';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
 import { taskStatusNames } from './ui/task-status';
@@ -835,6 +836,8 @@ function Workbench() {
             navigationPending={loading}
             onOpen={(id, source) => void open(id, source)}
             onNewTask={newTask}
+            onCalendar={() => navigate('calendar')}
+            importantInfo={ImportantSchedules}
             onFinance={(projectId) => {
               if (!canLeave()) return;
               navigate('finance');

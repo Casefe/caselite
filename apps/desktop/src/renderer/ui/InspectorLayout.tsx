@@ -6,11 +6,13 @@ export default function InspectorLayout({
   children,
   blocked = false,
   className = '',
+  expandedActions,
 }: {
   properties: ReactNode;
   children: ReactNode;
   blocked?: boolean;
   className?: string;
+  expandedActions?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [customWidth, setCustomWidth] = useState<number | null>(null);
@@ -203,6 +205,7 @@ export default function InspectorLayout({
             </svg>
           </button>
         </header>
+        {expanded && expandedActions}
         <div ref={content} id={region} className="inspector-ai-scroll">
           {children}
         </div>
