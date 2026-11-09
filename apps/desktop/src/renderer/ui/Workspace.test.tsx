@@ -15,6 +15,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         onCollapse={collapse}
         onNavigate={navigate}
         tasks={[]}
+        importantDatesCount={73}
         onOpen={vi.fn()}
       >
         <p>内容区域</p>
@@ -32,6 +33,14 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         expect(sidebar.queryByRole('button', { name, exact: true })).toBeNull();
     };
     checkNavigation();
+    expect(
+      screen.getByRole('button', { name: '任务', exact: true }).querySelector('small'),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole('button', { name: '日历', exact: true })).getByLabelText(
+        '重要日期 73 项',
+      ).textContent,
+    ).toBe('73');
     expect(screen.getByRole('region', { name: '收藏' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '项目', exact: true }));
     expect(navigate).toHaveBeenCalledWith('projects');
@@ -54,6 +63,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
         onCollapse={collapse}
         onNavigate={navigate}
         tasks={[]}
+        importantDatesCount={73}
         onOpen={vi.fn()}
       >
         <p>内容区域</p>
@@ -63,6 +73,9 @@ describe('workspace navigation and clearly bounded project prototype', () => {
       'false',
     );
     checkNavigation();
+    expect(screen.getByRole('button', { name: '日历', exact: true }).title).toBe(
+      '日历 · 73 个重要日期',
+    );
     fireEvent.click(screen.getByRole('button', { name: '客户', exact: true }));
     expect(navigate).toHaveBeenCalledWith('contacts');
     fireEvent.click(screen.getByRole('button', { name: '展开导航' }));
