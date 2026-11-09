@@ -7,7 +7,8 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
   const legacyProjectPlaceholder = '00000000-0000-0000-0000-000000000000';
   const encode = (run: AgentRun, now: string) => {
     const document = run.scope.startsWith('document:');
-    const project = run.scope.startsWith('project:') || document;
+    const project =
+      run.scope.startsWith('project:') || document || run.scope.startsWith('contact:');
     return JSON.stringify({
       ...run,
       scope: project ? legacyProjectPlaceholder : run.scope,
@@ -21,7 +22,12 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
   const decode = (row: StoredRun) => {
     const stored = JSON.parse(row.payload);
     const payload = agentRunSchema.parse(stored);
-    if (!row.scope.startsWith('project:') && !row.scope.startsWith('document:')) return payload;
+    if (
+      !row.scope.startsWith('project:') &&
+      !row.scope.startsWith('document:') &&
+      !row.scope.startsWith('contact:')
+    )
+      return payload;
     if (payload.scope !== legacyProjectPlaceholder) throw new Error('Invalid stored project run');
     return agentRunSchema.parse({
       ...payload,
@@ -79,6 +85,7 @@ export function createAgentHistoryStore(db: Database.Database, workspace: string
         old.prompt !== run.prompt ||
         old.context_id !== run.context_id ||
         old.page_context_id !== run.page_context_id ||
+        old.contact_record_context_id !== run.contact_record_context_id ||
         JSON.stringify(old.page_reference) !== JSON.stringify(run.page_reference) ||
         old.project_fingerprint !== run.project_fingerprint ||
         JSON.stringify(old.attachments) !== JSON.stringify(run.attachments) ||

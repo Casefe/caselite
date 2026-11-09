@@ -13,6 +13,9 @@ import { emptyDraft, type RichDraft } from '../../editors/editor-state';
 import { isConversationRun } from './agent-messages';
 
 // 仅保留尚未提交的编辑草稿/发送身份，避免面板卸载丢字或未知回执触发新收费Run。
+type ContactReference = { run_id: string; title: string; token: string };
+const contactReferences = new Map<string, ContactReference>();
+const submittedReferences = new Map<string, ContactReference>();
 const drafts = new Map<string, RichDraft>();
 const draftRevisions = new Map<string, number>();
 const submissionRevisions = new Map<string, number>();
@@ -36,7 +39,9 @@ export function useAgentController({
   project,
   page,
 }: AgentControllerOptions) {
-  const withoutMaterials = Boolean(project || scope.startsWith('document:'));
+  const withoutMaterials = Boolean(
+    project || scope.startsWith('document:') || scope.startsWith('contact:'),
+  );
   const materials = useMaterials(scope, !withoutMaterials);
   const [pageState, setPageState] = useState<{
     version: string | undefined;
@@ -69,6 +74,28 @@ export function useAgentController({
     (onDraft ?? setLocalDraft)(value);
   };
   const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [contactReference, setContactReference] = useState(() => contactReferences.get(scope));
+  const selectContactRecord = (run: AgentRun) => {
+    if (
+      !scope.startsWith('contact:') ||
+      run.scope !== scope ||
+      run.status !== 'succeeded' ||
+      run.output_incomplete ||
+      !run.contact_record_candidate
+    )
+      return;
+    const value = {
+      run_id: run.id,
+      title: run.contact_record_candidate.title,
+      token: crypto.randomUUID(),
+    };
+    contactReferences.set(scope, value);
+    setContactReference(value);
+  };
+  const removeContactRecord = () => {
+    contactReferences.delete(scope);
+    setContactReference(undefined);
+  };
   const [model, setModel] = useState<AgentModel>('gpt-4.1-mini');
   const [providers, setProviders] = useState<
     Partial<Record<import('../../../preload/caselite-api').AgentProvider, boolean>>
@@ -107,6 +134,12 @@ export function useAgentController({
     if (draftRevisions.get(scope) === submissionRevisions.get(request.run_id))
       current.current.setDraft(emptyDraft());
     submissionRevisions.delete(request.run_id);
+    const reference = submittedReferences.get(request.run_id);
+    if (reference && contactReferences.get(scope)?.token === reference.token) {
+      contactReferences.delete(scope);
+      if (alive.current) setContactReference(undefined);
+    }
+    submittedReferences.delete(request.run_id);
     if (alive.current) setUnknown(false);
   };
   const acceptResponse = useRef(acknowledge);
@@ -267,6 +300,9 @@ export function useAgentController({
           run_id: crypto.randomUUID(),
           prompt,
           confirmed: true,
+          ...(scope.startsWith('contact:') && contactReferences.has(scope)
+            ? { contact_record_context_id: contactReferences.get(scope)!.run_id }
+            : {}),
           ...(context ? { context_id: context.id } : {}),
           ...(pageReference
             ? { page_context_id: pageReference.id }
@@ -275,6 +311,9 @@ export function useAgentController({
               : {}),
         };
         submissions.set(scope, request);
+        const reference = contactReferences.get(scope);
+        if (reference && request.contact_record_context_id === reference.run_id)
+          submittedReferences.set(request.run_id, reference);
         if (revision !== undefined) submissionRevisions.set(request.run_id, revision);
         if (context) confirmedMaterials.set(scope, context);
         else confirmedMaterials.delete(scope);
@@ -379,6 +418,9 @@ export function useAgentController({
     }
   };
   return {
+    contactReference,
+    selectContactRecord,
+    removeContactRecord,
     pageReference,
     pageLoading,
     loadPageReference,

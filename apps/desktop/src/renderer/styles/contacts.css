@@ -344,3 +344,20 @@
   align-items: center;
   gap: 8px;
 }
+/* 客户页的标签是固定工具栏，不能继承填满父级的 view-tabs 高度挤掉列表。 */
+.contacts-workbench > .collection-main {
+  overflow: hidden;
+}
+.contacts-workbench .collection-main > .caption {
+  margin: 12px 20px;
+  flex-shrink: 0;
+}
+.contacts-workbench .view-tabs {
+  height: 40px;
+  flex-shrink: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.contacts-workbench :is(.customer-list-filters, .customer-list-views, .collection-footer) {
+  flex-shrink: 0;
+}

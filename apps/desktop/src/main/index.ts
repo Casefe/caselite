@@ -35,6 +35,7 @@ import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runTypographyDemo } from './typography-demo';
 import { runProjectDemo } from './project-demo';
+import { runCustomerDemo, createSyntheticCustomerStream } from './customer-demo';
 import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
@@ -161,6 +162,7 @@ async function createWindow(
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('customer-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-scheme-') ||
@@ -694,6 +696,9 @@ if (taskDemoPhase) {
       'agent-credential-read',
       'agent-crash-synthetic',
       'agent-read-synthetic',
+      'customer-write',
+      'customer-read',
+      'customer-preview',
       'finance-write',
       'finance-reverse',
       'finance-read',
@@ -1039,6 +1044,7 @@ app
             );
           }
         : undefined;
+    const customerDemo = taskDemoPhase?.startsWith('customer-');
     const financeDemo = taskDemoPhase?.startsWith('finance-');
     if (financeDemo) materialDemoKeys.clear();
     const documentReviewDemo =
@@ -1061,6 +1067,7 @@ app
       taskDemoPhase?.startsWith('legal-') ||
       performanceDemo ||
       documentReviewDemo ||
+      customerDemo ||
       financeDemo ||
       taskDemoPhase?.startsWith('reminder') ||
       taskDemoPhase?.startsWith('project-') ||
@@ -1124,7 +1131,7 @@ app
           },
         }
       : baseAgentCredentials;
-    if (taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
+    if (customerDemo || taskDemoPhase === 'agent' || taskDemoPhase === 'materials')
       await agentCredentials.set('sk-synthetic-openai');
     let historyReady = true;
     try {
@@ -1218,49 +1225,52 @@ app
               },
             })
           : createPiRuntime(
-              taskDemoPhase?.startsWith('important-date-')
-                ? syntheticImportantDateStream
-                : performanceDemo
-                  ? syntheticAgentStream
-                  : documentReviewDemo
-                    ? syntheticReviewStream
-                    : financeDemo ||
-                        taskDemoPhase === 'typography' ||
-                        credentialUi ||
-                        taskDemoPhase?.startsWith('reminder') ||
-                        (taskDemoPhase?.startsWith('project-') &&
-                          taskDemoPhase !== 'project-agent-write') ||
-                        taskDemoPhase === 'task-status-write' ||
-                        taskDemoPhase === 'task-status-read' ||
-                        taskDemoPhase === 'agent-read' ||
-                        taskDemoPhase === 'agent-credential-read' ||
-                        taskDemoPhase === 'agent-read-synthetic' ||
-                        taskDemoPhase === 'materials-read'
-                      ? () => {
-                          if (credentialUi) {
-                            credentialRuntimeAttempts++;
-                            recordCredentialUi();
-                          }
-                          writeFileSync(
-                            join(taskDemoRoot!, 'unexpected-runtime.txt'),
-                            'unexpected dispatch',
-                          );
-                          throw new Error('Unexpected restart dispatch');
-                        }
-                      : taskDemoPhase === 'materials' || taskDemoPhase?.startsWith('materials-docx')
-                        ? (model, context, options) => {
+              customerDemo
+                ? createSyntheticCustomerStream(taskDemoRoot!)
+                : taskDemoPhase?.startsWith('important-date-')
+                  ? syntheticImportantDateStream
+                  : performanceDemo
+                    ? syntheticAgentStream
+                    : documentReviewDemo
+                      ? syntheticReviewStream
+                      : financeDemo ||
+                          taskDemoPhase === 'typography' ||
+                          credentialUi ||
+                          taskDemoPhase?.startsWith('reminder') ||
+                          (taskDemoPhase?.startsWith('project-') &&
+                            taskDemoPhase !== 'project-agent-write') ||
+                          taskDemoPhase === 'task-status-write' ||
+                          taskDemoPhase === 'task-status-read' ||
+                          taskDemoPhase === 'agent-read' ||
+                          taskDemoPhase === 'agent-credential-read' ||
+                          taskDemoPhase === 'agent-read-synthetic' ||
+                          taskDemoPhase === 'materials-read'
+                        ? () => {
+                            if (credentialUi) {
+                              credentialRuntimeAttempts++;
+                              recordCredentialUi();
+                            }
                             writeFileSync(
-                              join(taskDemoRoot!, 'material-pi-context.json'),
-                              JSON.stringify(context, null, 2),
+                              join(taskDemoRoot!, 'unexpected-runtime.txt'),
+                              'unexpected dispatch',
                             );
-                            return taskDemoPhase?.startsWith('materials-docx')
-                              ? syntheticDocxStream(model, context, options)
-                              : syntheticAgentStream(model, context, options);
+                            throw new Error('Unexpected restart dispatch');
                           }
-                        : taskDemoPhase === 'project-agent-write' ||
-                            taskDemoPhase?.startsWith('agent')
-                          ? syntheticAgentStream
-                          : undefined,
+                        : taskDemoPhase === 'materials' ||
+                            taskDemoPhase?.startsWith('materials-docx')
+                          ? (model, context, options) => {
+                              writeFileSync(
+                                join(taskDemoRoot!, 'material-pi-context.json'),
+                                JSON.stringify(context, null, 2),
+                              );
+                              return taskDemoPhase?.startsWith('materials-docx')
+                                ? syntheticDocxStream(model, context, options)
+                                : syntheticAgentStream(model, context, options);
+                            }
+                          : taskDemoPhase === 'project-agent-write' ||
+                              taskDemoPhase?.startsWith('agent')
+                            ? syntheticAgentStream
+                            : undefined,
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
@@ -1517,6 +1527,16 @@ app
         }),
       );
       app.quit();
+      return;
+    }
+    if (
+      taskDemoRoot &&
+      (taskDemoPhase === 'customer-write' ||
+        taskDemoPhase === 'customer-read' ||
+        taskDemoPhase === 'customer-preview')
+    ) {
+      await runCustomerDemo(createWindow, taskDemoRoot, taskDemoPhase);
+      if (taskDemoPhase !== 'customer-preview') app.quit();
       return;
     }
     if (
