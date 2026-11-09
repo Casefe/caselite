@@ -1,3 +1,5 @@
+import CalendarView from './features/calendar/CalendarView';
+import { localDate, invalidateCalendar } from './features/calendar/calendar-query';
 import ContactsView from './features/contacts/ContactsView';
 import ReportView from './features/reports/ReportView';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -49,6 +51,7 @@ function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
+  const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -95,6 +98,7 @@ function Workbench() {
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
     invalidateTaskPages(queryClient);
+    invalidateCalendar(queryClient);
     void invalidateOrdinaryCatalog(queryClient);
     void invalidateProjectCatalog(queryClient);
     const sequence = ++listReadSequence.current;
@@ -206,7 +210,7 @@ function Workbench() {
     setView(next);
     if (next === 'finance' && view !== 'finance') setFinanceProject('');
     if (next !== 'settings') setTaskReturn(null);
-    if (next === 'tasks') setActive(null);
+    if (next === 'tasks' || next === 'calendar') setActive(null);
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
@@ -233,6 +237,7 @@ function Workbench() {
     document = false,
     review = false,
     tab = source?.documentId || document ? '成果正文' : '内容',
+    destination: WorkspaceView = 'tasks',
   ) {
     if (!canLeave()) return;
     if (dirty) {
@@ -263,7 +268,7 @@ function Workbench() {
         setReviewDocument(review ? task.document_id : null);
         setState(r.state);
         setObjectiveState(r.objective_state ?? null);
-        setView('tasks');
+        setView(destination);
         setDetailTab(tab);
         setCreateTagDraft(false);
         setCreating(false);
@@ -391,6 +396,57 @@ function Workbench() {
     }
     void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
   };
+  const taskInspector = active ? (
+    <TaskInspector
+      key={active.id}
+      task={active}
+      content={
+        view === 'calendar' ? (
+          <>
+            <h2>{active.title}</h2>
+            <TaskContentEditor
+              key={active.id + ':' + propertiesRead}
+              task={active}
+              initial={objectiveState}
+              onDirty={setDirty}
+              disabled={propertiesBlocked || reminderBlocked || projectDirty}
+              onSaved={(saved, bytes) => {
+                setActive(saved);
+                setObjectiveState(bytes);
+                void refresh().catch(() => setError('任务内容已保存，日历刷新失败。'));
+              }}
+            />
+            <button
+              disabled={propertiesBlocked || reminderBlocked}
+              onClick={() => setReminderTask(reminderTask === active.id ? null : active.id)}
+            >
+              本机提醒
+            </button>
+            {reminderTask === active.id && (
+              <ReminderEditor
+                taskId={active.id}
+                disabled={dirty || propertiesBlocked || projectDirty}
+                onBlocked={setReminderBlocked}
+              />
+            )}
+          </>
+        ) : undefined
+      }
+      projectDisabled={
+        dirty || commentDirty || propertiesBlocked || reminderBlocked || busy || uncertain
+      }
+      propertiesDisabled={
+        dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+      }
+      reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
+      onPropertiesBlocked={setPropertiesBlocked}
+      onTaskChanged={acceptTaskProperties}
+      suggestions={tagSuggestions}
+      assigneeSuggestions={tasks.flatMap(({ assignee }) => (assignee ? [assignee] : []))}
+      onProjectDirty={setProjectDirty}
+      onProjectChanged={acceptTaskProperties}
+    />
+  ) : null;
   const documentEntry = reviewDocument !== null && reviewDocument === active?.document_id;
   const documentReview = documentEntry && detailTab === '成果正文';
   useEffect(() => {
@@ -660,6 +716,36 @@ function Workbench() {
               }
             }}
           />
+        ) : view === 'calendar' ? (
+          <CalendarView
+            date={calendarDate}
+            selected={active}
+            inspector={taskInspector}
+            blocked={
+              dirty || propertiesBlocked || reminderBlocked || projectDirty || busy || uncertain
+            }
+            onOpen={(id) => void open(id, null, false, false, '内容', 'calendar')}
+            onClose={() => {
+              if (canLeave()) {
+                readSequence.current++;
+                setActive(null);
+              }
+            }}
+            onDate={(date) => {
+              if (canLeave()) {
+                readSequence.current++;
+                setCalendarDate(date);
+                setActive(null);
+              }
+            }}
+            onReminders={() => navigate('reminders')}
+            onSettings={() => {
+              if (canLeave()) {
+                setSettingsSection('integrations');
+                navigate('settings');
+              }
+            }}
+          />
         ) : view === 'home' ? (
           <AgentHome
             prompt={agentPrompt}
@@ -858,35 +944,15 @@ function Workbench() {
               {documentReview ? (
                 <aside className="task-inspector" ref={setReviewDock} aria-label="文档审阅侧栏" />
               ) : (
-                <TaskInspector
-                  key={active.id}
-                  task={active}
-                  projectDisabled={
-                    dirty ||
-                    commentDirty ||
-                    propertiesBlocked ||
-                    reminderBlocked ||
-                    busy ||
-                    uncertain
-                  }
-                  propertiesDisabled={
-                    dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
-                  }
-                  reminderEditing={reminderBlocked || dirty || commentDirty || projectDirty}
-                  onPropertiesBlocked={setPropertiesBlocked}
-                  onTaskChanged={acceptTaskProperties}
-                  suggestions={tagSuggestions}
-                  assigneeSuggestions={tasks.flatMap(({ assignee }) =>
-                    assignee ? [assignee] : [],
-                  )}
-                  onProjectDirty={setProjectDirty}
-                  onProjectChanged={acceptTaskProperties}
-                />
+                taskInspector
               )}
             </div>
           </section>
         ) : view === 'reminders' ? (
-          <ReminderInbox onOpen={(id) => void open(id)} onBlocked={setPropertiesBlocked} />
+          <>
+            <button onClick={() => navigate('calendar')}>返回日历</button>
+            <ReminderInbox onOpen={(id) => void open(id)} onBlocked={setPropertiesBlocked} />
+          </>
         ) : view === 'documents' || view === 'knowledge' ? (
           <DocumentLibrary
             key={view}
@@ -930,7 +996,10 @@ function Workbench() {
         ) : view === 'settings' ? (
           <SettingsView
             section={settingsSection}
-            onSection={setSettingsSection}
+            onSection={(section) => {
+              if (canLeave()) setSettingsSection(section);
+            }}
+            onBlocked={setPropertiesBlocked}
             onBack={() => {
               if (settingsReturn === 'tasks' && active)
                 void open(

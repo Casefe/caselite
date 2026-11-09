@@ -1,3 +1,4 @@
+import ImportantSchedules from '../features/calendar/ImportantSchedules';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
@@ -44,7 +45,7 @@ export default function AgentHome({
 }: {
   prompt: RichDraft;
   onPrompt(value: RichDraft): void;
-  onNavigate(view: 'tasks' | 'projects' | 'agent-history'): void;
+  onNavigate(view: 'tasks' | 'projects' | 'agent-history' | 'calendar'): void;
   tasks: Task[];
   onOpen(id: string): void;
 }) {
@@ -251,12 +252,7 @@ export default function AgentHome({
         }}
       >
         <div className="home-context-panel">
-          <section className="home-reminder-card">
-            <h3>
-              <Icon name="clock" size={16} /> 重要日期
-            </h3>
-            <p>日期提醒尚未接入，暂不能显示未来事项。</p>
-          </section>
+          <ImportantSchedules home onOpen={onOpen} onCalendar={() => onNavigate('calendar')} />
           <section className="home-reminder-card home-recent-card" aria-label="最近任务">
             <h3>
               <Icon name="check" size={16} />

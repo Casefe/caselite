@@ -10,6 +10,7 @@ const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
 export type WorkspaceView =
   | 'home'
+  | 'calendar'
   | 'reminders'
   | 'tasks'
   | 'projects'
@@ -24,7 +25,7 @@ export type WorkspaceView =
   | 'agent-history';
 export const navigation: Array<{ id: WorkspaceView; label: string; icon: string }> = [
   { id: 'home', label: '首页', icon: 'home' },
-  { id: 'reminders', label: '提醒', icon: 'bell' },
+  { id: 'calendar', label: '日历', icon: 'calendar' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
   { id: 'documents', label: '文档', icon: 'file' },

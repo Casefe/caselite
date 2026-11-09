@@ -1,6 +1,23 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+const render = (node: ReactNode) =>
+  rtlRender(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {node}
+    </QueryClientProvider>,
+  );
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import TaskInspector from './TaskInspector';
@@ -59,7 +76,9 @@ it('retains the same status owner when AI-tab switching is attempted during draf
   };
   fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
   collapseAndReopen();
-  await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(api.mock.calls.filter(([r]) => r.operation !== 'calendar_query')).toHaveLength(1),
+  );
   collapseAndReopen();
   await act(async () => finish({ ok: false, code: 'RESULT_UNKNOWN', message: '合成未知回执' }));
   collapseAndReopen();

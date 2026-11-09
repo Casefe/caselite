@@ -1,3 +1,5 @@
+import CalendarSettings from '../features/calendar/CalendarSettings';
+const ignoreBlocked = () => {};
 import { Icon } from '../shared/ui/Icon';
 import { ThemeSetting } from './Appearance';
 import ModelSettings from './ModelSettings';
@@ -10,10 +12,12 @@ export default function SettingsView({
   section,
   onSection,
   onBack,
+  onBlocked,
 }: {
   section: SettingsSection;
   onSection(section: SettingsSection): void;
   onBack(): void;
+  onBlocked?(value: boolean): void;
 }) {
   const { locations, pending } = useLocalPreferences();
   const group = settingsGroups.find(({ items }) => items.some(([id]) => id === section))!;
@@ -60,6 +64,9 @@ export default function SettingsView({
         </header>
         <div className="settings-page">
           <h2>{label}</h2>
+          {section === 'integrations' && (
+            <CalendarSettings onBlocked={onBlocked ?? ignoreBlocked} />
+          )}
           {section === 'models' && <ModelSettings />}
           {section === 'general' && <ThemeSetting />}
           {section === 'account' && <PersonalSettings />}

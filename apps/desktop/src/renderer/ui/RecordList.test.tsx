@@ -42,7 +42,11 @@ const result = (rows: Task[], offset = 0): TaskResponse => ({
 const source: Task[] = [];
 function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialTaskListState) {
   window.caselite = {
-    task: api,
+    // 新增类型查询不属于本组任务页IPC计数；该通道在Calendar专项中单独验收。
+    task: (r: TaskRequest) =>
+      r.operation === 'calendar_query'
+        ? Promise.resolve({ ...result([]), calendar_types: [] })
+        : api(r),
     catalog: async () => ({
       ok: true,
       projects: [],

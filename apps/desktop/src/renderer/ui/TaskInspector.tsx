@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import TaskCalendarEditor from '../features/calendar/TaskCalendarEditor';
+import { useCallback, useState, useRef, type ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import TaskProjectAction from '../features/projects/TaskProjectAction';
@@ -16,7 +17,9 @@ export default function TaskInspector({
   reminderEditing = false,
   onPropertiesBlocked,
   onTaskChanged,
+  content,
 }: {
+  content?: ReactNode;
   task: Task | null;
   onProjectChanged?(task: Task, objectiveState: number[] | null): void;
   onProjectDirty?(dirty: boolean): void;
@@ -29,10 +32,21 @@ export default function TaskInspector({
   onTaskChanged?(task: Task, objectiveState: number[] | null): void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [calendarEditing, setCalendarEditing] = useState(false);
+  const flags = useRef({ properties: false, calendar: false });
   const reportBlocked = useCallback(
     (value: boolean) => {
+      flags.current.properties = value;
       setEditing(value);
-      onPropertiesBlocked?.(value);
+      onPropertiesBlocked?.(value || flags.current.calendar);
+    },
+    [onPropertiesBlocked],
+  );
+  const reportCalendar = useCallback(
+    (value: boolean) => {
+      flags.current.calendar = value;
+      setCalendarEditing(value);
+      onPropertiesBlocked?.(value || flags.current.properties);
     },
     [onPropertiesBlocked],
   );
@@ -40,10 +54,11 @@ export default function TaskInspector({
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <div className="inspector-content task-inspector-content" aria-label="任务属性">
+        {content}
         {onPropertiesBlocked && onTaskChanged ? (
           <TaskProperties
             task={task}
-            disabled={propertiesDisabled}
+            disabled={propertiesDisabled || calendarEditing}
             suggestions={suggestions}
             assigneeSuggestions={assigneeSuggestions}
             groupTags
@@ -87,9 +102,22 @@ export default function TaskInspector({
             </dl>
           </details>
         )}
+        {onPropertiesBlocked && onTaskChanged && (
+          <TaskCalendarEditor
+            key={task.id + ':' + task.version}
+            task={task}
+            disabled={propertiesDisabled || editing}
+            onBlocked={reportCalendar}
+            onChanged={onTaskChanged}
+          />
+        )}
         <section aria-label="AI 对话" className="project-inspector-section">
           <h3>AI 对话</h3>
-          <SidebarAgent taskId={task.id} blocked={reminderEditing || editing} />
+          <SidebarAgent
+            key={task.id}
+            taskId={task.id}
+            blocked={reminderEditing || editing || calendarEditing}
+          />
         </section>
       </div>
     </aside>
