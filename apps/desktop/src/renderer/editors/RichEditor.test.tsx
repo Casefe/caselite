@@ -55,9 +55,16 @@ describe('rich input locking', () => {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       });
       expect(document.body.contains(menu)).toBe(true);
-      await waitFor(() => expect(menu.parentElement?.style.visibility).toBe('visible'));
+      await waitFor(() =>
+        expect((menu.closest('.selection-tools') as HTMLElement).style.visibility).toBe('visible'),
+      );
       expect(Y.encodeStateAsUpdate(firstDoc)).toEqual(firstState);
       expect(firstUpdates).not.toHaveBeenCalled();
+      await act(async () => {
+        (menu.querySelector('[aria-label=加粗]') as HTMLButtonElement).focus();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      expect(document.body.contains(menu)).toBe(true);
       fireEvent.mouseDown(menu.querySelector('[aria-label=加粗]')!);
       fireEvent.click(menu.querySelector('[aria-label=加粗]')!);
       expect(first.getJSON().content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
@@ -66,14 +73,28 @@ describe('rich input locking', () => {
         first.commands.undo();
       });
       expect(first.getJSON().content?.[0].content?.[0].marks).toBeUndefined();
+      await waitFor(() => expect(first.view.hasFocus()).toBe(true));
       await act(async () => {
         second.view.dom.focus();
         second.commands.setTextSelection({ from: 1, to: 5 });
       });
-      await waitFor(() =>
-        expect(screen.getAllByRole('toolbar', { name: '选区格式' })).toHaveLength(1),
-      );
+      await waitFor(() => {
+        const menus = screen.getAllByRole('toolbar', { name: '选区格式' });
+        expect(menus).toHaveLength(1);
+        expect(menus[0].closest('[data-editor-mode]')?.getAttribute('data-editor-mode')).toBe(
+          'compact',
+        );
+      });
       const compactMenu = screen.getByRole('toolbar', { name: '选区格式' });
+      await act(async () => {
+        (compactMenu.querySelector('[aria-label=斜体]') as HTMLButtonElement).focus();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      expect(document.body.contains(compactMenu)).toBe(true);
+      expect(compactMenu.closest('[data-editor-mode]')?.getAttribute('data-editor-mode')).toBe(
+        'compact',
+      );
+      expect(second.state.selection.toJSON()).toEqual({ type: 'text', anchor: 1, head: 5 });
       fireEvent.click(compactMenu.querySelector('[aria-label=斜体]')!);
       expect(second.getJSON().content?.[0].content?.[0].marks).toEqual([{ type: 'italic' }]);
       expect(first.getJSON().content?.[0].content?.[0].marks).toBeUndefined();

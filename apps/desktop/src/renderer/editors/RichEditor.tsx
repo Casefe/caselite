@@ -240,7 +240,22 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
     return menu;
   });
   const [pluginKey] = useState(() => new PluginKey('selectionFormat'));
+  const [active, setActive] = useState(editor.isFocused);
   useEffect(() => {
+    const focus = () => setActive(true);
+    const blur = ({ event }: { event: FocusEvent }) => {
+      if (!(event.relatedTarget instanceof Node && element.contains(event.relatedTarget)))
+        setActive(false);
+    };
+    editor.on('focus', focus);
+    editor.on('blur', blur);
+    return () => {
+      editor.off('focus', focus);
+      editor.off('blur', blur);
+    };
+  }, [editor, element]);
+  useEffect(() => {
+    if (!active) return;
     // 正文和紧凑描述使用不同滚动祖先；交给官方插件监听，不能只跟随window。
     let parent = editor.view.dom.parentElement;
     let scrollTarget: HTMLElement | Window = window;
@@ -266,8 +281,23 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
       editor.unregisterPlugin(pluginKey);
       element.remove();
     };
-  }, [editor, element, pluginKey]);
-  return createPortal(<FormatBar editor={editor} floating marksOnly />, element);
+  }, [editor, element, pluginKey, active]);
+  return createPortal(
+    <div
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        // 菜单按钮属于当前选区；离开菜单和正文时必须收起，不能把旧选区留在另一对象上。
+        if (!(
+          next instanceof Node &&
+          (element.contains(next) || (!editor.isDestroyed && editor.view.dom.contains(next)))
+        ))
+          setActive(false);
+      }}
+    >
+      <FormatBar editor={editor} floating marksOnly />
+    </div>,
+    element,
+  );
 }
 
 export function EditorSurface({
@@ -539,12 +569,10 @@ export function EditorSurface({
             格式工具
           </button>
           {showFormats && <FormatBar editor={editor} />}
-          {!showFormats && !composing && ui?.selected && ui.focused && (
-            <SelectionFormatTools editor={editor} />
-          )}
+          {!showFormats && !composing && ui?.selected && <SelectionFormatTools editor={editor} />}
         </>
       )}
-      {documentMode && editable && !composing && ui?.selected && ui.focused && (
+      {documentMode && editable && !composing && ui?.selected && (
         <SelectionFormatTools editor={editor} />
       )}
       {showBlockActions && editable && ui && (

@@ -149,6 +149,8 @@ export async function runEditorSchemeDemo(
       const selected = tasks.execute({ protocol_version: 1, operation: 'read', task_id: task.id });
       if (JSON.stringify(before) !== JSON.stringify(selected))
         throw new Error('Showing selection menu changed saved body or receipt');
+      await evaluate("document.querySelector('.selection-tools [aria-label=加粗]').focus()");
+      await wait(`${selectionMenu} && getComputedStyle(${selectionMenu}).visibility==='visible'`);
       await click('.selection-tools [aria-label=加粗]');
       await wait(`${body}.querySelector('strong')`);
       await click('.simple-toolbar [aria-label=撤销]:not(:disabled)');
@@ -184,6 +186,7 @@ export async function runEditorSchemeDemo(
       const after = tasks.execute({ protocol_version: 1, operation: 'read', task_id: task.id });
       if (JSON.stringify(saved) !== JSON.stringify(after) || !before.ok || !saved.ok)
         throw new Error('Scheme switch changed durable body');
+      window.setContentSize(900, 760);
       await command('Emulation.setDeviceMetricsOverride', {
         width: 900,
         height: 760,
