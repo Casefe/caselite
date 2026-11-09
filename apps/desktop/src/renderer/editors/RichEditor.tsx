@@ -4,7 +4,14 @@ import { useLocalDoc, type RichDraft } from './editor-state';
 import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
 export { localExtensions } from './editor-config';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { BubbleMenuPlugin } from '@tiptap/extension-bubble-menu';
 import { PluginKey, TextSelection } from '@tiptap/pm/state';
@@ -233,7 +240,7 @@ const selectionMenuOptions = {
   shift: { padding: 8 },
 };
 
-function SelectionFormatTools({ editor }: { editor: Editor }) {
+function SelectionFormatTools({ editor, actions }: { editor: Editor; actions?: ReactNode }) {
   const [element] = useState(() => {
     const menu = document.createElement('div');
     menu.className = 'selection-tools';
@@ -255,7 +262,6 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
     };
   }, [editor, element]);
   useEffect(() => {
-    if (!active) return;
     // 正文和紧凑描述使用不同滚动祖先；交给官方插件监听，不能只跟随window。
     let parent = editor.view.dom.parentElement;
     let scrollTarget: HTMLElement | Window = window;
@@ -281,12 +287,14 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
       editor.unregisterPlugin(pluginKey);
       element.remove();
     };
-  }, [editor, element, pluginKey, active]);
+  }, [editor, element, pluginKey]);
   return createPortal(
+    // 失焦仅隐藏内容，不注销插件；既有焦点隔离保留，展开右栏不会重投影正文。
     <div
+      className={actions ? 'selection-menu-panel' : undefined}
+      hidden={!active}
       onBlur={(event) => {
         const next = event.relatedTarget;
-        // 菜单按钮属于当前选区；离开菜单和正文时必须收起，不能把旧选区留在另一对象上。
         if (!(
           next instanceof Node &&
           (element.contains(next) || (!editor.isDestroyed && editor.view.dom.contains(next)))
@@ -295,6 +303,7 @@ function SelectionFormatTools({ editor }: { editor: Editor }) {
       }}
     >
       <FormatBar editor={editor} floating marksOnly />
+      {actions}
     </div>,
     element,
   );
@@ -307,6 +316,7 @@ export function EditorSurface({
   disabled = false,
   blockActions = false,
   documentScheme,
+  selectionActions,
 }: {
   editor: Editor | null;
   mode: 'notion' | 'simple' | 'compact';
@@ -314,6 +324,7 @@ export function EditorSurface({
   disabled?: boolean;
   blockActions?: boolean;
   documentScheme?: 'markdown' | 'word';
+  selectionActions?: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const dragging = useRef<(ReturnType<typeof currentBlock> & { doc: object }) | null>(null);
@@ -573,7 +584,7 @@ export function EditorSurface({
         </>
       )}
       {documentMode && editable && !composing && ui?.selected && (
-        <SelectionFormatTools editor={editor} />
+        <SelectionFormatTools editor={editor} actions={selectionActions} />
       )}
       {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>

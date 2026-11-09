@@ -1,5 +1,13 @@
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useImperativeHandle,
+  type Ref,
+} from 'react';
 import type {
   AgentModel,
   AgentRun,
@@ -11,6 +19,9 @@ import { documentReviewTransport, type DocumentScope } from './document-review-t
 
 import useEditorSelection from './useEditorSelection';
 import EditorConversation from './EditorConversation';
+import { editorSelection } from './editor-selection';
+import type { WritingSkillHandle } from './WritingSkillMenu';
+export { default as WritingSkillMenu, type WritingSkillHandle } from './WritingSkillMenu';
 
 const protocol_version = 1 as const;
 
@@ -21,6 +32,8 @@ export default function DocumentReview({
   onApplyBusy,
   onSaved,
   variant = 'review',
+  skillHandle,
+  onSkillAvailability,
 }: {
   variant?: 'review' | 'assistant';
   editor: Editor | null;
@@ -28,6 +41,8 @@ export default function DocumentReview({
   blocked: boolean;
   onApplyBusy(value: boolean): void;
   onSaved(result: ReviewSaved): void;
+  skillHandle?: Ref<WritingSkillHandle>;
+  onSkillAvailability?(available: boolean): void;
 }) {
   const scope: DocumentScope = `document:${identity.document_id}`;
   const [preview, setPreview] = useState<{
@@ -51,6 +66,7 @@ export default function DocumentReview({
   const previewId = useRef<string | undefined>(undefined);
   const lock = useRef(false);
   const composing = useRef(false);
+  const root = useRef<HTMLDivElement>(null);
   const transport = useMemo(() => documentReviewTransport(scope, setTerminal), [scope]);
   const { messages, sendMessage, setMessages, stop, status, error, clearError } = useChat({
     id: scope,
@@ -71,6 +87,35 @@ export default function DocumentReview({
   const canPrepare = Boolean(
     reference && !blocked && identity.revision > 0 && reference.text.length <= 8000,
   );
+  const skillAvailable =
+    canPrepare && !submitted && !running && !preparing && !applying && !recovery;
+  useEffect(() => {
+    onSkillAvailability?.(skillAvailable);
+    return () => onSkillAvailability?.(false);
+  }, [onSkillAvailability, skillAvailable]);
+  useImperativeHandle(skillHandle, () => ({
+    pick(request) {
+      if (
+        !editor ||
+        !skillAvailable ||
+        editor.view.composing ||
+        !editor.isEditable ||
+        request.revision !== identity.revision ||
+        request.doc !== editor.state.doc ||
+        request.from !== editor.state.selection.from ||
+        request.to !== editor.state.selection.to ||
+        !editorSelection(editor)?.text
+      )
+        return;
+      setQuestion(request.skill.instruction);
+      const range = editorSelection(editor);
+      if (!range) return;
+      // 点击技能即明确发送当前指令与选区；直接传入快照，不能读到尚未更新的question。
+      root.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+      void send(request.skill.instruction, { range, doc: request.doc });
+    },
+  }));
+
   const streamed =
     messages.at(-1)?.role === 'assistant'
       ? messages
@@ -115,9 +160,8 @@ export default function DocumentReview({
     };
   }, [scope, stop]);
 
-  async function prepare() {
+  async function prepare(captured = selected) {
     if (lock.current || blocked || running || !editor || editor.view.composing) return;
-    const captured = selected;
     const selection = captured?.range;
     if (
       !selection ||
@@ -166,18 +210,18 @@ export default function DocumentReview({
     }
   }
 
-  async function send() {
-    if (blocked || lock.current || running || submitted || !question.trim() || composing.current)
+  async function send(prompt = question, captured = selected) {
+    if (blocked || lock.current || running || submitted || !prompt.trim() || composing.current)
       return;
     // 选区变化只更新本机引用卡；明确发送时才固定经可信端验证的输入。
-    const prepared = await prepare();
+    const prepared = await prepare(captured);
     if (!prepared || !alive.current || current.current.blocked) return;
     lock.current = true;
     setNotice('');
     setSubmitted(true);
     try {
       await sendMessage(
-        { text: question.trim() },
+        { text: prompt.trim() },
         { body: { id: prepared.id, model: prepared.model } },
       );
     } finally {
@@ -308,13 +352,13 @@ export default function DocumentReview({
   }
 
   return (
-    <div className="document-review">
+    <div ref={root} className="document-review">
       <h2>{variant === 'assistant' ? '正文 AI 助手' : '文档 AI 审阅'}</h2>
       {new URLSearchParams(window.location.search).has('mock-agent') && (
         <p className="caption">合成演示 · MOCK_ONLY</p>
       )}
       <p className="caption">
-        选中文字自动作为本轮引用；只在发送时交给模型。候选接受前不改变正文。
+        选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
       </p>
       {reference ? (
         <section className="document-review-text" aria-label="本轮引用">
@@ -393,7 +437,7 @@ export default function DocumentReview({
               type="button"
               className="primary"
               data-sidebar-expand
-              onClick={send}
+              onClick={() => void send()}
               disabled={
                 !canPrepare ||
                 !question.trim() ||
