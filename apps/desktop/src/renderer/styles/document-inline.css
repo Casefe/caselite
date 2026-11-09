@@ -149,7 +149,7 @@
 }
 .document-inline-editor .document > footer {
   position: sticky;
-  bottom: -18px;
+  top: -18px;
   z-index: 2;
   background: var(--theme-panel);
   padding: 12px 0;
@@ -157,7 +157,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 .document-readonly-note {
   font-size: 11px;

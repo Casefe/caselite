@@ -141,6 +141,23 @@ export default function BodyEditor({
       if (alive.current) setBusy(false);
     }
   }
+  const saveControls = (
+    <footer>
+      <span role="status" data-testid="save-status">
+        {task.document_archived_at ? '文档已归档 · 只读' : status}
+      </span>
+      <button
+        className="primary"
+        data-testid="save-body"
+        disabled={
+          disabled || reviewSaving || !!task.document_archived_at || busy || (!dirty && !hasPending)
+        }
+        onClick={() => void save()}
+      >
+        {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
+      </button>
+    </footer>
+  );
   return (
     <>
       <section className="document" hidden={deliveryOpen}>
@@ -153,6 +170,7 @@ export default function BodyEditor({
             修订 <b data-testid="revision">{revision}</b>
           </span>
         </div>
+        {embedded && saveControls}
         <EditorSurface
           editor={editor}
           mode={editorProfiles.document.mode}
@@ -177,25 +195,7 @@ export default function BodyEditor({
             )
           }
         />
-        <footer>
-          <span role="status" data-testid="save-status">
-            {task.document_archived_at ? '文档已归档 · 只读' : status}
-          </span>
-          <button
-            className="primary"
-            data-testid="save-body"
-            disabled={
-              disabled ||
-              reviewSaving ||
-              !!task.document_archived_at ||
-              busy ||
-              (!dirty && !hasPending)
-            }
-            onClick={() => void save()}
-          >
-            {busy ? '保存中…' : hasPending ? '核对并保存' : '保存正文'}
-          </button>
-        </footer>
+        {!embedded && saveControls}
         {!embedded && (
           <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
         )}

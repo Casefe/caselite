@@ -54,6 +54,10 @@ function setup(api: (r: TaskRequest) => Promise<unknown>) {
       onReviewSaving={vi.fn()}
     />,
   );
+  expect(
+    screen.getByTestId('save-body').compareDocumentPosition(screen.getByLabelText('测试输入')) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   fireEvent.change(screen.getByLabelText('测试输入'), { target: { value: '输入保留' } });
   return { onSaved, onDirty };
 }
