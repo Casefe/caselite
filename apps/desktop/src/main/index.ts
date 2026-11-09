@@ -1066,6 +1066,7 @@ app
       },
     );
     const agent = createAgentApplication({
+      contact: { exists: (id) => contacts.exists(id) },
       dates: importantDates,
       credentials: agentCredentials,
       copyOutput: (text) => clipboard.writeText(text),

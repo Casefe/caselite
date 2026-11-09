@@ -204,6 +204,13 @@
       "when": 1794191200000,
       "tag": "0025_finance_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1794191300000,
+      "tag": "0026_customer_workspace",
+      "breakpoints": true
     }
   ]
 }
