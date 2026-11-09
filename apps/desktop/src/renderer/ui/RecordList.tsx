@@ -58,7 +58,12 @@ export default function RecordList({
   onProjectDirty?(value: boolean): void;
   onTaskChanged(task: Task, state: number[] | null): void;
 }) {
-  const propertiesBlocked = propertyEditBlocked || projectDirty;
+  const [bulkBlocked, setBulkBlocked] = useState(false);
+  const [inspectorBlocked, setInspectorBlocked] = useState(false);
+  const propertiesBlocked = propertyEditBlocked || projectDirty || bulkBlocked || inspectorBlocked;
+  useEffect(() => {
+    onPropertiesBlocked(bulkBlocked || inspectorBlocked);
+  }, [bulkBlocked, inspectorBlocked, onPropertiesBlocked]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -167,7 +172,12 @@ export default function RecordList({
           <Icon name="check" size={18} />
           <h1>任务</h1>
           <span className="collection-total">{loading ? '…' : total}</span>
-          <button className="work-list-create" data-testid="new-task" onClick={onNew}>
+          <button
+            className="work-list-create"
+            data-testid="new-task"
+            disabled={propertiesBlocked}
+            onClick={onNew}
+          >
             <Icon name="plus" size={15} />
             新建任务
           </button>
@@ -440,9 +450,9 @@ export default function RecordList({
         <TaskBulkActions
           tasks={rows}
           selected={selectedIds.filter((id) => rows.some((t) => t.id === id))}
-          disabled={propertiesBlocked}
+          disabled={inspectorBlocked || projectDirty}
           onSelection={setSelectedIds}
-          onBlocked={onPropertiesBlocked}
+          onBlocked={setBulkBlocked}
           onChanged={onTaskChanged}
         />
         {(dateErrors.from || dateErrors.to) && (
@@ -550,10 +560,10 @@ export default function RecordList({
             task={error ? null : selected}
             suggestions={[...new Set(tasks.flatMap((t) => t.tags ?? []))]}
             assigneeSuggestions={tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
-            onPropertiesBlocked={onPropertiesBlocked}
-            propertiesDisabled={projectDirty}
-            projectDisabled={propertyEditBlocked || loading}
-            reminderEditing={projectDirty}
+            onPropertiesBlocked={setInspectorBlocked}
+            propertiesDisabled={projectDirty || bulkBlocked}
+            projectDisabled={inspectorBlocked || bulkBlocked || loading}
+            reminderEditing={projectDirty || bulkBlocked}
             onProjectDirty={onProjectDirty}
             onProjectChanged={onTaskChanged}
             onTaskChanged={onTaskChanged}
