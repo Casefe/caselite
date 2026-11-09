@@ -11,6 +11,7 @@
 | [设置中心与模型服务](settings-model-services.md)        | 设置和 Provider 表单的设计及接线范围       |
 | [首页 Agent 的资料交互](pdf-agent-interaction.md)       | PDF、提问、回答与继续操作                  |
 | [任务辅助起草流程](task-agent-draft-flow.md)            | 任务内选材、候选、人工确认与回退的流程设计 |
+| [开发侧界面采集](ui-capture.md)                         | 显式局部采集、私有证据包与合成规格对照     |
 
 ## 属性栏
 
