@@ -10,10 +10,14 @@ export type FinanceManagementRequest = Exclude<
 export type FinanceManagementSuccess = Extract<FinanceResponse, { kind: 'management' }>;
 export type FinanceRule = FinanceManagementSuccess['state']['rules'][number];
 type Write = Exclude<FinanceRequest, { operation: 'read' | 'status' }>;
-export type Draft =
-  | Omit<
-      Extract<Write, { operation: 'register_contract' }>,
-      'protocol_version' | 'project_id' | 'request_id' | 'idempotency_key'
-    >
-  | { operation: 'record_payment'; installment_id: string; amount_cents: number }
-  | { operation: 'reverse_payment'; payment_id: string };
+type Strip<T> = T extends unknown
+  ? Omit<T, 'protocol_version' | 'project_id' | 'request_id' | 'idempotency_key'>
+  : never;
+export type Draft = Strip<Write>;
+
+export type FinanceCandidate = FinanceManagementSuccess['state']['candidates'][number];
+export type FinancePrefill = { amount?: number; date?: string; reference?: string };
+export type ContractSeed = FinancePrefill & {
+  source?: { candidate_id: string; confirmed: true };
+  sourceName?: string;
+};

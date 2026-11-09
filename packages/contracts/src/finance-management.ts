@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { ordinaryDateSchema } from './task';
+import {
+  financeSourceClaimSchema,
+  financeSourceReferenceSchema,
+  financeCandidateSchema,
+  financeSourceLinkSchema,
+} from './finance-source';
 
 const id = z.uuid();
 const amount = z.number().int().nonnegative().max(1_000_000_000_000);
@@ -34,6 +40,7 @@ export type FinanceRule = z.infer<typeof financeRuleSchema>;
 const keys = { request_id: id, idempotency_key: id };
 const protocol = { protocol_version: z.literal(1) };
 const project = { project_id: id };
+const sourceWrite = { source: financeSourceClaimSchema.optional() };
 const allocation = {
   ...project,
   payment_id: id,
@@ -96,13 +103,29 @@ export const financeManagementRequestSchema = z.discriminatedUnion('operation', 
   z.strictObject({
     ...protocol,
     ...keys,
+    ...financeSourceReferenceSchema.shape,
+    operation: z.literal('m_prepare_source'),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...project,
+    operation: z.literal('m_dismiss_candidate'),
+    candidate_id: id,
+    note: text(1000).refine(Boolean),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
     ...expenseFields,
+    ...sourceWrite,
     operation: z.literal('m_record_expense'),
   }),
   z.strictObject({
     ...protocol,
     ...keys,
     ...project,
+    ...sourceWrite,
     operation: z.literal('m_record_reimbursement'),
     expense_id: id,
     amount_cents: positive,
@@ -129,6 +152,7 @@ export const financeManagementRequestSchema = z.discriminatedUnion('operation', 
     ...protocol,
     ...keys,
     ...invoiceFields,
+    ...sourceWrite,
     operation: z.literal('m_record_invoice'),
   }),
   z.strictObject({
@@ -136,6 +160,7 @@ export const financeManagementRequestSchema = z.discriminatedUnion('operation', 
     ...keys,
     ...invoiceFields,
     original_invoice_id: id,
+    ...sourceWrite,
     operation: z.literal('m_red_invoice'),
   }),
   z.strictObject({ ...protocol, operation: z.literal('m_status'), idempotency_key: id }),
@@ -172,6 +197,7 @@ export const financeManagementRequestSchema = z.discriminatedUnion('operation', 
     ...protocol,
     ...keys,
     ...project,
+    ...sourceWrite,
     operation: z.literal('m_record_payout'),
     allocation_id: id,
     amount_cents: positive,
@@ -230,6 +256,8 @@ export const financeManagementStateSchema = z.object({
   rules: z.array(financeRuleSchema),
   bindings: z.array(z.object({ project_id: id, rule_id: id })),
   allocations: z.array(financeAllocationSchema),
+  candidates: z.array(financeCandidateSchema),
+  sources: z.array(financeSourceLinkSchema),
   invoices: z.array(financeInvoiceSchema),
   expenses: z.array(financeExpenseSchema),
   reimbursements: z.array(financeReimbursementSchema),

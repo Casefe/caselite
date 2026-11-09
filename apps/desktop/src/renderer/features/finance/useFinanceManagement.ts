@@ -26,6 +26,20 @@ function matches(request: Write, result: FinanceManagementSuccess) {
       actual.version === request.expected_version + 1
     );
   if (actual.project_id !== request.project_id) return false;
+  if (request.operation === 'm_prepare_source')
+    return (
+      actual.id === proof.target_id &&
+      actual.sha256 === request.sha256 &&
+      actual.page === request.page
+    );
+  if (request.operation === 'm_dismiss_candidate')
+    return actual.id === request.candidate_id && actual.status === 'dismissed';
+  if (
+    'source' in request &&
+    request.source &&
+    actual.source_candidate_id !== request.source.candidate_id
+  )
+    return false;
   if (request.operation === 'm_bind_rule')
     return proof.target_id === request.project_id && actual.rule_id === request.rule_id;
   if (actual.id !== proof.target_id) return false;
@@ -44,6 +58,7 @@ function matches(request: Write, result: FinanceManagementSuccess) {
     'idempotency_key',
     'deductions_confirmed',
     'expected_preview_digest',
+    'source',
   ]);
   return Object.entries(request).every(([key, value]) => ignored.has(key) || actual[key] === value);
 }
@@ -53,7 +68,15 @@ export function useFinanceManagement() {
   const [pending, setPending] = useState<Write>();
   const [retry, setRetry] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [drafts, setDrafts] = useState<Set<string>>(() => new Set());
+  const dirty = drafts.size > 0;
+  const markDirty = (scope = 'general') => setDrafts((current) => new Set(current).add(scope));
+  const clearDirty = (scope: string) =>
+    setDrafts((current) => {
+      const next = new Set(current);
+      next.delete(scope);
+      return next;
+    });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);
@@ -118,7 +141,13 @@ export function useFinanceManagement() {
       }
       client.setQueryData<FinanceManagementSuccess>(financeManagementKey, result);
       void client.invalidateQueries({ queryKey: ['finance', 'ledger'] });
-      setDirty(false);
+      clearDirty(
+        request.operation === 'm_bind_rule'
+          ? `rule:${request.project_id}`
+          : 'project_id' in request
+            ? `${['m_prepare_source', 'm_dismiss_candidate'].includes(request.operation) ? 'intake' : 'entry'}:${request.project_id}`
+            : 'general',
+      );
       setMessage('已保存并读回财务记录。');
       resolved = true;
       return true;
@@ -140,10 +169,11 @@ export function useFinanceManagement() {
     busy,
     dirty,
     blocked: !!pending || busy || dirty,
-    markDirty: () => setDirty(true),
+    markDirty,
+    clearEntry: (projectId: string) => clearDirty(`entry:${projectId}`),
     discard: () => {
       if (!pending) {
-        setDirty(false);
+        setDrafts(new Set());
         setError('');
         setMessage('');
       }

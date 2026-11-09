@@ -1,5 +1,7 @@
 import type { FinanceManagementController } from './useFinanceManagement';
 import type { FinanceManagementSuccess } from './types';
+import type { FinancePrefill } from './types';
+import { FinanceSourceNote } from './FinanceIntake';
 import { formatCents } from './money';
 const parties = { lawyer: '我', firm: '律所', client: '客户' };
 type State = FinanceManagementSuccess['state'];
@@ -8,11 +10,13 @@ export function FinanceExpenseFields({
   state,
   projectId,
   selected,
+  prefill,
 }: {
   type: string;
   state: State | undefined;
   projectId: string;
   selected: string;
+  prefill?: FinancePrefill;
 }) {
   return type === 'expense' ? (
     <>
@@ -55,7 +59,12 @@ export function FinanceExpenseFields({
       </label>
       <label>
         支出金额（元）
-        <input name="amount" required inputMode="decimal" />
+        <input
+          name="amount"
+          required
+          inputMode="decimal"
+          defaultValue={prefill?.amount === undefined ? '' : (prefill.amount / 100).toFixed(2)}
+        />
       </label>
       <label className="finance-checkbox">
         <input type="checkbox" name="reimbursable" defaultChecked />
@@ -88,7 +97,12 @@ export function FinanceExpenseFields({
       </label>
       <label>
         实际报销金额（元）
-        <input name="amount" required inputMode="decimal" />
+        <input
+          name="amount"
+          required
+          inputMode="decimal"
+          defaultValue={prefill?.amount === undefined ? '' : (prefill.amount / 100).toFixed(2)}
+        />
       </label>
       <p className="finance-muted">
         报销收付按原垫付的承担方和付款人关联，不计入律师费回款或提成。
@@ -158,6 +172,7 @@ export default function FinanceExpenses({
                       <details>
                         <summary>收付与更正</summary>
                         <div className="finance-flow">
+                          <FinanceSourceNote targetId={expense.id} finance={finance} />
                           {expense.note && <p>{expense.note}</p>}
                           {rows.map((row) => (
                             <div key={row.id}>
@@ -165,6 +180,7 @@ export default function FinanceExpenses({
                               {formatCents(row.amount_cents)} 元 · {row.occurred_on} ·{' '}
                               {row.reversed_at ? '已冲回' : '已报销'}
                               <small>{row.note}</small>
+                              <FinanceSourceNote targetId={row.id} finance={finance} />
                               {!row.reversed_at && (
                                 <button
                                   disabled={disabled}

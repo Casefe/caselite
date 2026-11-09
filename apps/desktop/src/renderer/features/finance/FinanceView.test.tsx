@@ -3,8 +3,14 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import type { FinanceRequest, FinanceResponse, Matter } from '../../../preload/caselite-api';
+import type {
+  FinanceRequest,
+  FinanceResponse,
+  Matter,
+  MaterialResponse,
+} from '../../../preload/caselite-api';
 import FinanceView from './FinanceView';
+import type { FinanceManagementRequest, FinanceManagementSuccess, FinanceCandidate } from './types';
 import { formatCents, parseCents } from './money';
 
 vi.stubGlobal(
@@ -71,35 +77,48 @@ const ruleValue = {
 function show(
   handler: (request: FinanceRequest) => Promise<FinanceResponse>,
   projects: Matter[] = [project],
+  options: {
+    state?: Partial<FinanceManagementSuccess['state']>;
+    management?: (request: FinanceManagementRequest) => Promise<FinanceResponse>;
+    material?: (
+      request: Parameters<Window['caselite']['material']>[0],
+    ) => Promise<MaterialResponse>;
+  } = {},
 ) {
   const finance = vi.fn((request: FinanceRequest | { operation: string }) =>
     request.operation.startsWith('m_')
-      ? Promise.resolve({
-          ok: true,
-          kind: 'management',
-          receipt: null,
-          evidence: null,
-          effect: null,
-          state: {
-            version: 0,
-            default_rule_id: null,
-            projects: [],
-            rules: [
-              { ...ruleValue, id: ruleA },
-              { ...ruleValue, id: ruleB, name: '合成规则B' },
-            ],
-            bindings: [{ project_id: project.id, rule_id: ruleA }],
-            allocations: [],
-            invoices: [],
-            expenses: [],
-            reimbursements: [],
-            payouts: [],
-          },
-        })
+      ? options.management && request.operation !== 'm_read'
+        ? options.management(request as FinanceManagementRequest)
+        : Promise.resolve({
+            ok: true,
+            kind: 'management',
+            receipt: null,
+            evidence: null,
+            effect: null,
+            state: {
+              version: 0,
+              default_rule_id: null,
+              projects: [],
+              rules: [
+                { ...ruleValue, id: ruleA },
+                { ...ruleValue, id: ruleB, name: '合成规则B' },
+              ],
+              bindings: [{ project_id: project.id, rule_id: ruleA }],
+              allocations: [],
+              invoices: [],
+              candidates: [],
+              sources: [],
+              expenses: [],
+              reimbursements: [],
+              payouts: [],
+              ...options.state,
+            },
+          })
       : handler(request as FinanceRequest),
   );
   window.caselite = {
     finance,
+    material: vi.fn(options.material ?? (async () => ({ ok: true, materials: [] }))),
     agent: vi.fn(async () => ({
       ok: true,
       configured: false,
@@ -305,4 +324,200 @@ it('offers expense input and its ledger before a fee contract exists', async () 
     }),
   );
   expect(finance.mock.calls.filter(([r]) => r.operation === 'register_contract')).toHaveLength(0);
+});
+
+function sourceCandidate(kind: 'payment' | 'contract' | 'expense' = 'payment'): FinanceCandidate {
+  return {
+    id: crypto.randomUUID(),
+    project_id: project.id,
+    source_id: crypto.randomUUID(),
+    asset_version_id: crypto.randomUUID(),
+    derivation_id: crypto.randomUUID(),
+    sha256: 'a'.repeat(64),
+    page: 1,
+    name: '合成收款凭证.pdf',
+    quote: '合成到账金额1.00元，日期2026年11月9日',
+    kind,
+    amount_options: [100],
+    date_options: ['2026-11-09'],
+    reference: null,
+    status: 'pending',
+    confirmed_target_id: null,
+    created_at: '2026-11-09T00:00:00.000Z',
+  };
+}
+it('preserves manual input across modes and posts no sourced receipt until the candidate is explicitly confirmed', async () => {
+  const candidate = sourceCandidate();
+  const { finance } = show(
+    async (request) =>
+      request.operation === 'record_payment'
+        ? { ok: false, code: 'RESULT_UNKNOWN', message: '合成来源回款回执未知' }
+        : read(true),
+    [project],
+    { state: { candidates: [candidate] } },
+  );
+  fireEvent.change(await screen.findByLabelText('收款金额（元）'), { target: { value: '0.25' } });
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(screen.getByRole('button', { name: '手动输入' }));
+  expect(screen.getByLabelText<HTMLInputElement>('收款金额（元）').value).toBe('0.25');
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(await screen.findByRole('button', { name: '填入记账表单' }));
+  expect(screen.getByLabelText<HTMLInputElement>('收款金额（元）').value).toBe('1.00');
+  expect(screen.getByLabelText<HTMLInputElement>('实际日期').value).toBe('2026-11-09');
+  fireEvent.change(screen.getByLabelText('分配到期款'), {
+    target: { value: ledger.installments[0].id },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '确认登记收款' }));
+  expect(
+    finance.mock.calls.filter(([request]) => request.operation === 'record_payment'),
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByLabelText('已核对原件、类型、金额、日期和关联期款；确认本笔记录。'));
+  fireEvent.click(screen.getByRole('button', { name: '确认登记收款' }));
+  await screen.findByText('合成来源回款回执未知');
+  expect(finance.mock.calls.map(([request]) => request)).toContainEqual(
+    expect.objectContaining({
+      operation: 'record_payment',
+      amount_cents: 100,
+      occurred_on: '2026-11-09',
+      source: { candidate_id: candidate.id, confirmed: true },
+    }),
+  );
+});
+it('keeps the current fee contract when a second contract candidate is selected', async () => {
+  const candidate = sourceCandidate('contract');
+  const { finance } = show(async () => read(true), [project], {
+    state: { candidates: [candidate] },
+  });
+  await screen.findByTestId('finance-outstanding');
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(await screen.findByRole('button', { name: '填入记账表单' }));
+  await screen.findByText('本项目已有收费约定；本条候选先保留，请核对现有合同。');
+  expect(
+    finance.mock.calls.filter(([request]) => request.operation === 'register_contract'),
+  ).toHaveLength(0);
+  expect(screen.getByRole('button', { name: '填入记账表单' })).toBeDefined();
+});
+it('does not expose discard while an imported-source submission has an unknown result', async () => {
+  const candidate = sourceCandidate();
+  const task_id = crypto.randomUUID();
+  const { onDirty } = show(async () => read(true), [project], {
+    management: async () => ({
+      ok: false,
+      code: 'RESULT_UNKNOWN',
+      message: '合成候选准备回执未知',
+    }),
+    material: async () => ({
+      ok: true,
+      materials: [
+        {
+          id: candidate.source_id,
+          task_id,
+          asset_version_id: candidate.asset_version_id,
+          name: candidate.name,
+          sha256: candidate.sha256,
+          bytes: 100,
+          page_count: 1,
+          derivation_id: candidate.derivation_id,
+          status: 'ready',
+          pages: [
+            {
+              page: 1,
+              text: candidate.quote,
+              origin: 'pdf_text',
+              blocks: [],
+              width: 600,
+              height: 800,
+              rotation: 0,
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  fireEvent.change(await screen.findByLabelText('收款金额（元）'), { target: { value: '0.25' } });
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(screen.getByText('从项目已有材料生成'));
+  await screen.findByRole('option', { name: candidate.name });
+  fireEvent.change(await screen.findByLabelText('项目材料'), {
+    target: { value: candidate.source_id },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '本机识别并生成候选' }));
+  await screen.findByText('合成候选准备回执未知');
+  expect(screen.queryByRole('button', { name: '放弃当前输入' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '放弃未保存的财务输入' })).toBeNull();
+  expect(screen.getByRole('button', { name: '核对原财务提交' })).toBeDefined();
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+});
+
+it('prefills a sourced expense amount without posting it before human confirmation', async () => {
+  const candidate = sourceCandidate('expense');
+  const { finance } = show(async () => read(true), [project], {
+    state: { candidates: [candidate] },
+  });
+  await screen.findByLabelText('收款金额（元）');
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(await screen.findByRole('button', { name: '填入记账表单' }));
+  expect(screen.getByLabelText<HTMLInputElement>('支出金额（元）').value).toBe('1.00');
+  expect(screen.getByLabelText<HTMLInputElement>('实际日期').value).toBe('2026-11-09');
+  expect(
+    finance.mock.calls.filter(([request]) => request.operation === 'm_record_expense'),
+  ).toHaveLength(0);
+});
+
+it('waits for the automatic extraction before starting OCR on an imported material', async () => {
+  const candidate = sourceCandidate();
+  const task_id = crypto.randomUUID();
+  const order: string[] = [];
+  let ocr = false;
+  const source = (status: 'processing' | 'needs_ocr' | 'ready') => ({
+    id: candidate.source_id,
+    task_id,
+    asset_version_id: candidate.asset_version_id,
+    name: candidate.name,
+    sha256: candidate.sha256,
+    bytes: 100,
+    page_count: 1,
+    derivation_id: candidate.derivation_id,
+    status,
+    pages:
+      status === 'ready'
+        ? [
+            {
+              page: 1,
+              text: candidate.quote,
+              origin: 'ocr_candidate' as const,
+              blocks: [],
+              width: 600,
+              height: 800,
+              rotation: 0,
+            },
+          ]
+        : [],
+  });
+  show(async () => read(true), [project], {
+    material: async (request) => {
+      if (request.operation === 'list_project')
+        return { ok: true, materials: [source('processing')] };
+      if (request.operation === 'list') {
+        order.push('list');
+        return { ok: true, materials: [source(ocr ? 'ready' : 'needs_ocr')] };
+      }
+      if (request.operation === 'process') {
+        order.push('process');
+        ocr = true;
+        return { ok: true, materials: [source('processing')] };
+      }
+      return { ok: true, materials: [] };
+    },
+    management: async () => ({ ok: false, code: 'CONFLICT', message: '合成候选已送到确认入口' }),
+  });
+  await screen.findByLabelText('收款金额（元）');
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(screen.getByText('从项目已有材料生成'));
+  await screen.findByRole('option', { name: candidate.name });
+  fireEvent.change(screen.getByLabelText('项目材料'), { target: { value: candidate.source_id } });
+  fireEvent.click(screen.getByRole('button', { name: '本机识别并生成候选' }));
+  await screen.findByText('合成候选已送到确认入口');
+  expect(order.indexOf('process')).toBeGreaterThan(0);
+  expect(order.at(-1)).toBe('list');
 });

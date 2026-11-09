@@ -35,6 +35,8 @@ const initial = (): FinanceManagementSuccess => ({
     bindings: [],
     allocations: [],
     invoices: [],
+    candidates: [],
+    sources: [],
     expenses: [],
     reimbursements: [],
     payouts: [],
@@ -158,4 +160,81 @@ it('normalizes an invoice number before saving its original identity and recover
   expect(api.mock.calls.find(([r]) => r.operation === 'm_status')?.[0]).toMatchObject({
     idempotency_key: writes[0].idempotency_key,
   });
+});
+
+it('clears only the saved entry scope and preserves an unsaved project rule', async () => {
+  const project_id = crypto.randomUUID();
+  const api = vi.fn(async (request: FinanceManagementRequest) => {
+    if (request.operation === 'm_read') return initial();
+    if (request.operation === 'm_record_expense') {
+      const { operation, protocol_version, request_id, idempotency_key, ...fields } = request;
+      void protocol_version;
+      void request_id;
+      const row = {
+        ...fields,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString(),
+        reversed_at: null,
+      };
+      return {
+        ...initial(),
+        receipt: idempotency_key,
+        evidence: { operation, target_id: row.id, event_id: crypto.randomUUID() },
+        effect: row,
+      };
+    }
+    if (request.operation === 'm_bind_rule')
+      return {
+        ...initial(),
+        receipt: request.idempotency_key,
+        evidence: {
+          operation: request.operation,
+          target_id: project_id,
+          event_id: crypto.randomUUID(),
+        },
+        effect: { project_id, rule_id: request.rule_id },
+      };
+    throw Error('Unexpected operation');
+  });
+  window.caselite = { finance: api } as unknown as Window['caselite'];
+  const client = createWorkbenchQueryClient();
+  const { result } = renderHook(() => useFinanceManagement(), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+  await waitFor(() => expect(result.current.state).toBeDefined());
+  act(() => {
+    result.current.markDirty(`rule:${project_id}`);
+    result.current.markDirty(`entry:${project_id}`);
+  });
+  await act(async () => {
+    expect(
+      await result.current.submit({
+        operation: 'm_record_expense',
+        project_id,
+        description: '合成支出',
+        amount_cents: 100,
+        occurred_on: '2026-11-09',
+        category: 'case_cost',
+        payer: 'lawyer',
+        bearer: 'lawyer',
+        payee: '合成收款方',
+        reimbursable: false,
+        note: '',
+      }),
+    ).toBe(true);
+  });
+  expect(result.current.dirty).toBe(true);
+  await act(async () => {
+    expect(
+      await result.current.submit({
+        operation: 'm_bind_rule',
+        project_id,
+        rule_id: crypto.randomUUID(),
+        expected_rule_id: null,
+      }),
+    ).toBe(true);
+  });
+  expect(result.current.dirty).toBe(false);
 });

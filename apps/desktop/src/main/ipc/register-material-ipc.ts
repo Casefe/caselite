@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, type WebContents } from 'electron';
 import {
   MATERIAL_CHANNEL,
   MATERIAL_DROP_CHANNEL,
@@ -11,12 +11,44 @@ import {
 } from '@caselite/contracts';
 import type { createMaterialApplication } from '@caselite/application';
 import { isTrustedDesktopSender } from './register-application-ipc';
-export function registerMaterialIpc(app: ReturnType<typeof createMaterialApplication>) {
+export function registerMaterialIpc(
+  app: ReturnType<typeof createMaterialApplication>,
+  camera?: {
+    prepare(contents: WebContents): Promise<boolean>;
+    revoke(contents: WebContents): void;
+  },
+) {
   const denied = { ok: false, code: 'FORBIDDEN', message: '当前页面无权读取材料。' };
   let selecting = false;
   ipcMain.handle(MATERIAL_CHANNEL, async (event, input: unknown) => {
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
     const request = materialRequestSchema.safeParse(input);
+    if (
+      request.success &&
+      (request.data.operation === 'camera_permission' || request.data.operation === 'camera_revoke')
+    ) {
+      if (request.data.operation === 'camera_revoke') {
+        camera?.revoke(event.sender);
+        return { ok: true, materials: [] };
+      }
+      if (!camera || !app.canCapture(request.data.scope))
+        return { ok: false, code: 'SCOPE', message: '当前范围不能拍照，请核对任务或项目状态。' };
+      const allowed = await camera.prepare(event.sender);
+      if (
+        !allowed ||
+        !isTrustedDesktopSender(event, BrowserWindow.getAllWindows()) ||
+        !app.canCapture(request.data.scope)
+      ) {
+        camera.revoke(event.sender);
+        return {
+          ok: false,
+          code: 'CAMERA_UNAVAILABLE',
+          message: '未获摄像头许可，可选择拍好的照片。',
+        };
+      }
+      return { ok: true, materials: [] };
+    }
+
     if (
       request.success &&
       (request.data.operation === 'save_original' ||

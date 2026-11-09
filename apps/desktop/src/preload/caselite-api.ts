@@ -223,7 +223,8 @@ export function createCaseLitePreloadApi(
       materialResult(
         (request.operation === 'preview' && request.automatic) ||
           request.operation === 'save_original' ||
-          request.operation === 'save_project_original'
+          request.operation === 'save_project_original' ||
+          request.operation === 'camera_permission'
           ? invoke(MATERIAL_CHANNEL, request)
           : invokeBusinessCommand(invoke, MATERIAL_CHANNEL, request),
       ),
@@ -231,7 +232,11 @@ export function createCaseLitePreloadApi(
     async dropPdf(file, scope) {
       const path = droppedPath?.(file);
       if (!path)
-        return { ok: false, code: 'INVALID_FILE', message: '请拖入本机磁盘上的 PDF 或 DOCX。' };
+        return {
+          ok: false,
+          code: 'INVALID_FILE',
+          message: '请选择本机磁盘上的 PDF、DOCX、JPEG 或 PNG 原件。',
+        };
       return materialResult(invoke(MATERIAL_DROP_CHANNEL, { scope, path }));
     },
     async appearance(request) {

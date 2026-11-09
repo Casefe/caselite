@@ -65,7 +65,11 @@ export default function FinanceSettings({ finance }: { finance: FinanceManagemen
         </div>
       </div>
       <div className="finance-settings-grid">
-        <form key={revision} onSubmit={(event) => void save(event)} onChange={finance.markDirty}>
+        <form
+          key={revision}
+          onSubmit={(event) => void save(event)}
+          onChange={() => finance.markDirty()}
+        >
           <fieldset disabled={finance.busy || !!finance.pending}>
             <legend>保存为新规则</legend>
             <label>

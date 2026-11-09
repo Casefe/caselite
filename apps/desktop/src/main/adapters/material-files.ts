@@ -12,6 +12,11 @@ const zip = Buffer.from([80, 75, 3, 4]);
 const pdf = Buffer.from('%PDF-');
 export function materialSignature(data: Uint8Array): MaterialKind | undefined {
   const bytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  if (
+    bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+    (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255)
+  )
+    return 'image';
   if (bytes.subarray(0, 4).equals(zip)) return 'docx';
   if (bytes.subarray(0, 1024).includes(pdf)) return 'pdf';
 }
@@ -84,6 +89,40 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
     }
   }
   return {
+    async stagePhoto(data, scope, token) {
+      await setup();
+      if (data.length < 8 || data.length > 8 * 1024 * 1024 || materialSignature(data) !== 'image')
+        throw new Error('Invalid photo');
+      validId(token);
+      const bytes = Buffer.from(data);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const pending = path(staged, token, 'image'),
+        placed = await locate(assets, token),
+        existingPending = await locate(staged, token);
+      let newlyCreated = false;
+      if (await exists(placed)) await read(placed, sha256);
+      else if (await exists(existingPending)) await read(existingPending, sha256);
+      else {
+        const fd = await open(pending, 'wx', 0o600);
+        newlyCreated = true;
+        try {
+          await fd.writeFile(bytes);
+          await fd.sync();
+        } finally {
+          await fd.close();
+        }
+        await syncDirectory(staged);
+      }
+      return {
+        newly_created: newlyCreated,
+        token,
+        scope,
+        name: `照片-${token.slice(0, 8)}.${bytes[0] === 137 ? 'png' : 'jpg'}`,
+        bytes: bytes.length,
+        sha256,
+        state: 'staged',
+      };
+    },
     async stage(source, scope, identity, expected) {
       await setup();
       const kind = materialKind(basename(source));
@@ -117,7 +156,9 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
         name:
           basename(source).length <= 500
             ? basename(source)
-            : basename(source).slice(0, 490) + '.' + kind,
+            : basename(source).slice(0, 490) +
+              '.' +
+              (kind === 'image' ? (bytes[0] === 137 ? 'png' : 'jpg') : kind),
         bytes: bytes.length,
         sha256: createHash('sha256').update(bytes).digest('hex'),
         state: 'staged',

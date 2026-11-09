@@ -21,6 +21,9 @@ export default {
   outDir: process.env.CASELITE_FORGE_OUT_DIR || undefined,
   packagerConfig: {
     appBundleId: 'com.caselite.desktop',
+    extendInfo: {
+      NSCameraUsageDescription: '仅在你点击拍照录入后使用摄像头，照片保存在本机项目材料中。',
+    },
     asar: true,
     download: {
       checksums: electronArtifactChecksums,

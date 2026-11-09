@@ -27,7 +27,10 @@ import { validateMaterialBatchPath } from './adapters/material-batch-files';
 import { runMaterialBatchDemo } from './material-batch-demo';
 import { createDocxProcessor, readDocxSemanticHtml } from './adapters/docx-processor';
 import { createMaterialFiles } from './adapters/material-files';
+import { createMaterialScopeWritable } from './adapters/material-scope';
 import { createPdfProcessor } from './adapters/pdf-processor';
+import { createImageProcessor } from './adapters/image-processor';
+import { createPhotoPermissionGate } from './adapters/photo-permission';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
 import { runTypographyDemo } from './typography-demo';
@@ -75,7 +78,18 @@ import {
   registerFinanceIpc,
   registerTaskIpc,
 } from './ipc/register-task-ipc';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  screen,
+  session,
+  shell,
+  systemPreferences,
+  type WebContents,
+} from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -244,12 +258,45 @@ function registerIpcSpike(offlineProbe?: ReturnType<typeof createOfflineProbeApp
   });
 }
 
-function denyUnrequestedDesktopCapabilities(): void {
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false);
+function denyUnrequestedDesktopCapabilities() {
+  const camera = createPhotoPermissionGate<WebContents>({
+    trusted(contents) {
+      const window = BrowserWindow.fromWebContents(contents);
+      if (!window || window.isDestroyed() || contents.isDestroyed()) return false;
+      try {
+        const current = new URL(contents.getURL()),
+          entry = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
+        return (
+          current.protocol === entry.protocol &&
+          current.host === entry.host &&
+          current.pathname === entry.pathname
+        );
+      } catch {
+        return false;
+      }
+    },
+    askSystem: () =>
+      process.platform === 'darwin'
+        ? systemPreferences.askForMediaAccess('camera')
+        : Promise.resolve(false),
   });
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // 默认拒绝；仅可信主窗显式申请且系统同意的短时视频许可例外，不开放音频或其他权限。
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(camera.permits(contents, permission, details)),
+  );
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    camera.permits(contents, permission, details),
+  );
   session.defaultSession.on('will-download', (event) => event.preventDefault());
+  app.on('web-contents-created', (_event, contents) => {
+    if (contents.session !== session.defaultSession) {
+      contents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
+        callback(false),
+      );
+      contents.session.setPermissionCheckHandler(() => false);
+    }
+  });
+  return camera;
 }
 
 function validatedIntegrationRoot(): string {
@@ -736,7 +783,7 @@ app.on('second-instance', () => {
 app
   .whenReady()
   .then(async () => {
-    denyUnrequestedDesktopCapabilities();
+    const cameraPermission = denyUnrequestedDesktopCapabilities();
     if (
       process.env.CASELITE_INTEGRATION_PHASE === 'write' ||
       process.env.CASELITE_INTEGRATION_PHASE === 'read'
@@ -920,24 +967,30 @@ app
       files: createMaterialFiles(join(taskRoot, 'materials')),
       processor: createPdfProcessor(),
       docxProcessor: createDocxProcessor(),
+      imageProcessor: createImageProcessor(),
       docxPreview: readDocxSemanticHtml,
       id: randomUUID,
       hash: (text) => createHash('sha256').update(text).digest('hex'),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
+      scopeWritable: createMaterialScopeWritable({
+        task: (scope) => taskStore.materials.task(scope),
+        tasks,
+        catalog: baseCatalog,
+      }),
       createTask(token, name) {
         const result = tasks.execute({
           protocol_version: 1,
           operation: 'create',
           request_id: randomUUID(),
           idempotency_key: token,
-          title: name.replace(/\.(pdf|docx)$/i, '').slice(0, 200) || '材料分析',
+          title: name.replace(/\.(pdf|docx|png|jpe?g)$/i, '').slice(0, 200) || '材料分析',
           objective: '',
         });
         if (!result.ok) throw new Error('Cannot create material task');
         return result.tasks[0].id;
       },
     });
-    registerMaterialIpc(materials);
+    registerMaterialIpc(materials, cameraPermission);
     const materialBatches = createMaterialBatchApplication({
       store: taskStore.materials,
       materials,

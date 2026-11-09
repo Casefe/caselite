@@ -21,12 +21,13 @@ import { formatCents, parseCents } from './money';
 
 type Detail = Extract<FinanceResponse, { kind: 'ledger' }>;
 type Write = Exclude<FinanceRequest, { operation: 'read' | 'status' }>;
-import type { Draft } from './types';
+import type { Draft, ContractSeed } from './types';
 
 function matchesEvidence(result: Detail, request: Write, evidence: Detail['evidence']) {
   const ledger = result.ledger;
   if (!ledger || !evidence || evidence.operation !== request.operation) return false;
   if (request.operation === 'register_contract') {
+    if (request.source && ledger.source_candidate_id !== request.source.candidate_id) return false;
     const expected = [...request.installments].sort((a, b) => a.due_date.localeCompare(b.due_date));
     return (
       evidence.target_id === request.project_id &&
@@ -43,8 +44,11 @@ function matchesEvidence(result: Detail, request: Write, evidence: Detail['evide
   const payment = ledger.payments.find((row) => row.id === evidence.target_id);
   if (request.operation === 'record_payment')
     return (
+      (!request.source || payment?.source_candidate_id === request.source.candidate_id) &&
       payment?.installment_id === request.installment_id &&
-      payment.amount_cents === request.amount_cents
+      payment.amount_cents === request.amount_cents &&
+      (!request.occurred_on || payment.occurred_on === request.occurred_on) &&
+      (request.note === undefined || payment.note === request.note.trim())
     );
   return payment?.id === request.payment_id && Boolean(payment.reversed_at);
 }
@@ -55,17 +59,27 @@ function ContractForm({
   disabled,
   submit,
   onEdit,
+  seed,
 }: {
+  seed?: ContractSeed;
   disabled: boolean;
   submit(draft: Draft): void;
   onEdit(): void;
 }) {
-  const [rows, setRows] = useState(() => [blank()]);
+  const [rows, setRows] = useState(() => [
+    {
+      ...blank(),
+      amount: seed?.amount === undefined ? '' : (seed.amount / 100).toFixed(2),
+      date: seed?.date ?? '',
+    },
+  ]);
   function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
+    if (seed?.source && fields.get('source_confirmed') !== 'on') return;
     submit({
       operation: 'register_contract',
+      source: seed?.source,
       number: String(fields.get('number')),
       amount_cents: parseCents(String(fields.get('amount'))),
       installments: rows.map((row) => ({
@@ -80,11 +94,16 @@ function ContractForm({
         <legend>登记有效收费合同</legend>
         <label>
           合同编号
-          <input name="number" required maxLength={120} />
+          <input name="number" required maxLength={120} defaultValue={seed?.reference} />
         </label>
         <label>
           合同金额（元）
-          <input name="amount" inputMode="decimal" required />
+          <input
+            name="amount"
+            inputMode="decimal"
+            required
+            defaultValue={seed?.amount === undefined ? '' : (seed.amount / 100).toFixed(2)}
+          />
         </label>
         {rows.map((row, index) => (
           <div key={row.id} className="finance-fields">
@@ -131,6 +150,14 @@ function ContractForm({
             )}
           </div>
         ))}
+        <div>
+          {seed?.source && (
+            <label className="finance-checkbox">
+              <input type="checkbox" name="source_confirmed" required />
+              已核对 {seed.sourceName} 的金额及分期安排，确认登记本合同。
+            </label>
+          )}
+        </div>
         <div className="finance-fields">
           <button
             type="button"
@@ -170,6 +197,7 @@ function ProjectLedger({
   const [reverse, setReverse] = useState<string>();
   const [formRevision, setFormRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [intakeBusy, setIntakeBusy] = useState(false);
   const inFlight = useRef(false);
   const projectId = project.id;
 
@@ -204,7 +232,7 @@ function ProjectLedger({
   }
 
   function discardDraft() {
-    finance.discard();
+    finance.clearEntry(projectId);
     setEntry(true);
     setFormRevision((value) => value + 1);
     setDirty(false);
@@ -215,6 +243,7 @@ function ProjectLedger({
   }
 
   function accept(result: Detail) {
+    finance.clearEntry(projectId);
     setEntry(false);
     void client.invalidateQueries({ queryKey: financeManagementKey });
     void invalidateOrdinaryCatalog(client, true, true);
@@ -299,7 +328,7 @@ function ProjectLedger({
     } finally {
       if (resolved) {
         setPending(undefined);
-        if (!dirty && !reverse) onBlocked(false);
+        if (!dirty && !reverse && !intakeBusy) onBlocked(false);
       }
       inFlight.current = false;
       setBusy(false);
@@ -323,7 +352,7 @@ function ProjectLedger({
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {busy && <p role="status">正在核对账本…</p>}
-      {dirty && !pending && (
+      {dirty && !pending && !busy && !intakeBusy && !finance.pending && !finance.busy && (
         <p>
           有未提交的财务输入。保存或放弃输入后可以切换项目。
           <button type="button" onClick={discardDraft}>
@@ -362,19 +391,32 @@ function ProjectLedger({
           </details>
           {project.archived_at && <p>此项目已归档，账本只读。</p>}
           <ProjectFinancePanel
-            key={formRevision}
             project={project}
+            entryRevision={formRevision}
+            entryDirty={dirty}
+            onEntrySaved={() => {
+              setDirty(false);
+              setFormRevision((value) => value + 1);
+              onBlocked(!!pending || busy || !!reverse || intakeBusy);
+            }}
             ledger={ledger ?? null}
             contractForm={
-              !ledger && !project.archived_at ? (
-                <ContractForm
-                  key={formRevision}
-                  disabled={!!pending || busy}
-                  submit={submit}
-                  onEdit={edit}
-                />
-              ) : undefined
+              !ledger && !project.archived_at
+                ? (seed) => (
+                    <ContractForm
+                      key={`${formRevision}:${seed.source?.candidate_id ?? 'manual'}:${seed.amount ?? ''}:${seed.date ?? ''}`}
+                      disabled={!!pending || busy}
+                      submit={submit}
+                      onEdit={edit}
+                      seed={seed}
+                    />
+                  )
+                : undefined
             }
+            onIntakeBusy={(value) => {
+              setIntakeBusy(value);
+              onBlocked(value || dirty || !!pending || !!reverse || busy);
+            }}
             today={detail.today}
             finance={finance}
             disabled={!!pending || busy || !!reverse || finance.busy || !!finance.pending}

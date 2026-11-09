@@ -1,3 +1,4 @@
+import { extractFinanceSuggestions } from './finance-source-parser';
 import {
   financeRequestSchema,
   financeManagementRequestSchema,
@@ -8,7 +9,12 @@ import {
 
 interface FinancePort {
   execute(request: FinanceRequest): FinanceResponse;
-  management?: { execute(request: FinanceManagementRequest): FinanceResponse };
+  management?: {
+    execute(
+      request: FinanceManagementRequest,
+      parse?: (text: string) => ReturnType<typeof extractFinanceSuggestions>,
+    ): FinanceResponse;
+  };
 }
 
 export function createFinanceApplication(port: FinancePort) {
@@ -18,7 +24,7 @@ export function createFinanceApplication(port: FinancePort) {
       if (management.success) {
         try {
           return (
-            port.management?.execute(management.data) ?? {
+            port.management?.execute(management.data, extractFinanceSuggestions) ?? {
               ok: false,
               code: 'UNAVAILABLE',
               message: '财务设置暂不可用。',
@@ -37,6 +43,8 @@ export function createFinanceApplication(port: FinancePort) {
         return { ok: false, code: 'INVALID_REQUEST', message: '项目、合同、期款或金额格式无效。' };
 
       const request = parsed.data;
+      if (request.operation === 'record_payment' && request.source && !request.occurred_on)
+        return { ok: false, code: 'INVALID_REQUEST', message: '请核对来源凭证的实际收款日期。' };
       if (request.operation === 'register_contract') {
         const total = request.installments.reduce((sum, row) => sum + BigInt(row.amount_cents), 0n);
         if (total !== BigInt(request.amount_cents))

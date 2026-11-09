@@ -7,21 +7,26 @@ export const MATERIAL_DROP_CHANNEL = 'caselite:material-drop:v1';
 export const MATERIAL_MAX_BYTES = 20 * 1024 * 1024;
 export const MATERIAL_MAX_PAGES = 200;
 export const MATERIAL_MAX_CONTEXT = 32_000;
-export type MaterialKind = 'pdf' | 'docx';
+export type MaterialKind = 'pdf' | 'docx' | 'image';
 export function materialKind(name: string): MaterialKind | undefined {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
   if (!name.includes('.')) return;
   if (ext === 'pdf' || ext === 'docx') return ext;
+  if (['png', 'jpg', 'jpeg'].includes(ext)) return 'image';
 }
 export function materialLocation(name: string, page: number) {
   const kind = materialKind(name);
   if (kind === 'docx') return `Word 提取段 ${page}`;
+  if (kind === 'image') return '照片';
   return `物理页 ${page}`;
 }
 const id = z.string().uuid();
 export const materialScopeSchema = z.union([z.literal('home'), id]);
 export const materialStageRequestSchema = z
-  .object({ scope: materialScopeSchema, path: z.string().min(1).max(4096).optional() })
+  .object({
+    scope: materialScopeSchema,
+    path: z.string().min(1).max(4096).optional(),
+  })
   .strict();
 export type MaterialScope = z.infer<typeof materialScopeSchema>;
 export const textPageSchema = z.object({
@@ -82,6 +87,17 @@ export const materialSelectionSchema = z
   })
   .strict();
 export const materialRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({ ...base, operation: z.literal('camera_permission') }),
+  z.strictObject({ ...base, operation: z.literal('photo_ticket') }),
+  z.strictObject({ ...base, operation: z.literal('camera_revoke') }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('capture_photo'),
+    token: id,
+    bytes: z
+      .instanceof(Uint8Array)
+      .refine((value) => value.length >= 8 && value.length <= 8 * 1024 * 1024),
+  }),
   z
     .object({
       protocol_version: z.literal(1),
@@ -173,6 +189,7 @@ export const materialResponseSchema = z.discriminatedUnion('ok', [
     ok: z.literal(true),
     materials: z.array(materialSchema),
     staged: stagedPdfSchema.nullable().optional(),
+    capture_token: id.optional(),
     data: z.instanceof(Uint8Array).optional(),
     preview: materialPreviewSchema.optional(),
     docx_semantic: z
