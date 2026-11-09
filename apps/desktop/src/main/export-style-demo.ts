@@ -196,6 +196,12 @@ export async function runExportStyleDemo(
     const evidence = await evaluate(
       `(async()=>{const prefs=await window.caselite.preferences({protocol_version:1,operation:'read'});const list=await window.caselite.task({protocol_version:1,operation:'list_snapshots',task_id:'${task.id}',document_id:'${task.document_id}',offset:0});const snapshot=list.snapshots[0];const records=[];for(const format of ['docx','pdf']){const r=await window.caselite.task({protocol_version:1,operation:'read_export',task_id:'${task.id}',document_id:'${task.document_id}',snapshot_id:snapshot.id,format,export_style:prefs.preferences.export_style,include_history:true});if(!r.ok||r.exports?.[0]?.status!=='ready')throw Error('Missing ready '+format);records.push(r.exports[0]);}return {preferences:prefs.preferences,snapshot,records};})()`,
     );
+    const legacyRecords =
+      phase === 'export-style-write'
+        ? await evaluate(
+            `(async()=>{const records=[];for(const format of ['docx','pdf']){const request={protocol_version:1,operation:'export_snapshot',request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),task_id:'${task.id}',document_id:'${task.document_id}',snapshot_id:'${evidence.snapshot.id}',format};const result=await window.caselite.task(request);if(!result.ok||result.exports?.[0]?.configuration)throw Error('Legacy export failed');records.push({request,result});}return records;})()`,
+          )
+        : JSON.parse(readFileSync(join(root, 'export-style-write.json'), 'utf8')).legacyRecords;
     for (const row of evidence.records) {
       const bytes = readFileSync(
         join(root, 'userData', 'delivery-exports', 'fixed', row.id + '.' + row.format),
@@ -213,6 +219,7 @@ export async function runExportStyleDemo(
       JSON.stringify(
         {
           ...evidence,
+          legacyRecords,
           providerCalls: 0,
           synthetic: true,
           systemIme: 'NOT_RUN',
