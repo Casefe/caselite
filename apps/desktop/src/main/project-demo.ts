@@ -54,7 +54,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
     window.setContentSize(width, height);
     await frame();
     await evaluate(`document.querySelector('${selector}').scrollIntoView({block:'end'})`);
-    const measurement = await evaluate(`(() => {
+    const measurement = await evaluate(`(async () => {
       const split = document.querySelector('${selector}');
       const properties = split.querySelector('.inspector-properties-scroll');
       const ai = split.querySelector('.inspector-ai-region');
@@ -85,9 +85,12 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
       if(last) {
         last.scrollIntoView({block:'nearest'});
+        await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
         const l=last.getBoundingClientRect();
-        if(l.top<p.top-1 || l.bottom>p.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
-          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON()}));
+        const currentProperties=properties.getBoundingClientRect();
+        const currentAi=ai.getBoundingClientRect();
+        if(currentProperties.bottom>currentAi.top+1 || l.top<currentProperties.top-1 || l.bottom>currentProperties.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON(),ancestors:(()=>{let node=last;const rows=[];while(node&&node!==split){const style=getComputedStyle(node);rows.push({tag:node.tagName,cls:node.className,top:node.scrollTop,scrollHeight:node.scrollHeight,height:node.clientHeight,overflow:style.overflowY,rect:node.getBoundingClientRect().toJSON()});node=node.parentElement;}return rows;})()}));
       }
       properties.scrollTop=0;
       button.focus();
@@ -409,6 +412,7 @@ export async function runProjectDemo(
     await evaluate(`(() => {
       const input = document.querySelector('${projectInput}');
       input.focus();
+      input.select();
       document.execCommand('insertText', false, ${JSON.stringify(draft)});
     })()`);
     await wait(`document.querySelector('${projectInput}')?.value === ${JSON.stringify(draft)}`);
@@ -479,7 +483,9 @@ export async function runProjectDemo(
         assertNoRuns();
         if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
           await checkSidebarResize(window, root, 'project-empty');
-          await evaluate("document.querySelector('.inspector-ai-heading button').click()");
+          await evaluate(
+            "(() => { const toggle=document.querySelector('.inspector-ai-heading button'); toggle.focus(); toggle.click(); })()",
+          );
         }
         await wait(`!document.querySelector('${projectInput}')?.closest('[inert]')`);
         window.webContents.focus();
