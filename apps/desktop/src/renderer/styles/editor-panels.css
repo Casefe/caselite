@@ -38,7 +38,7 @@
   margin: 8px 0 5px;
 }
 .rich-editor .tiptap blockquote {
-  border-left: 3px solid #ccd6dc;
+  border-left: 3px solid var(--line, #ccd6dc);
   margin: 10px 0;
   padding-left: 13px;
   color: #6e7f8b;
@@ -51,7 +51,7 @@
 }
 .rich-editor .tiptap hr {
   border: 0;
-  border-top: 1px solid #dce2e6;
+  border-top: 1px solid var(--line, #dce2e6);
   margin: 16px 0;
 }
 .rich-editor[data-empty='true']:before {
@@ -113,7 +113,7 @@
 }
 .format-separator {
   height: 15px;
-  border-left: 1px solid #e1e6ea;
+  border-left: 1px solid var(--line, #e1e6ea);
   margin: 0 4px;
 }
 .block-controls {
@@ -147,7 +147,7 @@
 .format-bar--floating {
   padding: 4px 6px;
   background: white;
-  border: 1px solid #e0e5e9;
+  border: 1px solid var(--line, #e0e5e9);
   border-radius: 6px;
   box-shadow: 0 5px 20px #182c3820;
 }
@@ -160,7 +160,7 @@
   overflow: auto;
   padding: 6px;
   background: white;
-  border: 1px solid #e1e5e9;
+  border: 1px solid var(--line, #e1e5e9);
   border-radius: 7px;
   box-shadow: 0 8px 30px #1b2f4020;
 }
@@ -194,7 +194,7 @@
   place-items: center;
   width: 29px;
   height: 29px;
-  border: 1px solid #e2e8ec;
+  border: 1px solid var(--line, #e2e8ec);
   border-radius: 4px;
   font-size: 13px;
   color: #7b8b98;
@@ -240,7 +240,7 @@
   margin: 0 0 9px;
 }
 .create-objective .rich-editor {
-  border: 1px solid #dce0e5;
+  border: 1px solid var(--line, #dce0e5);
   border-radius: 5px;
   background: white;
 }
@@ -278,13 +278,13 @@
   padding: 8px 16px;
 }
 .project-overview-editor {
-  border: 1px solid #e8ecef;
+  border: 1px solid var(--line, #e8ecef);
   border-radius: 6px;
 }
 .project-overview-editor > .caption {
   margin: 0;
   padding: 6px 12px;
-  border-top: 1px solid #eef1f4;
+  border-top: 1px solid var(--line, #eef1f4);
   font-size: 10px;
 }
 .project-comments {
@@ -297,7 +297,7 @@
   font-size: 13px;
 }
 .comment-composer {
-  border: 1px solid #e1e6ea;
+  border: 1px solid var(--line, #e1e6ea);
   border-radius: 6px;
 }
 .comment-composer .rich-editor .tiptap {
@@ -309,7 +309,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
-  border-top: 1px solid #eef1f4;
+  border-top: 1px solid var(--line, #eef1f4);
   font-size: 9px;
   color: #9ca7b0;
 }
@@ -358,7 +358,7 @@
   border-radius: 50%;
 }
 .assistant-settings {
-  border-top: 1px solid #e7e8eb;
+  border-top: 1px solid var(--line, #e7e8eb);
   padding: 8px 0;
   font-size: 12px;
 }
@@ -379,7 +379,7 @@
 .assistant-settings input {
   width: 100%;
   padding: 8px;
-  border: 1px solid #dedfe3;
+  border: 1px solid var(--line, #dedfe3);
   border-radius: 5px;
   font: inherit;
 }
@@ -499,7 +499,7 @@
 .assistant-preview {
   margin-top: 10px;
   padding: 12px;
-  border: 1px solid #cbd0ee;
+  border: 1px solid var(--line, #cbd0ee);
   border-radius: 7px;
   background: #f9faff;
 }
