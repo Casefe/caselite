@@ -154,18 +154,23 @@ describe('bounded local UI capture', () => {
           area,
           join(area, name),
         ],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
+        { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DEBUG: 'pw:browser' } },
       );
       let output = '';
       child.stdout.on('data', (chunk) => {
-        output += chunk.toString();
+        output = (output + chunk.toString()).slice(-8000);
       });
       child.stderr.on('data', (chunk) => {
-        output += chunk.toString();
+        output = (output + chunk.toString()).slice(-8000);
       });
       // 进入导航才证明子进程已装好取消处理器；固定延时会在整套测试负载下抢先杀死启动进程。
       if (terminate) cancelNavigation = () => child.kill('SIGTERM');
-      const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
+      const started = Date.now();
+      let watchdogFired = false;
+      const timer = setTimeout(() => {
+        watchdogFired = true;
+        child.kill('SIGKILL');
+      }, 15_000);
       const code = await new Promise<number | null>((resolve, reject) => {
         child.on('error', reject);
         child.on('close', resolve);
@@ -178,9 +183,18 @@ describe('bounded local UI capture', () => {
         code,
         output,
       });
+      // 先报告真实退出原因，避免缺失清单的ENOENT掩盖启动/导航/清理阶段的失败；不放宽原时限。
+      expect(
+        code,
+        JSON.stringify({
+          signal: child.signalCode,
+          elapsedMs: Date.now() - started,
+          watchdogFired,
+          output: output.slice(-8000),
+        }),
+      ).toBe(terminate ? 1 : 0);
       const receipt = JSON.parse(readFileSync(join(area, name, 'manifest.json'), 'utf8'));
       expect(receipt.cleanedUp).toBe(true);
-      expect(code).toBe(terminate ? 1 : 0);
       expect(receipt.status).toBe(terminate ? 'FAIL' : 'PASS_REAL');
       if (terminate) expect(receipt.failure).toBe('CANCELLED');
     }

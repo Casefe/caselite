@@ -8,15 +8,71 @@ import {
   useLocalPreferences,
 } from '../shared/data/LocalPreferences';
 import EditorSettings from './EditorSettings';
+import { localPreferencesSchema } from '@caselite/contracts';
 
 afterEach(cleanup);
+it('edits, orders, hides and removes personal skills, applying them only after save', async () => {
+  let preferences = { ...initialLocalPreferences };
+  const api = vi.fn(async (request: LocalPreferencesRequest) => {
+    if (request.operation === 'set') {
+      preferences = localPreferencesSchema.parse({
+        ...request.values,
+        version: preferences.version + 1,
+      });
+      return { ok: true, preferences, receipt: request.idempotency_key };
+    }
+    return { ok: true, preferences, receipt: null };
+  });
+  Object.defineProperty(window, 'caselite', { configurable: true, value: { preferences: api } });
+  const view = render(
+    <LocalPreferencesProvider>
+      <EditorSettings />
+    </LocalPreferencesProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '新增技能' }).disabled).toBe(
+      false,
+    ),
+  );
+  expect(screen.getAllByLabelText(/技能 \d 名称/)).toHaveLength(5);
+  fireEvent.click(screen.getByRole('button', { name: '新增技能' }));
+  fireEvent.change(screen.getByLabelText('技能 6 名称'), { target: { value: '客户说明' } });
+  fireEvent.change(screen.getByLabelText('技能 6 指令'), {
+    target: { value: '  面向客户解释所选内容。  ' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '上移客户说明' }));
+  fireEvent.click(screen.getAllByText('显示在写作菜单')[4].querySelector('input')!);
+  fireEvent.click(screen.getByRole('button', { name: '删除重新组织格式' }));
+  expect(preferences.writing_skills).toBeUndefined();
+  // 技能先加入draft，再选方案；可信Schema会以不同顺序返回顶层字段。
+  fireEvent.click(screen.getByRole('radio', { name: 'Word' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存编辑器设置' }));
+  await screen.findByText('个人资料与偏好已保存到此工作区。');
+  expect(preferences.editor_mode).toBe('word');
+  expect(preferences.writing_skills?.at(-1)).toMatchObject({
+    name: '客户说明',
+    enabled: false,
+    instruction: '面向客户解释所选内容。',
+  });
+  view.unmount();
+  render(
+    <LocalPreferencesProvider>
+      <EditorSettings />
+    </LocalPreferencesProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLInputElement>('技能 5 名称').value).toBe('客户说明'),
+  );
+});
 it('applies only the confirmed scheme and recovers the same submission after an unknown result', async () => {
   let original: Extract<LocalPreferencesRequest, { operation: 'set' }> | undefined;
   const api = vi.fn(async (request: LocalPreferencesRequest) => {
     if (request.operation === 'read')
       return {
         ok: true,
-        preferences: original ? { ...original.values, version: 1 } : initialLocalPreferences,
+        preferences: original
+          ? localPreferencesSchema.parse({ ...original.values, version: 1 })
+          : initialLocalPreferences,
         receipt: null,
       };
     if (request.operation === 'set') {
@@ -26,7 +82,7 @@ it('applies only the confirmed scheme and recovers the same submission after an 
     expect(request.idempotency_key).toBe(original!.idempotency_key);
     return {
       ok: true,
-      preferences: { ...original!.values, version: 1 },
+      preferences: localPreferencesSchema.parse({ ...original!.values, version: 1 }),
       receipt: original!.idempotency_key,
     };
   });
@@ -47,6 +103,7 @@ it('applies only the confirmed scheme and recovers the same submission after an 
   const word = screen.getByRole<HTMLInputElement>('radio', { name: 'Word' });
   await waitFor(() => expect(word.closest('fieldset')!.disabled).toBe(false));
   expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Markdown' }).checked).toBe(true);
+  fireEvent.change(screen.getByLabelText('技能 1 名称'), { target: { value: '恢复后的技能' } });
   fireEvent.click(word);
   expect(screen.getByLabelText('已生效方案').textContent).toBe('markdown');
   fireEvent.click(screen.getByRole('button', { name: '保存编辑器设置' }));
@@ -56,5 +113,6 @@ it('applies only the confirmed scheme and recovers the same submission after an 
   expect(screen.getByLabelText('已生效方案').textContent).toBe('markdown');
   fireEvent.click(screen.getByRole('button', { name: '核对保存结果' }));
   await waitFor(() => expect(screen.getByLabelText('已生效方案').textContent).toBe('word'));
+  expect(screen.getByLabelText<HTMLInputElement>('技能 1 名称').value).toBe('恢复后的技能');
   expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
 });

@@ -9,6 +9,13 @@ import type {
 import { mutation } from './taskCommand';
 type Write = Extract<LocalPreferencesRequest, { operation: 'set' }>;
 type Phase = 'idle' | 'verify' | 'retry';
+// 回执须逐值相同；Schema重排对象键不改变含义，技能数组的顺序仍参与比较。
+const preferenceJson = (values: unknown) =>
+  JSON.stringify(values, (_key, value: unknown) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value,
+  );
 const fields = ({ version, ...values }: LocalPreferences): LocalPreferenceValues => {
   void version;
   return values;
@@ -31,10 +38,15 @@ const Context = createContext({
   error: '',
   notice: '',
   phase: 'idle' as Phase,
+  ready: false,
   change(patch: Partial<LocalPreferenceValues>) {
     void patch;
   },
   async save() {
+    return false;
+  },
+  async saveCalendarLayout(layout: NonNullable<LocalPreferenceValues['calendar_layout']>) {
+    void layout;
     return false;
   },
   async reload() {},
@@ -47,15 +59,27 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     [draft, setDraft] = useState(initial);
   const [locations, setLocations] = useState<WorkspaceLocations | null>(null);
   const [pending, setPending] = useState(true),
+    [ready, setReady] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
     [phase, setPhase] = useState<Phase>('idle');
   const request = useRef<Write | null>(null),
+    requestKind = useRef<'personal' | 'calendar'>('personal'),
     lock = useRef(false),
     mounted = useRef(false);
-  const accept = (value: LocalPreferences) => {
+  const accept = (value: LocalPreferences, base?: LocalPreferenceValues) => {
     setPreferences(value);
-    setDraft(fields(value));
+    setReady(true);
+    // 调整布局只提交已保存的个人资料，并保留设置页尚未保存的输入。
+    setDraft((old) => {
+      if (!base) return fields(value);
+      const edited = Object.fromEntries(
+        (['name', 'email', 'avatar', 'show_word_count', 'editor_mode', 'writing_skills'] as const)
+          .filter((key) => preferenceJson(old[key]) !== preferenceJson(base[key]))
+          .map((key) => [key, old[key]]),
+      );
+      return { ...fields(value), ...edited };
+    });
   };
   useEffect(() => {
     mounted.current = true;
@@ -110,10 +134,10 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
         if (
           r.receipt !== original.idempotency_key ||
           r.preferences.version !== original.expected_version + 1 ||
-          JSON.stringify(fields(r.preferences)) !== JSON.stringify(original.values)
+          preferenceJson(fields(r.preferences)) !== preferenceJson(original.values)
         )
           throw new Error('Unexpected receipt');
-        accept(r.preferences);
+        accept(r.preferences, requestKind.current === 'calendar' ? original.values : undefined);
         request.current = null;
         setPhase('idle');
         // 原键回执可能早于其他窗口的后续修改；确认保存后只读刷新，不再提交。
@@ -124,9 +148,16 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
           });
           if (mounted.current) {
             if (latest.ok) {
-              accept(latest.preferences);
+              accept(
+                latest.preferences,
+                requestKind.current === 'calendar' ? original.values : undefined,
+              );
               setLocations(latest.locations ?? null);
-              setNotice('个人资料与偏好已保存到此工作区。');
+              setNotice(
+                requestKind.current === 'calendar'
+                  ? '日历布局已保存。'
+                  : '个人资料与偏好已保存到此工作区。',
+              );
             } else setNotice('已保存；最新资料刷新失败，可重新读取，不必再次保存。');
           }
         } catch {
@@ -163,15 +194,41 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     )
       return false;
     const values = { ...draft, name: draft.name.trim(), email: draft.email.trim() };
+    if (values.writing_skills) {
+      values.writing_skills = values.writing_skills.map(({ id, name, instruction, enabled }) => ({
+        id,
+        name: name.trim(),
+        instruction: instruction.trim(),
+        enabled,
+      }));
+      if (values.writing_skills.some((skill) => !skill.name || !skill.instruction)) {
+        setError('请填写每个技能的名称和执行指令。');
+        return false;
+      }
+    }
     if (!values.name) {
       setError('请填写名称。');
       return false;
     }
+    requestKind.current = 'personal';
     request.current = {
       ...mutation(),
       operation: 'set',
       expected_version: preferences.version,
       values,
+    };
+    return run('set');
+  }
+  async function saveCalendarLayout(layout: NonNullable<LocalPreferenceValues['calendar_layout']>) {
+    if (lock.current || request.current || pending || !ready) return false;
+    if (JSON.stringify(preferences.calendar_layout) === JSON.stringify(layout)) return true;
+    requestKind.current = 'calendar';
+    setDraft((old) => ({ ...old, calendar_layout: layout }));
+    request.current = {
+      ...mutation(),
+      operation: 'set',
+      expected_version: preferences.version,
+      values: { ...fields(preferences), calendar_layout: layout },
     };
     return run('set');
   }
@@ -184,9 +241,9 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
       const r = await window.caselite.preferences({ protocol_version: 1, operation: 'read' });
       if (!mounted.current) return;
       if (r.ok) {
+        setReady(true);
         setLocations(r.locations ?? null);
-        if (edited) setPreferences(r.preferences);
-        else accept(r.preferences);
+        accept(r.preferences, edited ? fields(preferences) : undefined);
         setError('');
         setNotice(
           edited
@@ -209,6 +266,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
         draft,
         dirty: JSON.stringify(draft) !== JSON.stringify(fields(preferences)),
         pending,
+        ready,
         error,
         notice,
         phase,
@@ -216,6 +274,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
           if (!lock.current && !request.current) setDraft((v) => ({ ...v, ...patch }));
         },
         save,
+        saveCalendarLayout,
         reload,
         verify: async () => {
           await run('status');
