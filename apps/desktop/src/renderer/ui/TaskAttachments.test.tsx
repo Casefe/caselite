@@ -325,3 +325,111 @@ it('keeps a late pre-commit poll from erasing a committed source and does not le
   expect(ai.result.current.error).toBe('');
   expect(await ai.result.current.preview('纯文字发送', 'gpt-4.1-mini')).toBeUndefined();
 });
+
+it.each(['resolve', 'reject'] as const)(
+  'isolates pending, reading and copy diagnostics when one hook changes scope before old requests %s',
+  async (outcome) => {
+    const f = fixture(),
+      other = crypto.randomUUID();
+    let resolveRead!: (r: MaterialResponse) => void, rejectRead!: (e: Error) => void;
+    let resolveCopy!: (r: MaterialResponse) => void, rejectCopy!: (e: Error) => void;
+    f.material.mockImplementation(async (r) => {
+      if (r.operation === 'read' && r.scope === f.task)
+        return new Promise((yes, no) => {
+          resolveRead = yes;
+          rejectRead = no;
+        });
+      if (r.operation === 'save_original' && r.scope === f.task)
+        return new Promise((yes, no) => {
+          resolveCopy = yes;
+          rejectCopy = no;
+        });
+      if (r.operation === 'read') return { ok: false, code: 'MISSING', message: '新任务阅读诊断' };
+      if (r.operation === 'save_original')
+        return { ok: false, code: 'COPY_FAILED', message: '新任务副本诊断' };
+      return { ok: true, materials: 'scope' in r && r.scope === f.task ? [f.file] : [] };
+    });
+    const hook = renderHook(({ scope }) => useMaterials(scope), {
+      initialProps: { scope: f.task },
+    });
+    await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+    let oldRead!: Promise<void>, oldCopy!: Promise<void>;
+    await act(async () => {
+      oldRead = hook.result.current.readReference(f.file.id, f.task, f.file.name);
+      oldCopy = hook.result.current.saveOriginal(f.file.id, f.task);
+    });
+    expect(hook.result.current.readPending).toBe(true);
+    hook.rerender({ scope: other });
+    expect(hook.result.current.readPending).toBe(false);
+    expect(hook.result.current.error).toBe('');
+    expect(hook.result.current.copyError).toBe('');
+    await act(async () => {
+      await hook.result.current.readReference(f.file.id, other, f.file.name);
+      await hook.result.current.saveOriginal(f.file.id, other);
+    });
+    await act(async () => {
+      if (outcome === 'reject') {
+        rejectRead(new Error('旧任务阅读失败'));
+        rejectCopy(new Error('旧任务副本失败'));
+      } else {
+        resolveRead({ ok: true, materials: [f.file], data: new Uint8Array([1]) });
+        resolveCopy({ ok: true, materials: [f.file] });
+      }
+      await Promise.all([oldRead, oldCopy]);
+    });
+    expect(hook.result.current.reading).toBeNull();
+    expect(hook.result.current.readPending).toBe(false);
+    expect(hook.result.current.error).toBe('新任务阅读诊断');
+    expect(hook.result.current.copyError).toBe('新任务副本诊断');
+    hook.rerender({ scope: f.task });
+    expect(hook.result.current.readPending).toBe(false);
+    expect(hook.result.current.error).toBe('');
+    expect(hook.result.current.copyError).toBe('');
+  },
+);
+
+it.each(['pending', 'opened', 'failed'] as const)(
+  'does not revive %s reader state when switching A to B to A without any action in B',
+  async (state) => {
+    const f = fixture(),
+      other = crypto.randomUUID();
+    let finish!: (r: MaterialResponse) => void;
+    f.material.mockImplementation(async (r) => {
+      if (r.operation === 'save_original')
+        return { ok: false, code: 'COPY_FAILED', message: '旧副本诊断' };
+      if (r.operation === 'read') {
+        if (state === 'pending')
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        if (state === 'failed') return { ok: false, code: 'MISSING', message: '旧阅读诊断' };
+        return { ok: true, materials: [f.file], data: new Uint8Array([1]) };
+      }
+      return { ok: true, materials: 'scope' in r && r.scope === f.task ? [f.file] : [] };
+    });
+    const hook = renderHook(({ scope }) => useMaterials(scope), {
+      initialProps: { scope: f.task },
+    });
+    await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+    let read!: Promise<void>;
+    await act(async () => {
+      read = hook.result.current.readReference(f.file.id, f.task, f.file.name);
+      if (state !== 'pending') await read;
+      await hook.result.current.saveOriginal(f.file.id, f.task);
+    });
+    expect(hook.result.current.copyError).toBe('旧副本诊断');
+    hook.rerender({ scope: other });
+    hook.rerender({ scope: f.task });
+    expect(hook.result.current.reading).toBeNull();
+    expect(hook.result.current.readPending).toBe(false);
+    expect(hook.result.current.error).toBe('');
+    expect(hook.result.current.copyError).toBe('');
+    if (state === 'pending')
+      await act(async () => {
+        finish({ ok: true, materials: [f.file], data: new Uint8Array([1]) });
+        await read;
+      });
+    expect(hook.result.current.reading).toBeNull();
+    expect(hook.result.current.readPending).toBe(false);
+  },
+);

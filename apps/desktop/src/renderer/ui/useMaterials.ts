@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   Material,
   MaterialScope,
@@ -120,27 +120,42 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
   const snapshot = useCallback(() => getDraft(scope).revision, [scope]);
   useSyncExternalStore(subscribe, snapshot);
   const items = draft.items;
+  const context = useMemo(() => ({ scope }), [scope]);
   const [reading, setReading] = useState<{
-    scope: string;
+    context: { scope: string };
     id: string;
     name: string;
     task: string;
     bytes: Uint8Array;
     material?: Material;
   } | null>(null);
-  const [readPending, setReadPending] = useState(false);
-  const [copyError, setCopyError] = useState('');
-  const [readingError, setReadingError] = useState('');
+  const [pendingContext, setPendingContext] = useState<typeof context | null>(null);
+  const [copyDiagnostic, setCopyDiagnostic] = useState<{
+    context: typeof context;
+    message: string;
+  } | null>(null);
+  const [readingDiagnostic, setReadingDiagnostic] = useState<{
+    context: typeof context;
+    message: string;
+  } | null>(null);
+  const readPending = pendingContext === context;
+  const copyError = copyDiagnostic?.context === context ? copyDiagnostic.message : '';
+  const readingError = readingDiagnostic?.context === context ? readingDiagnostic.message : '';
+  const setCopyError = (message: string) => setCopyDiagnostic({ context, message });
+  const setReadingError = (message: string) => setReadingDiagnostic({ context, message });
   const alive = useRef(true);
   const readSequence = useRef(0);
+  const copySequence = useRef(0);
   useEffect(() => {
     alive.current = true;
     const sequence = readSequence;
+    const copy = copySequence;
     return () => {
       alive.current = false;
       sequence.current++;
+      copy.current++;
     };
-  }, [scope]);
+  }, [context]);
   const render = () => notify(draft);
   async function command(
     request: Omit<MaterialRequest, 'protocol_version' | 'scope'>,
@@ -237,6 +252,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
       render();
     },
     async saveOriginal(id: string, task: string) {
+      const sequence = ++copySequence.current;
       setCopyError('');
       try {
         await command(
@@ -247,11 +263,12 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
           task,
         );
       } catch (error) {
+        if (!alive.current || sequence !== copySequence.current) return;
         setCopyError(error instanceof Error ? error.message : '原件副本未保存。');
       }
     },
     copyError,
-    reading: reading?.scope === scope ? reading : null,
+    reading: reading?.context === context ? reading : null,
     busy: Boolean(draft.upload),
     staged: !selectImports || draft.selectImport !== false ? draft.staged : undefined,
     uploadingName: !selectImports || draft.selectImport !== false ? draft.name : undefined,
@@ -292,8 +309,9 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
     },
     clearReading() {
       setReadingError('');
+      copySequence.current++;
       readSequence.current++;
-      setReadPending(false);
+      setPendingContext(null);
       setReading(null);
       setCopyError('');
     },
@@ -409,7 +427,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
     },
     async readReference(id: string, task: string, name: string) {
       const sequence = ++readSequence.current;
-      setReadPending(true);
+      setPendingContext(context);
       setReadingError('');
       setReading(null);
       setCopyError('');
@@ -434,7 +452,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
         )
           throw new Error('附件版本或归属已变化，请重新读取。');
         setReading({
-          scope,
+          context,
           id,
           name,
           task,
@@ -445,7 +463,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
         if (!alive.current || sequence !== readSequence.current) return;
         setReadingError(error instanceof Error ? error.message : '无法打开附件。');
       } finally {
-        if (alive.current && sequence === readSequence.current) setReadPending(false);
+        if (alive.current && sequence === readSequence.current) setPendingContext(null);
       }
     },
     async preview(
