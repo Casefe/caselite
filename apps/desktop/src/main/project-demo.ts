@@ -63,6 +63,9 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const a = ai.getBoundingClientRect();
       const p = properties.getBoundingClientRect();
       const ratio = a.height / r.height;
+      const expectedWidth = Math.min(r.width * 1.5, Math.max(r.width, r.right - 12));
+      if (Math.abs(a.width - expectedWidth) > 2 || Math.abs(a.right - r.right) > 2 || getComputedStyle(ai).position !== 'fixed')
+        throw new Error('Invalid floating AI width: '+JSON.stringify({expectedWidth,r:r.toJSON(),a:a.toJSON()}));
       if (r.height < 100 || ratio < .73 || ratio > .81 || p.height < 30 || getComputedStyle(properties).overflowY !== 'auto')
         throw new Error('Invalid split geometry: '+JSON.stringify({r:r.toJSON(),a:a.toJSON(),p:p.toJSON(),ratio}));
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) throw new Error('Reduced motion emulation missing');
@@ -101,8 +104,11 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       rows.push(
         await evaluate(`(() => {
         const split=document.querySelector('${selector}');
+        const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
+        if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
+          throw new Error('Minimized AI does not match property width');
         return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
-          expanded:split.dataset.aiExpanded, aiHeight:split.querySelector('.inspector-ai-region').getBoundingClientRect().height};
+          expanded:split.dataset.aiExpanded, ai:ai.toJSON()};
       })()`),
       );
       if (state === 'expanded' || state === 'compact') {
@@ -117,6 +123,49 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       }
     }
   }
+  window.setContentSize(1440, 900);
+  await frame();
+  const beforeDrag = await evaluate(`(() => {
+    const handle=document.querySelector('${selector} .inspector-ai-resize').getBoundingClientRect();
+    return {x:handle.x+4,y:handle.y+handle.height/2,width:document.querySelector('${selector} .inspector-ai-region').getBoundingClientRect().width};
+  })()`);
+  // 用真实 Electron 鼠标事件覆盖指针捕获；拖出手柄后仍须连续调宽。
+  wc.sendInputEvent({
+    type: 'mouseMove',
+    x: Math.round(beforeDrag.x),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseDown',
+    button: 'left',
+    clickCount: 1,
+    x: Math.round(beforeDrag.x),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseMove',
+    x: Math.round(beforeDrag.x - 96),
+    y: Math.round(beforeDrag.y),
+  });
+  wc.sendInputEvent({
+    type: 'mouseUp',
+    button: 'left',
+    clickCount: 1,
+    x: Math.round(beforeDrag.x - 96),
+    y: Math.round(beforeDrag.y),
+  });
+  await frame();
+  const afterDrag = await evaluate(
+    `document.querySelector('${selector} .inspector-ai-region').getBoundingClientRect().width`,
+  );
+  if (Math.abs(afterDrag - beforeDrag.width - 96) > 2)
+    throw new Error('Native pointer resizing failed: ' + JSON.stringify({ beforeDrag, afterDrag }));
+  rows.push({ nativeDrag: { before: beforeDrag.width, after: afterDrag } });
+  const { data: dragImage } = await debug.sendCommand('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: false,
+  });
+  writeFileSync(join(root, `resize-${label}-dragged.png`), Buffer.from(dragImage, 'base64'));
   // 使用原生键盘事件验证 Escape 焦点返回；收起只改展示，不停止流式或重发。
   await evaluate(`document.querySelector('${selector} .inspector-ai-heading button').focus()`);
   wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });

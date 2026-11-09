@@ -16,6 +16,42 @@ vi.stubGlobal(
   },
 );
 afterEach(cleanup);
+it('floats at property width, expands on conversation click, supports keyboard width and resets on minimize', async () => {
+  const geometry = vi
+    .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(
+      () => ({ width: 320, right: window.innerWidth - 24, bottom: 700, height: 600 }) as DOMRect,
+    );
+  try {
+    render(
+      <InspectorLayout properties={<p>属性内容</p>}>
+        <p>点击会话区域</p>
+        <textarea aria-label="草稿" defaultValue="保留输入" />
+      </InspectorLayout>,
+    );
+    const panel = screen.getByRole('region', { name: 'AI 对话' });
+    expect(panel.style.width).toBe('320px');
+    expect(screen.queryByRole('separator')).toBeNull();
+    fireEvent.click(screen.getByText('点击会话区域'));
+    expect(panel.style.width).toBe('480px');
+    const handle = screen.getByRole('separator', { name: '调整 AI 对话宽度' });
+    handle.focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(panel.style.width).toBe('504px');
+    await userEvent.keyboard('{End}');
+    expect(panel.style.width).toBe(`${window.innerWidth - 36}px`);
+    await userEvent.keyboard('{Home}');
+    expect(panel.style.width).toBe('320px');
+    fireEvent.click(screen.getByTitle('最小化 AI 对话'));
+    expect(panel.style.width).toBe('320px');
+    fireEvent.click(screen.getByText('点击会话区域'));
+    expect(panel.style.width).toBe('480px');
+    expect((screen.getByLabelText('草稿') as HTMLTextAreaElement).value).toBe('保留输入');
+  } finally {
+    geometry.mockRestore();
+  }
+});
+
 it('preserves the mounted conversation and dock, draft, attachment and running state across keyboard resizing', async () => {
   const mounted = vi.fn();
   const stopped = vi.fn();
