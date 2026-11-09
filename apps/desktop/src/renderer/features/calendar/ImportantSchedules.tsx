@@ -80,10 +80,16 @@ export default function ImportantSchedules({
     <section className="important-schedules" aria-label={home ? '首页重要日程' : '跨日期重要日程'}>
       <header>
         <h3>
-          {title}
+          {home && onCalendar ? (
+            <button className="home-section-link" onClick={onCalendar}>
+              {title}
+            </button>
+          ) : (
+            title
+          )}
           {read.data && <small> {read.data.page?.total ?? 0}</small>}
         </h3>
-        {onCalendar && <button onClick={onCalendar}>日历</button>}
+        {!home && onCalendar && <button onClick={onCalendar}>日历</button>}
       </header>
       {read.isPending && <p role="status">正在读取重要日程…</p>}
       {read.error && (

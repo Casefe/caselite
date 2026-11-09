@@ -167,6 +167,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
     .object({ ...base, operation: z.literal('copy_output'), scope, run_id: z.string().uuid() })
     .strict(),
   z.object({ ...base, operation: z.literal('history') }).strict(),
+  z.object({ ...base, operation: z.literal('active_runs') }).strict(),
   z
     .object({
       ...base,

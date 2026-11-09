@@ -196,6 +196,7 @@ export function createAgentApplication(ports: {
           request.operation === 'read' ||
           request.operation === 'cancel' ||
           request.operation === 'history' ||
+          request.operation === 'active_runs' ||
           request.operation === 'pin_history' ||
           request.operation === 'apply_review')
       )
@@ -213,6 +214,26 @@ export function createAgentApplication(ports: {
       )
         return failure('BUSY', '模型配置正在保存，请稍后核对。');
       try {
+        if (request.operation === 'active_runs') {
+          // 首页跨作用域只读投影仍检查窗口归属及原对象存在性，不扩大单对象读取权限。
+          const visible = [...runs.values()].filter(({ owner: runOwner, run }) => {
+            if ((runOwner !== owner && runOwner !== '') || run.status !== 'running') return false;
+            if (run.scope === 'home') return true;
+            if (run.scope.startsWith('project:')) return ports.project?.exists(run.scope.slice(8));
+            if (run.scope.startsWith('document:')) return ports.review?.exists(run.scope.slice(9));
+            if (run.scope.startsWith('contact:')) return ports.contact?.exists(run.scope.slice(8));
+            return ports.taskExists(run.scope);
+          });
+          const model = ports.credentials.getDefaultModel();
+          const state = configuration();
+          return {
+            ok: true,
+            ...state,
+            configured: state.providers[agentProviderFor(model)],
+            model,
+            runs: visible.map(({ run }) => publicRun(run)),
+          };
+        }
         if (request.operation === 'date_rules') {
           if (!ports.dates) return failure('UNAVAILABLE', '日期规则尚未接入');
           const model = ports.credentials.getDefaultModel(),
