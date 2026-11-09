@@ -1,4 +1,4 @@
-import TaskAttachments from './TaskAttachments';
+import ReminderEditor from './ReminderEditor';
 import TaskCalendarEditor from '../features/calendar/TaskCalendarEditor';
 import { useCallback, useState, useRef, type ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
@@ -20,9 +20,13 @@ export default function TaskInspector({
   onPropertiesBlocked,
   onTaskChanged,
   content,
+  reminder,
+  showCalendar = false,
   editorAssistantDock,
 }: {
   content?: ReactNode;
+  reminder?: ReactNode;
+  showCalendar?: boolean;
   editorAssistantDock?(element: HTMLDivElement | null): void;
   task: Task | null;
   onProjectChanged?(task: Task, objectiveState: number[] | null): void;
@@ -37,13 +41,13 @@ export default function TaskInspector({
 }) {
   const [editing, setEditing] = useState(false);
   const [calendarEditing, setCalendarEditing] = useState(false);
-  const [dateEditing, setDateEditing] = useState(false);
-  const flags = useRef({ properties: false, calendar: false, dates: false });
+  const [localReminderEditing, setLocalReminderEditing] = useState(false);
+  const flags = useRef({ properties: false, calendar: false, reminder: false });
   const reportBlocked = useCallback(
     (value: boolean) => {
       flags.current.properties = value;
       setEditing(value);
-      onPropertiesBlocked?.(value || flags.current.calendar || flags.current.dates);
+      onPropertiesBlocked?.(value || flags.current.calendar || flags.current.reminder);
     },
     [onPropertiesBlocked],
   );
@@ -51,14 +55,14 @@ export default function TaskInspector({
     (value: boolean) => {
       flags.current.calendar = value;
       setCalendarEditing(value);
-      onPropertiesBlocked?.(value || flags.current.properties || flags.current.dates);
+      onPropertiesBlocked?.(value || flags.current.properties || flags.current.reminder);
     },
     [onPropertiesBlocked],
   );
-  const reportDates = useCallback(
+  const reportReminder = useCallback(
     (value: boolean) => {
-      flags.current.dates = value;
-      setDateEditing(value);
+      flags.current.reminder = value;
+      setLocalReminderEditing(value);
       onPropertiesBlocked?.(value || flags.current.properties || flags.current.calendar);
     },
     [onPropertiesBlocked],
@@ -67,17 +71,27 @@ export default function TaskInspector({
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <InspectorLayout
-        blocked={reminderEditing || editing || calendarEditing || dateEditing}
+        blocked={reminderEditing || editing || calendarEditing || localReminderEditing}
         properties={
           <div className="inspector-content task-inspector-content" aria-label="任务属性">
             {content}
             {onPropertiesBlocked && onTaskChanged ? (
               <TaskProperties
                 task={task}
-                disabled={propertiesDisabled || calendarEditing || dateEditing}
+                disabled={propertiesDisabled || calendarEditing || localReminderEditing}
                 suggestions={suggestions}
                 assigneeSuggestions={assigneeSuggestions}
                 groupTags
+                reminder={
+                  reminder ?? (
+                    <ReminderEditor
+                      compact
+                      taskId={task.id}
+                      disabled={propertiesDisabled || editing || calendarEditing}
+                      onBlocked={reportReminder}
+                    />
+                  )
+                }
                 project={
                   onProjectChanged && onProjectDirty ? (
                     <TaskProjectAction
@@ -118,23 +132,15 @@ export default function TaskInspector({
                 </dl>
               </details>
             )}
-            {onPropertiesBlocked && onTaskChanged && (
+            {showCalendar && onPropertiesBlocked && onTaskChanged && (
               <TaskCalendarEditor
                 key={task.id}
                 task={task}
-                disabled={propertiesDisabled || editing || dateEditing}
+                disabled={propertiesDisabled || editing}
                 onBlocked={reportCalendar}
                 onChanged={onTaskChanged}
               />
             )}
-            <TaskAttachments
-              key={`attachments:${task.id}`}
-              taskId={task.id}
-              task={task}
-              onDateBlocked={reportDates}
-              onTaskChanged={onTaskChanged}
-              disabled={propertiesDisabled || reminderEditing || editing || calendarEditing}
-            />
           </div>
         }
       >
@@ -145,7 +151,7 @@ export default function TaskInspector({
             key={task.id}
             taskId={task.id}
             taskVersion={task.version}
-            blocked={reminderEditing || editing || calendarEditing || dateEditing}
+            blocked={reminderEditing || editing || calendarEditing || localReminderEditing}
           />
         )}
       </InspectorLayout>

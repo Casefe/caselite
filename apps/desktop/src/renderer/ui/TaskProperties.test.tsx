@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import TaskProperties from './TaskProperties';
 
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open');
+  };
+});
 afterEach(cleanup);
 const initial = (): Task => ({
   id: crypto.randomUUID(),
@@ -213,14 +221,15 @@ it('edits ordinary attributes together, clears the date, and prevents overlappin
   const { blocked } = show(task, api, true);
   select();
   fireEvent.change(screen.getByLabelText('任务优先级'), { target: { value: '2' } });
-  const input = screen.getByLabelText('普通截止日期') as HTMLInputElement;
-  fireEvent.input(input, { target: { value: '2024-02-29' } });
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  const input = screen.getByLabelText('截止日期') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: '2024-02-29' } });
   expect(api).toHaveBeenCalledTimes(1);
   await act(async () => confirm());
   expect(current.version).toBe(3);
   expect((screen.getByLabelText('任务状态') as HTMLSelectElement).value).toBe('done');
   expect(blocked).toHaveBeenLastCalledWith(true);
-  fireEvent.blur(input);
+  fireEvent.click(screen.getByRole('button', { name: '确定日期' }));
   await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
   expect(current).toMatchObject({
     version: 4,
@@ -228,7 +237,8 @@ it('edits ordinary attributes together, clears the date, and prevents overlappin
     priority: 2,
     status: 'done',
   });
-  fireEvent.click(screen.getByText('清空截止日期'));
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  fireEvent.click(screen.getByRole('button', { name: '清除日期' }));
   await waitFor(() => expect(blocked).toHaveBeenLastCalledWith(false));
   expect(current).toMatchObject({ version: 5, due_date: null, priority: 2 });
 });
@@ -236,20 +246,28 @@ it('edits ordinary attributes together, clears the date, and prevents overlappin
 it('blocks incomplete native date input instead of treating it as an explicit clear', () => {
   const api = vi.fn();
   const { blocked } = show({ ...initial(), due_date: '2026-01-01' }, api);
-  const input = screen.getByLabelText('普通截止日期') as HTMLInputElement;
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  const input = screen.getByLabelText('截止日期') as HTMLInputElement;
   fireEvent.compositionStart(input);
-  fireEvent.input(input, { target: { value: '' } });
+  fireEvent.change(input, { target: { value: '' } });
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
-  fireEvent.blur(input);
   expect(api).not.toHaveBeenCalled();
   fireEvent.compositionEnd(input);
-  fireEvent.blur(input);
+  Object.defineProperty(input, 'validity', {
+    configurable: true,
+    value: { valid: false, badInput: true },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '确定日期' }));
   expect(screen.getByRole('alert')).toBeTruthy();
   expect(blocked).toHaveBeenLastCalledWith(true);
-  fireEvent.keyDown(input, { key: 'Escape' });
-  expect(input.value).toBe('2026-01-01');
+  fireEvent(
+    screen.getByRole('dialog', { name: '任务日期' }),
+    new Event('cancel', { cancelable: true }),
+  );
   expect(blocked).toHaveBeenLastCalledWith(false);
   expect(api).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  expect(input.value).toBe('2026-01-01');
 });
 
 it('stops queued edits when read-back observes an intervening version', async () => {
@@ -344,9 +362,10 @@ it('retains the exact date/priority request through unknown delivery and rejects
     return response(later);
   });
   const { changed } = show(task, api);
-  const input = screen.getByLabelText('普通截止日期');
-  fireEvent.input(input, { target: { value: '2026-01-01' } });
-  fireEvent.blur(input);
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  const input = screen.getByLabelText('截止日期');
+  fireEvent.change(input, { target: { value: '2026-01-01' } });
+  fireEvent.click(screen.getByRole('button', { name: '确定日期' }));
   fireEvent.click(await screen.findByText('核对并重试原提交'));
   await screen.findByText('提交回执与任务不一致，请核对原提交。');
   expect((input as HTMLInputElement).disabled).toBe(true);

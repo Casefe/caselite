@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import RecordList, { initialTaskListState, type TaskListState } from './RecordList';
-vi.mock('./AgentPanel', () => ({ default: () => null }));
+vi.mock('./AgentPanel', () => ({ default: () => null, UnavailableAgentPanel: () => null }));
 afterEach(() => {
   cleanup();
   onlineManager.setOnline(true);
@@ -102,6 +102,8 @@ it('invalidates query A before B and never displays its late rows or count under
   );
   await waitFor(() => expect(pending).toHaveLength(1));
   const filter = screen.getByRole('button', { name: '筛选任务' });
+  expect(filter.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('true');
@@ -265,7 +267,8 @@ it('keeps the project assignment guard until a confirmed write can be read back'
       <Host />
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
+  if (screen.getByRole('button', { name: '筛选任务' }).getAttribute('aria-expanded') === 'false')
+    fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
   fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
   await waitFor(() => expect(field.disabled).toBe(false));

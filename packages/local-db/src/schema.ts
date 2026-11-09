@@ -53,6 +53,7 @@ export const taskItems = sqliteTable(
       .default('todo'),
     priority: integer('priority').notNull().default(0),
     dueDate: text('due_date'),
+    startDate: text('start_date'),
     plannedDate: text('planned_date'),
     scheduleDate: text('schedule_date'),
     scheduleStart: text('schedule_start'),
@@ -153,6 +154,14 @@ export const taskItems = sqliteTable(
     check(
       'task_due_date_valid',
       sql`${table.dueDate} IS NULL OR (length(${table.dueDate}) = 10 AND ${table.dueDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.dueDate},1,4) <> '0000' AND date(${table.dueDate}) IS NOT NULL AND date(${table.dueDate}) = ${table.dueDate})`,
+    ),
+    check(
+      'task_start_date_valid',
+      sql`${table.startDate} IS NULL OR (length(${table.startDate}) = 10 AND ${table.startDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.startDate},1,4) <> '0000' AND date(${table.startDate}) IS NOT NULL AND date(${table.startDate}) = ${table.startDate})`,
+    ),
+    check(
+      'task_date_range_valid',
+      sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.startDate} <= ${table.dueDate}`,
     ),
   ],
 );

@@ -92,6 +92,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
+  const hasStartDate = (
+    db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
+  ).some((c) => c.name === 'start_date');
   const hasSubscription = (
     db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
   ).some((v) => v.name === 'subscribed');
@@ -103,7 +106,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   ).some((c) => c.name === 'attention_timezone');
   const select = (hasSubscription ? baseSelect : baseSelect.replace(',t.subscribed', '')).replace(
     ' FROM task_items',
-    `${hasCalendar ? calendarColumns : ''}${hasTimezone ? ',t.attention_timezone' : ''} FROM task_items`,
+    `${hasStartDate ? ',t.start_date' : ''}${hasCalendar ? calendarColumns : ''}${hasTimezone ? ',t.attention_timezone' : ''} FROM task_items`,
   );
   // 完整宿主先应用全部迁移；旧版迁移夹具尚无导出意图表，不能因此破坏已有Task读写。
   const hasExportIntents = !!db
@@ -152,6 +155,10 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     if (q.status !== null) {
       clauses.push('t.status=?');
       params.push(q.status);
+    }
+    if (q.assignee !== undefined) {
+      clauses.push(q.assignee === null ? 't.assignee IS NULL' : 't.assignee=?');
+      if (q.assignee !== null) params.push(q.assignee);
     }
     if (q.priority !== null) {
       clauses.push('t.priority=?');
@@ -349,6 +356,10 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             return fail('INVALID_REQUEST', '任务说明超过4000字符，输入已保留。');
         }
         if (request.operation === 'create') {
+          if (request.start_date && request.due_date && request.start_date > request.due_date)
+            return fail('INVALID_REQUEST', '开始日期不能晚于截止日期。');
+          if (request.start_date && !hasStartDate)
+            return fail('CONFLICT', '此工作区尚未升级开始日期格式。');
           if (
             request.matter_id &&
             !db
@@ -373,6 +384,11 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             request.due_date ?? null,
             JSON.stringify(request.tags ?? []),
           );
+          if (hasStartDate && request.start_date)
+            db.prepare('UPDATE task_items SET start_date=? WHERE id=?').run(
+              request.start_date,
+              taskId,
+            );
           if (request.matter_id)
             db.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(
               taskId,
@@ -381,6 +397,20 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           db.prepare(
             'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
           ).run(randomUUID(), taskId, randomUUID());
+          if (request.initial_reminder) {
+            // 复用同连接的 Reminder Owner；创建、提醒、活动和两类回执共同提交或回滚。
+            const reminder = api.reminders.execute({
+              ...request.initial_reminder,
+              protocol_version: 1,
+              operation: 'schedule',
+              request_id: request.request_id,
+              idempotency_key: request.idempotency_key,
+              task_id: taskId,
+              reminder_id: randomUUID(),
+              expected_version: 0,
+            });
+            if (!reminder.ok) throw new Error('初始提醒未提交，撤回本次任务创建。');
+          }
         } else {
           taskId = request.task_id;
           const task = get(taskId);
@@ -451,22 +481,30 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             if (task.version !== request.expected_version)
               return fail('CONFLICT', '任务已更新，请重新读取后核对。');
             // 旧请求省略属性时保留当前值；null 是明确清空，不能按省略处理。
+            const start =
+              request.start_date === undefined ? (task.start_date ?? null) : request.start_date;
+            if (start && request.due_date && start > request.due_date)
+              return fail('INVALID_REQUEST', '开始日期不能晚于截止日期。');
+            if (request.start_date && !hasStartDate)
+              return fail('CONFLICT', '此工作区尚未升级开始日期格式。');
             const assignee = request.assignee === undefined ? task.assignee : request.assignee;
             const tags = JSON.stringify(request.tags ?? task.tags);
             if (
               task.priority === request.priority &&
               task.due_date === request.due_date &&
+              start === (task.start_date ?? null) &&
               assignee === task.assignee &&
               tags === JSON.stringify(task.tags)
             )
               return fail('INVALID_REQUEST', '任务属性没有变化。');
             db.prepare(
-              'UPDATE task_items SET priority=?,due_date=?,tags=?,assignee=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=?',
+              `UPDATE task_items SET priority=?,due_date=?,tags=?,assignee=?${hasStartDate ? ',start_date=?' : ''},version=version+1,updated_at=? WHERE id=? AND workspace_id=?`,
             ).run(
               request.priority,
               request.due_date,
               tags,
               assignee,
+              ...(hasStartDate ? [start] : []),
               new Date().toISOString(),
               taskId,
               workspace,
@@ -517,6 +555,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           ).run(taskId, updated.version, Buffer.from(rich));
         const result = {
           ...ok([updated], null, request.idempotency_key),
+          ...(request.operation === 'create' && request.initial_reminder
+            ? { reminder_created: true }
+            : {}),
           ...(savedSnapshots
             ? { snapshots: savedSnapshots, snapshot_created: snapshotCreated }
             : {}),
