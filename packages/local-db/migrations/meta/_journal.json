@@ -190,6 +190,13 @@
       "when": 1794191000000,
       "tag": "0023_finance_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794191100000,
+      "tag": "0024_finance_expenses",
+      "breakpoints": true
     }
   ]
 }

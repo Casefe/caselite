@@ -3,6 +3,8 @@ import type Database from 'better-sqlite3';
 import {
   financeAllocationSchema,
   financeInvoiceSchema,
+  financeExpenseSchema,
+  financeReimbursementSchema,
   financeManagementSuccessSchema,
   financeRuleSchema,
   type FinanceManagementRequest,
@@ -93,6 +95,28 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
           )
           .all(workspace),
         allocations: allocations(),
+        expenses: (
+          db
+            .prepare(
+              'SELECT id,value,created_at,reversed_at FROM finance_expenses WHERE workspace_id=? ORDER BY rowid',
+            )
+            .all(workspace) as {
+            id: string;
+            value: string;
+            created_at: string;
+            reversed_at: string | null;
+          }[]
+        ).map((row) =>
+          financeExpenseSchema.parse({
+            ...JSON.parse(row.value),
+            id: row.id,
+            created_at: row.created_at,
+            reversed_at: row.reversed_at,
+          }),
+        ),
+        reimbursements: db
+          .prepare('SELECT * FROM finance_reimbursements WHERE workspace_id=? ORDER BY rowid')
+          .all(workspace),
         invoices: db
           .prepare('SELECT * FROM finance_invoices WHERE workspace_id=? ORDER BY rowid')
           .all(workspace),
@@ -122,15 +146,21 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
         throw new Error('财务回执摘要不匹配。');
     }
     const table =
-      request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice'
-        ? 'finance_invoices'
-        : request.operation === 'm_save_rule'
-          ? 'finance_rules'
-          : request.operation === 'm_allocate' || request.operation === 'm_reverse_allocation'
-            ? 'finance_allocations'
-            : request.operation === 'm_record_payout' || request.operation === 'm_reverse_payout'
-              ? 'finance_payouts'
-              : null;
+      request.operation === 'm_record_expense' || request.operation === 'm_reverse_expense'
+        ? 'finance_expenses'
+        : request.operation === 'm_record_reimbursement' ||
+            request.operation === 'm_reverse_reimbursement'
+          ? 'finance_reimbursements'
+          : request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice'
+            ? 'finance_invoices'
+            : request.operation === 'm_save_rule'
+              ? 'finance_rules'
+              : request.operation === 'm_allocate' || request.operation === 'm_reverse_allocation'
+                ? 'finance_allocations'
+                : request.operation === 'm_record_payout' ||
+                    request.operation === 'm_reverse_payout'
+                  ? 'finance_payouts'
+                  : null;
     if (
       table &&
       !db
@@ -166,10 +196,7 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
       throw new Error('项目规则历史凭据不一致。');
     if (table) {
       const current = effect(request, proof.target_id);
-      if (
-        request.operation === 'm_reverse_payout' ||
-        request.operation === 'm_reverse_allocation'
-      ) {
+      if (request.operation.startsWith('m_reverse_')) {
         if (!current.reversed_at || current.reversed_at !== stored.effect.reversed_at)
           throw new Error('冲回凭据缺失。');
       } else {
@@ -186,6 +213,30 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
   };
   function effect(request: FinanceManagementRequest, targetId: string): Record<string, unknown> {
     if (request.operation === 'm_save_rule') return { ...rule(targetId) };
+    if (request.operation === 'm_record_expense' || request.operation === 'm_reverse_expense') {
+      const row = db
+        .prepare(
+          'SELECT id,value,created_at,reversed_at FROM finance_expenses WHERE id=? AND workspace_id=?',
+        )
+        .get(targetId, workspace) as
+        { id: string; value: string; created_at: string; reversed_at: string | null } | undefined;
+      if (!row) throw new Error('支出未读回。');
+      return financeExpenseSchema.parse({
+        ...JSON.parse(row.value),
+        id: row.id,
+        created_at: row.created_at,
+        reversed_at: row.reversed_at,
+      });
+    }
+    if (
+      request.operation === 'm_record_reimbursement' ||
+      request.operation === 'm_reverse_reimbursement'
+    )
+      return financeReimbursementSchema.parse(
+        db
+          .prepare('SELECT * FROM finance_reimbursements WHERE id=? AND workspace_id=?')
+          .get(targetId, workspace),
+      );
     if (request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice')
       return financeInvoiceSchema.parse(
         db
@@ -334,6 +385,7 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
     }
     const now = new Date().toISOString();
     let targetId: string = randomUUID();
+    let expectedReimbursementParties: { from_party: string; to_party: string } | undefined;
     let expectedAllocation: ReturnType<typeof preview> | undefined;
     if (request.operation === 'm_save_rule') {
       const values = request.values;
@@ -444,6 +496,75 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
         request.note,
         now,
       );
+    } else if (request.operation === 'm_record_expense') {
+      if (request.reimbursable && request.payer === request.bearer)
+        return fail('付款人与承担方相同，不形成待报销。');
+      const { operation, protocol_version, request_id, idempotency_key, ...value } = request;
+      void operation;
+      void protocol_version;
+      void request_id;
+      void idempotency_key;
+      db.prepare(
+        'INSERT INTO finance_expenses(id,workspace_id,project_id,value,created_at) VALUES(?,?,?,?,?)',
+      ).run(targetId, workspace, request.project_id, JSON.stringify(value), now);
+    } else if (request.operation === 'm_record_reimbursement') {
+      const expense = read().state.expenses.find(
+        (row) =>
+          row.id === request.expense_id &&
+          row.project_id === request.project_id &&
+          !row.reversed_at,
+      );
+      if (!expense || !expense.reimbursable) return fail('没有本案可报销的有效垫付。');
+      const reimbursed = db
+        .prepare(
+          'SELECT COALESCE(SUM(amount_cents),0) n FROM finance_reimbursements WHERE workspace_id=? AND expense_id=? AND reversed_at IS NULL',
+        )
+        .get(workspace, expense.id) as { n: number };
+      if (request.amount_cents > expense.amount_cents - reimbursed.n)
+        return fail('报销金额超过该垫付尚未报销金额。');
+      if (request.occurred_on < expense.occurred_on) return fail('报销日期早于支出日期，请核对。');
+      expectedReimbursementParties = { from_party: expense.bearer, to_party: expense.payer };
+      db.prepare(
+        'INSERT INTO finance_reimbursements(id,workspace_id,project_id,expense_id,amount_cents,occurred_on,note,from_party,to_party,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+      ).run(
+        targetId,
+        workspace,
+        request.project_id,
+        expense.id,
+        request.amount_cents,
+        request.occurred_on,
+        request.note,
+        expense.bearer,
+        expense.payer,
+        now,
+      );
+    } else if (request.operation === 'm_reverse_expense') {
+      const expense = read().state.expenses.find(
+        (row) =>
+          row.id === request.expense_id &&
+          row.project_id === request.project_id &&
+          !row.reversed_at,
+      );
+      if (!expense) return fail('没有本案有效的支出。');
+      if (
+        db
+          .prepare(
+            'SELECT 1 FROM finance_reimbursements WHERE expense_id=? AND workspace_id=? AND reversed_at IS NULL',
+          )
+          .get(expense.id, workspace)
+      )
+        return fail('请先冲回本项支出关联的报销登记。');
+      targetId = expense.id;
+      db.prepare('UPDATE finance_expenses SET reversed_at=? WHERE id=?').run(now, targetId);
+    } else if (request.operation === 'm_reverse_reimbursement') {
+      const row = db
+        .prepare(
+          'SELECT id FROM finance_reimbursements WHERE id=? AND workspace_id=? AND project_id=? AND reversed_at IS NULL',
+        )
+        .get(request.reimbursement_id, workspace, request.project_id);
+      if (!row) return fail('没有本案有效的报销登记。');
+      targetId = request.reimbursement_id;
+      db.prepare('UPDATE finance_reimbursements SET reversed_at=? WHERE id=?').run(now, targetId);
     } else if (request.operation === 'm_allocate') {
       let value: ReturnType<typeof preview>;
       try {
@@ -549,6 +670,19 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
           ('original_invoice_id' in request ? request.original_invoice_id : null)
       )
         throw new Error('发票原票关联未正确落盘。');
+    if (request.operation === 'm_record_expense' || request.operation === 'm_record_reimbursement')
+      for (const [key, value] of Object.entries(request))
+        if (
+          !['operation', 'protocol_version', 'request_id', 'idempotency_key'].includes(key) &&
+          actualEffect[key] !== value
+        )
+          throw new Error('支出或报销内容未正确落盘。');
+    if (
+      expectedReimbursementParties &&
+      (actualEffect.from_party !== expectedReimbursementParties.from_party ||
+        actualEffect.to_party !== expectedReimbursementParties.to_party)
+    )
+      throw new Error('报销收付主体未正确落盘。');
     if (expectedAllocation)
       for (const [key, value] of Object.entries(expectedAllocation))
         if (actualEffect[key] !== value) throw new Error('分配快照未正确落盘。');
@@ -561,7 +695,9 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
     )
       throw new Error('到账内容未正确落盘。');
     if (
-      (request.operation === 'm_reverse_payout' || request.operation === 'm_reverse_allocation') &&
+      (request.operation.startsWith('m_reverse_') ||
+        request.operation === 'm_reverse_expense' ||
+        request.operation === 'm_reverse_reimbursement') &&
       actualEffect.reversed_at !== now
     )
       throw new Error('冲回未落盘。');

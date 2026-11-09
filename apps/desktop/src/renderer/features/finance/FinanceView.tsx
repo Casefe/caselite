@@ -13,7 +13,6 @@ import {
   financeManagementKey,
   type FinanceManagementController,
 } from './useFinanceManagement';
-import { createPortal } from 'react-dom';
 import InspectorLayout from '../../ui/InspectorLayout';
 import SidebarAgent from '../../ui/SidebarAgent';
 import AgentPanel from '../../ui/AgentPanel';
@@ -206,7 +205,7 @@ function ProjectLedger({
 
   function discardDraft() {
     finance.discard();
-    setEntry(false);
+    setEntry(true);
     setFormRevision((value) => value + 1);
     setDirty(false);
     setReverse(undefined);
@@ -362,69 +361,52 @@ function ProjectLedger({
             <p>若曾在回执未确认时退出，请先查看账本及收款记录，核对原操作是否已登记。</p>
           </details>
           {project.archived_at && <p>此项目已归档，账本只读。</p>}
-          {ledger ? (
-            <>
-              <ProjectFinancePanel
-                key={formRevision}
-                project={project}
-                ledger={ledger}
-                today={detail.today}
-                finance={finance}
-                disabled={!!pending || busy || !!reverse || finance.busy || !!finance.pending}
-                onEdit={edit}
-                submit={submit}
-                reverse={(id) => {
-                  setReverse(id);
-                  onBlocked(true);
+          <ProjectFinancePanel
+            key={formRevision}
+            project={project}
+            ledger={ledger ?? null}
+            contractForm={
+              !ledger && !project.archived_at ? (
+                <ContractForm
+                  key={formRevision}
+                  disabled={!!pending || busy}
+                  submit={submit}
+                  onEdit={edit}
+                />
+              ) : undefined
+            }
+            today={detail.today}
+            finance={finance}
+            disabled={!!pending || busy || !!reverse || finance.busy || !!finance.pending}
+            onEdit={edit}
+            submit={submit}
+            reverse={(id) => {
+              setReverse(id);
+              onBlocked(true);
+            }}
+            entry={entry}
+            setEntry={setEntry}
+            propertySlot={propertySlot}
+          />
+          {reverse && (
+            <div className="finance-preview">
+              <p>确认更正原收款登记；如已关联分配，需先核对相关到账和分配。</p>
+              <button
+                disabled={!!pending}
+                onClick={() => submit({ operation: 'reverse_payment', payment_id: reverse })}
+              >
+                确认冲回原收款
+              </button>
+              <button
+                disabled={!!pending}
+                onClick={() => {
+                  setReverse(undefined);
+                  if (!dirty) onBlocked(false);
                 }}
-                entry={entry}
-                setEntry={setEntry}
-                propertySlot={propertySlot}
-              />
-              {reverse && (
-                <div className="finance-preview">
-                  <p>确认更正原收款登记；如已关联分配，需先核对相关到账和分配。</p>
-                  <button
-                    disabled={!!pending}
-                    onClick={() => submit({ operation: 'reverse_payment', payment_id: reverse })}
-                  >
-                    确认冲回原收款
-                  </button>
-                  <button
-                    disabled={!!pending}
-                    onClick={() => {
-                      setReverse(undefined);
-                      if (!dirty) onBlocked(false);
-                    }}
-                  >
-                    取消冲回
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <p>待收款（元） — · 此项目尚未建账</p>
-              {!project.archived_at &&
-                (propertySlot ? (
-                  createPortal(
-                    <ContractForm
-                      key={formRevision}
-                      disabled={!!pending}
-                      submit={submit}
-                      onEdit={edit}
-                    />,
-                    propertySlot,
-                  )
-                ) : (
-                  <ContractForm
-                    key={formRevision}
-                    disabled={!!pending}
-                    submit={submit}
-                    onEdit={edit}
-                  />
-                ))}
-            </>
+              >
+                取消冲回
+              </button>
+            </div>
           )}
         </>
       )}
@@ -479,6 +461,23 @@ export default function FinanceView({
   const received = finance.state?.projects
     .filter((row) => matches.some((item) => item.id === row.project_id))
     .reduce((sum, row) => sum + BigInt(row.received_cents), 0n);
+  const reimbursementWaiting = finance.state?.expenses
+    .filter(
+      (row) =>
+        !row.reversed_at &&
+        row.reimbursable &&
+        row.payer === 'lawyer' &&
+        matches.some((project) => project.id === row.project_id),
+    )
+    .reduce(
+      (sum, row) =>
+        sum +
+        BigInt(row.amount_cents) -
+        (finance.state?.reimbursements
+          .filter((paid) => paid.expense_id === row.id && !paid.reversed_at)
+          .reduce((s, paid) => s + BigInt(paid.amount_cents), 0n) ?? 0n),
+      0n,
+    );
   const openProject = (id: string) => {
     if (isBlocked) return;
     setSelected(id);
@@ -570,7 +569,10 @@ export default function FinanceView({
               <div>
                 <dt>我的已到账</dt>
                 <dd>{finance.state ? formatCents(paid) : '—'}</dd>
-                <small>报销另列</small>
+                <small>
+                  另有待报销{' '}
+                  {reimbursementWaiting === undefined ? '—' : formatCents(reimbursementWaiting)} 元
+                </small>
               </div>
             </dl>
             <div className="finance-filters">

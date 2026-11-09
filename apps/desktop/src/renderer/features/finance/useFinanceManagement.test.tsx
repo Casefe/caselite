@@ -35,6 +35,8 @@ const initial = (): FinanceManagementSuccess => ({
     bindings: [],
     allocations: [],
     invoices: [],
+    expenses: [],
+    reimbursements: [],
     payouts: [],
   },
 });

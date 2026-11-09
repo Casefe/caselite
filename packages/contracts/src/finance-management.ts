@@ -60,8 +60,71 @@ export const financeInvoiceSchema = z.object({
   original_invoice_id: id.nullable(),
   created_at: z.iso.datetime(),
 });
+const party = z.enum(['lawyer', 'firm', 'client']);
+const expenseFields = {
+  ...project,
+  description: text(160).refine(Boolean),
+  category: z.enum(['case_cost', 'travel', 'client_advance', 'other']),
+  payer: party,
+  bearer: party,
+  payee: text(80).refine(Boolean),
+  reimbursable: z.boolean(),
+  amount_cents: positive,
+  occurred_on: ordinaryDateSchema,
+  note: text(1000),
+};
+export const financeExpenseSchema = z.object({
+  id,
+  ...expenseFields,
+  created_at: z.iso.datetime(),
+  reversed_at: z.iso.datetime().nullable(),
+});
+export const financeReimbursementSchema = z.object({
+  id,
+  ...project,
+  expense_id: id,
+  amount_cents: positive,
+  occurred_on: ordinaryDateSchema,
+  note: text(1000),
+  from_party: party,
+  to_party: party,
+  created_at: z.iso.datetime(),
+  reversed_at: z.iso.datetime().nullable(),
+});
 export const financeManagementRequestSchema = z.discriminatedUnion('operation', [
   z.strictObject({ ...protocol, operation: z.literal('m_read') }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...expenseFields,
+    operation: z.literal('m_record_expense'),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...project,
+    operation: z.literal('m_record_reimbursement'),
+    expense_id: id,
+    amount_cents: positive,
+    occurred_on: ordinaryDateSchema,
+    note: text(1000),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...project,
+    operation: z.literal('m_reverse_expense'),
+    expense_id: id,
+    note: text(1000).refine(Boolean),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...project,
+    operation: z.literal('m_reverse_reimbursement'),
+    reimbursement_id: id,
+    note: text(1000).refine(Boolean),
+  }),
   z.strictObject({
     ...protocol,
     ...keys,
@@ -168,6 +231,8 @@ export const financeManagementStateSchema = z.object({
   bindings: z.array(z.object({ project_id: id, rule_id: id })),
   allocations: z.array(financeAllocationSchema),
   invoices: z.array(financeInvoiceSchema),
+  expenses: z.array(financeExpenseSchema),
+  reimbursements: z.array(financeReimbursementSchema),
   payouts: z.array(
     z.object({
       id,

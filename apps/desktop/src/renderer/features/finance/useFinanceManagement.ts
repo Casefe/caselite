@@ -29,6 +29,10 @@ function matches(request: Write, result: FinanceManagementSuccess) {
   if (request.operation === 'm_bind_rule')
     return proof.target_id === request.project_id && actual.rule_id === request.rule_id;
   if (actual.id !== proof.target_id) return false;
+  if (request.operation === 'm_reverse_expense')
+    return proof.target_id === request.expense_id && typeof actual.reversed_at === 'string';
+  if (request.operation === 'm_reverse_reimbursement')
+    return proof.target_id === request.reimbursement_id && typeof actual.reversed_at === 'string';
   if (request.operation === 'm_reverse_payout')
     return proof.target_id === request.payout_id && typeof actual.reversed_at === 'string';
   if (request.operation === 'm_reverse_allocation')
@@ -161,6 +165,8 @@ export function useFinanceManagement() {
           firm_name: request.values.firm_name.trim(),
         };
       if ('note' in request) request.note = request.note.trim();
+      if ('description' in request) request.description = request.description.trim();
+      if ('payee' in request) request.payee = request.payee.trim();
       if ('invoice_number' in request) request.invoice_number = request.invoice_number.trim();
       return process(request);
     },

@@ -91,6 +91,8 @@ function show(
             bindings: [{ project_id: project.id, rule_id: ruleA }],
             allocations: [],
             invoices: [],
+            expenses: [],
+            reimbursements: [],
             payouts: [],
           },
         })
@@ -284,4 +286,23 @@ it('keeps the original client-payment identity when a second rule draft exists a
     { idempotency_key: 'idempotency_key' in writes[0] ? writes[0].idempotency_key : '' },
   );
   expect(onDirty).toHaveBeenLastCalledWith(true);
+});
+
+it('offers expense input and its ledger before a fee contract exists', async () => {
+  const { finance } = show(async () => read(false));
+  fireEvent.change(await screen.findByLabelText('记录类型'), { target: { value: 'expense' } });
+  expect(screen.getByRole('region', { name: '支出与报销' })).toBeDefined();
+  fireEvent.change(screen.getByLabelText('支出事项'), { target: { value: '合成交通垫付' } });
+  fireEvent.change(screen.getByLabelText('收款方'), { target: { value: '合成交通公司' } });
+  fireEvent.change(screen.getByLabelText('支出金额（元）'), { target: { value: '20' } });
+  fireEvent.click(screen.getByRole('button', { name: '确认登记支出' }));
+  await screen.findByRole('button', { name: '核对原财务提交' });
+  expect(finance.mock.calls.map(([r]) => r)).toContainEqual(
+    expect.objectContaining({
+      operation: 'm_record_expense',
+      description: '合成交通垫付',
+      amount_cents: 2000,
+    }),
+  );
+  expect(finance.mock.calls.filter(([r]) => r.operation === 'register_contract')).toHaveLength(0);
 });
