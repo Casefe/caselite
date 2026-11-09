@@ -54,7 +54,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
     window.setContentSize(width, height);
     await frame();
     await evaluate(`document.querySelector('${selector}').scrollIntoView({block:'end'})`);
-    const measurement = await evaluate(`(() => {
+    const measurement = await evaluate(`(async () => {
       const split = document.querySelector('${selector}');
       const properties = split.querySelector('.inspector-properties-scroll');
       const ai = split.querySelector('.inspector-ai-region');
@@ -66,8 +66,17 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const expectedWidth = Math.min(r.width * 1.5, Math.max(r.width, r.right - 12));
       if (Math.abs(a.width - expectedWidth) > 2 || Math.abs(a.right - r.right) > 2 || getComputedStyle(ai).position !== 'fixed')
         throw new Error('Invalid floating AI width: '+JSON.stringify({expectedWidth,r:r.toJSON(),a:a.toJSON()}));
-      if (r.height < 100 || ratio < .73 || ratio > .81 || p.height < 30 || getComputedStyle(properties).overflowY !== 'auto')
+      if (r.height < 100 || ratio < .84 || ratio > .86 || p.height < 30 || p.bottom>a.top+1 || getComputedStyle(properties).overflowY !== 'auto')
         throw new Error('Invalid split geometry: '+JSON.stringify({r:r.toJSON(),a:a.toJSON(),p:p.toJSON(),ratio}));
+      const composer=ai.querySelector('.assistant-compose,.editor-agent-thread > form');
+      const expectedBottom=a.bottom-parseFloat(getComputedStyle(ai).paddingBottom)-parseFloat(getComputedStyle(ai).borderBottomWidth);
+      if(composer && Math.abs(composer.getBoundingClientRect().bottom-expectedBottom)>2)
+        throw new Error('Composer is not docked at the bottom: '+JSON.stringify({composer:composer.getBoundingClientRect().toJSON(),expectedBottom}));
+      for(const reference of ai.querySelectorAll('.agent-page-reference')) {
+        if(!reference.getClientRects().length) continue;
+        if(getComputedStyle(reference).borderTopWidth!=='0px' || !reference.querySelector('svg') || reference.querySelector('small') || getComputedStyle(reference.querySelector('.agent-page-reference-icon')).borderTopWidth!=='0px')
+          throw new Error('Reference must show only an unframed icon and title');
+      }
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) throw new Error('Reduced motion emulation missing');
       properties.scrollTop = properties.scrollHeight;
       const oldAiTop = a.top;
@@ -76,9 +85,12 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
       if(last) {
         last.scrollIntoView({block:'nearest'});
+        await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
         const l=last.getBoundingClientRect();
-        if(l.top<p.top-1 || l.bottom>p.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
-          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON()}));
+        const currentProperties=properties.getBoundingClientRect();
+        const currentAi=ai.getBoundingClientRect();
+        if(currentProperties.bottom>currentAi.top+1 || l.top<currentProperties.top-1 || l.bottom>currentProperties.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON(),currentAi:currentAi.toJSON(),ancestors:(()=>{let node=last;const rows=[];while(node){const style=getComputedStyle(node);rows.push({tag:node.tagName,cls:node.className,top:node.scrollTop,scrollHeight:node.scrollHeight,height:node.clientHeight,overflow:style.overflowY,rect:node.getBoundingClientRect().toJSON()});node=node.parentElement;}return rows;})()}));
       }
       properties.scrollTop=0;
       button.focus();
@@ -97,6 +109,11 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         if (window.__resizeInput !== input || window.__resizeConversation !== split.querySelector('.assistant-panel, .document-review') ||
           (input?.value ?? input?.textContent) !== window.__resizeDraft)
           throw new Error('Resizing remounted conversation or changed draft');
+        if(split.dataset.aiExpanded==='true') {
+          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport,.document-review-content'))
+            if(scroll.clientHeight>0 && scroll.scrollHeight>scroll.clientHeight+2 && scroll.scrollTop+scroll.clientHeight<scroll.scrollHeight-2)
+              throw new Error('Expanded conversation did not open at the latest content');
+        }
       })()`);
       await evaluate(`(() => {
       const split = document.querySelector('${selector}');
@@ -123,7 +140,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         }
         if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
           throw new Error('Minimized AI does not match property width');
-        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review > h2,.document-review > .caption')].some(node=>node.getClientRects().length)))
+        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review h2,.document-review .caption')].some(node=>node.getClientRects().length)))
           throw new Error('Compact AI exposed history/status or exceeded composer height');
         return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
           expanded:split.dataset.aiExpanded, ai:ai.toJSON()};
@@ -395,6 +412,7 @@ export async function runProjectDemo(
     await evaluate(`(() => {
       const input = document.querySelector('${projectInput}');
       input.focus();
+      input.select();
       document.execCommand('insertText', false, ${JSON.stringify(draft)});
     })()`);
     await wait(`document.querySelector('${projectInput}')?.value === ${JSON.stringify(draft)}`);
@@ -465,7 +483,9 @@ export async function runProjectDemo(
         assertNoRuns();
         if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
           await checkSidebarResize(window, root, 'project-empty');
-          await evaluate("document.querySelector('.inspector-ai-heading button').click()");
+          await evaluate(
+            "(() => { const toggle=document.querySelector('.inspector-ai-heading button'); toggle.focus(); toggle.click(); })()",
+          );
         }
         await wait(`!document.querySelector('${projectInput}')?.closest('[inert]')`);
         window.webContents.focus();
