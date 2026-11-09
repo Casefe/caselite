@@ -1,7 +1,12 @@
 import CalendarView from './features/calendar/CalendarView';
 import InspectorLayout from './ui/InspectorLayout';
 import { DocumentPropertyValues } from './ui/DocumentInspector';
-import { localDate, invalidateCalendar } from './features/calendar/calendar-query';
+import {
+  localDate,
+  invalidateCalendar,
+  calendarQuery,
+  useCalendar,
+} from './features/calendar/calendar-query';
 import ContactsView from './features/contacts/ContactsView';
 import { projectListDefaults } from './features/projects/ProjectList';
 import ReportView from './features/reports/ReportView';
@@ -61,6 +66,7 @@ const defaultCreateProperties = {
 };
 function Workbench() {
   const queryClient = useQueryClient();
+  const importantDates = useCalendar(calendarQuery('important'));
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
@@ -616,6 +622,7 @@ function Workbench() {
         onNavigate={navigate}
         projectBackSlot={setProjectBackSlot}
         tasks={tasks}
+        importantDatesCount={importantDates.isError ? undefined : importantDates.data?.page?.total}
         favorites={favorites}
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}

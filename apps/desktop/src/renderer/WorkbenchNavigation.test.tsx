@@ -25,14 +25,17 @@ vi.mock('./ui/Workspace', () => ({
     children,
     onNavigate,
     onOpen,
+    importantDatesCount,
   }: {
     children: React.ReactNode;
     onNavigate(v: string): void;
     onOpen(id: string): void;
+    importantDatesCount?: number;
   }) => (
     <>
       <button onClick={() => onNavigate('projects')}>项目入口</button>
       <button onClick={() => onNavigate('calendar')}>日历入口</button>
+      <output aria-label="日历导航计数">{importantDatesCount ?? '未读取'}</output>
       <button onClick={() => onNavigate('tasks')}>全局入口</button>
       <button onClick={() => onNavigate('settings')}>设置入口</button>
       <button onClick={() => onOpen('B')}>全局B</button>
@@ -147,6 +150,38 @@ function setup(read?: (id: string) => Promise<unknown>) {
   render(<App />);
 }
 afterEach(cleanup);
+it('uses the complete important calendar total and refreshes saved counts without faking zero on failure', async () => {
+  let total = 73,
+    fail = false;
+  const api = vi.fn(async (request: TaskRequest) => {
+    if (request.operation === 'calendar_query') {
+      expect(request.query).toMatchObject({
+        view: 'important',
+        home: false,
+        include_closed: false,
+      });
+      if (fail) throw new Error('calendar unavailable');
+      return {
+        ok: true,
+        tasks: [task('A')],
+        state: null,
+        receipt: null,
+        page: { offset: 0, total, has_more: total > 1 },
+      };
+    }
+    return { ok: true, tasks: [task('A'), task('B')], state: null };
+  });
+  window.caselite = { task: api } as unknown as Window['caselite'];
+  render(<App />);
+  expect(screen.getByLabelText('日历导航计数').textContent).toBe('未读取');
+  await waitFor(() => expect(screen.getByLabelText('日历导航计数').textContent).toBe('73'));
+  total = 0;
+  act(() => window.dispatchEvent(new Event('caselite:material-task-saved')));
+  await waitFor(() => expect(screen.getByLabelText('日历导航计数').textContent).toBe('0'));
+  fail = true;
+  act(() => window.dispatchEvent(new Event('caselite:material-task-saved')));
+  await waitFor(() => expect(screen.getByLabelText('日历导航计数').textContent).toBe('未读取'));
+});
 async function projectTask() {
   await screen.findByText('首页');
   fireEvent.click(screen.getByText('项目入口'));

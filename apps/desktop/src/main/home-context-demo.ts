@@ -71,6 +71,34 @@ export async function runHomeContextDemo(
       throw new Error('Home context contains legacy cards');
     if (await evaluate("Boolean(document.querySelector('.important-schedules header > button'))"))
       throw new Error('Legacy calendar button remains');
+    if (await evaluate("Boolean(document.querySelector('[data-nav=tasks] small'))"))
+      throw new Error('Task navigation count remains');
+    if (
+      await evaluate(
+        "getComputedStyle(document.querySelector('.home-context-panel .important-schedules')).borderTopWidth !== '0px'",
+      )
+    )
+      throw new Error('Home important schedule top divider remains');
+    if (phase === 'agent-home-check') {
+      await wait("document.querySelector('[data-nav=calendar] small')?.textContent === '0'");
+      await capture('home-calendar-count-empty.png');
+      const seeded = await evaluate(`(async()=>{
+        for(let i=1;i<=6;i++){
+          const title='合成重要日期'+i;
+          const created=await window.caselite.task({protocol_version:1,operation:'create',request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),title,objective:''});
+          if(!created.ok) return false;
+          const task=created.tasks.find(t=>t.title===title);
+          if(!task) return false;
+          const saved=await window.caselite.task({protocol_version:1,operation:'update_calendar',request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),task_id:task.id,expected_version:task.version,
+            calendar:{planned_date:null,schedule:null,important:true,type_id:'hearing',attention_source:'custom',attention_date:'2026-11-10',attention_time:null}});
+          if(!saved.ok) return false;
+        }
+        window.dispatchEvent(new Event('caselite:material-task-saved'));
+        return true;
+      })()`);
+      if (!seeded) throw new Error('Important date fixtures could not be saved');
+    }
+    await wait("document.querySelector('[data-nav=calendar] small')?.textContent === '6'");
     await evaluate("document.querySelector('.important-schedules h3 button').click()");
     await wait(
       "document.querySelector('[data-nav=calendar][aria-current=page]') && document.querySelector('.calendar-workbench')",

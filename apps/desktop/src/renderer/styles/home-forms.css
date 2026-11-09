@@ -305,6 +305,9 @@
   border-radius: 0;
   background: transparent;
 }
+.home-context-panel .important-schedules {
+  border-top: 0;
+}
 .home-context-panel .home-reminder-card + .home-reminder-card {
   border-top: 1px solid var(--line);
 }
