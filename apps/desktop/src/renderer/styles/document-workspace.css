@@ -1,0 +1,122 @@
+.collection-workspace.document-workspace {
+  grid-template-columns: 248px minmax(280px, 1fr) 296px;
+  grid-template-rows: minmax(0, 1fr);
+}
+.document-workspace > .collection-main {
+  min-width: 0;
+}
+.document-center-workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--line);
+}
+.document-center-workspace .tiptap p {
+  color: var(--ink);
+}
+.document-workspace .document-directory-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+.document-workspace .document-directory-table th:last-child,
+.document-workspace .document-directory-table td:last-child {
+  width: 54px;
+  font-size: 11px;
+  text-align: end;
+  white-space: nowrap;
+}
+.document-workspace .document-directory-table td:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-workspace .document-intro {
+  padding-block: 4px 12px;
+}
+.document-workspace .document-intro h2 {
+  font-size: 13px;
+}
+.document-workspace .document-intro p {
+  font-size: 11px;
+}
+.document-workspace .document-directory-filters {
+  gap: 6px;
+  padding-inline: 12px;
+}
+.document-workspace .document-directory-filters input {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 100%;
+}
+.document-workspace .document-directory-filters select {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 40%;
+  font-size: 11px;
+}
+.document-workspace .view-toolbar {
+  padding-inline: 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.document-workspace .view-tabs {
+  gap: 2px;
+}
+.document-workspace .view-tabs button {
+  padding-inline: 5px;
+  font-size: 11px;
+}
+.document-workspace .catalog-actions {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.document-workspace .catalog-buttons {
+  flex-wrap: wrap;
+}
+.document-workspace .catalog-buttons button {
+  font-size: 11px;
+  padding: 5px 7px;
+}
+.document-workspace .document-directory-back {
+  margin: 0;
+}
+.document-workspace > .document-directory-sidebar {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.document-workspace > .document-directory-sidebar > .task-inspector {
+  height: 100%;
+}
+@media (max-width: 1250px) and (min-width: 901px) {
+  .collection-workspace.document-workspace {
+    grid-template-columns: 210px minmax(240px, 1fr) 252px;
+  }
+}
+@media (max-width: 900px) {
+  .collection-workspace.document-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 32vh);
+  }
+  .document-workspace > .document-center-workspace {
+    display: none;
+  }
+  .collection-workspace.document-workspace[data-directory-view='preview'] {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .document-workspace[data-directory-view='preview'] > .document-center-workspace {
+    display: block;
+  }
+  .document-workspace[data-directory-view='preview'] > .document-directory-sidebar {
+    display: none;
+  }
+  .document-workspace > .document-directory-sidebar {
+    max-height: none;
+  }
+  .collection-workspace.document-workspace[data-collection='documents']
+    > .document-directory-sidebar:has(.inspector-split) {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+  }
+}
