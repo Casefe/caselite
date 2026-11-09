@@ -275,6 +275,7 @@ export function createAgentApplication(ports: {
           const visible = [...runs.values()].filter(
             ({ owner: runOwner, run }) =>
               (runOwner === owner || runOwner === '') &&
+              run.purpose !== 'important_dates' &&
               (run.scope === 'home' ||
                 (!run.scope.startsWith('project:') && ports.taskExists(run.scope))),
           );

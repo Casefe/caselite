@@ -2,7 +2,7 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { AgentRequest, AgentResponse } from '../../preload/caselite-api';
+import type { AgentRequest, AgentResponse, AgentRun } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
 import SidebarAgent from './SidebarAgent';
 import userEvent from '@testing-library/user-event';
@@ -510,4 +510,94 @@ it('opens a local project preview on focus, preserves scoped drafts, and sends o
     prompt: '项目甲草稿',
   });
   expect(material).not.toHaveBeenCalled();
+});
+
+it.each(['succeeded', 'failed', 'cancelled', 'running'] as const)(
+  'keeps dedicated date %s output out of chat while retaining the scope run guard',
+  async (status) => {
+    const scope = `date-purpose-${status}`;
+    const ordinary: AgentRun = {
+      id: '77777777-7777-4777-8777-777777777777',
+      scope,
+      prompt: '普通聊天问题',
+      output: '普通聊天回答',
+      model: 'gpt-4.1-mini',
+      provider: 'openai',
+      status: 'succeeded',
+      sequence: 1,
+      message: '普通聊天完成',
+      usage: null,
+    };
+    const dateRun: AgentRun = {
+      ...ordinary,
+      id: '88888888-8888-4888-8888-888888888888',
+      purpose: 'important_dates',
+      prompt: '内部日期提取要求',
+      output: '{"candidates":[{"internal":"date-only-facts"}]}',
+      message: '内部日期结果',
+      status,
+    };
+    const agent = vi.fn(async (request: AgentRequest) => {
+      if (request.operation === 'cancel') dateRun.status = 'cancelled';
+      return { ...profile, runs: [ordinary, { ...dateRun }] };
+    });
+    window.caselite = { agent } as unknown as Window['caselite'];
+    const changed = vi.fn();
+    render(<AgentPanel scope={scope} variant="compact" onConversationChange={changed} />);
+    await screen.findByText('普通聊天回答');
+    expect(screen.queryByText('内部日期提取要求')).toBeNull();
+    expect(screen.queryByText(/date-only-facts/)).toBeNull();
+    expect(screen.queryByText(/内部日期结果/)).toBeNull();
+    expect(screen.queryByText('恢复上轮要求与原选段')).toBeNull();
+    expect(changed).toHaveBeenLastCalledWith(true);
+    const input = screen.getByLabelText('AI 工作要求');
+    fireEvent.change(input, { target: { value: '新问题草稿' } });
+    if (status === 'running') {
+      await screen.findByText('重要日期识别正在运行，请在重要日期面板查看候选与来源。');
+      expect((screen.getByLabelText('选择大模型') as HTMLSelectElement).disabled).toBe(true);
+      fireEvent.submit(input.closest('form')!);
+      expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+      await waitFor(() =>
+        expect(agent).toHaveBeenCalledWith({
+          protocol_version: 1,
+          operation: 'cancel',
+          scope,
+          run_id: dateRun.id,
+        }),
+      );
+      await screen.findByRole('button', { name: '发送' });
+      expect((input as HTMLTextAreaElement).value).toBe('新问题草稿');
+    }
+    expect(screen.getByText('普通聊天回答')).toBeTruthy();
+    expect(agent.mock.calls.some(([r]) => r.operation === 'start')).toBe(false);
+  },
+);
+
+it('does not enter ordinary conversation layout for a date-only history', async () => {
+  const agent = vi.fn(async () => ({
+    ...profile,
+    runs: [
+      {
+        id: '99999999-9999-4999-8999-999999999999',
+        scope: 'date-only-history',
+        purpose: 'important_dates',
+        prompt: '内部日期请求',
+        output: '{"candidates":[]}',
+        model: 'gpt-4.1-mini',
+        provider: 'openai',
+        status: 'succeeded',
+        sequence: 1,
+        message: '日期已完成',
+        usage: null,
+      },
+    ],
+  }));
+  window.caselite = { agent } as unknown as Window['caselite'];
+  const changed = vi.fn();
+  const view = render(<AgentPanel scope="date-only-history" onConversationChange={changed} />);
+  await screen.findByText('已配置 · 模型设置');
+  expect(changed).toHaveBeenLastCalledWith(false);
+  expect(view.container.querySelector('.assistant-panel--conversation')).toBeNull();
+  expect(screen.queryByText(/candidates/)).toBeNull();
 });

@@ -1,9 +1,11 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { AgentRun } from '../../../preload/caselite-api';
 
+export const isConversationRun = (run: AgentRun) => run.purpose !== 'important_dates';
+
 // UI 投影只映射已有 Run，不创建会话或保存第二份运行历史。
 export function agentMessages(runs: AgentRun[]): ThreadMessageLike[] {
-  return runs.flatMap((run) => [
+  return runs.filter(isConversationRun).flatMap((run) => [
     {
       id: `${run.id}:input`,
       role: 'user' as const,

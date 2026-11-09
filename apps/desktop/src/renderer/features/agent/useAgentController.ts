@@ -9,6 +9,7 @@ import type {
   AgentResponse,
 } from '../../../preload/caselite-api';
 import { emptyDraft, type RichDraft } from '../../editors/editor-state';
+import { isConversationRun } from './agent-messages';
 
 // 仅保留尚未提交的编辑草稿/发送身份，避免面板卸载丢字或未知回执触发新收费Run。
 const drafts = new Map<string, RichDraft>();
@@ -69,9 +70,10 @@ export function useAgentController({
   const preparationGeneration = useRef(0);
   const preparingAbort = useRef<AbortController | null>(null);
   const active = runs.find((run) => run.status === 'running');
+  const hasConversation = runs.some(isConversationRun);
   useEffect(() => {
-    onConversationChange?.(runs.length > 0);
-  }, [onConversationChange, runs.length]);
+    onConversationChange?.(hasConversation);
+  }, [onConversationChange, hasConversation]);
   const current = useRef({ draft, setDraft, materials, scope });
   useLayoutEffect(() => {
     current.current = { draft, setDraft, materials, scope };
@@ -289,6 +291,7 @@ export function useAgentController({
       sending.current ||
       active ||
       submissions.has(scope) ||
+      !isConversationRun(run) ||
       run.scope !== scope ||
       !['failed', 'cancelled', 'interrupted'].includes(run.status) ||
       current.current.draft.text.trim()

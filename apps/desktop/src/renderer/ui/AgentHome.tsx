@@ -7,6 +7,7 @@ import type { AgentRun, Task } from '../../preload/caselite-api';
 import AgentPanel from './AgentPanel';
 import BrandLogo from './BrandLogo';
 import { useCatalog } from './useCatalog';
+import { isConversationRun } from '../features/agent/agent-messages';
 
 const starters = [
   {
@@ -74,7 +75,7 @@ export default function AgentHome({
           return;
         }
         if (result.ok) {
-          setHistory(result.runs);
+          setHistory(result.runs.filter(isConversationRun));
           setHistoryError('');
         } else setHistoryError(result.message);
       } catch {
@@ -99,7 +100,7 @@ export default function AgentHome({
         pinned: !run.pinned,
       });
       if (result.ok) {
-        setHistory(result.runs);
+        setHistory(result.runs.filter(isConversationRun));
         setHistoryError('');
       } else setHistoryError(result.message);
     } catch {

@@ -16,6 +16,13 @@ it('reads all accessible scopes and opens a task conversation', async () => {
         output: '回答',
         created_at: '2026-11-06T00:00:00Z',
       },
+      {
+        id: `date-${request.scope}`,
+        scope: request.scope,
+        purpose: 'important_dates',
+        prompt: '专用日期提取',
+        output: '{\"candidates\":[]}',
+      },
     ],
   }));
   window.caselite = { agent } as unknown as Window['caselite'];
@@ -28,6 +35,8 @@ it('reads all accessible scopes and opens a task conversation', async () => {
     />,
   );
   expect(await screen.findByText('问题 home')).toBeTruthy();
+  expect(screen.queryByText('专用日期提取')).toBeNull();
+  expect(screen.queryByText(/candidates/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /问题 task-1/ }));
   expect(screen.getByText('回答')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '打开所属任务' }));

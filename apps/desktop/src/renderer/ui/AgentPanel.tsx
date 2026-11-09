@@ -1,5 +1,5 @@
 import { isDocx } from './useMaterials';
-import { agentMessages } from '../features/agent/agent-messages';
+import { agentMessages, isConversationRun } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
@@ -268,7 +268,8 @@ export default function AgentPanel({
         await command({ protocol_version: 1, operation: 'cancel', scope, run_id: active.id });
     },
   });
-  const latest = runs.at(-1);
+  // 专用日期历史不投影成聊天；active仍来自全部Run，不能因隐藏JSON而放开重复发送。
+  const latest = runs.findLast(isConversationRun);
   const homeComposer = scope === 'home' || variant === 'compact';
   const actions = (
     <>
@@ -350,7 +351,7 @@ export default function AgentPanel({
         }}
       >
         <section
-          className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${runs.length ? ' assistant-panel--conversation' : ''}`}
+          className={`assistant-panel${variant === 'compact' ? ' assistant-panel--compact' : ''}${messages.length ? ' assistant-panel--conversation' : ''}`}
           aria-label={
             project ? '项目 AI 对话' : scope === 'home' ? '首页 AI Agent' : '任务 AI 辅助栏'
           }
@@ -388,7 +389,7 @@ export default function AgentPanel({
             </div>
           )}
 
-          {(!project || runs.length > 0) && (
+          {(!project || messages.length > 0) && (
             <ThreadPrimitive.Root className="assistant-thread">
               <ThreadPrimitive.Viewport className="assistant-viewport">
                 <ThreadPrimitive.Messages components={{ Message }} />
@@ -405,6 +406,11 @@ export default function AgentPanel({
               {latest.usage
                 ? ` 输入 ${latest.usage.input} / 输出 ${latest.usage.output} tokens；费用未知。`
                 : ''}
+            </p>
+          )}
+          {active?.purpose === 'important_dates' && (
+            <p className="assistant-run-status" role="status">
+              重要日期识别正在运行，请在重要日期面板查看候选与来源。
             </p>
           )}
           {credentialReading && (

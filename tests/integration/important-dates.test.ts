@@ -694,3 +694,67 @@ it('does not accept a valid JSON fragment from a token-limited model completion'
   expect(await s.app.execute(s.command(), 'window')).toMatchObject({ ok: false });
   expect(s.store.dates.task(s.task.id)?.version).toBe(s.task.version);
 });
+
+it('keeps date Runs in their owner history without crowding five ordinary conversation rounds', async () => {
+  const s = await setup(samples[0], 'pdf');
+  const normalIds: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const id = randomUUID();
+    normalIds.push(id);
+    ok<AgentResponse>(
+      await s.app.execute(
+        {
+          protocol_version: 1,
+          operation: 'start',
+          scope: s.task.id,
+          run_id: id,
+          model: 'gpt-4.1-mini',
+          prompt: `普通对话${i}`,
+          confirmed: true,
+        },
+        'window',
+      ),
+    );
+    s.callbacks().onText(`普通回答${i}`);
+    s.callbacks().onEnd({ status: 'succeeded', usage: null, message: 'MOCK_ONLY' });
+  }
+  const dateIds: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const id = randomUUID();
+    dateIds.push(id);
+    ok<AgentResponse>(await s.app.execute({ ...s.start, run_id: id }, 'window'));
+    s.callbacks().onText(
+      JSON.stringify({ candidates: mockImportantDateFacts(s.source, s.pages, samples[0].pdf) }),
+    );
+    s.callbacks().onEnd({ status: 'succeeded', usage: null, message: 'MOCK_ONLY' });
+  }
+  const history = ok<AgentResponse>(
+    await s.app.execute({ protocol_version: 1, operation: 'history' }, 'window'),
+  );
+  expect(history.runs).toHaveLength(5);
+  expect(history.runs.map((r) => r.id).sort()).toEqual(normalIds.sort());
+  const read = ok<AgentResponse>(
+    await s.app.execute({ protocol_version: 1, operation: 'read', scope: s.task.id }, 'window'),
+  );
+  expect(read.runs).toHaveLength(11);
+  expect(
+    read.runs
+      .filter((r) => r.purpose === 'important_dates')
+      .map((r) => r.id)
+      .sort(),
+  ).toEqual(dateIds.sort());
+  const dates = ok<AgentResponse>(
+    await s.app.execute(
+      { protocol_version: 1, operation: 'read_dates', scope: s.task.id, run_id: dateIds[0] },
+      'window',
+    ),
+  );
+  expect(dates.date_candidates).toHaveLength(1);
+  expect(
+    await s.app.execute(
+      { protocol_version: 1, operation: 'pin_history', run_id: dateIds[0], pinned: true },
+      'window',
+    ),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  expect(s.store.agentHistory.load()).toHaveLength(11);
+});
