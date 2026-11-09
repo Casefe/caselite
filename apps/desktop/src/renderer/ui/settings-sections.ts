@@ -5,6 +5,7 @@ export const settingsGroups = [
     items: [
       ['account', '个人资料'],
       ['general', '偏好设置'],
+      ['editor', '编辑器'],
       ['notifications', '通知'],
     ],
   },

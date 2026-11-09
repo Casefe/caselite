@@ -37,6 +37,7 @@ import {
 } from './agent-demo';
 import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
 import { runEditorInteractionDemo } from './editor-interaction-demo';
+import { runEditorSchemeDemo } from './editor-scheme-demo';
 import { documentReviewStore } from './document-review-store';
 import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
@@ -133,6 +134,7 @@ async function createWindow(
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('editor-scheme-') ||
     process.env.CASELITE_TASK_DEMO?.startsWith('important-date-')
   )
     entry.searchParams.set('mock-agent', '1');
@@ -563,6 +565,9 @@ if (taskDemoPhase) {
       'editor-interaction-write',
       'editor-interaction-read',
       'editor-interaction-preview',
+      'editor-scheme-write',
+      'editor-scheme-read',
+      'editor-scheme-preview',
       'credential-preflight',
       'credential-preflight-ui',
       'task-status-write',
@@ -869,7 +874,8 @@ app
     if (financeDemo) materialDemoKeys.clear();
     const documentReviewDemo =
       taskDemoPhase?.startsWith('document-review-') ||
-      taskDemoPhase?.startsWith('editor-interaction-');
+      taskDemoPhase?.startsWith('editor-interaction-') ||
+      taskDemoPhase?.startsWith('editor-scheme-');
     let initialCredentialRead = Promise.resolve();
     const openSystemCredentials = async (root: string) => {
       let settled!: () => void;
@@ -1128,18 +1134,27 @@ app
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
       app.on('will-quit', () => taskStore.close());
-      if (taskDemoPhase !== 'document-review-read' && taskDemoPhase !== 'editor-interaction-read')
+      if (
+        taskDemoPhase !== 'document-review-read' &&
+        taskDemoPhase !== 'editor-interaction-read' &&
+        taskDemoPhase !== 'editor-scheme-read'
+      )
         seedDocumentReview(tasks);
       if (
         taskDemoPhase === 'document-review-preview' ||
-        taskDemoPhase === 'editor-interaction-preview'
+        taskDemoPhase === 'editor-interaction-preview' ||
+        taskDemoPhase === 'editor-scheme-preview'
       ) {
-        await createWindow();
+        const window = await createWindow();
+        if (taskDemoPhase === 'editor-scheme-preview')
+          window.setTitle('CaseLite · Markdown / Word 验收 · 合成资料');
       } else {
         await (
-          taskDemoPhase?.startsWith('editor-interaction-')
-            ? runEditorInteractionDemo
-            : runDocumentReviewDemo
+          taskDemoPhase?.startsWith('editor-scheme-')
+            ? runEditorSchemeDemo
+            : taskDemoPhase?.startsWith('editor-interaction-')
+              ? runEditorInteractionDemo
+              : runDocumentReviewDemo
         )(
           () => createWindow(false),
           taskDemoRoot,

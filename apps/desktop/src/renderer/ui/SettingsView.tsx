@@ -4,6 +4,7 @@ import { Icon } from '../shared/ui/Icon';
 import { ThemeSetting } from './Appearance';
 import ModelSettings from './ModelSettings';
 import PersonalSettings from './PersonalSettings';
+import EditorSettings from './EditorSettings';
 import { useLocalPreferences } from '../shared/data/LocalPreferences';
 import { settingsGroups, information, type SettingsSection } from './settings-sections';
 export { settingsGroups, type SettingsSection } from './settings-sections';
@@ -69,6 +70,7 @@ export default function SettingsView({
           )}
           {section === 'models' && <ModelSettings />}
           {section === 'general' && <ThemeSetting />}
+          {section === 'editor' && <EditorSettings />}
           {section === 'account' && <PersonalSettings />}
           {section === 'general' && <PersonalSettings preferencesOnly />}
           {section === 'general' && (
