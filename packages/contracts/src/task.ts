@@ -120,6 +120,7 @@ export const taskListQuerySchema = z
       z.object({ type: z.literal('workspace') }).strict(),
       z.object({ type: z.literal('project'), id: taskIdSchema }).strict(),
     ]),
+    view: z.enum(['all', 'created', 'subscribed']).optional(),
     text: z.string().trim().max(160),
     status: taskStatusSchema.nullable(),
     priority: taskPrioritySchema.nullable(),
@@ -143,6 +144,7 @@ export const taskSchema = z.object({
   priority: taskPrioritySchema.default(0),
   due_date: ordinaryDateSchema.nullable().default(null),
   tags: tagListSchema.optional(),
+  subscribed: z.boolean().optional(),
   assignee: taskAssigneeSchema.optional(),
   calendar: taskCalendarSchema.optional(),
   matter_id: taskIdSchema.nullable(),
@@ -232,7 +234,12 @@ export const taskQuerySchema = z.discriminatedUnion('operation', [
     })
     .strict(),
   z
-    .object({ operation: z.literal('read'), protocol_version: z.literal(1), task_id: taskIdSchema })
+    .object({
+      operation: z.literal('read'),
+      protocol_version: z.literal(1),
+      task_id: taskIdSchema,
+      navigation: taskListQuerySchema.optional(),
+    })
     .strict(),
   z
     .object({
@@ -286,6 +293,15 @@ export const taskMutationSchema = z.discriminatedUnion('operation', [
         .trim()
         .max(200)
         .refine((value) => !value.includes('\0')),
+    })
+    .strict(),
+  z
+    .object({
+      ...mutation,
+      operation: z.literal('set_subscription'),
+      task_id: taskIdSchema,
+      subscribed: z.boolean(),
+      expected_subscribed: z.boolean(),
     })
     .strict(),
   z
@@ -367,6 +383,14 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
     export_opened: z.boolean().optional(),
     export_saved: z.boolean().optional(),
     objective_state: richState.nullable().optional(),
+    navigation: z
+      .object({
+        index: z.number().int().nonnegative(),
+        total: z.number().int().positive(),
+        previous: taskIdSchema.nullable(),
+        next: taskIdSchema.nullable(),
+      })
+      .optional(),
     page: z
       .object({
         offset: z.number().int().nonnegative(),

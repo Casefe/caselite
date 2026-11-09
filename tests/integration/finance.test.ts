@@ -257,18 +257,53 @@ it('preserves a populated 0014 store and rolls back interrupted 0015 before a cl
   );
   const legacy = openTaskStore(file, old);
   const project = createProject(legacy, '旧库合成项目');
-  const task = legacy.execute({
-    ...keys(),
-    operation: 'create',
-    title: '旧库合成任务',
-    objective: '保留原任务',
-    matter_id: project,
-  });
-  if (!task.ok) throw new Error(task.message);
-  const taskId = task.tasks[0].id;
-  const readTask = { operation: 'read' as const, protocol_version, task_id: taskId };
-  const oldTask = legacy.execute(readTask);
   legacy.close();
+  const taskId = randomUUID();
+  const docId = randomUUID();
+  const bodyId = randomUUID();
+  const timestamp = '2026-11-01T00:00:00.000Z';
+  const legacyDb = openToolchainProbe(file, old).sqlite;
+  legacyDb
+    .prepare(
+      'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at) VALUES(?,?,?,?,1,?)',
+    )
+    .run(taskId, 'local', '旧库合成任务', '保留原任务', timestamp);
+  legacyDb
+    .prepare(
+      'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
+    )
+    .run(docId, taskId, bodyId);
+  legacyDb.prepare('INSERT INTO task_projects(task_id,matter_id) VALUES(?,?)').run(taskId, project);
+  legacyDb.close();
+  const readTask = { operation: 'read' as const, protocol_version, task_id: taskId };
+  const expectedTask = {
+    ok: true,
+    state: null,
+    objective_state: null,
+    receipt: null,
+    tasks: [
+      {
+        id: taskId,
+        title: '旧库合成任务',
+        objective: '保留原任务',
+        version: 1,
+        status: 'todo',
+        priority: 0,
+        due_date: null,
+        tags: [],
+        assignee: '本人',
+        updated_at: timestamp,
+        document_id: docId,
+        body_id: bodyId,
+        body_revision: 0,
+        editor_schema: 1,
+        document_archived_at: null,
+        matter_id: project,
+        matter_title: '旧库合成项目',
+        subscribed: false,
+      },
+    ],
+  };
 
   expect(() => openTaskStore(file, bad)).toThrow();
   const rolledBack = openToolchainProbe(file, old).sqlite;
@@ -280,10 +315,13 @@ it('preserves a populated 0014 store and rolls back interrupted 0015 before a cl
 
   const next = openTaskStore(file, migrations);
   try {
-    if (!oldTask.ok) throw Error(oldTask.message);
     expect(next.execute(readTask)).toEqual({
-      ...oldTask,
-      tasks: oldTask.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+      ...expectedTask,
+      tasks: expectedTask.tasks.map((task) => ({
+        ...task,
+        document_metadata_version: 1,
+        calendar: emptyTaskCalendar,
+      })),
     });
     expect(list(next, project)).toMatchObject({
       id: project,

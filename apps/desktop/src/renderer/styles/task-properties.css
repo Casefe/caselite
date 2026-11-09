@@ -293,6 +293,39 @@
   }
 }
 
+.task-query-list:not([data-layout='three-column']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.task-query-list [data-testid='new-task'] {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.task-view-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px 0;
+}
+.task-view-switcher button {
+  border-radius: 999px;
+}
+.task-view-switcher button[aria-pressed='true'] {
+  background: var(--theme-panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.task-adjacent {
+  gap: 4px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+.task-adjacent span {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .work-list-glyph {
   display: inline-flex;
   align-items: center;
@@ -308,6 +341,98 @@
 .work-list-glyph[data-status='done'] {
   color: var(--theme-accent);
 }
+.work-list-create {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.work-list-create:enabled:hover {
+  border-color: var(--line);
+  background: var(--theme-hover);
+}
+
+.task-list-viewbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--workbench-header-height);
+  padding: 8px var(--workbench-toolbar-inset);
+}
+.task-query-list .task-view-switcher {
+  padding: 0;
+}
+.task-query-list .task-list-preview-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--workbench-tab-height);
+  padding: 0;
+  flex-shrink: 0;
+}
+.task-query-list .task-view-switcher button,
+.task-query-list .task-list-preview-toggle {
+  min-height: var(--workbench-tab-height);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--theme-subtle);
+  color: var(--muted);
+}
+.task-query-list .task-view-switcher button[aria-pressed='true'],
+.task-query-list .task-list-preview-toggle[aria-expanded='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.task-query-list .task-query-toolbar {
+  padding-block: 5px 8px;
+}
+.task-query-list .task-query-toolbar :is(input, select) {
+  border-color: var(--line);
+  border-radius: 7px;
+  background: var(--theme-panel);
+}
+.task-query-list .task-table-structured {
+  min-width: 0;
+  padding: 0 var(--workbench-toolbar-inset) 12px;
+}
+.task-query-list .task-table-structured .table-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.task-query-list .task-table-structured .task-row {
+  gap: 10px;
+  min-height: var(--workbench-row-height);
+  padding-inline: clamp(14px, 2.6vw, 38px) 18px;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: none;
+  text-align: start;
+}
+.task-query-list .task-table-structured .task-row > span {
+  grid-row: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-query-list .task-table-structured .task-row [data-column='project'] {
+  color: var(--muted);
+}
+.task-query-list .task-table-structured .task-row [data-column='owner'] {
+  color: var(--muted);
+}
+.task-query-list .task-table-structured .task-row [data-column='due-date'] {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.task-query-list .task-table-structured .task-row:is(:hover, [aria-current='true']) {
+  background: var(--theme-hover);
+}
+
 .task-display-options {
   position: relative;
   flex-shrink: 0;
@@ -321,6 +446,7 @@
 .task-display-options fieldset {
   position: absolute;
   inset-inline-start: 0;
+  inset-inline-end: 0;
   z-index: 3;
   width: max-content;
   margin: 4px 0 0;
@@ -341,6 +467,7 @@
 }
 .task-display-group h2 {
   margin: 8px 20px 3px;
+  margin: 8px var(--workbench-toolbar-inset) 3px;
   padding: 5px 10px;
   border-radius: 6px;
   background: var(--theme-subtle);

@@ -1332,9 +1332,7 @@ export async function runProjectDemo(
       await wait("document.querySelector('#project-tab-overview[aria-selected=true]')");
       await evaluate("document.querySelector('[data-nav=tasks]').click()");
       await wait("document.querySelector('[data-row-task]')");
-      await evaluate(
-        "document.querySelector('[data-row-task]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))",
-      );
+      await evaluate("document.querySelector('[data-row-task]').click()");
       await wait("document.querySelector('[aria-label=返回任务列表]')");
       await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
       await wait("document.querySelector('[data-row-task]')");
@@ -1959,7 +1957,9 @@ export async function runProjectDemo(
         await wait(
           `document.activeElement?.dataset.projectTask===${JSON.stringify(standalone.id)}`,
         );
-        await click(`#project-panel-tasks [data-project-task="${standalone.id}"] + button`);
+        await click(
+          `#project-panel-tasks tr:has([data-project-task="${standalone.id}"]) td:last-child button`,
+        );
         await wait(
           `!document.querySelector('#project-panel-tasks [data-project-task="${standalone.id}"]')`,
         );
@@ -2602,6 +2602,9 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.task-table-structured [role=columnheader]:nth-child(4)')?.textContent === '截止日期'",
         );
+        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
+        await captureRenderer('linear-task-list.png');
+        await evaluate("document.querySelector('.task-list-preview-toggle').click()");
         await wait(
           "document.querySelector('.task-list-summary')?.textContent.includes('今日到期')",
         );

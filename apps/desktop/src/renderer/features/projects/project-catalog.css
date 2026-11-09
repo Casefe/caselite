@@ -144,27 +144,46 @@
 .project-section-tabs {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--line);
-}
-.project-section-tabs {
-  padding-top: 0;
-  padding-bottom: 0;
-  gap: 24px;
+  gap: 6px;
+  padding: 9px 24px;
   overflow-x: auto;
 }
 .project-section-tabs button {
-  padding: 14px 0;
-  border: 0;
-  border-radius: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   white-space: nowrap;
 }
 .project-section-tabs button[aria-selected='true'] {
   color: var(--ink);
-  box-shadow: inset 0 -2px var(--accent);
+  background: var(--theme-panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.project-overview-intro {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 22px 24px 4px;
+}
+.project-overview-intro h2 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  overflow-wrap: anywhere;
+}
+.project-task-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+.project-task-table {
+  min-width: 500px;
+}
+.project-task-table tbody tr {
+  cursor: pointer;
+}
+.project-task-table tbody tr:hover {
+  background: var(--theme-panel);
 }
 .project-record-panel:not([hidden]) {
   display: flex;
@@ -836,6 +855,328 @@
 .project-list-stages span {
   margin-inline-start: 4px;
   color: var(--muted);
+}
+
+.project-health-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-health::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.project-health[data-health]::before {
+  background: currentColor;
+}
+.project-health[data-health='on_track']::before {
+  color: #39866a;
+}
+.project-health[data-health='at_risk']::before {
+  color: #b67c2d;
+}
+.project-health[data-health='off_track']::before {
+  color: #bd585b;
+}
+
+.project-planning {
+  display: grid;
+  gap: 12px;
+  margin-block: 14px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--line);
+}
+.project-planning p {
+  margin: 6px 0;
+  color: var(--muted);
+}
+.project-planning progress {
+  width: 100%;
+}
+.project-progress-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+.project-progress-counts div {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.project-progress-counts dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+.project-milestone-row,
+.project-milestone-form {
+  display: grid;
+  gap: 5px;
+  padding-block: 7px;
+}
+.project-milestone-row + .project-milestone-row {
+  border-block-start: 1px solid var(--line);
+}
+.project-milestone-row small {
+  color: var(--muted);
+}
+.project-milestone-form label {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  gap: 5px;
+  align-items: center;
+}
+.project-milestone-form input,
+.project-milestone-form select {
+  width: 100%;
+  min-width: 0;
+}
+.project-milestone-row button + button,
+.project-milestone-form button + button {
+  margin-inline-start: 5px;
+}
+
+.project-catalog-heading > .work-list-create {
+  margin-inline-start: auto;
+}
+.project-catalog[data-project-view='list']:not([data-layout='three-column']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.project-catalog > .project-properties[hidden] {
+  display: none;
+}
+.project-list-stages .project-list-inspector-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--workbench-tab-height);
+  padding-inline: 0;
+}
+.project-catalog .project-list-stages {
+  align-items: center;
+  min-height: var(--workbench-header-height);
+  margin: 0 var(--workbench-toolbar-inset);
+}
+.project-catalog .project-list-stages button,
+.project-catalog .project-section-tabs button {
+  min-height: var(--workbench-tab-height);
+  padding-block: 4px;
+  background: var(--theme-subtle);
+  color: var(--muted);
+}
+.project-catalog .project-list-stages button:is([aria-pressed='true'], [aria-expanded='true']),
+.project-catalog .project-section-tabs button[aria-selected='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.project-catalog .project-section-tabs {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  min-height: var(--workbench-header-height);
+  padding: 8px var(--workbench-toolbar-inset);
+  background: var(--theme-panel);
+}
+.project-catalog .project-task-table th {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.project-catalog .project-task-table td {
+  border-bottom-color: transparent;
+}
+.project-catalog .project-task-table tbody tr:hover {
+  background: var(--theme-hover);
+}
+
+.project-catalog #project-panel-overview {
+  --project-detail-gutter: clamp(20px, 3.65vw, 54px);
+}
+.project-catalog .project-overview-intro {
+  padding: clamp(32px, 4.8vw, 70px) var(--project-detail-gutter) 16px;
+}
+.project-catalog .project-overview-intro h2 {
+  font-size: clamp(22px, 2.5vw, 26px);
+}
+.project-overview-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-block-end: 3px;
+  border-radius: 10px;
+  background: var(--theme-subtle);
+  color: var(--theme-accent);
+}
+.project-overview-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--muted);
+}
+.project-overview-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-catalog #project-panel-overview > .project-summary {
+  padding-inline: var(--project-detail-gutter);
+  border: 0;
+}
+.project-update-action {
+  margin: 4px var(--project-detail-gutter) 10px;
+}
+.project-update-entry {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+.project-update-entry:enabled:hover {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.project-catalog .project-activity-panel:not([hidden]) {
+  align-items: stretch;
+  padding: clamp(24px, 3.25vw, 48px) 18px;
+}
+.project-activity-panel .project-discussion.project-record-panel {
+  width: 100%;
+  padding: 0;
+}
+.project-activity-panel .project-discussion-compose {
+  min-height: 188px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--theme-subtle);
+}
+.project-activity-panel .project-discussion-compose .tiptap {
+  min-height: 94px;
+}
+.project-activity-panel .activity-list ol {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 14px;
+}
+.project-task-panel:not([hidden]) {
+  align-items: stretch;
+  gap: 9px;
+  padding: 0 var(--workbench-toolbar-inset) 20px;
+}
+.project-task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.project-task-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.project-task-heading small,
+.project-task-table time {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* 与全局任务列表一致，列名保留给辅助技术，列表视觉突出任务行。 */
+.project-task-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.project-task-table td {
+  padding: 5px 8px;
+}
+.project-task-table td:is(:nth-child(1), :nth-child(2)) {
+  width: 24px;
+  text-align: center;
+}
+.project-task-table td:nth-child(3) {
+  width: 55%;
+  overflow-wrap: anywhere;
+}
+.project-task-table td:nth-child(n + 4) {
+  white-space: nowrap;
+}
+.project-task-assignment,
+.project-task-assignment > label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.project-task-table tbody tr {
+  height: var(--workbench-row-height);
+}
+.project-catalog .project-task-table .project-task-group {
+  height: 40px;
+  background: var(--theme-subtle);
+}
+.project-catalog .project-task-table .project-task-group th {
+  padding: 0;
+  border: 0;
+}
+.project-task-group button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 15px;
+  text-align: start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+.project-task-group button[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+.project-task-group small {
+  color: var(--muted);
+}
+.project-task-table td:last-child button {
+  white-space: nowrap;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+/* 辅助栏只承载项目现有表单和规划入口，不复制活动查询。 */
+.project-catalog:not([data-project-view='list']) > .project-properties {
+  padding: 12px;
+  background: var(--theme-panel);
+}
+.project-catalog:not([data-project-view='list']) > .project-properties > .project-planning {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--theme-subtle);
+}
+.project-catalog #project-panel-overview > :is(.catalog-actions, .project-discussion) {
+  padding-inline: var(--project-detail-gutter);
 }
 
 .project-catalog > .project-properties > form {

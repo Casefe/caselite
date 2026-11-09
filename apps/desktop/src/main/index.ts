@@ -9,7 +9,8 @@ import { createReminderApplication } from '@caselite/application';
 import { registerReminderIpc } from './ipc/register-task-ipc';
 import { createRealDemoRuntime, runRealAgentDemo } from './agent-real-demo';
 import {
-  realDemoId,
+  validateRealDemoLaunch,
+  type RealDemoAuthorization,
   realDemoPdfHash,
   realDemoResumeId,
   inspectZeroDispatchResume,
@@ -22,6 +23,7 @@ import { createMaterialFiles } from './adapters/material-files';
 import { createPdfProcessor } from './adapters/pdf-processor';
 import { registerMaterialIpc } from './ipc/register-material-ipc';
 import { runTaskDemo } from './task-demo';
+import { runTypographyDemo } from './typography-demo';
 import { runProjectDemo } from './project-demo';
 import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-probe';
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
@@ -34,6 +36,7 @@ import {
   syntheticReviewStream,
 } from './agent-demo';
 import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
+import { runEditorInteractionDemo } from './editor-interaction-demo';
 import { documentReviewStore } from './document-review-store';
 import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
@@ -120,14 +123,18 @@ async function createWindow(
   if (process.env.CASELITE_TASK_DEMO === 'preview') entry.searchParams.set('preview', '1');
   if (process.env.CASELITE_TASK_DEMO === 'delivery-preview')
     entry.searchParams.set('delivery-preview', '1');
+  if (process.env.CASELITE_TASK_DEMO === 'credential-preflight-ui')
+    entry.searchParams.set('audit-agent', '1');
   if (
     process.env.CASELITE_TASK_DEMO === 'agent-preview' ||
     process.env.CASELITE_TASK_DEMO?.startsWith('project-agent-') ||
-    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-')
+    process.env.CASELITE_TASK_DEMO?.startsWith('document-review-') ||
+    process.env.CASELITE_TASK_DEMO?.startsWith('editor-interaction-')
   )
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await window.loadURL(entry.toString());
+  credentialWindowLoaded();
   if (show && !window.isDestroyed()) window.show();
   return window;
 }
@@ -442,7 +449,7 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (
       !result.ok ||
       result.value?.stored_value !== 'offline-integration-verified' ||
-      result.value?.migration_count !== 21
+      result.value?.migration_count !== 24
     ) {
       throw new Error('Packaged IPC/SQLite readback or migration count failed');
     }
@@ -533,6 +540,11 @@ function runLocalDatabaseProbe(): void {
 }
 
 const defaultCredentialRoot = app.getPath('userData');
+let credentialWindowLoaded: () => void;
+const credentialWindowReady = new Promise<void>((resolve) => {
+  credentialWindowLoaded = resolve;
+});
+let realDemoAuthorization: RealDemoAuthorization | undefined;
 let taskDemoRoot: string | undefined;
 let taskDemoEvidenceRoot: string | undefined;
 let realResumeAudit: ReturnType<typeof inspectZeroDispatchResume> | undefined;
@@ -544,6 +556,9 @@ if (taskDemoPhase) {
       'document-review-preview',
       'document-review-write',
       'document-review-read',
+      'editor-interaction-write',
+      'editor-interaction-read',
+      'editor-interaction-preview',
       'credential-preflight',
       'credential-preflight-ui',
       'task-status-write',
@@ -558,12 +573,14 @@ if (taskDemoPhase) {
       'materials',
       'materials-read',
       'materials-docx',
+      'materials-docx-table',
       'materials-docx-lists',
       'materials-docx-recovery',
       'materials-docx-preview',
       'materials-docx-reopen',
       'crash',
       'preview',
+      'typography',
       'project-write',
       'project-agent-write',
       'project-agent-read',
@@ -598,12 +615,13 @@ if (taskDemoPhase) {
     !basename(candidate).startsWith('caselite-task-demo-')
   )
     throw new Error('Demo directory must be isolated');
-  if (
-    taskDemoPhase === 'real-agent' &&
-    (candidate !== join(realpathSync(tmpdir()), 'caselite-task-demo-dev1650-real-20261106') ||
-      process.env.CASELITE_REAL_AGENT_APPROVAL !== realDemoId)
-  )
-    throw new Error('Real validation requires the fixed approved run');
+  if (taskDemoPhase === 'real-agent')
+    realDemoAuthorization = validateRealDemoLaunch({
+      directory: candidate,
+      temporaryRoot: realpathSync(tmpdir()),
+      approval: process.env.CASELITE_REAL_AGENT_APPROVAL,
+      resume: process.env.CASELITE_REAL_AGENT_RESUME,
+    });
   taskDemoRoot = candidate;
   taskDemoEvidenceRoot = candidate;
   const resume = process.env.CASELITE_REAL_AGENT_RESUME;
@@ -612,10 +630,12 @@ if (taskDemoPhase) {
     (resume !== realDemoResumeId || !taskDemoPhase.startsWith('real-agent'))
   )
     throw new Error('Invalid resume mode');
-  if (taskDemoPhase === 'real-agent' && !resume)
-    throw new Error('Real validation requires reviewed zero-dispatch resume');
   if (resume) {
-    realResumeAudit = inspectZeroDispatchResume(candidate, taskDemoPhase === 'real-agent-dry');
+    realResumeAudit = inspectZeroDispatchResume(
+      candidate,
+      taskDemoPhase === 'real-agent-dry',
+      realDemoAuthorization,
+    );
     taskDemoEvidenceRoot = realpathSync(join(candidate, realDemoResumeId));
     if (taskDemoEvidenceRoot !== join(candidate, realDemoResumeId))
       throw new Error('Invalid resume evidence directory');
@@ -840,7 +860,20 @@ app
         : undefined;
     const financeDemo = taskDemoPhase?.startsWith('finance-');
     if (financeDemo) materialDemoKeys.clear();
-    const documentReviewDemo = taskDemoPhase?.startsWith('document-review-');
+    const documentReviewDemo =
+      taskDemoPhase?.startsWith('document-review-') ||
+      taskDemoPhase?.startsWith('editor-interaction-');
+    let initialCredentialRead = Promise.resolve();
+    const openSystemCredentials = async (root: string) => {
+      let settled!: () => void;
+      initialCredentialRead = new Promise<void>((resolve) => {
+        settled = resolve;
+      });
+      return createAgentCredentials(root, recordCredentialStage, {
+        afterWindowReady: credentialWindowReady,
+        onSettled: settled,
+      });
+    };
     const baseAgentCredentials =
       documentReviewDemo ||
       financeDemo ||
@@ -849,6 +882,7 @@ app
       taskDemoPhase?.startsWith('materials') ||
       taskDemoPhase === 'real-agent-dry' ||
       taskDemoPhase === 'agent-preview' ||
+      taskDemoPhase === 'typography' ||
       taskDemoPhase === 'agent-crash-synthetic' ||
       taskDemoPhase === 'agent-read-synthetic'
         ? {
@@ -867,10 +901,8 @@ app
             },
           }
         : taskDemoPhase === 'real-agent' || credentialUi
-          ? readOnlyDemoCredentials(
-              await createAgentCredentials(defaultCredentialRoot, recordCredentialStage),
-            )
-          : await createAgentCredentials(taskRoot, recordCredentialStage);
+          ? readOnlyDemoCredentials(await openSystemCredentials(defaultCredentialRoot))
+          : await openSystemCredentials(taskRoot);
     const recordCredentialUi = () => {
       if (!credentialUi || !taskDemoRoot) return;
       const after = credentialFingerprints(defaultCredentialRoot);
@@ -934,6 +966,7 @@ app
               directory: taskDemoEvidenceRoot!,
               budgetDirectory: taskDemoRoot,
               resumeAudit: realResumeAudit,
+              authorization: realDemoAuthorization,
               model: agentCredentials.getDefaultModel(),
               dry: taskDemoPhase === 'real-agent-dry',
               runs: () => taskStore.agentHistory.load(),
@@ -977,6 +1010,7 @@ app
               documentReviewDemo
                 ? syntheticReviewStream
                 : financeDemo ||
+                    taskDemoPhase === 'typography' ||
                     credentialUi ||
                     taskDemoPhase?.startsWith('reminder') ||
                     (taskDemoPhase?.startsWith('project-') &&
@@ -1016,16 +1050,35 @@ app
     });
     registerAgentIpc(agent);
     app.on('will-quit', () => agent.release());
+    if (taskDemoRoot && taskDemoPhase === 'typography') {
+      try {
+        await runTypographyDemo(() => createWindow(false), taskDemoRoot, tasks);
+      } finally {
+        agent.release();
+        materials.close();
+        taskStore.close();
+      }
+      app.exit(0);
+      return;
+    }
     if (documentReviewDemo && taskDemoRoot) {
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
         callback({ cancel: /^https?:/i.test(details.url) }),
       );
       app.on('will-quit', () => taskStore.close());
-      if (taskDemoPhase !== 'document-review-read') seedDocumentReview(tasks);
-      if (taskDemoPhase === 'document-review-preview') {
+      if (taskDemoPhase !== 'document-review-read' && taskDemoPhase !== 'editor-interaction-read')
+        seedDocumentReview(tasks);
+      if (
+        taskDemoPhase === 'document-review-preview' ||
+        taskDemoPhase === 'editor-interaction-preview'
+      ) {
         await createWindow();
       } else {
-        await runDocumentReviewDemo(
+        await (
+          taskDemoPhase?.startsWith('editor-interaction-')
+            ? runEditorInteractionDemo
+            : runDocumentReviewDemo
+        )(
           () => createWindow(false),
           taskDemoRoot,
           taskDemoPhase!,
@@ -1037,8 +1090,9 @@ app
       return;
     }
     if (credentialUi) {
-      recordCredentialUi();
       const window = await createWindow();
+      await initialCredentialRead;
+      recordCredentialUi();
       window.setTitle('CaseLite · 系统凭据重读验收');
       return;
     }
@@ -1057,6 +1111,7 @@ app
         taskDemoEvidenceRoot!,
         taskDemoPhase === 'real-agent-dry',
         taskDemoRoot,
+        initialCredentialRead,
       );
       if (taskDemoPhase === 'real-agent-dry') app.exit(0);
       return;

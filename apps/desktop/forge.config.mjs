@@ -76,7 +76,7 @@ export default {
     new WebpackPlugin({
       mainConfig: localPath('./webpack.main.config.mjs'),
       devContentSecurityPolicy:
-        "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+        "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
       devServer: {
         host: 'localhost',
         hot: false,

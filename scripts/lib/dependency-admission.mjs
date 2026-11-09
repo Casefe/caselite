@@ -4,6 +4,7 @@ const desktop = {
   ai: '6.0.324',
   '@assistant-ui/react': '0.15.32',
   '@assistant-ui/react-markdown': '0.14.24',
+  'remark-gfm': '4.0.1', // DEV-1650：只读回答的 GFM 表格解析，不增加正文或执行内核。
   '@caselite/application': 'workspace:*',
   '@caselite/contracts': 'workspace:*',
   '@caselite/local-db': 'workspace:*',

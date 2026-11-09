@@ -136,8 +136,11 @@ it('upgrades the actual previous 19 migrations without changing existing rows', 
   roots.push(root);
   const previous = join(root, 'old-migrations');
   cpSync(migrations, previous, { recursive: true });
+  rmSync(join(previous, 'meta/dual-history-1826.json'));
   const journalPath = join(previous, 'meta/_journal.json');
-  const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
+  const journal = JSON.parse(
+    readFileSync(resolve('tests/fixtures/migration-histories/A.json'), 'utf8'),
+  );
   journal.entries = journal.entries.slice(0, 19);
   writeFileSync(journalPath, JSON.stringify(journal));
   const file = join(root, 'previous.sqlite'),
@@ -153,7 +156,7 @@ it('upgrades the actual previous 19 migrations without changing existing rows', 
   const next = openToolchainProbe(file, migrations);
   closes.push(() => next.sqlite.close());
   expect(next.sqlite.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-    n: 21,
+    n: 24,
   });
   expect(next.sqlite.prepare('SELECT * FROM toolchain_probe').all()).toEqual(before);
   expect(next.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');

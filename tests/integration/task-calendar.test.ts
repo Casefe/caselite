@@ -335,8 +335,11 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
   const old = join(r, 'old'),
     bad = join(r, 'bad');
   cpSync(migrations, old, { recursive: true });
+  rmSync(join(old, 'meta/dual-history-1826.json'));
   const path = join(old, 'meta/_journal.json');
-  const journal = JSON.parse(readFileSync(path, 'utf8'));
+  const journal = JSON.parse(
+    readFileSync(resolve('tests/fixtures/migration-histories/A.json'), 'utf8'),
+  );
   writeFileSync(path, JSON.stringify({ ...journal, entries: journal.entries.slice(0, 20) }));
   const file = join(r, 'old.sqlite'),
     store = openTaskStore(file, old),
@@ -351,6 +354,8 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
   db.close();
   store.close();
   cpSync(migrations, bad, { recursive: true });
+  rmSync(join(bad, 'meta/dual-history-1826.json'));
+  writeFileSync(join(bad, 'meta/_journal.json'), JSON.stringify(journal));
   const ddl = join(bad, '0020_task_calendar.sql');
   writeFileSync(
     ddl,
@@ -379,7 +384,7 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
     expect(check.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(check.pragma('foreign_key_check')).toEqual([]);
     expect(check.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
-      n: 21,
+      n: 24,
     });
     check.close();
   }
@@ -424,6 +429,7 @@ it('matches the generated Drizzle snapshot while applying additive DDL without r
     db = openToolchainProbe(s.file, migrations).sqlite;
   try {
     const snapshot = JSON.parse(readFileSync(join(migrations, 'meta/0020_snapshot.json'), 'utf8'));
+    const t = create(s.app);
     for (const name of ['task_items', 'calendar_types']) {
       const columns = (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>)
         .map((v) => v.name)
@@ -434,10 +440,15 @@ it('matches the generated Drizzle snapshot while applying additive DDL without r
           sql: string;
         }
       ).sql;
-      for (const check of Object.keys(snapshot.tables[name].checkConstraints))
-        expect(sql).toContain(check);
+      for (const check of Object.keys(snapshot.tables[name].checkConstraints)) {
+        // B 原 SQL 的订阅 CHECK 没有显式名称；保留原字节并验证等价约束及非法值拒绝。
+        if (check === 'task_subscribed_valid')
+          expect(sql).toMatch(/CHECK\s*\(\s*`subscribed` IN \(0, 1\)\)/);
+        else expect(sql).toContain(check);
+      }
+      if (name === 'task_items')
+        expect(() => db.prepare('UPDATE task_items SET subscribed=2').run()).toThrow();
     }
-    const t = create(s.app);
     for (const value of ['2026-02-30', '0000-01-01', '2026-11-09T00:00:00Z'])
       expect(() =>
         db.prepare('UPDATE task_items SET planned_date=? WHERE id=?').run(value, t.id),

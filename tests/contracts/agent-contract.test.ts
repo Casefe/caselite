@@ -532,3 +532,51 @@ describe('explicit credential refresh', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
+
+it('accepts old credential profiles and validates the optional reading projection', () => {
+  const profile = {
+    ok: true,
+    configured: false,
+    model: 'gpt-4.1-mini',
+    providers: { openai: false, deepseek: false },
+    runs: [],
+  };
+  expect(agentResponseSchema.safeParse(profile).success).toBe(true);
+  expect(agentResponseSchema.parse({ ...profile, credential_reading: true })).toHaveProperty(
+    'credential_reading',
+    true,
+  );
+  expect(
+    agentResponseSchema.safeParse({ ...profile, credential_reading: 'synthetic-key' }).success,
+  ).toBe(false);
+});
+
+it('blocks a new run during credential reading even with a cached Key but permits reconciliation', async () => {
+  let reading = true;
+  const refresh = vi.fn(async () => {});
+  const runtime = { start: vi.fn(() => ({ cancel() {} })) };
+  const app = createAgentApplication({
+    credentials: {
+      isReading: () => reading,
+      refresh,
+      get: () => 'synthetic-cached-key',
+      getDefaultModel: () => 'gpt-4.1-mini',
+      setDefaultModel() {},
+      set() {},
+      clear() {},
+    },
+    runtime,
+    taskExists: () => true,
+  });
+  expect(await app.execute(start, 'window')).toMatchObject({ ok: false, code: 'BUSY' });
+  expect(
+    await app.execute({ protocol_version: 1, operation: 'refresh_credentials' }, 'window'),
+  ).toMatchObject({ ok: false, code: 'BUSY' });
+  expect(runtime.start).not.toHaveBeenCalled();
+  expect(refresh).not.toHaveBeenCalled();
+  reading = false;
+  expect(await app.execute(start, 'window')).toMatchObject({ ok: true });
+  reading = true;
+  expect(await app.execute(start, 'window')).toMatchObject({ ok: true });
+  expect(runtime.start).toHaveBeenCalledTimes(1);
+});

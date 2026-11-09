@@ -1,6 +1,6 @@
+import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
-import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
@@ -199,7 +199,7 @@ export function TaskTable({
   onOpen(id: string): void;
   documents?: boolean;
   selectedId?: string;
-  onSelect(id: string): void;
+  onSelect?(id: string): void;
   hiddenColumns?: TaskOptionalColumn[];
 }) {
   const titleColumn: ColumnDef<Task> = {
@@ -207,8 +207,12 @@ export function TaskTable({
     header: documents ? '文档名称' : '任务名称',
     cell: ({ row: { original: task } }) => (
       <span className="task-name">
-        <Icon name={documents ? 'file' : 'check'} size={16} />
-        <small>{task.id.slice(0, 4).toUpperCase()}</small>
+        {documents && (
+          <>
+            <Icon name="file" size={16} />
+            <small>{task.id.slice(0, 4).toUpperCase()}</small>
+          </>
+        )}
         <strong
           className="task-row-title"
           onClick={(event) => {
@@ -280,7 +284,7 @@ export function TaskTable({
       {table.getHeaderGroups().map((group) => (
         <div className="table-head" role="row" key={group.id} style={rowStyle}>
           {group.headers.map((header) => (
-            <span key={header.id} role="columnheader">
+            <span key={header.id} role="columnheader" data-column={header.column.id}>
               {flexRender(header.column.columnDef.header, header.getContext())}
             </span>
           ))}
@@ -295,8 +299,8 @@ export function TaskTable({
           data-row-task={row.id}
           aria-label={`选择${documents ? '文档' : '任务'}：${row.original.title}`}
           aria-current={selectedId === row.id ? 'true' : undefined}
-          onClick={() => onSelect(row.id)}
-          onDoubleClick={() => onOpen(row.id)}
+          onClick={() => (onSelect ?? onOpen)(row.id)}
+          onDoubleClick={onSelect ? () => onOpen(row.id) : undefined}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();

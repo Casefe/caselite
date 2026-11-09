@@ -41,10 +41,12 @@ const reviewRange = z.strictObject({
   revision: z.number().int().positive(),
   paragraph: z.number().int().min(0).max(100000),
   from: z.number().int().min(0).max(2_000_000),
-  to: z.number().int().positive().max(2_000_000),
-  text: z.string().min(1).max(8000),
+  to: z.number().int().nonnegative().max(2_000_000),
+  text: z.string().max(8000),
 });
 export type ReviewRange = z.infer<typeof reviewRange>;
+export const reviewActionSchema = z.enum(['replace', 'insert_after', 'append']);
+export type ReviewAction = z.infer<typeof reviewActionSchema>;
 const reviewSaved = z.strictObject({
   task: taskSchema,
   state: z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000),
@@ -102,6 +104,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
     scope: documentScope,
     run_id: z.string().uuid(),
     confirmed: z.literal(true),
+    action: reviewActionSchema.optional(),
   }),
   z.strictObject({
     ...base,
@@ -182,6 +185,7 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
       kimi: z.boolean().optional(),
       siliconflow: z.boolean().optional(),
     }),
+    credential_reading: z.boolean().optional(),
     credential_errors: z
       .object({
         openai: z.literal('UNAVAILABLE').optional(),

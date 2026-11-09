@@ -17,6 +17,7 @@ import {
   type ReviewRange,
   type Task,
   type TaskRequest,
+  type TaskListQuery,
   type TaskResponse,
   type DeliverySnapshot,
   taskResponseSchema,
@@ -29,13 +30,15 @@ import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 
-type Row = Omit<Task, 'tags' | 'assignee'> & {
+type Row = Omit<Task, 'tags' | 'assignee' | 'subscribed'> & {
   tags: string;
+  subscribed?: number;
   assignee: string | null;
 } & Partial<CalendarRow>;
 const decodeTask = (input: Row): Task => {
   const {
     tags,
+    subscribed,
     planned_date,
     schedule_date,
     schedule_start,
@@ -50,6 +53,7 @@ const decodeTask = (input: Row): Task => {
   } = input;
   return {
     ...row,
+    ...(subscribed !== undefined ? { subscribed: subscribed === 1 } : {}),
     tags: tagListSchema.parse(JSON.parse(tags)),
     ...(planned_date !== undefined
       ? {
@@ -69,7 +73,11 @@ const decodeTask = (input: Row): Task => {
       : {}),
   };
 };
-const baseSelect = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.version,t.updated_at,d.id AS document_id,d.metadata_version AS document_metadata_version,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const baseSelect = `SELECT t.id,t.title,t.objective,t.status,t.priority,t.due_date,t.assignee,t.tags,t.subscribed,t.version,t.updated_at,d.id AS document_id,d.metadata_version AS document_metadata_version,d.body_id,d.body_revision,d.editor_schema,d.archived_at AS document_archived_at,p.matter_id,m.title AS matter_title FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const from = `FROM task_items t JOIN documents d ON d.task_id=t.id LEFT JOIN task_projects p ON p.task_id=t.id LEFT JOIN matters m ON m.id=p.matter_id`;
+const creation =
+  "(SELECT min(a.created_at) FROM task_activity a WHERE a.task_id=t.id AND a.operation='create')";
+
 const fail = (
   code: 'NOT_FOUND' | 'CONFLICT' | 'FORBIDDEN' | 'INVALID_REQUEST',
   message: string,
@@ -80,10 +88,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
+  const hasSubscription = (
+    db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
+  ).some((v) => v.name === 'subscribed');
   const hasCalendar = (
     db.prepare('PRAGMA table_info(task_items)').all() as Array<{ name: string }>
   ).some((v) => v.name === 'planned_date');
-  const select = baseSelect.replace(
+  const select = (hasSubscription ? baseSelect : baseSelect.replace(',t.subscribed', '')).replace(
     ' FROM task_items',
     `${hasCalendar ? calendarColumns : ''} FROM task_items`,
   );
@@ -111,6 +122,75 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     state: number[] | null = null,
     receipt: string | null = null,
   ): Extract<TaskResponse, { ok: true }> => ({ ok: true, tasks, state, receipt });
+  const isListScopeAvailable = (q: TaskListQuery) =>
+    q.scope.type === 'workspace' ||
+    Boolean(
+      db
+        .prepare('SELECT id FROM matters WHERE id=? AND workspace_id=? AND archived_at IS NULL')
+        .get(q.scope.id, workspace),
+    );
+  const listFilter = (q: TaskListQuery) => {
+    const clauses = ['t.workspace_id=?'],
+      params: (string | number)[] = [workspace];
+    if (q.scope.type === 'project') {
+      clauses.push('p.matter_id=?');
+      params.push(q.scope.id);
+    }
+    if (q.view === 'created') clauses.push(`${creation} IS NOT NULL`);
+    if (q.view === 'subscribed') clauses.push(hasSubscription ? 't.subscribed=1' : '0');
+    if (q.text) {
+      clauses.push("instr(lower(t.title || ' ' || t.objective),lower(?)) > 0");
+      params.push(q.text);
+    }
+    if (q.status !== null) {
+      clauses.push('t.status=?');
+      params.push(q.status);
+    }
+    if (q.priority !== null) {
+      clauses.push('t.priority=?');
+      params.push(q.priority);
+    }
+    if (q.dates !== 'all')
+      clauses.push(q.dates === 'dated' ? 't.due_date IS NOT NULL' : 't.due_date IS NULL');
+    if (q.from) {
+      clauses.push('t.due_date>=?');
+      params.push(q.from);
+    }
+    if (q.to) {
+      clauses.push('t.due_date<=?');
+      params.push(q.to);
+    }
+    if (q.body !== 'all')
+      clauses.push(q.body === 'written' ? 'd.body_revision>0' : 'd.body_revision=0');
+    const order =
+      q.view === 'created' && q.sort === 'updated'
+        ? `${creation} DESC,t.id`
+        : {
+            updated: 't.updated_at DESC,t.id',
+            title: 't.title COLLATE NOCASE,t.id',
+            priority: '(t.priority=0),t.priority,t.id',
+            due_date: '(t.due_date IS NULL),t.due_date,t.id',
+          }[q.sort];
+    return { where: `WHERE ${clauses.join(' AND ')}`, params, order };
+  };
+  const navigation = (id: string, q: TaskListQuery) => {
+    if (!isListScopeAvailable(q)) return undefined;
+    const { where, params, order } = listFilter(q);
+    // 列表和相邻任务使用同一组筛选和排序；窗口查询覆盖分页边界。
+    return db
+      .prepare(
+        `
+      WITH ordered AS (
+        SELECT t.id, row_number() OVER (ORDER BY ${order}) - 1 AS "index",
+          count(*) OVER () AS total, lag(t.id) OVER (ORDER BY ${order}) AS previous,
+          lead(t.id) OVER (ORDER BY ${order}) AS next
+        ${from} ${where}
+      ) SELECT "index",total,previous,next FROM ordered WHERE id=?
+    `,
+      )
+      .get(...params, id) as
+      NonNullable<Extract<TaskResponse, { ok: true }>['navigation']> | undefined;
+  };
   return {
     localPreferences: createLocalPreferencesStore(db, workspace),
     deliveryExports: createDeliveryExportStore(db, workspace),
@@ -148,52 +228,10 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       if (request.operation === 'list') {
         const q = request.query;
         if (q) {
-          if (
-            q.scope.type === 'project' &&
-            !db
-              .prepare(
-                'SELECT id FROM matters WHERE id=? AND workspace_id=? AND archived_at IS NULL',
-              )
-              .get(q.scope.id, workspace)
-          )
+          if (!isListScopeAvailable(q))
             return fail('NOT_FOUND', '项目不存在、已归档或不在当前工作区。');
-          const clauses = ['t.workspace_id=?'],
-            params: (string | number)[] = [workspace];
-          if (q.scope.type === 'project') {
-            clauses.push('p.matter_id=?');
-            params.push(q.scope.id);
-          }
-          if (q.text) {
-            clauses.push("instr(lower(t.title || ' ' || t.objective),lower(?)) > 0");
-            params.push(q.text);
-          }
-          if (q.status !== null) {
-            clauses.push('t.status=?');
-            params.push(q.status);
-          }
-          if (q.priority !== null) {
-            clauses.push('t.priority=?');
-            params.push(q.priority);
-          }
-          if (q.dates !== 'all')
-            clauses.push(q.dates === 'dated' ? 't.due_date IS NOT NULL' : 't.due_date IS NULL');
-          if (q.from) {
-            clauses.push('t.due_date>=?');
-            params.push(q.from);
-          }
-          if (q.to) {
-            clauses.push('t.due_date<=?');
-            params.push(q.to);
-          }
-          if (q.body !== 'all')
-            clauses.push(q.body === 'written' ? 'd.body_revision>0' : 'd.body_revision=0');
-          const order = {
-            updated: 't.updated_at DESC,t.id',
-            title: 't.title COLLATE NOCASE,t.id',
-            priority: '(t.priority=0),t.priority,t.id',
-            due_date: '(t.due_date IS NULL),t.due_date,t.id',
-          }[q.sort];
-          const filtered = `${select} WHERE ${clauses.join(' AND ')}`;
+          const { where, params, order } = listFilter(q);
+          const filtered = `${select} ${where}`;
           const total = (
             db.prepare(`SELECT count(*) AS n FROM (${filtered})`).get(...params) as { n: number }
           ).n;
@@ -234,6 +272,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
         return {
           ...ok([task], row ? Array.from(row.state) : null),
           objective_state: objective ? Array.from(objective) : null,
+          ...(request.navigation ? { navigation: navigation(task.id, request.navigation) } : {}),
         };
       }
       // 幂等结果、对象/正文修订和成功事件同事务提交；异常不留下半个成功结果。
@@ -309,7 +348,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           taskId = randomUUID();
           const now = new Date().toISOString();
           db.prepare(
-            'INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at,status,priority,due_date,tags) VALUES(?,?,?,?,1,?,?,?,?,?)',
+            `INSERT INTO task_items(id,workspace_id,title,objective,version,updated_at,status,priority,due_date,tags${hasSubscription ? ',subscribed' : ''}) VALUES(?,?,?,?,1,?,?,?,?,?${hasSubscription ? ',1' : ''})`,
           ).run(
             taskId,
             workspace,
@@ -333,7 +372,16 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           taskId = request.task_id;
           const task = get(taskId);
           if (!task) return fail('NOT_FOUND', '任务不存在或不在当前工作区。');
-          if (request.operation === 'create_snapshot') {
+          if (request.operation === 'set_subscription') {
+            if (!hasSubscription) return fail('CONFLICT', '此工作区尚未升级订阅格式。');
+            if (task.subscribed !== request.expected_subscribed)
+              return fail('CONFLICT', '订阅状态已更新，请重新读取任务后核对。');
+            db.prepare('UPDATE task_items SET subscribed=? WHERE id=? AND workspace_id=?').run(
+              Number(request.subscribed),
+              taskId,
+              workspace,
+            );
+          } else if (request.operation === 'create_snapshot') {
             const fixed = snapshots.create(request, task);
             if (!fixed.ok) return fixed;
             savedSnapshots = [fixed.snapshot];
@@ -441,7 +489,16 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
         if (snapshotCreated !== false)
           db.prepare(
             'INSERT INTO task_activity(id,task_id,operation,created_at) VALUES(?,?,?,?)',
-          ).run(randomUUID(), taskId, request.operation, new Date().toISOString());
+          ).run(
+            randomUUID(),
+            taskId,
+            request.operation === 'set_subscription'
+              ? request.subscribed
+                ? 'subscribe_task'
+                : 'unsubscribe_task'
+              : request.operation,
+            new Date().toISOString(),
+          );
         db.prepare('INSERT INTO task_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)').run(
           workspace,
           request.idempotency_key,

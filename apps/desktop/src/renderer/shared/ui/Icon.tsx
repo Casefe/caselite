@@ -42,6 +42,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
         <path d="M5 19a7 6 0 0 1 14 0" />
       </>
     ),
+    filter: <path d="M4 6h16M7 12h10m-7 6h4" />,
     search: (
       <>
         <circle cx="10" cy="10" r="6" />

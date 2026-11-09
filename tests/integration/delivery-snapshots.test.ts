@@ -316,9 +316,13 @@ it('upgrades the existing 17-migration database without changing old bodies, ide
     ok(upgraded.app.execute({ protocol_version: 1, operation: 'read', task_id: task.id })),
   ).toEqual({
     ...before,
-    tasks: before.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+    tasks: before.tasks.map((task) => ({
+      ...task,
+      subscribed: false,
+      calendar: emptyTaskCalendar,
+    })),
   });
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 21 });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 24 });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(ok(upgraded.app.execute(create(task))).snapshot_created).toBe(true);
 });

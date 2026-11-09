@@ -8,7 +8,9 @@
   --line: #e8eaee;
   --canvas: #fbfbfc;
   --active: #eaf2f3;
-  --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  --font:
+    system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans CJK SC', sans-serif;
 }
 * {
   box-sizing: border-box;

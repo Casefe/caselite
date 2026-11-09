@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useContext } from 'react';
+import { useContext, useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest } from '../preload/caselite-api';
 import App from './App';
@@ -69,12 +69,36 @@ vi.mock('./ui/TaskInspector', () => ({
   ),
 }));
 vi.mock('./features/calendar/CalendarView', () => ({
-  default: ({ inspector, onOpen }: { inspector: React.ReactNode; onOpen(id: string): void }) => (
-    <div>
-      <button onClick={() => onOpen('A')}>日历A</button>
-      {inspector}
-    </div>
-  ),
+  default: function Calendar({
+    inspector,
+    onOpen,
+    blocked,
+  }: {
+    inspector: React.ReactNode;
+    onOpen(id: string): void;
+    blocked: boolean;
+  }) {
+    const [showClosed, setShowClosed] = useState(false);
+    const [page, setPage] = useState(0);
+    return (
+      <div>
+        <input
+          aria-label="显示已完成"
+          type="checkbox"
+          checked={showClosed}
+          onChange={(e) => setShowClosed(e.target.checked)}
+        />
+        <button onClick={() => setPage(page + 1)}>日历下一页</button>
+        <span>
+          日历分页{page}；日期计数{showClosed ? 5 : 4}
+        </span>
+        <button disabled={blocked} onClick={() => onOpen('A')}>
+          日历A
+        </button>
+        {inspector}
+      </div>
+    );
+  },
 }));
 vi.mock('./ui/SettingsView', () => {
   return {
@@ -217,4 +241,25 @@ it('keeps the calendar inspector compact and opens original Task content through
     ),
   );
   expect(screen.getByTestId('save-task-content')).toBeTruthy();
+});
+
+it('preserves the mounted calendar filters, count and page while a Task read is pending and succeeds', async () => {
+  let complete!: (v: unknown) => void;
+  setup(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await screen.findByText('首页');
+  fireEvent.click(screen.getByText('日历入口'));
+  fireEvent.click(screen.getByLabelText('显示已完成'));
+  fireEvent.click(screen.getByText('日历下一页'));
+  fireEvent.click(screen.getByText('日历A'));
+  expect(screen.getByText('日历分页1；日期计数5')).toBeTruthy();
+  expect((screen.getByText('日历A') as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => complete(result('A')));
+  await screen.findByRole('button', { name: '打开任务内容' });
+  expect((screen.getByLabelText('显示已完成') as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText('日历分页1；日期计数5')).toBeTruthy();
 });

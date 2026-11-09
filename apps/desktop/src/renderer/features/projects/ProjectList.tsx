@@ -4,7 +4,7 @@ import ReadTable from '../../shared/ui/ReadTable';
 import { Icon } from '../../shared/ui/Icon';
 import { PriorityGlyph } from '../../ui/TaskListGlyph';
 import { formatCents } from '../finance/money';
-import { projectStatuses, projectTypes } from './project-display';
+import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
 
 export const projectListProperties = {
   status: '状态',
@@ -14,6 +14,7 @@ export const projectListProperties = {
   targetDate: '目标日',
   tasks: '任务',
   updated: '更新时间',
+  health: '健康度',
   client: '客户',
   nextDate: '下一关键日期',
   risk: '风险／异常',
@@ -30,6 +31,7 @@ export const projectListDefaults: ProjectListColumns = {
   targetDate: true,
   tasks: true,
   updated: true,
+  health: false,
   client: false,
   nextDate: false,
   risk: false,
@@ -160,6 +162,15 @@ export default function ProjectList({
       <time dateTime={row.original.updated_at}>
         {new Date(row.original.updated_at).toLocaleDateString()}
       </time>
+    ),
+  });
+  add('health', {
+    size: 108,
+    header: '健康度',
+    cell: ({ row }) => (
+      <span className="project-health" data-health={row.original.health ?? undefined}>
+        {row.original.health ? projectHealthNames[row.original.health] : '暂无更新'}
+      </span>
     ),
   });
   // 尚未接入的法律属性保持空值，不用目标日、健康度等近似字段冒充。

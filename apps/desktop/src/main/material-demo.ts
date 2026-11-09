@@ -11,6 +11,10 @@ export async function runMaterialDemo(
   const window = await create();
   const evaluate = (code: string) => window.webContents.executeJavaScript(code);
   window.webContents.debugger.attach('1.3');
+  if (phase === 'materials-docx-table')
+    await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
   await window.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
     width: 1920,
     height: 1080,
@@ -232,6 +236,7 @@ export async function runMaterialDemo(
     }
     if (
       phase === 'materials-docx' ||
+      phase === 'materials-docx-table' ||
       phase === 'materials-docx-lists' ||
       phase === 'materials-docx-recovery'
     ) {
@@ -331,6 +336,81 @@ export async function runMaterialDemo(
       stage = 'docx-edit-draft';
       await openTask(item.task_id);
       await docxStructure('[data-testid=body-editor]');
+      if (phase === 'materials-docx-table') {
+        stage = 'docx-table-controls';
+        const selectCell = async (selector: string) => {
+          await evaluate(
+            `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`,
+          );
+          const point = await evaluate(
+            `(() => {const cell=document.querySelector(${JSON.stringify(selector)}); const r=(cell.querySelector('p') ?? cell).getBoundingClientRect(); return {x:r.x+5,y:r.y+Math.min(8,r.height/2)};})()`,
+          );
+          await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          });
+          await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            button: 'left',
+            clickCount: 1,
+            ...point,
+          });
+          await new Promise((done) => setTimeout(done, 200));
+        };
+        const tableCommand = async (command: string) => {
+          writeFileSync(
+            join(directory, 'table-selection.json'),
+            JSON.stringify(
+              await evaluate(
+                `({focus:document.hasFocus(),anchor:window.getSelection()?.anchorNode?.parentElement?.outerHTML,options:[...document.querySelector('[aria-label="表格操作"]').options].map(o=>({value:o.value,disabled:o.disabled}))})`,
+              ),
+            ),
+          );
+          await evaluate(
+            `(() => {const s=document.querySelector('[aria-label="表格操作"]'); s.value=${JSON.stringify(command)}; s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+          );
+          await new Promise((done) => setTimeout(done, 600));
+        };
+        const undo = async () => {
+          await evaluate(
+            `document.querySelector('.simple-toolbar button[aria-label="撤销"]').click()`,
+          );
+          await new Promise((done) => setTimeout(done, 600));
+        };
+        await selectCell('[data-testid=body-editor] td[rowspan="2"]');
+        await tableCommand('splitCell');
+        await waitFor(`!document.querySelector('[data-testid=body-editor] td[rowspan="2"]')`);
+        await undo();
+        await waitFor(
+          `Boolean(document.querySelector('[data-testid=body-editor] td[rowspan="2"]'))`,
+        );
+        await selectCell('[data-testid=body-editor] table td');
+        const rows = await evaluate(
+          `document.querySelector('[data-testid=body-editor] table').rows.length`,
+        );
+        await tableCommand('addRowAfter');
+        await waitFor(
+          `document.querySelector('[data-testid=body-editor] table').rows.length===${rows + 1}`,
+        );
+        await undo();
+        await waitFor(
+          `document.querySelector('[data-testid=body-editor] table').rows.length===${rows}`,
+        );
+        await capture('06-table-controls');
+        await docxStructure('[data-testid=body-editor]');
+        writeFileSync(
+          join(directory, 'table-controls.json'),
+          JSON.stringify({
+            split: true,
+            insertRow: true,
+            undoRestoresStructure: true,
+            merge: 'unit verified; physical cell drag NOT_RUN',
+            ime: 'NOT_RUN',
+          }),
+        );
+      }
       await evaluate(`(() => {
         const body = document.querySelector('[data-testid=body-editor]');
         const paragraph = [...body.querySelectorAll('p')].find(p => p.textContent.includes('Word复核段'));

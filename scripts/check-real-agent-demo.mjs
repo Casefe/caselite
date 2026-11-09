@@ -19,9 +19,12 @@ const root = resolve(import.meta.dirname, '..');
 const dry = process.argv.includes('--dry');
 const resume = process.argv.includes('--resume-zero');
 const credentialUi = process.argv.includes('--credential-ui');
+const fresh = process.argv.includes('--approved-20261109-two-calls');
+if (fresh && (dry || credentialUi || process.argv.includes('--approved-two-calls')))
+  throw new Error('The new approved batch cannot resume or replace the old batch.');
 if (credentialUi && (dry || resume || process.argv.includes('--approved-two-calls')))
   throw new Error('Credential UI is a separate zero-API check.');
-if (!credentialUi && !dry && (!resume || !process.argv.includes('--approved-two-calls')))
+if (!credentialUi && !dry && !fresh && (!resume || !process.argv.includes('--approved-two-calls')))
   throw new Error(
     'Real mode requires --resume-zero --approved-two-calls after independent review.',
   );
@@ -30,12 +33,17 @@ const appRoot = process.env.CASELITE_FORGE_OUT_DIR
   : join(root, 'apps/desktop/out/CaseLite-darwin-arm64/CaseLite.app');
 const binary = join(appRoot, 'Contents/MacOS/CaseLite');
 if (!existsSync(binary)) throw new Error('Package the reviewed source first.');
-const fixed = join(realpathSync(tmpdir()), 'caselite-task-demo-dev1650-real-20261106');
+const fixed = join(
+  realpathSync(tmpdir()),
+  fresh ? 'caselite-task-demo-dev1650-real-20261109' : 'caselite-task-demo-dev1650-real-20261106',
+);
 const directory = credentialUi
   ? mkdtempSync(join(tmpdir(), 'caselite-task-demo-credential-final-'))
   : dry
     ? mkdtempSync(join(tmpdir(), 'caselite-task-demo-real-dry-'))
     : fixed;
+// 固定新根只创建一次；失败、退出或未知回执都不能重建预算。
+if (fresh && !resume) mkdirSync(directory, { mode: 0o700 });
 const digest = (data) => createHash('sha256').update(data).digest('hex');
 const expected = 'fb59f0d58e887bbd3e30d77619c33fca9162e73dfa298efc29cc73ee5a049741';
 const fixture = join(root, 'tests/fixtures/case-materials/development/agent-console-mock.pdf');
@@ -79,7 +87,7 @@ if (dry && resume) {
   copyFileSync(fixture, join(directory, 'caselite-agent-mock.pdf'));
 }
 const evidence = resume ? join(directory, 'resume-1') : directory;
-if (!dry && !credentialUi) {
+if (!dry && !credentialUi && (!fresh || resume)) {
   if (!existsSync(join(directory, 'resume-approval.json')))
     throw new Error('Independent zero-dispatch and final credential approval is missing.');
   const oldProcess = JSON.parse(readFileSync(join(directory, 'process.json'), 'utf8'));
@@ -125,6 +133,7 @@ const build = {
   dry,
   credentialUi,
   resume,
+  authorizationId: fresh ? 'DEV-1650-20261109-two-calls' : 'DEV-1650-20261106-two-calls',
 };
 writeFileSync(join(evidence, 'build-manifest.json'), JSON.stringify(build, null, 2));
 if (dry && resume) {
@@ -191,7 +200,11 @@ const child = spawn(binary, [], {
     CASELITE_TASK_DEMO_DIR: directory,
     ...(resume ? { CASELITE_REAL_AGENT_RESUME: 'resume-1' } : {}),
     ...(!dry && !credentialUi
-      ? { CASELITE_REAL_AGENT_APPROVAL: 'DEV-1650-20261106-two-calls' }
+      ? {
+          CASELITE_REAL_AGENT_APPROVAL: fresh
+            ? 'DEV-1650-20261109-two-calls'
+            : 'DEV-1650-20261106-two-calls',
+        }
       : {}),
   },
 });
@@ -213,7 +226,7 @@ writeFileSync(
   ),
 );
 process.stdout.write(
-  `Isolated ${credentialUi ? 'CREDENTIAL UI; zero API' : dry ? 'MOCK_ONLY' : 'REAL; original total maximum two dispatches'}: ${evidence}\n`,
+  `Isolated ${credentialUi ? 'CREDENTIAL UI; zero API' : dry ? 'MOCK_ONLY' : fresh ? 'REAL; new approved batch maximum two dispatches' : 'REAL; original total maximum two dispatches'}: ${evidence}\n`,
 );
 let exited = false;
 child.once('error', () => {
@@ -223,11 +236,22 @@ child.once('exit', () => {
   exited = true;
 });
 if (credentialUi) {
+  // 等待实际初始化回执后再退出，不能把已启动窗口误报为凭据就绪。
+  for (let i = 0; i < 250; i++) {
+    const stateFile = join(directory, 'credential-ui-state.json');
+    if (existsSync(stateFile)) {
+      const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+      child.unref();
+      process.stdout.write(
+        `Credential startup ${state.configured ? 'ready' : 'blocked'}; no model requests.\n`,
+      );
+      process.exit(state.configured ? 0 : 1);
+    }
+    if (exited) throw new Error('Credential UI exited before initialization completed.');
+    await new Promise((done) => setTimeout(done, 200));
+  }
   child.unref();
-  process.stdout.write(
-    'Use the actual settings refresh button at most once; leave the instance for observation if blocked.\n',
-  );
-  process.exit(0);
+  throw new Error('Credential startup receipt unknown; do not retry automatically.');
 }
 for (let i = 0; i < 1000; i++) {
   const result = join(evidence, 'validation-result.json');

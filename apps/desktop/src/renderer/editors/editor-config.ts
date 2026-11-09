@@ -3,12 +3,17 @@ import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import type * as Y from 'yjs';
 
+export const reviewUpdateOrigin = Symbol('accepted-ai-review');
+
 // Collaboration 管理 Yjs 撤销历史；不能同时启用 StarterKit 的 UndoRedo。
 // 每个编辑会话注入自己的 Y.Doc，不在场景配置中缓存或共享可变正文。
 export const localExtensions = (doc: Y.Doc, tables = false) => [
   StarterKit.configure({ undoRedo: false, link: false }),
   ...(tables ? [TableKit.configure({ table: { resizable: false } })] : []),
-  Collaboration.configure({ document: doc }),
+  Collaboration.configure({
+    document: doc,
+    yUndoOptions: { trackedOrigins: [reviewUpdateOrigin] },
+  }),
 ];
 
 export const editorProfiles = {

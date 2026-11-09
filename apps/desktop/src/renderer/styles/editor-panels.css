@@ -565,3 +565,55 @@
   padding: 5px 9px;
   min-width: 28px;
 }
+
+/* 单元格选择沿用 ProseMirror 状态，视觉提示不能成为第二选区真源。 */
+.tiptap td,
+.tiptap th {
+  position: relative;
+}
+.tiptap .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(83, 120, 170, 0.18);
+  z-index: 1;
+}
+.tiptap table {
+  border-collapse: collapse;
+}
+.tiptap td,
+.tiptap th {
+  border: 1px solid var(--border, #c9cdd3);
+  padding: 5px 9px;
+  min-width: 28px;
+}
+
+/* AI 引用是选区投影，预览和流式候选不进入 Yjs 正文。 */
+.editor-ai-selection {
+  background: color-mix(in srgb, var(--accent, #6575df) 20%, transparent);
+  border-bottom: 1px solid var(--accent, #6575df);
+}
+.editor-agent-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.editor-agent-thread textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.editor-agent-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 8px 0;
+}
+.document-review-text ins,
+.document-review-text del {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.document-review-text select {
+  max-width: 100%;
+}

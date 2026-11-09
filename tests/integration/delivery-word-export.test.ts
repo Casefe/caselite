@@ -428,7 +428,9 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   roots.push(root);
   const folder = join(root, 'old-migrations');
   mkdirSync(join(folder, 'meta'), { recursive: true });
-  const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
+  const journal = JSON.parse(
+    readFileSync(resolve('tests/fixtures/migration-histories/A.json'), 'utf8'),
+  );
   journal.entries = journal.entries.slice(0, 18);
   writeFileSync(join(folder, 'meta/_journal.json'), JSON.stringify(journal));
   for (const entry of journal.entries)
@@ -452,7 +454,11 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   const tasks = createTaskApplication(upgraded);
   expect(good(tasks.execute(query))).toEqual({
     ...before,
-    tasks: before.tasks.map((task) => ({ ...task, calendar: emptyTaskCalendar })),
+    tasks: before.tasks.map((task) => ({
+      ...task,
+      subscribed: false,
+      calendar: emptyTaskCalendar,
+    })),
   });
   const files = createDeliveryExportFiles(join(root, 'exports'), async () => '');
   const controller = createDeliveryExportApplication({
@@ -464,7 +470,7 @@ it('upgrades an 18-migration database preserving existing snapshot bytes and rec
   });
   expect(good(await controller.execute(request(task, snapshot))).exports![0].status).toBe('ready');
   const db = openToolchainProbe(file, migrations).sqlite;
-  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 21 });
+  expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 24 });
   expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   expect(db.pragma('foreign_key_check')).toEqual([]);
   db.close();

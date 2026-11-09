@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { eq } from 'drizzle-orm';
 
 import { toolchainProbe } from './schema';
+import { bridgeMigrationHistories } from './migration-bridge';
 
 export { toolchainProbe };
 
@@ -11,6 +12,7 @@ export function openToolchainProbe(filePath: string, migrationsFolder: string) {
   const sqlite = new Database(filePath);
   try {
     const db = drizzle(sqlite, { schema: { toolchainProbe } });
+    bridgeMigrationHistories(sqlite, migrationsFolder);
     migrate(db, { migrationsFolder });
     return { sqlite, db };
   } catch (error) {

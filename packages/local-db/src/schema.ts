@@ -64,6 +64,7 @@ export const taskItems = sqliteTable(
     attentionDate: text('attention_date'),
     attentionTime: text('attention_time'),
     assignee: text('assignee').default('本人'),
+    subscribed: integer('subscribed', { mode: 'boolean' }).notNull().default(false),
     tags: text('tags', { mode: 'json' })
       .$type<string[]>()
       .notNull()
@@ -128,6 +129,7 @@ export const taskItems = sqliteTable(
         "(attention_source='custom' OR (attention_date IS NULL AND attention_time IS NULL)) AND (attention_time IS NULL OR (attention_date IS NOT NULL AND (typeof(attention_time)='text' AND attention_time GLOB '[0-2][0-9]:[0-5][0-9]' AND attention_time<'24:00')))",
       ),
     ),
+    check('task_subscribed_valid', sql`${table.subscribed} IN (0, 1)`),
     check(
       'task_assignee_valid',
       sql`${table.assignee} IS NULL OR (typeof(${table.assignee}) = 'text' AND instr(${table.assignee}, char(0)) = 0 AND length(trim(${table.assignee})) BETWEEN 1 AND 80)`,
@@ -276,14 +278,20 @@ export const taskReceipts = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
 );
-export const taskActivity = sqliteTable('task_activity', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id')
-    .notNull()
-    .references(() => taskItems.id),
-  operation: text('operation').notNull(),
-  createdAt: text('created_at').notNull(),
-});
+export const taskActivity = sqliteTable(
+  'task_activity',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => taskItems.id),
+    operation: text('operation').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('task_activity_created_scope').on(table.taskId, table.operation, table.createdAt),
+  ],
+);
 
 export const taskObjectiveRevisions = sqliteTable(
   'task_objective_revisions',
@@ -363,12 +371,17 @@ export const projectDiscussion = sqliteTable(
       .notNull()
       .references(() => matters.id),
     kind: text('kind').notNull(),
+    health: text('health', { enum: ['on_track', 'at_risk', 'off_track'] }),
     updateId: text('update_id'),
     bodyId: text('body_id').notNull().unique(),
     bodyRevision: integer('body_revision').notNull().default(1),
     committedAt: text('committed_at').notNull(),
   },
   (table) => [
+    check(
+      'project_discussion_health_valid',
+      sql`${table.health} IS NULL OR (${table.kind} = 'update' AND ${table.health} IN ('on_track', 'at_risk', 'off_track'))`,
+    ),
     unique().on(table.matterId, table.id),
     index('project_discussion_scope').on(table.matterId, table.kind, table.updateId),
     foreignKey({
@@ -407,14 +420,60 @@ export const taskComment = sqliteTable(
     check('task_comment_fixed_revision', sql`${table.bodyRevision} = 1`),
   ],
 );
-export const taskProjects = sqliteTable('task_projects', {
-  taskId: text('task_id')
-    .primaryKey()
-    .references(() => taskItems.id),
-  matterId: text('matter_id')
-    .notNull()
-    .references(() => matters.id),
-});
+export const taskProjects = sqliteTable(
+  'task_projects',
+  {
+    taskId: text('task_id')
+      .primaryKey()
+      .references(() => taskItems.id),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+  },
+  (table) => [unique('task_projects_task_matter').on(table.taskId, table.matterId)],
+);
+export const projectMilestones = sqliteTable(
+  'project_milestones',
+  {
+    id: text('id').primaryKey().notNull(),
+    matterId: text('matter_id')
+      .notNull()
+      .references(() => matters.id),
+    title: text('title').notNull(),
+    targetDate: text('target_date'),
+    version: integer('version').notNull().default(1),
+    createdAt: text('created_at').notNull(),
+    archivedAt: text('archived_at'),
+  },
+  (table) => [
+    unique().on(table.id, table.matterId),
+    index('project_milestones_matter').on(table.matterId, table.targetDate),
+    check(
+      'milestone_title_valid',
+      sql`length(trim(${table.title})) BETWEEN 1 AND 160 AND instr(${table.title}, char(0)) = 0`,
+    ),
+    check('milestone_version_valid', sql`${table.version} > 0`),
+  ],
+);
+export const taskMilestones = sqliteTable(
+  'task_milestones',
+  {
+    taskId: text('task_id').primaryKey().notNull(),
+    matterId: text('matter_id').notNull(),
+    milestoneId: text('milestone_id').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.taskId, table.matterId],
+      foreignColumns: [taskProjects.taskId, taskProjects.matterId],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.milestoneId, table.matterId],
+      foreignColumns: [projectMilestones.id, projectMilestones.matterId],
+    }),
+    index('task_milestones_milestone').on(table.milestoneId),
+  ],
+);
 export const catalogReceipts = sqliteTable(
   'catalog_receipts',
   {

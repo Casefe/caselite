@@ -1,0 +1,33 @@
+@font-face {
+  font-family: 'CaseLite Supplementary Han';
+  src: url('../fonts/Jigmo2.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+20000-2FFFF;
+}
+
+@font-face {
+  font-family: 'CaseLite Source Han Serif';
+  src: url('../fonts/SourceHanSerifSC-VF.otf.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+}
+
+:root {
+  --document-font:
+    'CaseLite Supplementary Han', 'CaseLite Source Han Serif', 'Source Han Serif SC',
+    'Noto Serif CJK SC', 'Songti SC', serif;
+}
+
+/* 只改变文档/草稿的显示字体；紧凑说明、工具栏和 PDF 原页仍由各自消费者负责。 */
+.rich-editor--simple .tiptap,
+.rich-editor--notion .tiptap {
+  font-family: var(--document-font);
+}
+
+.rich-editor--simple .tiptap :is(h1, h2, h3),
+.rich-editor--notion .tiptap :is(h1, h2, h3) {
+  font-family: inherit;
+}

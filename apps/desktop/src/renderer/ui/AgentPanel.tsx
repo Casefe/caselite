@@ -3,7 +3,7 @@ import { agentMessages } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
-import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
+import { AssistantMarkdown } from '../features/agent/AssistantMarkdown';
 import {
   createContext,
   forwardRef,
@@ -33,19 +33,6 @@ import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
-function MarkdownText() {
-  return (
-    <MarkdownTextPrimitive
-      className="assistant-markdown"
-      skipHtml
-      components={{
-        // 模型链接和图片仅作文字展示，不能触发联网或被当成已核验来源。
-        a: ({ children }) => <span title="模型提供的链接，未经核验">{children}</span>,
-        img: ({ alt }) => <span>{alt ? `[图片：${alt}]` : '[模型图片未加载]'}</span>,
-      }}
-    />
-  );
-}
 function Message() {
   const attachments = useAuiState(
     (state) => state.message.metadata.custom?.attachments,
@@ -61,6 +48,9 @@ function Message() {
       <header className="assistant-message-heading">
         <strong>{role === 'user' ? '你' : 'CaseLite'}</strong>
         {role === 'assistant' && <span>{run ? agentModelLabel(run.model) : 'AI 辅助'}</span>}
+        {role === 'assistant' && run?.status === 'running' && (
+          <span className="assistant-generating">正在生成</span>
+        )}
       </header>
       {attachments?.length ? (
         <div className="message-attachments">
@@ -82,7 +72,7 @@ function Message() {
         </div>
       ) : null}
       <MessagePrimitive.Parts
-        components={role === 'assistant' ? { Text: MarkdownText } : undefined}
+        components={role === 'assistant' ? { Text: AssistantMarkdown } : undefined}
       />
       {role === 'assistant' && run && run.status !== 'running' && (
         <footer className="assistant-message-footer">
@@ -241,6 +231,7 @@ export default function AgentPanel({
     configured,
     error,
     credentialUnavailable,
+    credentialReading,
     pending,
     restoring,
     restoreRun,
@@ -263,13 +254,14 @@ export default function AgentPanel({
   });
   const openSettings = useContext(ModelSettingsNavigation);
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
+  const readOnlyPreview = new URLSearchParams(window.location.search).has('audit-agent');
   const messages = agentMessages(runs);
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning: Boolean(active),
     convertMessage: (message) => message,
     onNew: async () => {
-      await send();
+      if (!readOnlyPreview) await send();
     },
     onCancel: async () => {
       if (active)
@@ -285,7 +277,7 @@ export default function AgentPanel({
           className="home-model-select"
           aria-label="选择大模型"
           value={active?.model ?? model}
-          disabled={Boolean(active) || pending || unknown}
+          disabled={Boolean(active) || pending || unknown || credentialReading}
           onChange={(event) =>
             void command({
               protocol_version: 1,
@@ -330,7 +322,8 @@ export default function AgentPanel({
           disabled={
             pending ||
             (!unknown &&
-              ((project && (archived || !projectPreview || projectLoading)) ||
+              (credentialReading ||
+                (project && (archived || !projectPreview || projectLoading)) ||
                 !draft.text.trim() ||
                 draft.text.length > 4000))
           }
@@ -367,6 +360,11 @@ export default function AgentPanel({
           {mockPreview && (
             <p className="assistant-run-status" role="status">
               MOCK_ONLY · 离线演示 · 不调用真实模型，固定输出只验证界面流程。
+            </p>
+          )}
+          {readOnlyPreview && (
+            <p className="assistant-run-status" role="status">
+              AI 验收记录（只读）· 可查看回答、复制和打开附件；此入口不发送新请求。
             </p>
           )}
           {!homeComposer && (
@@ -409,7 +407,12 @@ export default function AgentPanel({
                 : ''}
             </p>
           )}
-          {credentialUnavailable && (
+          {credentialReading && (
+            <p className="assistant-run-status" role="status">
+              正在读取系统安全凭据，尚未发起模型请求；人工任务与正文可继续使用。
+            </p>
+          )}
+          {!credentialReading && credentialUnavailable && (
             <div role="alert" className="assistant-error">
               系统安全凭据暂不可读；旧密文已保留，未发起模型请求。可在设置中核对，人工任务与正文仍可使用。
             </div>
@@ -478,35 +481,42 @@ export default function AgentPanel({
               )}
             </div>
           )}
-          <ComposerFrame
-            compact={homeComposer}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send();
-            }}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-          >
-            {project ? (
-              <div className="material-composer">
-                {composer}
-                <div className="assistant-actions">{actions}</div>
-              </div>
-            ) : (
-              <PdfAttachments
-                controller={materials}
-                showSavedMaterials={scope !== 'home'}
-                disabled={pending || unknown || Boolean(active)}
-                actions={actions}
-              >
-                {composer}
-              </PdfAttachments>
-            )}
-          </ComposerFrame>
+          {readOnlyPreview && materials.reading && (
+            <PdfAttachments controller={materials} disabled>
+              {null}
+            </PdfAttachments>
+          )}
+          {!readOnlyPreview && (
+            <ComposerFrame
+              compact={homeComposer}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+            >
+              {project ? (
+                <div className="material-composer">
+                  {composer}
+                  <div className="assistant-actions">{actions}</div>
+                </div>
+              ) : (
+                <PdfAttachments
+                  controller={materials}
+                  showSavedMaterials={scope !== 'home'}
+                  disabled={pending || unknown || Boolean(active)}
+                  actions={actions}
+                >
+                  {composer}
+                </PdfAttachments>
+              )}
+            </ComposerFrame>
+          )}
           {scope !== 'home' && variant !== 'compact' && (
             <p className="assistant-footnote">
               回答待人工核对，不自动写入正文。运行记录保存在此设备；生成中的未落盘增量可能丢失。每次发送独立，不自动携带历史。

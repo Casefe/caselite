@@ -18,8 +18,10 @@ export default function TaskInspector({
   onPropertiesBlocked,
   onTaskChanged,
   content,
+  editorAssistantDock,
 }: {
   content?: ReactNode;
+  editorAssistantDock?(element: HTMLDivElement | null): void;
   task: Task | null;
   onProjectChanged?(task: Task, objectiveState: number[] | null): void;
   onProjectDirty?(dirty: boolean): void;
@@ -113,11 +115,15 @@ export default function TaskInspector({
         )}
         <section aria-label="AI 对话" className="project-inspector-section">
           <h3>AI 对话</h3>
-          <SidebarAgent
-            key={task.id}
-            taskId={task.id}
-            blocked={reminderEditing || editing || calendarEditing}
-          />
+          {editorAssistantDock ? (
+            <div ref={editorAssistantDock} aria-label="正文 AI 侧栏" />
+          ) : (
+            <SidebarAgent
+              key={task.id}
+              taskId={task.id}
+              blocked={reminderEditing || editing || calendarEditing}
+            />
+          )}
         </section>
       </div>
     </aside>

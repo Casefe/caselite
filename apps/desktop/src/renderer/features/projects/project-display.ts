@@ -9,3 +9,9 @@ export const projectTypes = {
   contract_review: '合同审查',
 };
 export const projectStatuses = { planned: '待开始', active: '进行中', done: '已完成' };
+
+export const projectHealthNames = {
+  on_track: '正常',
+  at_risk: '有风险',
+  off_track: '偏离计划',
+} as const;

@@ -1,6 +1,8 @@
 /* 工作台主题仅控制视觉，偏好由桌面受控接口保存。 */
 :root {
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font:
+    system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans CJK SC', sans-serif;
   --ink: #232326;
   --muted: #77777f;
   --line: #e8e8eb;
@@ -33,7 +35,7 @@ body {
 h1,
 h2,
 h3 {
-  font-family: 'Inter Display', var(--font);
+  font-family: var(--font);
 }
 .primary-sidebar,
 .workspace-topbar-navigation {

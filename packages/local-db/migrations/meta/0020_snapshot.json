@@ -1643,6 +1643,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "health": {
+          "name": "health",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "update_id": {
           "name": "update_id",
           "type": "text",
@@ -1754,6 +1761,10 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
+        "project_discussion_health_valid": {
+          "name": "project_discussion_health_valid",
+          "value": "\"project_discussion\".\"health\" IS NULL OR (\"project_discussion\".\"kind\" = 'update' AND \"project_discussion\".\"health\" IN ('on_track', 'at_risk', 'off_track'))"
+        },
         "discussion_target": {
           "name": "discussion_target",
           "value": "(\"project_discussion\".\"kind\" IN ('project_comment','update') AND \"project_discussion\".\"update_id\" IS NULL) OR (\"project_discussion\".\"kind\" = 'update_comment' AND \"project_discussion\".\"update_id\" IS NOT NULL)"
@@ -1761,6 +1772,106 @@
         "discussion_fixed_revision": {
           "name": "discussion_fixed_revision",
           "value": "\"project_discussion\".\"body_revision\" = 1"
+        }
+      }
+    },
+    "project_milestones": {
+      "name": "project_milestones",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "matter_id": {
+          "name": "matter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_date": {
+          "name": "target_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "project_milestones_matter": {
+          "name": "project_milestones_matter",
+          "columns": [
+            "matter_id",
+            "target_date"
+          ],
+          "isUnique": false
+        },
+        "project_milestones_id_matter_id_unique": {
+          "name": "project_milestones_id_matter_id_unique",
+          "columns": [
+            "id",
+            "matter_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "project_milestones_matter_id_matters_id_fk": {
+          "name": "project_milestones_matter_id_matters_id_fk",
+          "tableFrom": "project_milestones",
+          "tableTo": "matters",
+          "columnsFrom": [
+            "matter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "milestone_title_valid": {
+          "name": "milestone_title_valid",
+          "value": "length(trim(\"project_milestones\".\"title\")) BETWEEN 1 AND 160 AND instr(\"project_milestones\".\"title\", char(0)) = 0"
+        },
+        "milestone_version_valid": {
+          "name": "milestone_version_valid",
+          "value": "\"project_milestones\".\"version\" > 0"
         }
       }
     },
@@ -2018,7 +2129,17 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "task_activity_created_scope": {
+          "name": "task_activity_created_scope",
+          "columns": [
+            "task_id",
+            "operation",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "task_activity_task_id_task_items_id_fk": {
           "name": "task_activity_task_id_task_items_id_fk",
@@ -2279,7 +2400,15 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false,
-          "default": "'本人'"
+          "default": "'\u672c\u4eba'"
+        },
+        "subscribed": {
+          "name": "subscribed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "tags": {
           "name": "tags",
@@ -2374,6 +2503,10 @@
           "name": "task_calendar_attention_complete_valid",
           "value": "(attention_source='custom' OR (attention_date IS NULL AND attention_time IS NULL)) AND (attention_time IS NULL OR (attention_date IS NOT NULL AND (typeof(attention_time)='text' AND attention_time GLOB '[0-2][0-9]:[0-5][0-9]' AND attention_time<'24:00')))"
         },
+        "task_subscribed_valid": {
+          "name": "task_subscribed_valid",
+          "value": "\"task_items\".\"subscribed\" IN (0, 1)"
+        },
         "task_assignee_valid": {
           "name": "task_assignee_valid",
           "value": "\"task_items\".\"assignee\" IS NULL OR (typeof(\"task_items\".\"assignee\") = 'text' AND instr(\"task_items\".\"assignee\", char(0)) = 0 AND length(trim(\"task_items\".\"assignee\")) BETWEEN 1 AND 80)"
@@ -2395,6 +2528,76 @@
           "value": "\"task_items\".\"due_date\" IS NULL OR (length(\"task_items\".\"due_date\") = 10 AND \"task_items\".\"due_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(\"task_items\".\"due_date\",1,4) <> '0000' AND date(\"task_items\".\"due_date\") IS NOT NULL AND date(\"task_items\".\"due_date\") = \"task_items\".\"due_date\")"
         }
       }
+    },
+    "task_milestones": {
+      "name": "task_milestones",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "matter_id": {
+          "name": "matter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "milestone_id": {
+          "name": "milestone_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_milestones_milestone": {
+          "name": "task_milestones_milestone",
+          "columns": [
+            "milestone_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_milestones_task_id_matter_id_task_projects_task_id_matter_id_fk": {
+          "name": "task_milestones_task_id_matter_id_task_projects_task_id_matter_id_fk",
+          "tableFrom": "task_milestones",
+          "tableTo": "task_projects",
+          "columnsFrom": [
+            "task_id",
+            "matter_id"
+          ],
+          "columnsTo": [
+            "task_id",
+            "matter_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "task_milestones_milestone_id_matter_id_project_milestones_id_matter_id_fk": {
+          "name": "task_milestones_milestone_id_matter_id_project_milestones_id_matter_id_fk",
+          "tableFrom": "task_milestones",
+          "tableTo": "project_milestones",
+          "columnsFrom": [
+            "milestone_id",
+            "matter_id"
+          ],
+          "columnsTo": [
+            "id",
+            "matter_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "task_objective_revisions": {
       "name": "task_objective_revisions",
@@ -2467,7 +2670,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "task_projects_task_matter": {
+          "name": "task_projects_task_matter",
+          "columns": [
+            "task_id",
+            "matter_id"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {
         "task_projects_task_id_task_items_id_fk": {
           "name": "task_projects_task_id_task_items_id_fk",

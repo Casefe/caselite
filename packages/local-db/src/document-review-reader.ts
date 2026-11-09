@@ -1,5 +1,11 @@
 import type Database from 'better-sqlite3';
-import type { ReviewRange, Task, TaskRequest, TaskResponse } from '@caselite/contracts';
+import type {
+  ReviewAction,
+  ReviewRange,
+  Task,
+  TaskRequest,
+  TaskResponse,
+} from '@caselite/contracts';
 import { validateBody, reviewBodyRange } from './body-schema';
 
 // 复用任务存储的连接、工作区与回执查询；不创建连接，也不在此写修订。
@@ -45,7 +51,7 @@ export function createDocumentReviewReader(
       validateBody(row.state, true);
       return { task, state: Array.from(row.state) };
     },
-    reviewState(range: ReviewRange, replacement?: string) {
+    reviewState(range: ReviewRange, replacement?: string, action?: ReviewAction) {
       const task = get(range.task_id);
       if (
         !task ||
@@ -61,7 +67,7 @@ export function createDocumentReviewReader(
         .get(task.body_id, range.revision) as { state: Buffer } | undefined;
       if (!row) return;
       validateBody(row.state, true);
-      return reviewBodyRange(row.state, range, replacement);
+      return reviewBodyRange(row.state, range, replacement, action);
     },
   };
 }

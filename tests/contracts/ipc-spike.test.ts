@@ -17,6 +17,7 @@ import {
 import {
   createCaseLitePreloadApi,
   IPC_COMMAND_TIMEOUT_MS,
+  CREDENTIAL_COMMAND_TIMEOUT_MS,
 } from '../../apps/desktop/src/preload/caselite-api';
 
 type Handler = (event: { senderFrame: { url: string } }, payload: unknown) => unknown;
@@ -352,4 +353,103 @@ describe('typed preload to main IPC Spike', () => {
       vi.useRealTimers();
     }
   });
+});
+
+it.each(['configure', 'refresh_credentials'] as const)(
+  'waits for the bounded credential %s receipt without extending model dispatch waits',
+  async (operation) => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (value: unknown) => void;
+      const invoke = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const api = createCaseLitePreloadApi(invoke);
+      const request =
+        operation === 'configure'
+          ? { protocol_version: 1 as const, operation, key: 'sk-synthetic-only' }
+          : { protocol_version: 1 as const, operation };
+      let settled = false;
+      const pending = api.agent(request).then((value) => {
+        settled = true;
+        return value;
+      });
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(settled).toBe(false);
+      finish({
+        ok: true,
+        configured: false,
+        model: 'deepseek-flash',
+        providers: { openai: false, deepseek: false },
+        credential_errors: { deepseek: 'UNAVAILABLE' },
+        runs: [],
+      });
+      expect(await pending).toMatchObject({
+        ok: true,
+        configured: false,
+        credential_errors: { deepseek: 'UNAVAILABLE' },
+      });
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it('bounds hanging credential recovery to fifty seconds and ignores its late receipt without retrying', async () => {
+  vi.useFakeTimers();
+  try {
+    let finish!: (value: unknown) => void;
+    const invoke = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = createCaseLitePreloadApi(invoke).agent({
+      protocol_version: 1,
+      operation: 'refresh_credentials',
+    });
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_COMMAND_TIMEOUT_MS);
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+    finish({
+      ok: true,
+      configured: true,
+      model: 'deepseek-flash',
+      providers: { deepseek: true, openai: false },
+      runs: [],
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps the paid start receipt deadline at fifteen seconds with zero retries', async () => {
+  vi.useFakeTimers();
+  try {
+    const invoke = vi.fn(() => new Promise(() => {}));
+    const pending = createCaseLitePreloadApi(invoke).agent({
+      protocol_version: 1,
+      operation: 'start',
+      scope: 'home',
+      run_id: '11111111-1111-4111-8111-111111111111',
+      prompt: '合成输入',
+      confirmed: true,
+    });
+    await vi.advanceTimersByTimeAsync(IPC_COMMAND_TIMEOUT_MS);
+    expect(await pending).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });

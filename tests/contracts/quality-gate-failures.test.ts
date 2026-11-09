@@ -1,17 +1,347 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { imports, forbiddenTestModifiers } from '../../scripts/lib/source-analysis.mjs';
 import {
   analyzeArchitecture,
   boundaryViolation,
 } from '../../scripts/check-architecture-boundaries.mjs';
-import { executePlan } from '../../scripts/lib/quality-results.mjs';
+import { executePlan, summarizeEvidence } from '../../scripts/lib/quality-results.mjs';
 import { licenseViolations } from '../../scripts/lib/license-policy.mjs';
-import { reviewChanges } from '../../scripts/check-quality-changes.mjs';
+import {
+  reviewChanges,
+  isReviewableFile,
+  collectChanges,
+  regressionCases,
+  validateRegression,
+} from '../../scripts/check-quality-changes.mjs';
 
 describe('G0 rejects deliberate failures', () => {
+  const qualityRecord = (startedAt: string, statuses = ['passed']) => ({
+    mode: 'quick',
+    startedAt,
+    node: 'v24.22.2',
+    pnpm: '11.0.9',
+    worktreeSha256: 'a'.repeat(64),
+    lockfileSha256: 'b'.repeat(64),
+    status: statuses.includes('failed') ? 'failed' : 'passed-with-limitations',
+    results: statuses.map((status, index) => ({
+      name: `check-${index}`,
+      command: `pnpm check-${index}`,
+      status,
+      durationMs: status === 'not-run' ? 0 : 100,
+      exitCode: status === 'passed' ? 0 : status === 'failed' ? 1 : null,
+      signal: null,
+    })),
+  });
+
+  it('summarizes failed and unexecuted checks without presenting retries as accepted tasks', () => {
+    const summary = summarizeEvidence([
+      { file: 'pass', evidence: qualityRecord('2026-11-01T00:00:00Z', ['passed', 'passed']) },
+      { file: 'fail', evidence: qualityRecord('2026-11-02T00:00:00Z', ['failed', 'not-run']) },
+      { file: 'again', evidence: qualityRecord('2026-11-03T00:00:00Z', ['failed', 'not-run']) },
+      { file: 'not-run', evidence: qualityRecord('2026-11-04T00:00:00Z', ['passed', 'not-run']) },
+    ]);
+    expect(summary).toMatchObject({ status: 'AVAILABLE', includedRuns: 4, errors: [] });
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]).toMatchObject({
+      runCount: 4,
+      completedRuns: 1,
+      failedRuns: 2,
+      runsWithUnexecutedChecks: 3,
+      completedRunMedianCheckMs: 200,
+      historicalCheckFailures: { 'check-0': 2 },
+      firstRunAt: '2026-11-01T00:00:00Z',
+      lastRunAt: '2026-11-04T00:00:00Z',
+    });
+    expect(Object.values(summary.outcomeMetrics)).toEqual(Array(4).fill('UNKNOWN'));
+  });
+
+  it('keeps different modes, environments, dependency snapshots and check plans separate', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    const variants = [
+      evidence,
+      { ...evidence, mode: 'full' },
+      { ...evidence, platform: 'darwin', arch: 'arm64' },
+      { ...evidence, node: 'v26.0.0' },
+      { ...evidence, pnpm: '12.0.0' },
+      { ...evidence, lockfileSha256: 'c'.repeat(64) },
+      qualityRecord(evidence.startedAt, ['passed', 'passed']),
+    ];
+    const summary = summarizeEvidence(
+      variants.map((item, i) => ({ file: `${i}`, evidence: item })),
+    );
+    expect(summary.groups).toHaveLength(7);
+    expect(summary.groups[0].environment.platform).toBe('UNKNOWN');
+    expect(summary.groups.every((group: { runCount: number }) => group.runCount === 1)).toBe(true);
+  });
+
+  it('reports bad evidence and excludes legacy or duplicate runs instead of inventing success', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    const summary = summarizeEvidence([
+      { file: 'valid', evidence },
+      { file: 'copy', evidence },
+      { file: 'legacy', evidence: { ...evidence, worktreeSha256: undefined } },
+      { file: 'broken', error: true },
+      { file: 'empty', evidence: { ...evidence, results: [] } },
+      { file: 'contradictory', evidence: { ...evidence, status: 'failed' } },
+    ]);
+    expect(summary).toMatchObject({ status: 'PARTIAL', inputFiles: 6, includedRuns: 1 });
+    expect(summary.excluded.map((item: { file: string }) => item.file)).toEqual(['copy', 'legacy']);
+    expect(summary.errors.map((item: { file: string }) => item.file)).toEqual([
+      'broken',
+      'empty',
+      'contradictory',
+    ]);
+    expect(summarizeEvidence([])).toMatchObject({ status: 'NOT_RUN', includedRuns: 0, groups: [] });
+    const incomplete = summarizeEvidence([
+      { file: 'unfinished', evidence: qualityRecord(evidence.startedAt, ['not-run']) },
+    ]);
+    expect(incomplete.groups[0].completedRunMedianCheckMs).toBeNull();
+    expect(incomplete.groups[0].completedRuns).toBe(0);
+  });
+
+  it('runs the existing evidence CLI without checks and returns failure for a corrupt report', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-evidence-'));
+    try {
+      mkdirSync(join(root, 'scripts/lib'), { recursive: true });
+      mkdirSync(join(root, 'artifacts/evidence'), { recursive: true });
+      for (const file of ['run-quality-gate.mjs', 'lib/quality-results.mjs'])
+        copyFileSync(
+          new URL(`../../scripts/${file}`, import.meta.url),
+          join(root, 'scripts', file),
+        );
+      const report = join(root, 'artifacts/evidence/g0-quick-example.json');
+      writeFileSync(report, '{broken');
+      const run = () =>
+        spawnSync(process.execPath, [join(root, 'scripts/run-quality-gate.mjs'), 'evidence'], {
+          cwd: root,
+          encoding: 'utf8',
+        });
+      expect(run().status).toBe(1);
+      const summary = () =>
+        JSON.parse(readFileSync(join(root, 'artifacts/evidence/quality-summary.json'), 'utf8'));
+      expect(summary()).toMatchObject({ status: 'PARTIAL', includedRuns: 0 });
+      writeFileSync(report, JSON.stringify(qualityRecord('2026-11-01T00:00:00Z')));
+      expect(run().status).toBe(0);
+      expect(summary()).toMatchObject({ status: 'AVAILABLE', includedRuns: 1, errors: [] });
+      expect(JSON.parse(readFileSync(report, 'utf8'))).toEqual(
+        qualityRecord('2026-11-01T00:00:00Z'),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects contradictory exits, corrupt fingerprints and conflicting copies of the same run', () => {
+    const evidence = qualityRecord('2026-11-01T00:00:00Z');
+    for (const altered of [
+      { ...evidence, worktreeSha256: 'corrupted' },
+      { ...evidence, worktreeSha256: ['a'.repeat(64)] },
+      { ...evidence, lockfileSha256: null },
+      { ...evidence, results: [{ ...evidence.results[0], exitCode: 1 }] },
+      { ...evidence, results: [{ ...evidence.results[0], signal: 'SIGTERM' }] },
+    ]) {
+      expect(summarizeEvidence([{ file: 'bad', evidence: altered }])).toMatchObject({
+        status: 'PARTIAL',
+        includedRuns: 0,
+        excluded: [],
+      });
+    }
+    const failed = qualityRecord(evidence.startedAt, ['failed']);
+    for (const pair of [
+      [evidence, failed],
+      [failed, evidence],
+    ]) {
+      const summary = summarizeEvidence(pair.map((item, i) => ({ file: `${i}`, evidence: item })));
+      expect(summary).toMatchObject({ status: 'PARTIAL', includedRuns: 0, groups: [] });
+      expect(summary.errors[0].reason).toBe('Conflicting run identity');
+    }
+    const deferred = qualityRecord(evidence.startedAt, ['not-run']);
+    deferred.results[0].exitCode = 0;
+    expect(summarizeEvidence([{ file: 'deferred', evidence: deferred }])).toMatchObject({
+      status: 'AVAILABLE',
+      includedRuns: 1,
+    });
+  });
+
+  it('rejects stale, missing, simulated and same-session regression evidence', () => {
+    const fingerprint = 'a'.repeat(64);
+    const evidence = {
+      version: 1,
+      rulesSha256: fingerprint,
+      authorSession: 'implementation',
+      reviewerSession: 'independent-review',
+      context: 'fresh',
+      model: 'UNKNOWN',
+      cases: regressionCases.map((id: string) => ({
+        id,
+        status: 'PASS_REAL',
+        evidence: 'report.txt',
+        sha256: fingerprint,
+      })),
+    };
+    expect(validateRegression(evidence, fingerprint)).toEqual([]);
+    expect(validateRegression(undefined, fingerprint)).not.toEqual([]);
+    expect(validateRegression(evidence, 'b'.repeat(64))).toContain('Regression evidence is stale');
+    expect(
+      validateRegression({ ...evidence, reviewerSession: 'implementation' }, fingerprint),
+    ).not.toEqual([]);
+    expect(validateRegression({ ...evidence, cases: [] }, fingerprint)).not.toEqual([]);
+    for (const status of ['MOCK_ONLY', 'NOT_RUN', 'FAIL', 'BLOCKED']) {
+      expect(
+        validateRegression(
+          { ...evidence, cases: evidence.cases.map((item: object) => ({ ...item, status })) },
+          fingerprint,
+        ),
+      ).not.toEqual([]);
+    }
+    expect(
+      validateRegression(
+        { ...evidence, cases: [evidence.cases[0], evidence.cases[0], evidence.cases[2]] },
+        fingerprint,
+      ),
+    ).not.toEqual([]);
+  });
+
+  it('collects tracked, untracked, deleted and moved Markdown from a real isolated Git repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-rule-review-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    const put = (file: string, body: string) => {
+      const path = join(root, file);
+      mkdirSync(join(path, '..'), { recursive: true });
+      writeFileSync(path, body);
+    };
+    try {
+      git('init', '-q');
+      put('AGENTS.md', 'Original rule');
+      put('docs/SECURITY.md', 'Security rule');
+      put('apps/desktop/AGENTS.md', 'Scoped rule');
+      git('add', '.');
+      git(
+        '-c',
+        'user.name=CaseLite Test',
+        '-c',
+        'user.email=test@example.invalid',
+        'commit',
+        '-qm',
+        'baseline',
+      );
+      put('AGENTS.md', 'Updated rule');
+      rmSync(join(root, 'docs/SECURITY.md'));
+      git('mv', 'apps/desktop/AGENTS.md', 'apps/desktop/moved.md');
+      put('docs/adr/ADR-测试 空格.md', 'New decision');
+      put('docs/notes/example.md', 'Ordinary note');
+      const { base, changes } = collectChanges(root, 'HEAD');
+      expect(base).toBe(git('rev-parse', 'HEAD'));
+      expect(changes.map(({ file }: { file: string }) => file)).toEqual(
+        expect.arrayContaining([
+          'AGENTS.md',
+          'docs/SECURITY.md',
+          'apps/desktop/AGENTS.md',
+          'apps/desktop/moved.md',
+          'docs/adr/ADR-测试 空格.md',
+          'docs/notes/example.md',
+        ]),
+      );
+      const report = reviewChanges(changes);
+      expect(report.protectedFiles).not.toContain('docs/notes/example.md');
+      expect(report.protectedFiles).toContain('docs/adr/ADR-测试 空格.md');
+      expect(report.violations).toEqual(
+        expect.arrayContaining([
+          'Protected rule document removed or emptied: docs/SECURITY.md',
+          'Protected rule document removed or emptied: apps/desktop/AGENTS.md',
+        ]),
+      );
+      const first = collectChanges(root, 'HEAD').rulesSha256;
+      put('docs/notes/example.md', 'Changed ordinary note');
+      expect(collectChanges(root, 'HEAD').rulesSha256).toBe(first);
+      put('AGENTS.md', 'Changed rule again');
+      expect(collectChanges(root, 'HEAD').rulesSha256).not.toBe(first);
+      put('.codex/config.toml', 'model = "synthetic"');
+      expect(
+        collectChanges(root, 'HEAD').changes.map(({ file }: { file: string }) => file),
+      ).toContain('.codex/config.toml');
+      for (const file of [
+        'scripts/lib/renderer-boundaries.mjs',
+        'scripts/lib/dependency-admission.mjs',
+        'scripts/lib/license-policy.mjs',
+        'scripts/lib/repository-content.mjs',
+        'eslint.config.mjs',
+        'vitest.config.mts',
+        '.github/workflows/quality.yml',
+        'package.json',
+        'pnpm-lock.yaml',
+        'mise.toml',
+        'apps/desktop/tsconfig.main.json',
+        'apps/desktop/tsconfig.preload.json',
+        'apps/desktop/tsconfig.renderer.json',
+        '.prettierignore',
+        '.gitignore',
+        '.npmrc',
+      ]) {
+        put(file, 'Original input');
+        const beforeChange = collectChanges(root, 'HEAD').rulesSha256;
+        put(file, 'Changed input');
+        expect(collectChanges(root, 'HEAD').rulesSha256, file).not.toBe(beforeChange);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reviews rule documents at every scope while leaving ordinary notes unprotected', () => {
+    for (const file of [
+      'AGENTS.md',
+      'apps/desktop/AGENTS.md',
+      'CLAUDE.md',
+      '.agents/skills/review/SKILL.md',
+      '.claude/skills/review/SKILL.md',
+      'docs/SECURITY.md',
+      'docs/security/DEV-1561-threat-model.md',
+      'docs/CODE_REVIEW.md',
+      'docs/WORKFLOW.md',
+      'docs/SOURCES.md',
+      'docs/DEVELOPMENT.md',
+      'docs/TESTING.md',
+      'docs/ARCHITECTURE.md',
+      'docs/REVIEW_HANDOFF_EXERCISE.md',
+      'docs/adr/ADR-021-local-docx-drafts.md',
+      '.github/PULL_REQUEST_TEMPLATE.md',
+    ]) {
+      expect(isReviewableFile(file)).toBe(true);
+      const changed = reviewChanges([{ file, before: 'Existing rule', after: 'Revised rule' }]);
+      expect(changed.protectedFiles).toContain(file);
+      expect(changed.reviewRequired).toBe(true);
+      expect(changed.violations).toEqual([]);
+      expect(reviewChanges([{ file, before: '', after: 'New rule' }]).reviewRequired).toBe(true);
+      for (const after of ['', ' \n\t'])
+        expect(reviewChanges([{ file, before: 'Existing rule', after }]).violations).toContain(
+          `Protected rule document removed or emptied: ${file}`,
+        );
+    }
+    expect(isReviewableFile('docs/notes/example.md')).toBe(true);
+    expect(isReviewableFile('sample.png')).toBe(false);
+    expect(
+      reviewChanges([
+        { file: 'docs/notes/example.test.md', before: "it('example only', () => {});", after: '' },
+        { file: 'docs/notes/vitest.config.md', before: 'lines: 80', after: 'lines: 20' },
+      ]),
+    ).toEqual({ violations: [], protectedFiles: [], reviewRequired: false });
+    expect(
+      reviewChanges([{ file: 'docs/notes/example.md', before: 'Old note', after: '' }]),
+    ).toEqual({ violations: [], protectedFiles: [], reviewRequired: false });
+    expect(
+      reviewChanges([
+        { file: 'apps/desktop/AGENTS.md', before: 'Rule', after: '' },
+        { file: 'docs/notes/moved.md', before: '', after: 'Rule' },
+      ]).violations,
+    ).toContain('Protected rule document removed or emptied: apps/desktop/AGENTS.md');
+  });
+
   it('detects static, dynamic, re-export, require and relative renderer boundary bypasses', () => {
     const file = 'apps/desktop/src/renderer/probe.ts';
     for (const source of [

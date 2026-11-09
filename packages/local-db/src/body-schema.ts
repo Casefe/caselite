@@ -259,41 +259,95 @@ export function bodyPlainText(state: Uint8Array) {
   }
 }
 
-// 审阅只接受顶层段落内连续文本。坐标与原文必须同时匹配权威修订。
+// 选区绑定已保存修订。只编辑顶层纯文本段落，表格和其他块保持原有 Yjs 身份。
 export function reviewBodyRange(
   state: Uint8Array,
   range: { paragraph: number; from: number; to: number; text: string },
   replacement?: string,
+  action: 'replace' | 'insert_after' | 'append' = 'replace',
 ): Uint8Array | undefined {
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, state);
-    const block = doc.getXmlFragment('default').get(range.paragraph);
-    if (!(block instanceof Y.XmlElement) || block.nodeName !== 'paragraph' || block.length !== 1)
+    const root = doc.getXmlFragment('default');
+    if (range.paragraph >= root.length) return;
+    const block = root.get(range.paragraph);
+    if (!(block instanceof Y.XmlElement) || block.nodeName !== 'paragraph' || block.length > 1)
       return;
-    const text = block.get(0);
-    if (!(text instanceof Y.XmlText)) return;
-    const parts = text.toDelta() as { insert: string; attributes?: Record<string, unknown> }[];
+    let text = block.get(0);
+    if (text !== undefined && !(text instanceof Y.XmlText)) return;
+    const parts = (text?.toDelta() ?? []) as {
+      insert: string;
+      attributes?: Record<string, unknown>;
+    }[];
     const original = parts.map((part) => part.insert).join('');
     const { from, to } = range;
     if (
-      from >= to ||
+      from < 0 ||
+      from > to ||
       to > original.length ||
       original.slice(from, to) !== range.text ||
-      !range.text.trim() ||
-      /[\p{Cc}\uD800-\uDFFF]/u.test(range.text)
+      /[\p{Cc}\uD800-\uDFFF]/u.test(range.text) ||
+      /[\uD800-\uDBFF]$/u.test(original.slice(0, from)) ||
+      /[\uD800-\uDBFF]$/u.test(original.slice(0, to))
     )
       return;
     if (replacement !== undefined) {
-      let end = 0;
-      const first = parts.find((part) => (end += part.insert.length) > from);
-      // 删除选中区间后只插入文本，继承选区首字符的格式，选区之外的标记保持原样。
+      if (
+        !replacement.trim() ||
+        replacement.length > 8000 ||
+        /[\p{Cc}\u2028\u2029\uD800-\uDFFF]/u.test(replacement.replaceAll('\n', '')) ||
+        (action === 'replace' && from === to)
+      )
+        return;
+      const lines = replacement.split('\n');
+      const paragraph = (line: string, attributes?: Record<string, unknown>) => {
+        const node = new Y.XmlElement('paragraph');
+        if (line) {
+          const content = new Y.XmlText();
+          content.insert(0, line, attributes);
+          node.insert(0, [content]);
+        }
+        return node;
+      };
       doc.transact(() => {
-        text.delete(from, to - from);
-        text.insert(from, replacement, first?.attributes ?? {});
+        if (action === 'append') {
+          root.push(lines.map((line) => paragraph(line)));
+          return;
+        }
+        if (!(text instanceof Y.XmlText)) {
+          text = new Y.XmlText();
+          block.push([text]);
+        }
+        const start = action === 'replace' ? from : to;
+        let offset = 0;
+        const attributes = parts.find((part) => (offset += part.insert.length) > start)?.attributes;
+        // 多段候选只拆分目标段落；尾部原文及其 marks 随最后一段保留，不重建整篇正文。
+        let position = 0;
+        const suffixParts = parts.flatMap((part) => {
+          const end = position + part.insert.length;
+          const insert = part.insert.slice(Math.max(0, to - position));
+          position = end;
+          return insert ? [{ ...part, insert }] : [];
+        });
+        text.delete(start, (lines.length > 1 ? original.length : to) - start);
+        if (lines[0]) text.insert(start, lines[0], attributes ?? {});
+        if (lines.length > 1) {
+          const nodes = lines.slice(1).map((line, index) => {
+            if (index !== lines.length - 2) return paragraph(line, attributes);
+            const node = new Y.XmlElement('paragraph');
+            const content = new Y.XmlText();
+            content.applyDelta([...(line ? [{ insert: line, attributes }] : []), ...suffixParts]);
+            node.insert(0, [content]);
+            return node;
+          });
+          root.insert(range.paragraph + 1, nodes);
+        }
       });
     }
-    return Y.encodeStateAsUpdate(doc);
+    const result = Y.encodeStateAsUpdate(doc);
+    validateBody(result, true);
+    return result;
   } finally {
     doc.destroy();
   }

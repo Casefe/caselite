@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { DiscussionFeed } from '../../shared/discussion/DiscussionFeed';
+import type { Matter } from '../../../preload/caselite-api';
+import { projectHealthNames } from './project-display';
 
 export default function ProjectDiscussion({
   projectId,
@@ -7,15 +9,23 @@ export default function ProjectDiscussion({
   archived,
   disabled,
   onDirty,
+  health,
+  onPublished,
 }: {
   projectId: string;
   activity?: boolean;
   archived: boolean;
   disabled: boolean;
   onDirty(value: boolean): void;
+  health?: Matter['health'];
+  onPublished?(): void;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [selectedHealth, setSelectedHealth] = useState<NonNullable<Matter['health']> | '' | null>(
+    null,
+  );
+  const updateHealth = selectedHealth ?? health ?? '';
   const scope = { kind: activity ? 'update' : 'project_comment', project_id: projectId } as const;
   const reportDirty = (value: boolean) => {
     setDirty(value);
@@ -28,10 +38,48 @@ export default function ProjectDiscussion({
       aria-label={activity ? '项目更新' : '项目评论'}
     >
       <h2>{activity ? '人工项目更新' : '项目整体评论'}</h2>
-      <DiscussionFeed scope={scope} compose={!replyTo} {...props}>
+      <DiscussionFeed
+        scope={scope}
+        compose={!replyTo}
+        publicationFields={activity && updateHealth ? { health: updateHealth } : undefined}
+        publicationOptions={
+          activity
+            ? (locked, setOptionsDirty) => (
+                <label className="project-health-control">
+                  健康度
+                  <select
+                    aria-label="更新健康度"
+                    disabled={locked}
+                    value={updateHealth}
+                    onChange={(event) => {
+                      const next = event.target.value as typeof updateHealth;
+                      setSelectedHealth(next);
+                      setOptionsDirty(Boolean(next && next !== health));
+                    }}
+                  >
+                    <option value="">{health ? '沿用当前健康度' : '未评估'}</option>
+                    {Object.entries(projectHealthNames).map(([value, name]) => (
+                      <option key={value} value={value}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )
+            : undefined
+        }
+        onPublished={activity ? onPublished : undefined}
+        onResetOptions={activity ? () => setSelectedHealth(null) : undefined}
+        {...props}
+      >
         {activity
           ? (entry, reading) => (
               <>
+                {entry.health && (
+                  <span className="project-health" data-health={entry.health}>
+                    {projectHealthNames[entry.health]}
+                  </span>
+                )}
                 <button
                   type="button"
                   disabled={disabled || dirty || reading}

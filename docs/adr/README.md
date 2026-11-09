@@ -51,3 +51,6 @@
 - [ADR-026](./ADR-026-workspace-local-preferences.md) 工作区本地个人资料、显示偏好与原键回执，DEV-1821。
 
 - [ADR-027](./ADR-027-task-calendar.md) Task日历元数据、类型与全范围共享查询，DEV-1824。
+- [ADR-028](./ADR-028-local-document-font.md) 本地思源宋体、系统界面字体与同源字体 CSP，DEV-1624 字体增量。
+
+- [ADR-029](./ADR-029-dual-history-migration-bridge.md) 双历史冻结迁移桥、已知形状拒绝与并发失败恢复，DEV-1826。

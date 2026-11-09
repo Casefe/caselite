@@ -1,4 +1,4 @@
-import { editorProfiles } from '../../editors/editor-config';
+import { editorProfiles, reviewUpdateOrigin } from '../../editors/editor-config';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
@@ -19,6 +19,7 @@ export default function BodyEditor({
   reviewDock,
   reviewSaving,
   onReviewSaving,
+  reviewVariant = 'review',
 }: {
   task: Task;
   initial: number[] | null;
@@ -28,6 +29,7 @@ export default function BodyEditor({
   reviewDock: HTMLElement | null;
   reviewSaving: boolean;
   onReviewSaving(value: boolean): void;
+  reviewVariant?: 'review' | 'assistant';
 }) {
   const [doc] = useState(() => {
     const d = new Y.Doc();
@@ -179,6 +181,7 @@ export default function BodyEditor({
           <div hidden={deliveryOpen}>
             <DocumentReview
               key={task.document_id}
+              variant={reviewVariant}
               editor={editor}
               identity={{
                 task_id: task.id,
@@ -198,7 +201,7 @@ export default function BodyEditor({
               onSaved={({ task: saved, state }) => {
                 reviewHydrating.current = true;
                 try {
-                  Y.applyUpdate(doc, Uint8Array.from(state));
+                  Y.applyUpdate(doc, Uint8Array.from(state), reviewUpdateOrigin);
                 } finally {
                   reviewHydrating.current = false;
                 }
