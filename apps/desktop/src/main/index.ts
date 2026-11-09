@@ -1004,6 +1004,7 @@ app
       copyOutput: (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
       project: taskStore.catalog.agentProject,
+      page: taskStore.agentPage,
       review: documentReviewStore(taskStore, tasks),
       history: {
         ...taskStore.agentHistory,

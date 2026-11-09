@@ -2,12 +2,13 @@ import type { ChatTransport, UIMessage, UIMessageChunk } from 'ai';
 import type { AgentModel, AgentRequest, AgentRun } from '../../../../preload/caselite-api';
 
 export type DocumentScope = `document:${string}`;
-export type ReviewSend = { id: string; model: AgentModel };
+export type ReviewSend = { id: string; model: AgentModel; page_context_id?: string };
 const protocol_version = 1 as const;
 
 export function documentReviewTransport(
   scope: DocumentScope,
   onTerminal: (run: AgentRun) => void,
+  onRejected?: (code: string) => void,
 ): ChatTransport<UIMessage> {
   return {
     async reconnectToStream() {
@@ -59,7 +60,9 @@ export function documentReviewTransport(
                 confirmed: true,
                 scope,
                 run_id,
-                context_id: run_id,
+                ...(options?.page_context_id
+                  ? { page_context_id: options.page_context_id }
+                  : { context_id: run_id }),
                 model,
                 prompt,
               });
@@ -70,7 +73,10 @@ export function documentReviewTransport(
               controller.enqueue({ type: 'text-start', id });
               let output = '';
               while (!disposed && !abortSignal?.aborted) {
-                if (!response.ok) throw new Error(response.message);
+                if (!response.ok) {
+                  onRejected?.(response.code);
+                  throw new Error(response.message);
+                }
                 const run = response.runs.find((entry) => entry.id === run_id);
                 if (!run) throw new Error('本地运行回执暂不可用。');
                 if (!run.output.startsWith(output))
@@ -80,10 +86,10 @@ export function documentReviewTransport(
                 if (delta) controller.enqueue({ type: 'text-delta', id, delta });
                 if (run.status !== 'running') {
                   finished = true;
+                  onTerminal(run);
                   if (run.status !== 'succeeded') throw new Error(run.message || '审阅未完成。');
                   controller.enqueue({ type: 'text-end', id });
                   controller.enqueue({ type: 'finish', finishReason: 'stop' });
-                  onTerminal(run);
                   break;
                 }
                 await new Promise<void>((resolve) => setTimeout(resolve, 100));

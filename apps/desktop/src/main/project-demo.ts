@@ -94,6 +94,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       await evaluate(`(() => {
       const split = document.querySelector('${selector}');
       for (const control of split.querySelectorAll('textarea, [contenteditable=true], button[type=submit], .assistant-stop, .inspector-ai-heading button, .document-review-actions button, .editor-agent-thread button')) {
+        if (!control.getClientRects().length) continue;
         control.scrollIntoView({block:'nearest',inline:'nearest'});
         const r=control.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0 || r.top < -1 || r.bottom > innerHeight+1 || r.right>innerWidth+1 ||
@@ -107,6 +108,8 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
         if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
           throw new Error('Minimized AI does not match property width');
+        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review > h2,.document-review > .caption')].some(node=>node.getClientRects().length)))
+          throw new Error('Compact AI exposed history/status or exceeded composer height');
         return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
           expanded:split.dataset.aiExpanded, ai:ai.toJSON()};
       })()`),
@@ -394,7 +397,7 @@ export async function runProjectDemo(
       const title = '合成项目 · 独立 AI';
       const second = '合成项目 · 隔离检查';
       const question = '合成问题：项目目标日是哪一天？';
-      const context = '[aria-label="项目上下文"]';
+      const context = '[aria-label="页面引用文件"]';
       const send = `${projectComposer} [aria-label=发送]`;
       const create = (title: string) =>
         evaluate(
@@ -442,7 +445,7 @@ export async function runProjectDemo(
         await captureRenderer('project-agent-reopened.png');
       } else {
         await wait(
-          `!document.querySelector('${context} dl') && document.querySelector('${send}:disabled')`,
+          `!document.querySelector('${context}') && document.querySelector('${send}:disabled')`,
         );
         assertNoRuns();
         if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
@@ -457,23 +460,14 @@ export async function runProjectDemo(
           return document.activeElement === input;
         })()`);
         if (!focused) throw new Error('Project composer could not be focused');
-        await wait(
-          `document.querySelector('${context} dl') || document.querySelector('${context} [role=alert]')`,
-        );
+        await wait(`document.querySelector('${context}')`);
         const previewText = await evaluate(`document.querySelector('${context}').innerText`);
         if (
-          !['合成项目 · 独立 AI', '进行中', '民事诉讼', '高', '2027-02-03'].every((value) =>
-            previewText.includes(value),
-          )
+          !previewText.includes('合成项目 · 独立 AI.txt') ||
+          ['进行中', '2027-02-03', '不进入预览'].some((value) => previewText.includes(value))
         )
-          throw new Error(`Unexpected project preview: ${previewText}`);
-        await wait(`(() => {
-          const preview = document.querySelector('${context} dl');
-          return preview?.querySelectorAll('dd').length === 5 &&
-            ['合成项目 · 独立 AI', '进行中', '民事诉讼', '高', '2027-02-03'].every(value => preview.textContent.includes(value)) &&
-            !preview.textContent.includes('不进入预览') &&
-            !document.querySelector('${projectComposer} [aria-label="添加文件与材料"]');
-        })()`);
+          throw new Error('Page card exposed body or omitted its filename: ' + previewText);
+        await wait(`!document.querySelector('${projectComposer} [aria-label="添加文件与材料"]')`);
         assertNoRuns();
         await typeProjectDraft(question);
         await evaluate(

@@ -7,6 +7,7 @@ import {
   type CalendarRow,
 } from './task-calendar';
 import { createDocumentReviewReader } from './document-review-reader';
+import { createAgentPageReader } from './agent-page-reader';
 import { createDeliverySnapshotStore } from './delivery-snapshot-store';
 import { createDeliveryExportStore } from './delivery-export-store';
 import { createReminderStore } from './reminder-store';
@@ -201,6 +202,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     api.execute(r, confirmation);
   const dates = createImportantDateStore(db, workspace, get, (r) => executeTask(r, true));
   const api = {
+    agentPage: createAgentPageReader(db, workspace, get),
     dates,
     localPreferences: createLocalPreferencesStore(db, workspace),
     deliveryExports: createDeliveryExportStore(db, workspace),

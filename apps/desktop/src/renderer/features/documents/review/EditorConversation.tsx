@@ -32,7 +32,7 @@ function Input({
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       maxLength={4000}
-      rows={3}
+      rows={1}
       addAttachmentOnPaste={false}
     />
   );

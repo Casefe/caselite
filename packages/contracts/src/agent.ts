@@ -42,6 +42,13 @@ export const AGENT_CHANNEL = 'caselite:agent:v1';
 const projectScope = z.templateLiteral(['project:', z.string().uuid()]);
 const documentScope = z.templateLiteral(['document:', z.string().uuid()]);
 const scope = z.union([z.literal('home'), z.string().uuid(), projectScope, documentScope]);
+export const agentPageReferenceSchema = z.strictObject({
+  id: z.string().uuid(),
+  title: z.string().min(1).max(160),
+  mode: z.enum(['page', 'selection']),
+  characters: z.number().int().min(1).max(32_000),
+});
+export type AgentPageReference = z.infer<typeof agentPageReferenceSchema>;
 const reviewRange = z.strictObject({
   task_id: z.string().uuid(),
   document_id: z.string().uuid(),
@@ -115,6 +122,12 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
     .strict(),
   z.object({ ...base, operation: z.literal('select_model'), model: agentModelSchema }).strict(),
   z.object({ ...base, operation: z.literal('read'), scope }).strict(),
+  z.strictObject({
+    ...base,
+    operation: z.literal('preview_page'),
+    scope,
+    selected_text: z.string().trim().min(1).max(32_000).optional(),
+  }),
   z.object({ ...base, operation: z.literal('preview_project'), scope: projectScope }).strict(),
   z.strictObject({
     ...base,
@@ -164,6 +177,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
       prompt: z.string().trim().min(1).max(4000),
       confirmed: z.literal(true),
       context_id: z.string().uuid().optional(),
+      page_context_id: z.string().uuid().optional(),
       project_fingerprint: projectFingerprint.optional(),
       purpose: z.literal('important_dates').optional(),
       date_types: z.array(z.string().min(1).max(80)).min(1).max(24).optional(),
@@ -192,6 +206,8 @@ export const agentRunSchema = z.object({
     .max(16)
     .optional(),
   context_id: z.string().uuid().optional(),
+  page_context_id: z.string().uuid().optional(),
+  page_reference: agentPageReferenceSchema.optional(),
   purpose: z.literal('important_dates').optional(),
   date_binding: dateBindingSchema.optional(),
   date_result: dateRunResultSchema.optional(),
@@ -229,6 +245,7 @@ export const agentResponseSchema = z.discriminatedUnion('ok', [
       .optional(),
     runs: z.array(agentRunSchema),
     project_preview: agentProjectPreviewSchema.optional(),
+    page_preview: agentPageReferenceSchema.optional(),
     review_preview: z.strictObject({ id: z.string().uuid(), range: reviewRange }).optional(),
     review_saved: reviewSaved.optional(),
     date_task: taskSchema.optional(),

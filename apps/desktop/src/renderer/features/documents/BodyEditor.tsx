@@ -207,6 +207,7 @@ export default function BodyEditor({
         createPortal(
           <div hidden={deliveryOpen}>
             <DocumentReview
+              title={task.title}
               key={task.document_id}
               variant={reviewVariant}
               editor={editor}
