@@ -45,8 +45,36 @@ const allocation = {
   occurred_on: ordinaryDateSchema,
   note: text(1000),
 };
+const invoiceFields = {
+  ...project,
+  installment_id: id,
+  invoice_number: text(80).refine(Boolean),
+  amount_cents: positive,
+  occurred_on: ordinaryDateSchema,
+  note: text(1000),
+};
+export const financeInvoiceSchema = z.object({
+  id,
+  ...invoiceFields,
+  kind: z.enum(['invoice', 'red_invoice']),
+  original_invoice_id: id.nullable(),
+  created_at: z.iso.datetime(),
+});
 export const financeManagementRequestSchema = z.discriminatedUnion('operation', [
   z.strictObject({ ...protocol, operation: z.literal('m_read') }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...invoiceFields,
+    operation: z.literal('m_record_invoice'),
+  }),
+  z.strictObject({
+    ...protocol,
+    ...keys,
+    ...invoiceFields,
+    original_invoice_id: id,
+    operation: z.literal('m_red_invoice'),
+  }),
   z.strictObject({ ...protocol, operation: z.literal('m_status'), idempotency_key: id }),
   z.strictObject({
     ...protocol,
@@ -139,6 +167,7 @@ export const financeManagementStateSchema = z.object({
   rules: z.array(financeRuleSchema),
   bindings: z.array(z.object({ project_id: id, rule_id: id })),
   allocations: z.array(financeAllocationSchema),
+  invoices: z.array(financeInvoiceSchema),
   payouts: z.array(
     z.object({
       id,

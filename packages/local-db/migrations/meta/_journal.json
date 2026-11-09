@@ -183,6 +183,13 @@
       "when": 1794190900000,
       "tag": "0022_finance_settlements",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1794191000000,
+      "tag": "0023_finance_invoices",
+      "breakpoints": true
     }
   ]
 }

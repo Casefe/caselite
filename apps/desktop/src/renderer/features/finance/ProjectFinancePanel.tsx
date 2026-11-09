@@ -66,6 +66,31 @@ export default function ProjectFinancePanel({
         });
         return;
       }
+      if (type === 'invoice' || type === 'red_invoice') {
+        const amount = parseCents(String(fields.get('amount')));
+        if (!amount) throw new Error('请填写有效发票金额。');
+        const common = {
+          project_id: project.id,
+          installment_id: String(fields.get('installment')),
+          invoice_number: String(fields.get('invoice_number')),
+          amount_cents: amount,
+          occurred_on: String(fields.get('date')),
+          note: String(fields.get('note')),
+        };
+        if (
+          await finance.submit(
+            type === 'invoice'
+              ? { operation: 'm_record_invoice', ...common }
+              : {
+                  operation: 'm_red_invoice',
+                  ...common,
+                  original_invoice_id: String(fields.get('original_invoice')),
+                },
+          )
+        )
+          setEntry(false);
+        return;
+      }
       if (type === 'payout') {
         const amount = parseCents(String(fields.get('amount')));
         if (!amount) throw new Error('请填写有效到账金额。');
@@ -218,6 +243,8 @@ export default function ProjectFinancePanel({
                   <option value="payment">客户回款</option>
                   <option value="allocation">确认律师分配</option>
                   <option value="payout">律师结算到账</option>
+                  <option value="invoice">已开发票</option>
+                  <option value="red_invoice">已开红字发票</option>
                 </select>
               </label>
               {type === 'payment' ? (
@@ -261,6 +288,50 @@ export default function ProjectFinancePanel({
                     实际到账金额（元）
                     <input name="amount" required inputMode="decimal" />
                   </label>
+                </>
+              ) : type === 'invoice' || type === 'red_invoice' ? (
+                <>
+                  {type === 'red_invoice' && (
+                    <label>
+                      原蓝字发票
+                      <select name="original_invoice" required defaultValue="">
+                        <option value="" disabled>
+                          选择原发票
+                        </option>
+                        {state?.invoices
+                          .filter(
+                            (item) => item.project_id === project.id && item.kind === 'invoice',
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.invoice_number} · {formatCents(item.amount_cents)} 元
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    对应期款
+                    <select name="installment" required defaultValue="">
+                      <option value="" disabled>
+                        选择期款
+                      </option>
+                      {ledger.installments.map((item, index) => (
+                        <option key={item.id} value={item.id}>
+                          第 {index + 1} 期
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    发票号码
+                    <input name="invoice_number" required maxLength={80} />
+                  </label>
+                  <label>
+                    发票金额（元）
+                    <input name="amount" required inputMode="decimal" />
+                  </label>
+                  <p className="finance-muted">登记已开具的发票；确认后不改变客户回款与待收。</p>
                 </>
               ) : (
                 <>
@@ -333,9 +404,11 @@ export default function ProjectFinancePanel({
                   ? '确认登记收款'
                   : type === 'payout'
                     ? '确认律师到账'
-                    : preview
-                      ? '确认本次分配'
-                      : '核对本次分配'}
+                    : type === 'invoice' || type === 'red_invoice'
+                      ? '确认登记发票'
+                      : preview
+                        ? '确认本次分配'
+                        : '核对本次分配'}
               </button>
             </fieldset>
           </form>
@@ -430,6 +503,13 @@ export default function ProjectFinancePanel({
                             ? '已到期'
                             : '未到期'}
                       </small>
+                      <small>
+                        {!state
+                          ? '开票待核对'
+                          : !state.invoices.some((item) => item.installment_id === row.id)
+                            ? '未开票'
+                            : `开票净额 ${formatCents(state.invoices.filter((item) => item.installment_id === row.id).reduce((sum, item) => sum + (item.kind === 'red_invoice' ? -item.amount_cents : item.amount_cents), 0))} 元`}
+                      </small>
                     </td>
                     <td>{formatCents(row.amount_cents)}</td>
                     <td>{formatCents(row.amount_cents - row.outstanding_cents)}</td>
@@ -451,6 +531,27 @@ export default function ProjectFinancePanel({
                           <h4>
                             本期收付与结算 · 我的应分 {known ? formatCents(share) : '待核对'} 元
                           </h4>
+                          {state?.invoices
+                            .filter((item) => item.installment_id === row.id)
+                            .map((item) => (
+                              <div className="finance-flow" key={item.id}>
+                                <span>
+                                  {item.kind === 'red_invoice' ? '红字发票' : '已开发票'}{' '}
+                                  {formatCents(item.amount_cents)} 元 · {item.invoice_number} ·{' '}
+                                  {item.occurred_on}
+                                </span>
+                                {item.kind === 'red_invoice' && (
+                                  <small>
+                                    对应原发票{' '}
+                                    {
+                                      state.invoices.find(
+                                        (original) => original.id === item.original_invoice_id,
+                                      )?.invoice_number
+                                    }
+                                  </small>
+                                )}
+                              </div>
+                            ))}
                           {payments.length === 0 ? (
                             <p>暂无实际回款。</p>
                           ) : (

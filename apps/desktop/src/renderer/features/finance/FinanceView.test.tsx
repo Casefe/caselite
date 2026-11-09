@@ -90,6 +90,7 @@ function show(
             ],
             bindings: [{ project_id: project.id, rule_id: ruleA }],
             allocations: [],
+            invoices: [],
             payouts: [],
           },
         })

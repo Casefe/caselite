@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import {
   financeAllocationSchema,
+  financeInvoiceSchema,
   financeManagementSuccessSchema,
   financeRuleSchema,
   type FinanceManagementRequest,
@@ -92,6 +93,9 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
           )
           .all(workspace),
         allocations: allocations(),
+        invoices: db
+          .prepare('SELECT * FROM finance_invoices WHERE workspace_id=? ORDER BY rowid')
+          .all(workspace),
         payouts: db
           .prepare('SELECT * FROM finance_payouts WHERE workspace_id=? ORDER BY rowid')
           .all(workspace),
@@ -118,13 +122,15 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
         throw new Error('财务回执摘要不匹配。');
     }
     const table =
-      request.operation === 'm_save_rule'
-        ? 'finance_rules'
-        : request.operation === 'm_allocate' || request.operation === 'm_reverse_allocation'
-          ? 'finance_allocations'
-          : request.operation === 'm_record_payout' || request.operation === 'm_reverse_payout'
-            ? 'finance_payouts'
-            : null;
+      request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice'
+        ? 'finance_invoices'
+        : request.operation === 'm_save_rule'
+          ? 'finance_rules'
+          : request.operation === 'm_allocate' || request.operation === 'm_reverse_allocation'
+            ? 'finance_allocations'
+            : request.operation === 'm_record_payout' || request.operation === 'm_reverse_payout'
+              ? 'finance_payouts'
+              : null;
     if (
       table &&
       !db
@@ -180,6 +186,12 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
   };
   function effect(request: FinanceManagementRequest, targetId: string): Record<string, unknown> {
     if (request.operation === 'm_save_rule') return { ...rule(targetId) };
+    if (request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice')
+      return financeInvoiceSchema.parse(
+        db
+          .prepare('SELECT * FROM finance_invoices WHERE id=? AND workspace_id=?')
+          .get(targetId, workspace),
+      );
     if (request.operation === 'm_allocate' || request.operation === 'm_reverse_allocation') {
       const row = allocations().find((row) => row.id === targetId);
       if (!row) throw new Error('结算分配未读回。');
@@ -383,6 +395,55 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
         `INSERT INTO finance_project_rules(project_id,rule_id) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET rule_id=excluded.rule_id`,
       ).run(request.project_id, request.rule_id);
       targetId = request.project_id;
+    } else if (request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice') {
+      if (
+        !db
+          .prepare('SELECT 1 FROM finance_installments WHERE id=? AND project_id=?')
+          .get(request.installment_id, request.project_id)
+      )
+        return fail('当前项目没有这笔期款。');
+      if (
+        db
+          .prepare('SELECT 1 FROM finance_invoices WHERE workspace_id=? AND invoice_number=?')
+          .get(workspace, request.invoice_number)
+      )
+        return fail('此票号已登记，请查看原记录。');
+      if (request.operation === 'm_red_invoice') {
+        const original = db
+          .prepare(
+            "SELECT * FROM finance_invoices WHERE id=? AND project_id=? AND workspace_id=? AND kind='invoice'",
+          )
+          .get(request.original_invoice_id, request.project_id, workspace) as
+          { amount_cents: number; installment_id: string; occurred_on: string } | undefined;
+        if (
+          !original ||
+          original.installment_id !== request.installment_id ||
+          request.occurred_on < original.occurred_on
+        )
+          return fail('原发票、期款或日期不匹配。');
+        const credited = db
+          .prepare(
+            'SELECT COALESCE(SUM(amount_cents),0) n FROM finance_invoices WHERE original_invoice_id=? AND workspace_id=?',
+          )
+          .get(request.original_invoice_id, workspace) as { n: number };
+        if (request.amount_cents > original.amount_cents - credited.n)
+          return fail('红字金额超过原发票尚未冲红金额。');
+      }
+      db.prepare(
+        'INSERT INTO finance_invoices(id,workspace_id,project_id,installment_id,invoice_number,kind,original_invoice_id,amount_cents,occurred_on,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      ).run(
+        targetId,
+        workspace,
+        request.project_id,
+        request.installment_id,
+        request.invoice_number,
+        request.operation === 'm_record_invoice' ? 'invoice' : 'red_invoice',
+        'original_invoice_id' in request ? request.original_invoice_id : null,
+        request.amount_cents,
+        request.occurred_on,
+        request.note,
+        now,
+      );
     } else if (request.operation === 'm_allocate') {
       let value: ReturnType<typeof preview>;
       try {
@@ -470,6 +531,24 @@ export function createFinanceManagementStore(db: Database.Database, workspace: s
     }
     const eventId = randomUUID();
     const actualEffect = effect(request, targetId);
+    if (request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice')
+      for (const key of [
+        'project_id',
+        'installment_id',
+        'invoice_number',
+        'amount_cents',
+        'occurred_on',
+        'note',
+      ] as const)
+        if (actualEffect[key] !== request[key]) throw new Error('发票内容未正确落盘。');
+    if (request.operation === 'm_record_invoice' || request.operation === 'm_red_invoice')
+      if (
+        actualEffect.kind !==
+          (request.operation === 'm_record_invoice' ? 'invoice' : 'red_invoice') ||
+        actualEffect.original_invoice_id !==
+          ('original_invoice_id' in request ? request.original_invoice_id : null)
+      )
+        throw new Error('发票原票关联未正确落盘。');
     if (expectedAllocation)
       for (const [key, value] of Object.entries(expectedAllocation))
         if (actualEffect[key] !== value) throw new Error('分配快照未正确落盘。');

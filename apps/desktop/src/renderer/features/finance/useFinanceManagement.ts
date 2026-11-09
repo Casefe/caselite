@@ -161,6 +161,7 @@ export function useFinanceManagement() {
           firm_name: request.values.firm_name.trim(),
         };
       if ('note' in request) request.note = request.note.trim();
+      if ('invoice_number' in request) request.invoice_number = request.invoice_number.trim();
       return process(request);
     },
     recover: () => (pending ? process(pending, !retry) : Promise.resolve(false)),

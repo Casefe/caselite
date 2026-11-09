@@ -130,4 +130,9 @@ export const integrationMigrations = [
     when: 1794190900000,
     hash: '5360e271c17f9b09a33666be70c36aff474ac3211b0bedd468743d9bb603b706',
   },
+  {
+    tag: '0023_finance_invoices',
+    when: 1794191000000,
+    hash: '62b4de706a3e1d0bc7b6cebb3a00e5be548dad3156651d714e852863e77c6bc0',
+  },
 ] as const;
