@@ -5,6 +5,7 @@ import type { CatalogDocument, Matter } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import InspectorLayout from './InspectorLayout';
 import TagPicker from '../shared/ui/TagPicker';
+import { DocumentVersions } from '../features/documents/DocumentVersions';
 
 export function DocumentPropertyValues({
   revision,
@@ -42,6 +43,8 @@ export default function DocumentInspector({
   suggestions,
   onTags,
   onTagDraft,
+  selectedVersion = null,
+  onVersion,
 }: {
   document?: CatalogDocument;
   project?: Matter;
@@ -53,6 +56,8 @@ export default function DocumentInspector({
   suggestions: string[];
   onTags(tags: string[], added?: boolean): void;
   onTagDraft(dirty: boolean): void;
+  selectedVersion?: string | null;
+  onVersion?(id: string | null): void;
 }) {
   return (
     <aside className="task-inspector" aria-label="文档属性与 AI 侧边栏">
@@ -67,6 +72,14 @@ export default function DocumentInspector({
                 taskTitle={document.title}
                 documentId={document.id}
               />
+              {onVersion && (
+                <DocumentVersions
+                  document={document}
+                  selected={selectedVersion}
+                  disabled={blocked}
+                  onSelect={onVersion}
+                />
+              )}
               <section
                 className="project-inspector-section task-label-section"
                 aria-label="文档标签"
@@ -97,9 +110,15 @@ export default function DocumentInspector({
               revision: document.body_revision,
               archived: !!document.archived_at,
             }}
-            taskId={document.archived_at ? undefined : document.task_id}
-            blocked={blocked}
-            unavailable={document.archived_at ? '文档已归档，恢复后可使用 AI 对话。' : undefined}
+            taskId={document.archived_at || selectedVersion ? undefined : document.task_id}
+            blocked={blocked || !!selectedVersion}
+            unavailable={
+              selectedVersion
+                ? '当前查看固定版本，返回工作稿后可使用 AI 对话。'
+                : document.archived_at
+                  ? '文档已归档，恢复后可使用 AI 对话。'
+                  : undefined
+            }
           />
         </InspectorLayout>
       ) : (

@@ -1,0 +1,122 @@
+.split-preview-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface-soft, var(--panel));
+}
+.split-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.split-preview-toolbar > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.split-preview-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.split-preview-toolbar button {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.split-preview-toolbar button[aria-pressed='true'] {
+  background: var(--active);
+}
+.split-preview-group {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+.split-preview-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  border-top: 2px solid transparent;
+}
+.split-preview-pane[data-active='true'] {
+  border-top-color: var(--ink);
+}
+.split-preview-pane-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.split-preview-pane-heading button {
+  flex: 0 0 auto;
+  border: 0;
+  font-size: 11px;
+  padding: 3px 5px;
+  color: var(--muted);
+}
+.split-preview-pane-heading button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--active);
+}
+.split-preview-pane-heading strong {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.split-preview-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+  overflow-wrap: anywhere;
+}
+.split-preview-scroll .draft-editor {
+  min-width: 0;
+}
+.split-preview-empty {
+  display: grid;
+  align-content: center;
+  min-height: 200px;
+  text-align: center;
+  color: var(--muted);
+}
+.split-preview-empty h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.split-preview-empty p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.split-preview-separator {
+  flex: 0 0 7px;
+  background: var(--line);
+  position: relative;
+  touch-action: none;
+}
+.split-preview-separator[hidden] {
+  display: none;
+}
+.split-preview-separator:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.split-preview-separator[aria-orientation='vertical'] {
+  cursor: col-resize;
+}
+.split-preview-separator[aria-orientation='horizontal'] {
+  cursor: row-resize;
+}

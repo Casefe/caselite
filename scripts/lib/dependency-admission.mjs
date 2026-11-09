@@ -29,6 +29,7 @@ const desktop = {
   react: '19.3.1',
   'react-dom': '19.3.1',
   'react-pdf': '11.0.0',
+  'react-resizable-panels': '4.21.0', // DEV-1849：MIT共享双预览，仅Renderer布局。
   yjs: '13.6.33',
 };
 
