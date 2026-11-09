@@ -157,6 +157,14 @@ export default function ProjectCatalog({
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    const closeDisplayMenu = () => {
+      const menu = workspace.current?.querySelector<HTMLDetailsElement>('.project-display-menu');
+      if (menu) menu.open = false;
+    };
+    window.addEventListener('resize', closeDisplayMenu);
+    return () => window.removeEventListener('resize', closeDisplayMenu);
+  }, []);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const [discussionDirty, setDiscussionDirty] = useState(false);
   const [planningDirty, setPlanningDirty] = useState(false);

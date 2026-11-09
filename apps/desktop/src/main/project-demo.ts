@@ -3343,6 +3343,12 @@ export async function runProjectDemo(
           throw new Error('Project list or display menu overflows its viewport');
         await evaluate("document.querySelector('.project-display-menu').open=false");
       }
+      if (process.env.CASELITE_PROJECT_DASHBOARD === '1') {
+        await evaluate("document.querySelector('.project-display-menu').open=true");
+        await wait("document.querySelector('.project-display-menu').open");
+        window.setContentSize(640, 700);
+        await wait("innerWidth===640 && !document.querySelector('.project-display-menu').open");
+      }
       window.setBounds(originalBounds);
       await button('项目创建与重启验收');
       await wait("document.querySelector('[aria-label=编辑项目名称]')");
