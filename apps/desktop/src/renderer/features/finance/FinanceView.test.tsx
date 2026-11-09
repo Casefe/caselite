@@ -521,3 +521,33 @@ it('waits for the automatic extraction before starting OCR on an imported materi
   expect(order.indexOf('process')).toBeGreaterThan(0);
   expect(order.at(-1)).toBe('list');
 });
+
+it('keeps an unreadable original available without submitting an unknown financial preparation', async () => {
+  const candidate = sourceCandidate();
+  const source = {
+    id: candidate.source_id,
+    task_id: crypto.randomUUID(),
+    asset_version_id: candidate.asset_version_id,
+    name: candidate.name,
+    sha256: candidate.sha256,
+    bytes: 100,
+    page_count: 1,
+    derivation_id: candidate.derivation_id,
+    status: 'ready' as const,
+    pages: [],
+  };
+  const { finance } = show(async () => read(true), [project], {
+    material: async () => ({ ok: true, materials: [source] }),
+  });
+  await screen.findByLabelText('收款金额（元）');
+  fireEvent.click(screen.getByRole('button', { name: '从文件导入' }));
+  fireEvent.click(screen.getByText('从项目已有材料生成'));
+  await screen.findByRole('option', { name: candidate.name });
+  fireEvent.change(screen.getByLabelText('项目材料'), { target: { value: candidate.source_id } });
+  fireEvent.click(screen.getByRole('button', { name: '本机识别并生成候选' }));
+  await screen.findByText('原件已保存，但未识别出本页文字，可核对原件后手动记一笔。');
+  expect(
+    finance.mock.calls.filter(([request]) => request.operation === 'm_prepare_source'),
+  ).toHaveLength(0);
+  expect(screen.getByRole('button', { name: '手动输入' }).hasAttribute('disabled')).toBe(false);
+});

@@ -414,6 +414,13 @@ export default function FinanceIntake({
       throw Error('原件已保存，本机识别未完成，可重试或手动记账。');
     updatePending(undefined);
     setProcessing(false);
+    if (
+      !current.pages.some(
+        (row) =>
+          row.page === number && row.text.trim() && !['needs_ocr', 'failed'].includes(row.origin),
+      )
+    )
+      throw Error('原件已保存，但未识别出本页文字，可核对原件后手动记一笔。');
     if (cancelRef.current) throw new Error('已取消生成候选，原件保留。');
     await prepare(current, number);
   }
