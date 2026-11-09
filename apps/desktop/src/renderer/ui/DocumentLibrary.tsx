@@ -5,15 +5,14 @@ import SplitPreviewWorkspace, {
   useSplitPreviewSelection,
   type PreviewPane,
 } from '../shared/ui/SplitPreviewWorkspace';
-import ReadTable from '../shared/ui/ReadTable';
 import { Icon } from '../shared/ui/Icon';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import DocumentCanvas from '../features/documents/DocumentCanvas';
-import DocumentFolderTree, { documentFolderGroups } from '../features/documents/DocumentFolderTree';
-import DocumentFormatExample, {
-  formatExamples,
-} from '../features/documents/DocumentFormatExamples';
+import DocumentFolderTree, {
+  documentFolderGroups,
+  documentFolderPath,
+} from '../features/documents/DocumentFolderTree';
 import { FixedDocumentVersion } from '../features/documents/DocumentVersions';
 import DocumentInspector from './DocumentInspector';
 import { useCatalog } from './useCatalog';
@@ -32,10 +31,6 @@ export default function DocumentLibrary({
   const selection = useSplitPreviewSelection();
   const [reading, setReading] = useState(false);
   const [reload, setReload] = useState(0);
-  const [folder, setFolder] = useState('all'),
-    [text, setText] = useState(''),
-    [page, setPage] = useState(0);
-  const [visited, setVisited] = useState<Record<string, number>>({});
   const [tagDraft, setTagDraft] = useState(false),
     [tagEditor, setTagEditor] = useState(0);
   const [acknowledged, setAcknowledged] = useState<{ id: string; version: number } | null>(null);
@@ -47,23 +42,14 @@ export default function DocumentLibrary({
   const heading = useRef<HTMLHeadingElement>(null);
   const all = c.data?.documents ?? [];
   const available = all.filter((d) => (!library || d.in_library) && !d.archived_at);
-  const groups = documentFolderGroups(available, c.data?.projects ?? [], visited);
-  const selectedFolder = groups.flatMap((g) => [g, ...g.children]).find((g) => g.id === folder);
-  const docs = (selectedFolder?.documents ?? available)
-    .filter((d) => d.title.toLocaleLowerCase().includes(text.trim().toLocaleLowerCase()))
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
-  const pages = Math.max(1, Math.ceil(docs.length / 20));
-  const index = docs.findIndex((d) => d.id === selection.selectedId);
-  const currentPage = index >= 0 ? Math.floor(index / 20) : Math.min(page, pages - 1);
-  const visible = docs.slice(currentPage * 20, currentPage * 20 + 20);
-  const ids = {
-    primary: selection.primary ?? visible[0]?.id ?? null,
-    secondary: selection.secondary,
-  };
-  const primary = docs.find((d) => d.id === ids.primary),
-    secondary = docs.find((d) => d.id === ids.secondary);
+  const groups = documentFolderGroups(available, c.data?.projects ?? []);
+  const ids = { primary: selection.primary, secondary: selection.secondary };
+  const primary = available.find((d) => d.id === ids.primary),
+    secondary = available.find((d) => d.id === ids.secondary);
   const current = selection.active === 'primary' ? primary : secondary;
-  const example = formatExamples.find((e) => e.id === ids[selection.active]);
+  const path = current
+    ? [...documentFolderPath(groups, current.id), current.title].join(' / ')
+    : '选择文件夹中的文档';
   const awaitingRead =
     !!acknowledged &&
     !all.some((d) => d.id === acknowledged.id && d.version >= acknowledged.version);
@@ -86,13 +72,6 @@ export default function DocumentLibrary({
     selection.select(id);
     setReading(true);
     setVersions((old) => ({ ...old, [selection.active]: null }));
-    if (id && !id.startsWith('example:')) setVisited((old) => ({ ...old, [id]: Date.now() }));
-  }
-  function resetDirectory() {
-    selection.reset();
-    setReading(false);
-    setVersions({ primary: null, secondary: null });
-    setPage(0);
   }
   async function tags(tags: string[], added = false) {
     if (!current) return;
@@ -143,14 +122,6 @@ export default function DocumentLibrary({
     void c.load();
   }
   function pane(slot: PreviewPane, doc: CatalogDocument | undefined) {
-    const sample = formatExamples.find((e) => e.id === ids[slot]);
-    if (sample)
-      return {
-        title: sample.title,
-        content: (
-          <DocumentFormatExample key={sample.id} example={sample} onClose={() => choose(null)} />
-        ),
-      };
     if (!doc) return null;
     const selectedVersion = versions[slot],
       key = slot + ':' + doc.id;
@@ -170,6 +141,9 @@ export default function DocumentLibrary({
           }
           onDirty={(value) => editorDirty(key, value)}
           onSaved={saved}
+          onReload={() => {
+            if (!dirty) void refresh();
+          }}
         />
       ),
     };
@@ -185,57 +159,15 @@ export default function DocumentLibrary({
         <header className="collection-heading">
           <Icon name={library ? 'book' : 'folder'} size={18} />
           <h1 tabIndex={-1} ref={heading}>
-            {library ? '知识库' : '文档'}
+            {library ? '知识库' : '文件夹'}
           </h1>
-          <span>{available.length}</span>
         </header>
         <DocumentFolderTree
           documents={available}
           projects={c.data?.projects ?? []}
-          visited={visited}
-          selected={folder}
+          selected={current?.id ?? null}
           disabled={blocked}
-          onSelect={(value) => {
-            setFolder(value.id);
-            resetDirectory();
-          }}
-        />
-        <section className="document-example-list" aria-label="合成格式示例">
-          <h2>
-            格式示例 <small>合成</small>
-          </h2>
-          {formatExamples.map((e) => (
-            <button
-              key={e.id}
-              aria-label={e.title}
-              disabled={blocked}
-              aria-pressed={ids[selection.active] === e.id}
-              onClick={() => choose(e.id)}
-            >
-              <span className="document-format-badge">{e.format === 'Word' ? 'W' : 'PDF'}</span>
-              <span>{e.title}</span>
-            </button>
-          ))}
-        </section>
-        <div className="document-list-heading">
-          <strong>{selectedFolder?.label ?? '全部文档'}</strong>
-          <button
-            disabled={bodyDirty || c.pending || c.unknown || tagDraft || (awaitingRead && !c.error)}
-            onClick={() => void refresh()}
-          >
-            刷新
-          </button>
-        </div>
-        <input
-          className="document-directory-search"
-          aria-label="搜索文档"
-          placeholder="搜索文档…"
-          value={text}
-          disabled={blocked}
-          onChange={(e) => {
-            setText(e.target.value);
-            resetDirectory();
-          }}
+          onSelect={(doc) => choose(doc.id)}
         />
         {c.error && <p role="alert">{c.error}</p>}
         {c.unknown && (
@@ -243,72 +175,14 @@ export default function DocumentLibrary({
             核对原提交
           </button>
         )}
-        <div className="collection-scroll">
-          <ReadTable
-            label={library ? '知识库列表' : '文档列表'}
-            className="catalog-table document-directory-table"
-            data={visible}
-            getRowId={(d) => d.id}
-            columns={[
-              {
-                id: 'title',
-                header: '名称',
-                cell: ({ row }) => (
-                  <>
-                    <Icon name="file" size={14} /> {row.original.title}
-                  </>
-                ),
-              },
-              { accessorKey: 'body_revision', header: '修订' },
-            ]}
-            rowProps={(doc) => ({
-              tabIndex: 0,
-              'data-document-id': doc.id,
-              'aria-selected': current?.id === doc.id,
-              onClick: () => choose(doc.id),
-              onKeyDown: (event) => {
-                if (
-                  (event.key === 'Enter' || event.key === ' ') &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  choose(doc.id);
-                }
-              },
-            })}
-          />
-          {!c.data && !c.error ? (
-            <p className="catalog-empty">正在读取…</p>
-          ) : (
-            !docs.length && <p className="catalog-empty">没有符合条件的文档。</p>
-          )}
-        </div>
-        {pages > 1 && (
-          <nav className="document-pagination" aria-label="文档分页">
-            <button
-              disabled={blocked || currentPage === 0}
-              onClick={() => {
-                setPage(currentPage - 1);
-                selection.select(null);
-              }}
-            >
-              上一页
-            </button>
-            <span>
-              第 {currentPage + 1} / {pages} 页 · 共 {docs.length} 份
-            </span>
-            <button
-              disabled={blocked || currentPage + 1 === pages}
-              onClick={() => {
-                setPage(currentPage + 1);
-                selection.select(null);
-              }}
-            >
-              下一页
-            </button>
-          </nav>
+        {(!c.data || c.error) && (
+          <button
+            disabled={read.isFetching || c.pending || c.unknown || bodyDirty}
+            onClick={() => void refresh()}
+          >
+            重读目录
+          </button>
         )}
-        <footer className="collection-footer">{available.length} 份文档 · 仅此设备</footer>
       </div>
       <div className="document-center-workspace">
         <SplitPreviewWorkspace
@@ -319,6 +193,7 @@ export default function DocumentLibrary({
             if (!blocked) selection.activate(pane);
           }}
           onToggle={() => selection.toggle(ids.primary)}
+          title={path}
           primary={pane('primary', primary)}
           secondary={pane('secondary', secondary)}
           actions={
@@ -337,9 +212,8 @@ export default function DocumentLibrary({
       </div>
       <div className="document-directory-sidebar">
         <DocumentInspector
-          key={current?.id ?? example?.id ?? 'empty'}
+          key={current?.id ?? 'empty'}
           document={current}
-          example={example}
           project={c.data?.projects.find((p) => p.id === current?.matter_id)}
           blocked={blocked}
           tagDraft={tagDraft}

@@ -1,150 +1,161 @@
+import { useState } from 'react';
 import type { CatalogDocument, Matter } from '../../../preload/caselite-api';
 import { Icon } from '../../shared/ui/Icon';
 
-export type DocumentFolder = { id: string; label: string; documents: CatalogDocument[] };
-export function documentFolderGroups(
-  documents: CatalogDocument[],
-  projects: Matter[],
-  visited: Record<string, number> = {},
-) {
-  const personal = documents.filter((d) => !d.matter_id && !d.collection.includes('模板'));
-  const names = [...new Set(personal.map((d) => d.collection).filter(Boolean))].sort();
+export type DocumentFolder = {
+  id: string;
+  label: string;
+  documents: CatalogDocument[];
+  children?: DocumentFolder[];
+};
+export function documentFolderGroups(documents: CatalogDocument[], projects: Matter[]) {
+  const templates = documents.filter((d) => d.collection.includes('模板'));
+  const ordinary = documents.filter((d) => !d.collection.includes('模板'));
+  const personal = ordinary.filter((d) => !d.matter_id);
+  const names = [
+    ...new Set([
+      '工作文档',
+      '个人资料',
+      '待整理',
+      ...personal.map((d) => d.collection).filter(Boolean),
+    ]),
+  ];
+  const projectIds = [
+    ...new Set([
+      ...projects.map((p) => p.id),
+      ...ordinary.flatMap((d) => (d.matter_id ? [d.matter_id] : [])),
+    ]),
+  ];
   return [
     {
       id: 'personal',
       label: '我的文档',
       documents: personal,
-      children: [
-        { id: 'personal:all', label: '工作文档', documents: personal },
-        {
-          id: 'collection:个人资料',
-          label: '个人资料',
-          documents: personal.filter((d) => d.collection === '个人资料'),
-        },
-        {
-          id: 'personal:unsorted',
-          label: '待整理',
-          documents: personal.filter((d) => !d.collection),
-        },
-        ...names
-          .filter((n) => !n.includes('模板') && n !== '个人资料')
-          .map((n) => ({
-            id: 'collection:' + n,
-            label: n,
-            documents: personal.filter((d) => d.collection === n),
-          })),
-      ],
+      children: names.map((name) => ({
+        id: 'collection:' + name,
+        label: name,
+        // 未分类的既有工作稿归入工作文档；每份文件只出现一次，不复制正文。
+        documents: personal.filter((d) => (d.collection || '工作文档') === name),
+      })),
     },
     {
       id: 'projects',
       label: '案件文档',
-      documents: documents.filter((d) => !!d.matter_id),
-      children: projects.map((p) => ({
-        id: 'project:' + p.id,
-        label: p.title,
-        documents: documents.filter((d) => d.matter_id === p.id),
+      documents: ordinary.filter((d) => !!d.matter_id),
+      children: projectIds.map((id) => ({
+        id: 'project:' + id,
+        label: projects.find((p) => p.id === id)?.title ?? '项目文档',
+        documents: ordinary.filter((d) => d.matter_id === id),
       })),
     },
     {
       id: 'templates',
       label: '模板',
-      documents: documents.filter((d) => d.collection.includes('模板')),
+      documents: templates,
       children: [
         ...new Set([
           '合同模板',
           '法律文书模板',
           '常用函件模板',
-          ...documents.map((d) => d.collection).filter((n) => n.includes('模板')),
+          ...templates.map((d) => d.collection),
         ]),
-      ].map((n) => ({
-        id: 'collection:' + n,
-        label: n,
-        documents: documents.filter((d) => d.collection === n),
+      ].map((name) => ({
+        id: 'collection:' + name,
+        label: name,
+        documents: templates.filter((d) => d.collection === name),
       })),
     },
-    {
-      id: 'recent',
-      label: '最近访问',
-      documents: documents.filter((d) => visited[d.id]),
-      children: [7, 30].map((days) => ({
-        id: 'recent:' + days,
-        label: '过去' + days + '天',
-        documents: documents.filter(
-          (d) => visited[d.id] && Date.now() - visited[d.id] <= days * 86400000,
-        ),
-      })),
-    },
-  ];
+  ] satisfies DocumentFolder[];
+}
+
+export function documentFolderPath(groups: DocumentFolder[], id: string): string[] {
+  for (const folder of groups) {
+    if (folder.children) {
+      const path = documentFolderPath(folder.children, id);
+      if (path.length) return [folder.label, ...path];
+    } else if (folder.documents.some((d) => d.id === id)) return [folder.label];
+  }
+  return [];
 }
 export default function DocumentFolderTree({
   documents,
   projects,
-  visited,
   selected,
   disabled,
   onSelect,
 }: {
   documents: CatalogDocument[];
   projects: Matter[];
-  visited: Record<string, number>;
-  selected: string;
+  selected: string | null;
   disabled: boolean;
-  onSelect(folder: DocumentFolder): void;
+  onSelect(document: CatalogDocument): void;
 }) {
-  const groups = documentFolderGroups(documents, projects, visited);
-  return (
-    <nav className="document-folder-tree" aria-label="文件夹">
-      <h2>文件夹</h2>
-      <button
-        type="button"
-        className="document-folder-row"
-        aria-pressed={selected === 'all'}
-        disabled={disabled}
-        onClick={() => onSelect({ id: 'all', label: '全部文档', documents })}
-      >
-        <Icon name="folder" size={18} />
-        <span>全部文档</span>
-        <small>{documents.length}</small>
-      </button>
-      {groups.map((g) => (
-        <details key={g.id} open>
-          <summary
-            aria-current={selected === g.id ? 'page' : undefined}
-            onClick={(event) => {
-              if (disabled) event.preventDefault();
-              else onSelect(g);
-            }}
-          >
-            <Icon name={g.id === 'recent' ? 'clock' : 'folder'} size={19} />
-            <strong>
-              {g.label}
-              {g.id === 'recent' && <em>本次会话</em>}
-            </strong>
-            <small>{g.documents.length}</small>
-          </summary>
-          <div>
-            {g.children.map((f) => (
-              <button
-                type="button"
-                key={f.id}
-                className="document-folder-row"
-                disabled={disabled}
-                aria-pressed={selected === f.id}
-                onClick={() => onSelect(f)}
-              >
-                <Icon name={g.id === 'recent' ? 'clock' : 'folder'} size={17} />
-                <span>{f.label}</span>
-                <small>{f.documents.length}</small>
-              </button>
-            ))}
-            {!g.children.length && (
-              <p className="document-folder-empty">
-                暂无{g.label === '案件文档' ? '项目' : '分类'}
-              </p>
+  const [expanded, setExpanded] = useState(['personal', 'collection:工作文档', 'projects']);
+  const groups = documentFolderGroups(documents, projects);
+  function folder(node: DocumentFolder) {
+    const open = expanded.includes(node.id);
+    return (
+      <details key={node.id} open={open} data-folder-id={node.id}>
+        <summary
+          aria-expanded={open}
+          aria-disabled={disabled}
+          onClick={(event) => {
+            event.preventDefault();
+            if (!disabled)
+              setExpanded((old) =>
+                old.includes(node.id) ? old.filter((id) => id !== node.id) : [...old, node.id],
+              );
+          }}
+        >
+          <Icon name="folder" size={19} />
+          <span>{node.label}</span>
+        </summary>
+        {open && (
+          <div className="document-folder-children">
+            {node.children
+              ? node.children.map(folder)
+              : node.documents.map((doc) => {
+                  const extension = doc.title.split('.').at(-1)?.toLocaleLowerCase();
+                  const badge =
+                    extension === 'pdf'
+                      ? 'PDF'
+                      : extension === 'docx' || extension === 'doc'
+                        ? 'W'
+                        : null;
+                  return (
+                    <button
+                      key={doc.id}
+                      type="button"
+                      className="document-folder-file"
+                      data-document-id={doc.id}
+                      aria-label={doc.title}
+                      aria-pressed={selected === doc.id}
+                      disabled={disabled}
+                      title={doc.title}
+                      onClick={() => onSelect(doc)}
+                    >
+                      {badge ? (
+                        <span className="document-file-badge" data-format={badge}>
+                          {badge}
+                        </span>
+                      ) : (
+                        <Icon name="file" size={17} />
+                      )}
+                      <span>{doc.title}</span>
+                    </button>
+                  );
+                })}
+            {!(node.children ? node.children.length : node.documents.length) && (
+              <p className="document-folder-empty">此文件夹为空</p>
             )}
           </div>
-        </details>
-      ))}
+        )}
+      </details>
+    );
+  }
+  return (
+    <nav className="document-folder-tree" aria-label="文件夹">
+      {groups.map(folder)}
     </nav>
   );
 }

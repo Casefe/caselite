@@ -156,7 +156,7 @@ export default function BodyEditor({
         <EditorSurface
           editor={editor}
           mode={editorProfiles.document.mode}
-          documentScheme={preferences.editor_mode ?? 'markdown'}
+          documentScheme={embedded ? 'word' : (preferences.editor_mode ?? 'markdown')}
           selectionActions={
             editor &&
             reviewDock && (

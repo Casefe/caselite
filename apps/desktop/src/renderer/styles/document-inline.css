@@ -1,165 +1,130 @@
-/* DEV-1850：应用目录分组不代表磁盘文件夹或持续同步。 */
+/* 文件夹和直属文件共用一棵目录树，不复制正文或建立磁盘同步。 */
+.collection-workspace.document-workspace,
+.document-workspace[data-collection='knowledge'] {
+  grid-template-columns: 288px minmax(280px, 1fr) 296px;
+}
 .document-workspace > .collection-main {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.document-folder-tree {
-  flex: 0 1 auto;
-  max-height: 48%;
+.document-workspace .document-folder-tree {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
-  padding: 12px 10px 8px;
-  border-bottom: 1px solid var(--line);
+  padding: 14px 10px;
 }
 .document-folder-tree h2 {
-  font-size: 12px;
-  margin: 0 8px 10px;
+  font-size: 13px;
+  margin: 0 8px 14px;
+}
+.document-folder-tree details {
+  margin: 0;
 }
 .document-folder-tree summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
-  font-size: 12px;
+  gap: 9px;
+  padding: 9px 5px;
+  font-size: 13px;
   cursor: pointer;
   list-style: none;
   border-radius: 5px;
 }
+.document-folder-tree > details > summary {
+  font-weight: 600;
+}
+.document-folder-tree summary::-webkit-details-marker {
+  display: none;
+}
 .document-folder-tree summary::before {
   content: '›';
-  color: #6889a7;
-  width: 9px;
+  color: var(--muted);
+  width: 10px;
+  flex-shrink: 0;
+  text-align: center;
 }
 .document-folder-tree details[open] > summary::before {
   transform: rotate(90deg);
 }
-.document-folder-tree summary small {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 11px;
+.document-folder-tree summary[aria-disabled='true'] {
+  cursor: default;
 }
-.document-folder-tree summary em {
-  display: block;
-  font-size: 9px;
-  font-weight: 400;
-  font-style: normal;
-  color: var(--muted);
-}
-.document-folder-tree summary[aria-current='page'],
-.document-folder-row[aria-pressed='true'] {
-  background: var(--active);
-}
-.document-folder-tree svg {
+.document-folder-tree summary svg {
   color: #3489d1;
   flex-shrink: 0;
 }
-.document-folder-tree details > div {
+.document-folder-tree .document-folder-children {
   padding-left: 18px;
 }
-.document-folder-row {
+.document-folder-file {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
   border: 0;
+  padding: 8px 7px;
+  min-height: 36px;
+  border-radius: 5px;
   background: transparent;
   text-align: left;
   font-size: 12px;
-  padding: 7px 6px;
-  border-radius: 5px;
 }
-.document-folder-row span {
+.document-folder-file > span:last-child,
+.document-folder-tree summary > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
 }
-.document-folder-row small,
-.document-folder-empty {
-  color: var(--muted);
-  font-size: 11px;
-}
-.document-example-list {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--line);
-  flex: 0 0 auto;
-}
-.document-example-list h2 {
-  font-size: 11px;
-  margin: 0 0 7px;
-}
-.document-example-list h2 small {
-  font-weight: 400;
-  color: var(--muted);
-}
-.document-example-list button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  width: 100%;
-  padding: 6px 0;
-  text-align: left;
-  font-size: 11px;
-  background: transparent;
-}
-.document-example-list button > span:last-child {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.document-example-list button[aria-pressed='true'] {
+.document-folder-file[aria-pressed='true'] {
   background: var(--active);
+  color: var(--ink);
 }
-.document-format-badge {
+.document-folder-file:hover:not(:disabled),
+.document-folder-tree summary:hover:not([aria-disabled='true']) {
+  background: var(--theme-subtle);
+}
+.document-folder-file:focus-visible,
+.document-folder-tree summary:focus-visible {
+  outline: 2px solid #368bd5;
+  outline-offset: -2px;
+}
+.document-folder-file svg {
+  flex-shrink: 0;
+}
+.document-file-badge {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 28px;
-  border-radius: 3px;
-  background: #edf2f8;
+  width: 22px;
+  height: 24px;
+  border-radius: 4px;
+  background: #e9f2fd;
   color: #2769a3;
-  font-size: 9px;
-  flex-shrink: 0;
+  font-size: 10px;
 }
-.document-example-list button:last-child .document-format-badge {
-  color: #a1453e;
-  background: #f6eeee;
+.document-file-badge[data-format='PDF'] {
+  background: #faeded;
+  color: #b44e4e;
+  font-size: 8px;
 }
-.document-list-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 12px 5px;
+.document-folder-empty {
+  margin: 3px 7px 9px;
+  color: var(--muted);
   font-size: 11px;
-  flex-shrink: 0;
 }
-.document-list-heading button {
-  font-size: 11px;
-  padding: 4px 7px;
-}
-.document-directory-search {
-  margin: 4px 12px 8px;
-  width: calc(100% - 24px);
+.split-preview-toolbar .split-preview-title {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
-  padding: 7px 8px;
-  flex-shrink: 0;
 }
-.document-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  padding: 7px 10px;
-  font-size: 10px;
-  border-top: 1px solid var(--line);
-}
-.document-pagination button {
-  padding: 4px 6px;
-  font-size: 10px;
+.document-workspace > .collection-main > .collection-heading {
+  flex: 0 0 auto;
 }
 .document-inline-editor .document {
   margin: 0;
@@ -244,16 +209,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.document-workspace[data-collection='knowledge'] {
-  grid-template-columns: 248px minmax(280px, 1fr) 296px;
-}
 @media (max-width: 900px) {
   .collection-workspace.document-workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 32vh);
   }
   .document-workspace .document-folder-tree {
-    max-height: 42%;
+    max-height: none;
   }
   .document-workspace[data-directory-view='preview'] > .collection-main {
     display: none;
@@ -269,5 +231,20 @@
   }
   .document-workspace[data-directory-view='preview'] > .document-center-workspace {
     display: block;
+  }
+}
+
+.document-workspace .document-directory-back {
+  display: none;
+}
+@media (max-width: 900px) {
+  .document-workspace .document-directory-back {
+    display: inline-flex;
+  }
+}
+@media (min-width: 901px) and (max-width: 1250px) {
+  .collection-workspace.document-workspace,
+  .document-workspace[data-collection='knowledge'] {
+    grid-template-columns: 230px minmax(200px, 1fr) 252px;
   }
 }

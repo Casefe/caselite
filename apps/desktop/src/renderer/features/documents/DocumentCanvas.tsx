@@ -11,6 +11,7 @@ export default function DocumentCanvas({
   mirror = false,
   onDirty,
   onSaved,
+  onReload,
 }: {
   document: CatalogDocument;
   generation?: number;
@@ -18,6 +19,7 @@ export default function DocumentCanvas({
   mirror?: boolean;
   onDirty(value: boolean): void;
   onSaved(task: Task): void;
+  onReload?(): void;
 }) {
   const client = useQueryClient();
   const dirtyCallback = useRef(onDirty);
@@ -58,7 +60,17 @@ export default function DocumentCanvas({
         <DocumentPreview document={document} />
       </>
     );
-  if (read.error) return <p role="alert">{read.error.message}</p>;
+  if (read.error)
+    return (
+      <>
+        <p role="alert">{read.error.message}</p>
+        {onReload && (
+          <button disabled={disabled} onClick={onReload}>
+            重新读取文档
+          </button>
+        )}
+      </>
+    );
   if (!read.data) return <p role="status">正在读取文档…</p>;
   const stale =
     read.data.task.body_revision !== document.body_revision ||

@@ -57,6 +57,7 @@ export default function SplitPreviewWorkspace({
   onActivate,
   onToggle,
   actions,
+  title,
 }: {
   primary: PreviewContent | null;
   secondary: PreviewContent | null;
@@ -66,6 +67,7 @@ export default function SplitPreviewWorkspace({
   onActivate(pane: PreviewPane): void;
   onToggle(): void;
   actions?: ReactNode;
+  title?: string;
 }) {
   const id = useId();
   const primaryId = `${id}-primary`;
@@ -113,7 +115,9 @@ export default function SplitPreviewWorkspace({
   return (
     <section className="split-preview-workspace" aria-label="预览工作区" data-split={split}>
       <header className="split-preview-toolbar">
-        <span>预览</span>
+        <span className="split-preview-title" title={title}>
+          {title ?? '预览'}
+        </span>
         <div>
           {actions}
           <button type="button" aria-pressed={split} disabled={disabled} onClick={onToggle}>
