@@ -6,6 +6,7 @@
   --ink: #232326;
   --muted: #77777f;
   --line: #e8e8eb;
+  --line-strong: #dddde1;
   --canvas: #f7f7f8;
   --nav: #f3f3f4;
   --theme-panel: #ffffff;
@@ -13,19 +14,36 @@
   --theme-hover: #ededf0;
   --theme-secondary: #66666f;
   --theme-accent: #5e6ad2;
+  --theme-selected: #e8eee7;
+  /* 旧消费者沿用同一主题真值，避免变量缺失后在深色界面回退为浅色边框。 */
+  --theme-border: var(--line);
+  --theme-muted: var(--muted);
+  --theme-text: var(--ink);
+  --border: var(--line);
+  --border-color: var(--line);
+  --panel: var(--theme-panel);
+  --surface: var(--theme-panel);
+  --surface-soft: var(--theme-subtle);
+  --surface-secondary: var(--theme-subtle);
+  --active: var(--theme-selected);
+  --accent: var(--theme-accent);
+  --text-primary: var(--ink);
+  --text-secondary: var(--theme-secondary);
 }
 html[data-theme='dark'] {
   color-scheme: dark;
   --ink: #eeeeef;
   --muted: #aaaab2;
-  --line: #36363b;
+  --line: #303036;
+  --line-strong: #3a3a42;
   --canvas: #1c1c1f;
   --nav: #18181b;
   --theme-panel: #222225;
-  --theme-subtle: #29292e;
+  --theme-subtle: #26262b;
   --theme-hover: #34343a;
   --theme-secondary: #b1b1ba;
   --theme-accent: #a0a8ff;
+  --theme-selected: #32323f;
 }
 body {
   background: var(--canvas);
@@ -95,6 +113,7 @@ h3 {
 .project-content,
 .document,
 .settings-content,
+.settings-center,
 .settings-page,
 .settings-heading,
 .catalog-view {

@@ -1,6 +1,7 @@
 import { session, type BrowserWindow } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { checkDarkTheme } from './dark-theme-demo';
 
 // 仅供受限临时目录的离线合成演示，验证外观切换及进程重启读回。
 export async function runAppearanceDemo(
@@ -47,7 +48,9 @@ export async function runAppearanceDemo(
     if (phase === 'appearance-write') {
       await wait("document.documentElement.dataset.theme==='light'");
       await click('[data-nav=settings]');
-      await click('.settings-nav-group[aria-label=个人] button:first-of-type');
+      await evaluate(
+        "[...document.querySelectorAll('.settings-nav-group[aria-label=个人] button')].find(b=>b.textContent.trim()==='偏好设置').click()",
+      );
       await wait("document.querySelector('.theme-option:nth-child(2):not(:disabled)')");
       await capture('settings-light.png');
       await click('.theme-option:nth-child(2)');
@@ -60,6 +63,7 @@ export async function runAppearanceDemo(
         "document.querySelector('.agent-main') && document.documentElement.dataset.theme==='dark'",
       );
       await capture('home-dark.png');
+      await checkDarkTheme(window, root);
     } else {
       await wait("document.documentElement.dataset.theme==='dark'");
       const colors = await evaluate(
@@ -100,19 +104,23 @@ export async function runAppearanceDemo(
       );
       await click('[data-testid=create-task]');
       await wait("document.querySelector('[data-testid=task-result-tab]')");
-      await click('[data-testid=task-result-tab]');
       await wait("document.querySelector('.task-inspector .assistant-panel--compact')");
       await evaluate(
         "document.querySelector('.assistant-panel--compact').scrollIntoView({block:'nearest'})",
       );
       await wait("document.querySelector('[data-testid=assistant-input]')");
+      await capture('assistant-dark.png');
+      await click('[data-testid=task-result-tab]');
+      await wait("document.querySelector('.simple-toolbar')");
       const toolbarColor = await evaluate(
         "getComputedStyle(document.querySelector('.simple-toolbar')).backgroundColor",
       );
       if (luminance(toolbarColor) >= 0.2) throw new Error('Dark editor toolbar is too bright');
-      await capture('assistant-dark.png');
+      await capture('editor-dark-reopened.png');
       await click('[data-nav=settings]');
-      await click('.settings-nav-group[aria-label=个人] button:first-of-type');
+      await evaluate(
+        "[...document.querySelectorAll('.settings-nav-group[aria-label=个人] button')].find(b=>b.textContent.trim()==='偏好设置').click()",
+      );
       await wait("document.querySelector('.theme-option:first-child:not(:disabled)')");
       await click('.theme-option:first-child');
       await wait(

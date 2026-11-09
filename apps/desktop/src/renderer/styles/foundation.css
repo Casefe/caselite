@@ -362,7 +362,7 @@ h3 {
   width: 100%;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid #eff0f3;
+  border-bottom: 1px solid var(--line, #eff0f3);
   border-radius: 0;
   min-height: 38px;
   font-size: 11px;
@@ -512,7 +512,7 @@ h3 {
   width: 100%;
   margin-top: 9px;
   padding: 11px;
-  border: 1px solid #dce0e5;
+  border: 1px solid var(--line, #dce0e5);
   border-radius: 5px;
   resize: vertical;
   background: #fff;
@@ -741,7 +741,7 @@ h3 {
   display: inline-flex;
   padding: 10px;
   color: #265461;
-  border: 1px solid #dfe9eb;
+  border: 1px solid var(--line, #dfe9eb);
   border-radius: 12px;
   background: #f5f9fa;
 }
@@ -776,12 +776,12 @@ h3 {
 .ai-capabilities p {
   font-size: 11px;
   color: #7e8c97;
-  border-bottom: 1px solid #f0f2f4;
+  border-bottom: 1px solid var(--line, #f0f2f4);
   padding: 0 0 10px;
 }
 .ai-composer {
   margin-top: auto;
-  border: 1px solid #e3e7eb;
+  border: 1px solid var(--line, #e3e7eb);
   border-radius: 7px;
   padding: 12px;
   background: #fafbfc;
@@ -809,7 +809,7 @@ h3 {
 
 .document {
   background: white;
-  border: 1px solid #e2e5e9;
+  border: 1px solid var(--line, #e2e5e9);
   border-radius: 7px;
   overflow: hidden;
 }
@@ -834,7 +834,7 @@ h3 {
 .draft-badge {
   font-size: 9px;
   font-weight: 400;
-  border: 1px solid #e6e8ed;
+  border: 1px solid var(--line, #e6e8ed);
   border-radius: 3px;
   padding: 2px 4px;
   color: #9aa3ad;
@@ -1042,7 +1042,7 @@ dd {
   width: 100%;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid #edf0f3;
+  border-bottom: 1px solid var(--line, #edf0f3);
   min-height: 40px;
   background: white;
   border-radius: 0;
@@ -1148,7 +1148,7 @@ dd {
   padding: 16px;
   text-align: left;
   display: block;
-  border: 1px solid #e6e9ed;
+  border: 1px solid var(--line, #e6e9ed);
   box-shadow: 0 2px 4px #27344203;
 }
 .project-card > svg {
@@ -1310,7 +1310,7 @@ dd {
   font-size: 10px;
   background: #f3f5f8;
   padding: 4px 7px;
-  border: 1px solid #e5e8ec;
+  border: 1px solid var(--line, #e5e8ec);
   border-radius: 4px;
   color: #84929f;
 }
@@ -1534,7 +1534,7 @@ dd {
 .agent-starters button {
   font-size: 11px;
   color: #758490;
-  border-color: #e8ebee;
+  border-color: var(--line, #e8ebee);
   padding: 8px 10px;
   font-weight: 400;
 }
