@@ -217,3 +217,124 @@ it.each(['committed', 'rejected'] as const)(
     client.clear();
   },
 );
+
+it.each(['close-during-prepare', 'stop-running'] as const)(
+  'waits for delayed cancellation before restarting: %s',
+  async (mode) => {
+    const scope =
+      mode === 'close-during-prepare'
+        ? '44444444-4444-4444-8444-444444444444'
+        : '55555555-5555-4555-8555-555555555555';
+    const task = {
+      id: scope,
+      version: 1,
+      title: '合成停止测试',
+      calendar: { type_id: 'hearing' },
+    } as Task;
+    let releaseCancel!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      releaseCancel = resolve;
+    });
+    let releasePreview!: () => void;
+    const delayedPreview = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    let previews = 0;
+    const runs: { id: string; purpose: string; status: string; created_at: string }[] = [];
+    const base = () => ({ ok: true, configured: false, model: 'gpt-4.1-mini', runs: [...runs] });
+    const agent = vi.fn(async (r: AgentRequest) => {
+      if (r.operation === 'date_rules')
+        return { ...base(), date_rules: { checks: {}, types: [], laws: [], calendars: [] } };
+      if (r.operation === 'start') {
+        runs.push({
+          id: r.run_id,
+          purpose: 'important_dates',
+          status: 'running',
+          created_at: '2026-11-09T00:00:00Z',
+        });
+        return base();
+      }
+      if (r.operation === 'cancel') {
+        await cancelled;
+        const old = runs.find((v) => v.id === r.run_id);
+        if (old) old.status = 'cancelled';
+        return base();
+      }
+      return base();
+    });
+    const material = vi.fn(async (r: { operation: string }) => {
+      if (r.operation === 'preview') {
+        if (++previews === 1 && mode === 'close-during-prepare') await delayedPreview;
+        return { ok: true, materials: [], preview: { id: source } };
+      }
+      if (r.operation === 'cancel_prepare') {
+        await cancelled;
+        return {
+          ok: true,
+          materials: [{ id: source, name: '合成通知.pdf', page_count: 1, sha256: 'a'.repeat(64) }],
+        };
+      }
+      return {
+        ok: true,
+        materials: [{ id: source, name: '合成通知.pdf', page_count: 1, sha256: 'a'.repeat(64) }],
+      };
+    });
+    Object.defineProperty(window, 'caselite', {
+      configurable: true,
+      value: {
+        agent,
+        material,
+        task: vi.fn(async () => ({
+          ok: true,
+          tasks: [],
+          calendar_types: [{ id: 'hearing', name: '开庭', enabled: true, version: 0 }],
+        })),
+      },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ImportantDates task={task} disabled={false} onBlocked={() => {}} onChanged={() => {}} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByText('识别重要日期'));
+    fireEvent.click(await screen.findByLabelText(/合成通知.pdf · 固定版本/));
+    fireEvent.click(screen.getByText('识别所选文书的重要日期'));
+    if (mode === 'close-during-prepare') {
+      await screen.findByText('正在本地准备固定文字与OCR…');
+      fireEvent.click(screen.getByText('关闭'));
+      const reopen = screen.getByText('识别重要日期') as HTMLButtonElement;
+      expect(reopen.disabled).toBe(true);
+      fireEvent.click(reopen);
+      expect(screen.queryByText('从固定附件识别重要日期')).toBeNull();
+      releasePreview();
+      await waitFor(() => expect(previews).toBe(1));
+      expect(agent.mock.calls.filter(([r]) => r.operation === 'start')).toHaveLength(0);
+      releaseCancel();
+      await waitFor(() => expect(reopen.disabled).toBe(false));
+      fireEvent.click(reopen);
+    } else {
+      await waitFor(() => expect(runs).toHaveLength(1));
+      fireEvent.click(await screen.findByText('停止识别'));
+      const restart = screen.getByText('识别所选文书的重要日期') as HTMLButtonElement;
+      expect(restart.disabled).toBe(true);
+      fireEvent.click(restart);
+      expect(runs).toHaveLength(1);
+      await screen.findByText('正在停止原识别，请稍候…');
+      releaseCancel();
+    }
+    await waitFor(() =>
+      expect((screen.getByText('识别所选文书的重要日期') as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByText('识别所选文书的重要日期'));
+    await waitFor(() => expect(runs).toHaveLength(mode === 'stop-running' ? 2 : 1));
+    const cancels = agent.mock.calls.filter(([r]) => r.operation === 'cancel');
+    expect(cancels).toHaveLength(mode === 'stop-running' ? 1 : 0);
+    if (mode === 'stop-running') expect(cancels[0][0]).toMatchObject({ run_id: runs[0].id });
+    expect(runs.at(-1)!.status).toBe('running');
+    expect(screen.queryByText('正在停止原识别，请稍候…')).toBeNull();
+    client.clear();
+  },
+);

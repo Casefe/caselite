@@ -80,6 +80,7 @@ export default function ImportantDates({
     [result, setResult] = useState<Success>(),
     [error, setError] = useState('');
   const [busy, setBusy] = useState(false),
+    [stopping, setStopping] = useState(false),
     [preparing, setPreparing] = useState(false),
     [unknownStart, setUnknownStart] = useState(starts.has(task.id));
   const [confirmPhase, setConfirmPhase] = useState<'idle' | 'unknown' | 'read'>(
@@ -100,12 +101,13 @@ export default function ImportantDates({
   const generation = useRef(0),
     alive = useRef(true),
     activeRun = useRef(''),
+    stoppingRef = useRef(false),
     preparingRef = useRef(false);
   const running = runs.some((r) => r.status === 'running');
   useEffect(() => {
-    onBlocked(open || confirmPhase !== 'idle');
+    onBlocked(open || stopping || confirmPhase !== 'idle');
     return () => onBlocked(false);
-  }, [open, confirmPhase, onBlocked]);
+  }, [open, stopping, confirmPhase, onBlocked]);
   useEffect(() => {
     alive.current = true;
     const cleanupGeneration = generation;
@@ -190,6 +192,7 @@ export default function ImportantDates({
     };
   }, [open, runId, task.id]);
   async function show() {
+    if (stoppingRef.current) return;
     setOpen(true);
     setError('');
     try {
@@ -201,8 +204,9 @@ export default function ImportantDates({
     }
   }
   async function dispatch(request: Start) {
+    const token = generation.current;
     const r = await window.caselite.agent(request);
-    if (!alive.current) return;
+    if (!alive.current || generation.current !== token) return;
     if (!r.ok) {
       if (['RESULT_UNKNOWN', 'INTERNAL', 'IPC_TIMEOUT', 'BUSY'].includes(r.code)) {
         setUnknownStart(true);
@@ -220,7 +224,7 @@ export default function ImportantDates({
     activeRun.current = r.runs.find((v) => v.status === 'running')?.id ?? '';
   }
   async function start() {
-    if (busy || running || unknownStart || confirmPhase !== 'idle') return;
+    if (stoppingRef.current || busy || running || unknownStart || confirmPhase !== 'idle') return;
     setBusy(true);
     setPreparing(true);
     preparingRef.current = true;
@@ -275,25 +279,42 @@ export default function ImportantDates({
       if (alive.current && generation.current === token) {
         setBusy(false);
         setPreparing(false);
+        preparingRef.current = false;
       }
-      preparingRef.current = false;
     }
   }
   async function stop() {
-    generation.current++;
+    if (stoppingRef.current) return;
+    // 取消只属于入口时的旧运行；等待旧取消落定前禁止重开，不能读取后续运行的身份。
+    const id = activeRun.current || starts.get(task.id)?.run_id;
+    const cancelPreparation = preparingRef.current;
+    const token = ++generation.current;
+    stoppingRef.current = true;
+    setStopping(true);
     setPreparing(false);
     preparingRef.current = false;
+    setBusy(true);
+    const results = await Promise.allSettled([
+      cancelPreparation ? materials.cancelPreparation() : Promise.resolve(),
+      id
+        ? window.caselite
+            .agent({
+              protocol_version: 1,
+              operation: 'cancel',
+              scope: task.id,
+              run_id: id,
+            })
+            .then((r) => {
+              if (!r.ok) throw Error(r.message);
+            })
+        : Promise.resolve(),
+    ]);
+    stoppingRef.current = false;
+    if (!alive.current || generation.current !== token) return;
+    setStopping(false);
     setBusy(false);
-    await materials.cancelPreparation();
-    const id = activeRun.current || starts.get(task.id)?.run_id;
-    if (id)
-      await window.caselite.agent({
-        protocol_version: 1,
-        operation: 'cancel',
-        scope: task.id,
-        run_id: id,
-      });
     setPreview(undefined);
+    if (results.some((r) => r.status === 'rejected')) setError('停止结果尚未确认，请核对原运行');
   }
   async function recoverStart(retry = false) {
     const original = starts.get(task.id);
@@ -573,7 +594,7 @@ export default function ImportantDates({
   );
   return (
     <>
-      <button disabled={disabled || !materials.available} onClick={() => void show()}>
+      <button disabled={disabled || stopping || !materials.available} onClick={() => void show()}>
         识别重要日期
       </button>
       {open && (
@@ -650,7 +671,12 @@ export default function ImportantDates({
           >
             识别所选文书的重要日期
           </button>
-          {(preparing || running) && <button onClick={() => void stop()}>停止识别</button>}
+          {(preparing || running || stopping) && (
+            <button disabled={stopping} onClick={() => void stop()}>
+              停止识别
+            </button>
+          )}
+          {stopping && <p role="status">正在停止原识别，请稍候…</p>}
           {preparing && <p role="status">正在本地准备固定文字与OCR…</p>}
           {unknownStart && (
             <p>
