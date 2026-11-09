@@ -166,6 +166,9 @@ export async function runTaskViewsDemo(
     await wait("document.querySelector('[data-nav=tasks]')");
     await click('[data-nav=tasks]');
     await wait("document.querySelectorAll('[data-row-task]').length===7");
+    await wait(
+      "(()=>{const e=document.querySelector('.task-table-overview .table-head');const r=e?.getBoundingClientRect();return r&&r.width>700&&r.height>20&&getComputedStyle(e).clipPath==='none';})()",
+    );
     await capture('01-task-summary.png');
     await click('[data-nav=settings]');
     await wait("document.querySelector('.theme-options')");

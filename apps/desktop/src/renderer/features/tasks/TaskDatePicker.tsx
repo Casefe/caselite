@@ -4,12 +4,13 @@ import { Icon } from '../../shared/ui/Icon';
 export type TaskDates = { start_date: string | null; due_date: string | null };
 export const dateLabel = (value: TaskDates) => {
   const short = (date: string) => `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
+  const full = (date: string) => `${date.slice(0, 4)}年${short(date)}`;
   return value.start_date && value.due_date
-    ? `${short(value.start_date)} — ${short(value.due_date)}`
+    ? `${full(value.start_date)} — ${value.start_date.slice(0, 4) === value.due_date.slice(0, 4) ? short(value.due_date) : full(value.due_date)}`
     : value.start_date
-      ? `${short(value.start_date)}开始`
+      ? `${full(value.start_date)}开始`
       : value.due_date
-        ? `${short(value.due_date)}截止`
+        ? `${full(value.due_date)}截止`
         : '设置开始与截止日期';
 };
 

@@ -1,3 +1,10 @@
+:is(.task-query-list, .task-detail) {
+  --workspace-inspector-width: 360px;
+}
+.task-detail .task-layout {
+  grid-template-columns: minmax(0, 1fr) var(--workspace-inspector-width);
+  min-width: 0;
+}
 /* 三页沿用全局主题和唯一辅助栏，只改变任务消费者的排版。 */
 .task-query-list.collection-workspace {
   height: 100%;
@@ -155,6 +162,11 @@
   min-height: 52px;
 }
 .task-query-list .task-table-overview .table-head {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
   background: var(--theme-subtle);
   color: var(--muted);
   font-weight: 500;
@@ -318,6 +330,9 @@
   flex: 1;
 }
 .task-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   justify-content: flex-start;
   background: transparent;
   border: 0;
@@ -356,12 +371,13 @@
   display: none;
 }
 .task-detail .task-work-area {
-  padding: 0 32px 36px;
+  position: relative;
+  padding: 0 32px 28px;
   overflow-y: auto;
 }
 .task-detail .detail-tabs {
-  padding-inline: 0;
-  margin-bottom: 26px;
+  padding: 18px 130px 0 0;
+  margin-bottom: 20px;
 }
 .task-detail .task-content-overview {
   padding: 0;
@@ -374,7 +390,7 @@
 }
 .task-title-editor {
   display: block;
-  margin: 0 0 18px;
+  margin: 0 0 12px;
 }
 .task-title-editor input {
   display: block;
@@ -399,14 +415,14 @@
 }
 .task-detail .task-content-panel .rich-editor--compact .tiptap {
   padding: 0;
-  min-height: 100px;
+  min-height: 48px;
   font-size: 15px;
   line-height: 1.8;
 }
 .task-detail .task-content-panel > footer {
   background: transparent;
-  margin: 0 0 18px;
-  padding: 8px 0;
+  margin: 0 0 12px;
+  padding: 6px 0;
 }
 .task-detail .task-content-panel > footer span {
   font-size: 11px;
@@ -415,7 +431,7 @@
 .task-detail .task-attachments {
   border: 0;
   padding: 0;
-  margin: 4px 0 26px;
+  margin: 4px 0 18px;
 }
 .task-detail .task-attachments > header {
   margin: 0 0 12px;
@@ -448,10 +464,10 @@
 }
 .task-detail .task-detail-section.task-events {
   border-top: 1px solid var(--line);
-  padding-top: 26px;
+  padding-top: 20px;
 }
 .task-detail .task-detail-section h2 {
-  margin: 0 0 20px;
+  margin: 0 0 14px;
   font-size: 20px;
 }
 .task-create-dialog {
@@ -624,5 +640,55 @@
   }
   .create-attachment-hint {
     max-width: 120px;
+  }
+}
+
+.task-detail .task-reminder-entry {
+  position: absolute;
+  top: 18px;
+  right: 32px;
+  z-index: 1;
+  padding: 0;
+}
+.task-detail .task-events .activity-list ol {
+  max-height: none;
+  overflow: visible;
+  list-style: none;
+  padding: 0 0 0 20px;
+  margin: 8px 0 10px 6px;
+  border-left: 1px solid var(--line);
+}
+.task-detail .task-events .activity-list li {
+  position: relative;
+  border: 0;
+  padding: 5px 0 8px;
+}
+.task-detail .task-events .activity-list li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.task-detail .task-events .activity-list li > div > span {
+  display: none;
+}
+.task-detail .task-events .activity-list time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-detail .task-detail-section.project-discussion {
+  border: 0;
+  padding-top: 0;
+}
+.task-detail .task-detail-section.project-discussion > .project-discussion-compose {
+  margin-top: 12px;
+}
+@media (max-width: 1100px) {
+  :is(.task-query-list, .task-detail) {
+    --workspace-inspector-width: 280px;
   }
 }
