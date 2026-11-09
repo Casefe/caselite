@@ -44,6 +44,11 @@ export function createDeliverySnapshotStore(
     ): { ok: true; snapshot: DeliverySnapshot; created: boolean } | Failure {
       if (task.document_id !== request.document_id || task.body_id !== request.body_id)
         return fail('FORBIDDEN', '所选文档与当前任务不匹配。');
+      if (task.editor_schema === 2)
+        return fail(
+          'CONFLICT',
+          '含高亮或批注的正文暂不支持新建固定交付版本；已有固定版本仍可查看和导出。',
+        );
       if (
         task.document_archived_at ||
         task.body_revision !== request.expected_revision ||

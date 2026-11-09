@@ -1,3 +1,4 @@
+import DocumentAnnotations from './DocumentAnnotations';
 import { assertBoundedHtml } from './bounded-html';
 import { TableCommands } from './TableCommands';
 import { useLocalDoc, type RichDraft } from './editor-state';
@@ -745,7 +746,7 @@ export const DraftEditor = forwardRef<
   const editor = useEditor(
     {
       injectCSS: false,
-      extensions: localExtensions(doc, readTables && disabled),
+      extensions: localExtensions(doc, readTables && disabled, readTables && disabled),
       editable: !disabled,
       editorProps: {
         attributes: {
@@ -790,11 +791,14 @@ export const DraftEditor = forwardRef<
     [editor, disabled],
   );
   return (
-    <EditorSurface
-      editor={editor}
-      mode={editorProfiles[profile ?? (compact ? 'description' : 'draft')].mode}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+    <>
+      {editor && readTables && disabled && <DocumentAnnotations editor={editor} readonly />}
+      <EditorSurface
+        editor={editor}
+        mode={editorProfiles[profile ?? (compact ? 'description' : 'draft')].mode}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    </>
   );
 });

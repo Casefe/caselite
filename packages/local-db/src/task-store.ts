@@ -272,13 +272,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       if (request.operation === 'read') {
         const task = get(request.task_id);
         if (!task) return fail('NOT_FOUND', '任务不存在或不在当前工作区。');
-        if (task.editor_schema !== 1)
+        if (task.editor_schema !== 1 && task.editor_schema !== 2)
           return fail('CONFLICT', '正文格式版本暂不兼容，原始数据已保留。');
         const row = db
           .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
           .get(task.body_id, task.body_revision) as { state: Buffer } | undefined;
         if (task.body_revision > 0 && !row) throw new Error('Missing committed body');
-        if (row) validateBody(row.state, true);
+        if (row) validateBody(row.state, true, task.editor_schema);
         const objective = objectiveState(task.id, task.version);
         if (objective && bodyPlainText(objective) !== task.objective)
           throw new Error('Invalid task description projection');
@@ -483,10 +483,13 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             if (task.document_archived_at) return fail('CONFLICT', '正文已归档，请恢复后再保存。');
             if (task.document_id !== request.document_id || task.body_id !== request.body_id)
               return fail('FORBIDDEN', '正文与当前任务不匹配。');
-            if (task.editor_schema !== 1 || task.body_revision !== request.expected_revision)
+            if (
+              request.editor_schema < task.editor_schema ||
+              task.body_revision !== request.expected_revision
+            )
               return fail('CONFLICT', '正文已有新修订或格式不兼容，请核对后再保存。');
             try {
-              validateBody(Uint8Array.from(request.state), true);
+              validateBody(Uint8Array.from(request.state), true, request.editor_schema);
             } catch {
               return fail('INVALID_REQUEST', '正文结构或格式不支持，原修订已保留。');
             }
@@ -496,8 +499,9 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
               next,
               Buffer.from(request.state),
             );
-            db.prepare('UPDATE documents SET body_revision=? WHERE id=?').run(
+            db.prepare('UPDATE documents SET body_revision=?,editor_schema=? WHERE id=?').run(
               next,
+              request.editor_schema,
               task.document_id,
             );
             db.prepare('UPDATE task_items SET updated_at=? WHERE id=?').run(
