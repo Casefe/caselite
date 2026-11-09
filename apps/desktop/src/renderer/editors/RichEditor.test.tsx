@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Editor } from '@tiptap/react';
+import { StrictMode } from 'react';
 import { DraftEditor, draftDoc, EditorSurface, localExtensions } from './RichEditor';
 import * as Y from 'yjs';
 
@@ -26,6 +27,97 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 describe('rich input locking', () => {
+  it('keeps selection-menu lifecycle and formatting isolated across document and compact editors', async () => {
+    const firstDoc = draftDoc({ text: '文档条款独立保存', state: null });
+    const secondDoc = draftDoc({ text: '项目任务评论独立保存', state: null });
+    const first = new Editor({ extensions: localExtensions(firstDoc), injectCSS: false });
+    const second = new Editor({ extensions: localExtensions(secondDoc), injectCSS: false });
+    const firstUpdates = vi.fn();
+    const secondUpdates = vi.fn();
+    first.on('update', firstUpdates);
+    second.on('update', secondUpdates);
+    const firstState = Y.encodeStateAsUpdate(firstDoc);
+    const secondState = Y.encodeStateAsUpdate(secondDoc);
+    const view = render(
+      <StrictMode>
+        <EditorSurface editor={first} mode="simple" />
+        <EditorSurface editor={second} mode="compact" />
+      </StrictMode>,
+    );
+    try {
+      await waitFor(() => expect(first.isInitialized && second.isInitialized).toBe(true));
+      await act(async () => {
+        first.view.dom.focus();
+        first.commands.setTextSelection({ from: 1, to: 5 });
+      });
+      const menu = await screen.findByRole('toolbar', { name: '选区格式' });
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      expect(document.body.contains(menu)).toBe(true);
+      await waitFor(() => expect(menu.parentElement?.style.visibility).toBe('visible'));
+      expect(Y.encodeStateAsUpdate(firstDoc)).toEqual(firstState);
+      expect(firstUpdates).not.toHaveBeenCalled();
+      fireEvent.mouseDown(menu.querySelector('[aria-label=加粗]')!);
+      fireEvent.click(menu.querySelector('[aria-label=加粗]')!);
+      expect(first.getJSON().content?.[0].content?.[0].marks).toEqual([{ type: 'bold' }]);
+      expect(Y.encodeStateAsUpdate(secondDoc)).toEqual(secondState);
+      await act(async () => {
+        first.commands.undo();
+      });
+      expect(first.getJSON().content?.[0].content?.[0].marks).toBeUndefined();
+      await act(async () => {
+        second.view.dom.focus();
+        second.commands.setTextSelection({ from: 1, to: 5 });
+      });
+      await waitFor(() =>
+        expect(screen.getAllByRole('toolbar', { name: '选区格式' })).toHaveLength(1),
+      );
+      const compactMenu = screen.getByRole('toolbar', { name: '选区格式' });
+      fireEvent.click(compactMenu.querySelector('[aria-label=斜体]')!);
+      expect(second.getJSON().content?.[0].content?.[0].marks).toEqual([{ type: 'italic' }]);
+      expect(first.getJSON().content?.[0].content?.[0].marks).toBeUndefined();
+      await act(async () => {
+        second.commands.undo();
+      });
+      for (let i = 0; i < 3; i++) {
+        await act(async () => {
+          second.commands.setTextSelection(1);
+        });
+        await waitFor(() => expect(screen.queryByRole('toolbar', { name: '选区格式' })).toBeNull());
+        await act(async () => {
+          second.commands.setTextSelection({ from: 1, to: 5 });
+        });
+        await screen.findByRole('toolbar', { name: '选区格式' });
+      }
+      secondUpdates.mockClear();
+      const saved = Y.encodeStateAsUpdate(secondDoc);
+      fireEvent.compositionStart(second.view.dom);
+      await waitFor(() => expect(screen.queryByRole('toolbar', { name: '选区格式' })).toBeNull());
+      fireEvent.keyDown(second.view.dom, { key: 'Enter', isComposing: true });
+      fireEvent.compositionEnd(second.view.dom);
+      expect(Y.encodeStateAsUpdate(secondDoc)).toEqual(saved);
+      expect(secondUpdates).not.toHaveBeenCalled();
+      await act(async () => {
+        second.setEditable(false, false);
+      });
+      view.rerender(<EditorSurface editor={second} mode="compact" disabled />);
+      await waitFor(() => expect(screen.queryByRole('toolbar', { name: '选区格式' })).toBeNull());
+      expect(Y.encodeStateAsUpdate(secondDoc)).toEqual(saved);
+      expect(secondUpdates).not.toHaveBeenCalled();
+      view.unmount();
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      expect(document.querySelector('.selection-tools')).toBeNull();
+    } finally {
+      view.unmount();
+      first.destroy();
+      second.destroy();
+      firstDoc.destroy();
+      secondDoc.destroy();
+    }
+  });
   it('switches document schemes without changing Yjs, selection or undo history, and retains tables', async () => {
     const doc = draftDoc({ text: '合成付款条款', state: null });
     const editor = new Editor({ extensions: localExtensions(doc, true), injectCSS: false });

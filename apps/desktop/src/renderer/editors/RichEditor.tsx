@@ -4,16 +4,11 @@ import { useLocalDoc, type RichDraft } from './editor-state';
 import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
 export { localExtensions } from './editor-config';
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import { TextSelection } from '@tiptap/pm/state';
+import { BubbleMenuPlugin } from '@tiptap/extension-bubble-menu';
+import { PluginKey, TextSelection } from '@tiptap/pm/state';
+import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import { DocumentWordCount } from './DocumentWordCount';
 
@@ -231,34 +226,48 @@ function FormatBar({
   );
 }
 
-function SelectionFormatTools({ editor, from }: { editor: Editor; from: number }) {
-  const popup = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = popup.current;
-    const surface = element?.parentElement;
-    if (!element || !surface) return;
-    const position = () => {
-      if (editor.isDestroyed) return;
-      const selection = editor.view.coordsAtPos(editor.state.selection.from);
-      const bounds = surface.getBoundingClientRect();
-      const maxLeft = surface.clientWidth - element.offsetWidth;
-      element.style.left = `${Math.max(0, Math.min(selection.left - bounds.left, maxLeft))}px`;
-      const above = selection.top - bounds.top - element.offsetHeight - 4;
-      const below = selection.bottom - bounds.top + 4;
-      element.style.top = `${above < 0 && below + element.offsetHeight <= surface.clientHeight ? below : above}px`;
+const selectionMenuOptions = {
+  placement: 'top' as const,
+  offset: 6,
+  flip: { padding: 8 },
+  shift: { padding: 8 },
+};
+
+function SelectionFormatTools({ editor }: { editor: Editor }) {
+  const [element] = useState(() => {
+    const menu = document.createElement('div');
+    menu.className = 'selection-tools';
+    return menu;
+  });
+  const [pluginKey] = useState(() => new PluginKey('selectionFormat'));
+  useEffect(() => {
+    // 正文和紧凑描述使用不同滚动祖先；交给官方插件监听，不能只跟随window。
+    let parent = editor.view.dom.parentElement;
+    let scrollTarget: HTMLElement | Window = window;
+    while (parent) {
+      const style = getComputedStyle(parent);
+      if (/(auto|scroll)/.test(style.overflow + style.overflowX + style.overflowY)) {
+        scrollTarget = parent;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+    editor.registerPlugin(
+      BubbleMenuPlugin({
+        editor,
+        element,
+        pluginKey,
+        options: { ...selectionMenuOptions, scrollTarget },
+        updateDelay: 0,
+      }),
+    );
+    // 同步注销当前实例，避免React严格模式重放后被旧的延迟清理移除；不改官方定位算法。
+    return () => {
+      editor.unregisterPlugin(pluginKey);
+      element.remove();
     };
-    // 选区坐标和弹层尺寸随窄窗换行变化，外层滚动时它们随正文一起移动。
-    position();
-    const resize = new ResizeObserver(position);
-    resize.observe(surface);
-    resize.observe(element);
-    return () => resize.disconnect();
-  }, [editor, from]);
-  return (
-    <div className="selection-tools" ref={popup}>
-      <FormatBar editor={editor} floating marksOnly />
-    </div>
-  );
+  }, [editor, element, pluginKey]);
+  return createPortal(<FormatBar editor={editor} floating marksOnly />, element);
 }
 
 export function EditorSurface({
@@ -531,12 +540,12 @@ export function EditorSurface({
           </button>
           {showFormats && <FormatBar editor={editor} />}
           {!showFormats && !composing && ui?.selected && ui.focused && (
-            <SelectionFormatTools editor={editor} from={ui.from} />
+            <SelectionFormatTools editor={editor} />
           )}
         </>
       )}
       {documentMode && editable && !composing && ui?.selected && ui.focused && (
-        <SelectionFormatTools editor={editor} from={ui.from} />
+        <SelectionFormatTools editor={editor} />
       )}
       {showBlockActions && editable && ui && (
         <div className="block-controls" style={{ top: Math.max(8, ui.top) }}>
