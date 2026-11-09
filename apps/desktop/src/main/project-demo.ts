@@ -110,7 +110,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
           (input?.value ?? input?.textContent) !== window.__resizeDraft)
           throw new Error('Resizing remounted conversation or changed draft');
         if(split.dataset.aiExpanded==='true') {
-          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport,.document-review'))
+          for(const scroll of split.querySelectorAll('.inspector-ai-scroll,.assistant-thread,.assistant-viewport,.editor-agent-viewport,.document-review-content'))
             if(scroll.clientHeight>0 && scroll.scrollHeight>scroll.clientHeight+2 && scroll.scrollTop+scroll.clientHeight<scroll.scrollHeight-2)
               throw new Error('Expanded conversation did not open at the latest content');
         }
@@ -140,7 +140,7 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         }
         if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
           throw new Error('Minimized AI does not match property width');
-        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review > h2,.document-review > .caption')].some(node=>node.getClientRects().length)))
+        if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review h2,.document-review .caption')].some(node=>node.getClientRects().length)))
           throw new Error('Compact AI exposed history/status or exceeded composer height');
         return {state:${JSON.stringify(state)}, theme:document.documentElement.dataset.theme, width:innerWidth, height:innerHeight,
           expanded:split.dataset.aiExpanded, ai:ai.toJSON()};

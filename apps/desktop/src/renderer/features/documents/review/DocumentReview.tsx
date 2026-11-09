@@ -503,133 +503,139 @@ export default function DocumentReview({
         composing.current = false;
       }}
     >
-      <h2>{variant === 'assistant' ? '正文 AI 助手' : '文档 AI 审阅'}</h2>
-      {new URLSearchParams(window.location.search).has('mock-agent') && (
-        <p className="caption">合成演示 · MOCK_ONLY</p>
-      )}
-      <p className="caption">
-        选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
-      </p>
-      {reference?.text ? (
-        <section className="document-review-reference" aria-label="本轮引用">
+      <div className="document-review-content">
+        <h2>{variant === 'assistant' ? '正文 AI 助手' : '文档 AI 审阅'}</h2>
+        {new URLSearchParams(window.location.search).has('mock-agent') && (
+          <p className="caption">合成演示 · MOCK_ONLY</p>
+        )}
+        <p className="caption">
+          选中文字作为本轮引用；点击技能立即分析，也可在右侧填写问题后发送。候选接受前不改变正文。
+        </p>
+        {reference?.text ? (
+          <section className="document-review-reference" aria-label="本轮引用">
+            <PageReference
+              reference={{ title, mode: 'selection', characters: reference.text.length }}
+            />
+            {submitted && !valid && !applying && !verifyApply && (
+              <p>工作稿已变化，请保存后重新选取。</p>
+            )}
+            {!submitted && blocked && <p>请先保存正文，引用不会自动外发。</p>}
+          </section>
+        ) : generalSelection && !submitted ? (
           <PageReference
-            reference={{ title, mode: 'selection', characters: reference.text.length }}
+            reference={{ title, mode: 'selection', characters: generalSelection.length }}
           />
-          {submitted && !valid && !applying && !verifyApply && (
-            <p>工作稿已变化，请保存后重新选取。</p>
-          )}
-          {!submitted && blocked && <p>请先保存正文，引用不会自动外发。</p>}
-        </section>
-      ) : generalSelection && !submitted ? (
-        <PageReference
-          reference={{ title, mode: 'selection', characters: generalSelection.length }}
-        />
-      ) : pagePreview ? (
-        <PageReference reference={pagePreview} />
-      ) : null}
-      {!submitted && reference?.text && (
-        <button
-          type="button"
-          onClick={() => {
-            if (editor) editor.commands.setTextSelection(editor.state.selection.to);
-          }}
-        >
-          移除引用，改为插入
-        </button>
-      )}
-      {(preview || pagePreview) && submitted && !terminal && (running || streamed) && !error && (
-        <section className="document-review-text" aria-label="流式候选">
-          <h3>正在生成候选</h3>
-          <p>{streamed || '等待模型响应…'}</p>
-        </section>
-      )}
-      {!preview && pagePreview && terminal && (
-        <section className="document-review-text" aria-label="本页 AI 回答">
-          <p>{candidate}</p>
-          <button type="button" onClick={() => void reject()}>
-            继续提问
+        ) : pagePreview ? (
+          <PageReference reference={pagePreview} />
+        ) : null}
+        {!submitted && reference?.text && (
+          <button
+            type="button"
+            onClick={() => {
+              if (editor) editor.commands.setTextSelection(editor.state.selection.to);
+            }}
+          >
+            移除引用，改为插入
           </button>
-        </section>
-      )}
-      {preview && terminal && (
-        <section className="document-review-text" aria-label="替换差异">
-          <h3>{action === 'replace' ? '替换差异' : '待插入正文'}</h3>
-          <label>
-            接受方式
-            <select
-              aria-label="接受方式"
-              value={action}
-              disabled={applying || !!recovery}
-              onChange={(event) => setAction(event.target.value as typeof action)}
-            >
-              <option value="replace" disabled={!preview.range.text}>
-                替换所选文字
-              </option>
-              <option value="insert_after">插入选区或光标后</option>
-              <option value="append">追加到文末</option>
-            </select>
-          </label>
-          <ins>{candidate}</ins>
-          {!applicable && <p>请选择适用的接受方式；候选须为有效纯文本，换行将保存为段落。</p>}
+        )}
+        {(preview || pagePreview) && submitted && !terminal && (running || streamed) && !error && (
+          <section className="document-review-text" aria-label="流式候选">
+            <h3>正在生成候选</h3>
+            <p>{streamed || '等待模型响应…'}</p>
+          </section>
+        )}
+        {!preview && pagePreview && terminal && (
+          <section className="document-review-text" aria-label="本页 AI 回答">
+            <p>{candidate}</p>
+            <button type="button" onClick={() => void reject()}>
+              继续提问
+            </button>
+          </section>
+        )}
+        {preview && terminal && (
+          <section className="document-review-text" aria-label="替换差异">
+            <h3>{action === 'replace' ? '替换差异' : '待插入正文'}</h3>
+            <label>
+              接受方式
+              <select
+                aria-label="接受方式"
+                value={action}
+                disabled={applying || !!recovery}
+                onChange={(event) => setAction(event.target.value as typeof action)}
+              >
+                <option value="replace" disabled={!preview.range.text}>
+                  替换所选文字
+                </option>
+                <option value="insert_after">插入选区或光标后</option>
+                <option value="append">追加到文末</option>
+              </select>
+            </label>
+            <ins>{candidate}</ins>
+            {!applicable && <p>请选择适用的接受方式；候选须为有效纯文本，换行将保存为段落。</p>}
+            <div className="document-review-actions">
+              <button
+                type="button"
+                onClick={() => void reject()}
+                disabled={applying || verifyApply}
+              >
+                拒绝
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void apply()}
+                disabled={(!valid && !verifyApply) || !applicable || applying}
+              >
+                {applying
+                  ? '核对中…'
+                  : verifyApply
+                    ? '核对原提交'
+                    : recovery === 'retry'
+                      ? '重试确认'
+                      : '确认写回'}
+              </button>
+            </div>
+          </section>
+        )}
+        {error && !running && !terminal && (preview || pageRunId) && (
           <div className="document-review-actions">
-            <button type="button" onClick={() => void reject()} disabled={applying || verifyApply}>
-              拒绝
+            <button type="button" onClick={() => void recoverRun()}>
+              核对本轮结果
             </button>
             <button
               type="button"
-              className="primary"
-              onClick={() => void apply()}
-              disabled={(!valid && !verifyApply) || !applicable || applying}
+              onClick={() =>
+                void window.caselite
+                  .agent({
+                    protocol_version,
+                    operation: 'cancel',
+                    scope,
+                    run_id: (preview?.id ?? pageRunId)!,
+                  })
+                  .then(() => recoverRun())
+                  .catch(() => setNotice('停止结果待核对。'))
+              }
             >
-              {applying
-                ? '核对中…'
-                : verifyApply
-                  ? '核对原提交'
-                  : recovery === 'retry'
-                    ? '重试确认'
-                    : '确认写回'}
+              停止原运行
             </button>
           </div>
-        </section>
-      )}
-      {error && !running && !terminal && (preview || pageRunId) && (
-        <div className="document-review-actions">
-          <button type="button" onClick={() => void recoverRun()}>
-            核对本轮结果
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void window.caselite
-                .agent({
-                  protocol_version,
-                  operation: 'cancel',
-                  scope,
-                  run_id: (preview?.id ?? pageRunId)!,
-                })
-                .then(() => recoverRun())
-                .catch(() => setNotice('停止结果待核对。'))
-            }
-          >
-            停止原运行
-          </button>
-        </div>
-      )}
-      {(notice || error) && <p role="status">{notice || error?.message}</p>}
-      {history.length > 0 && (
-        <details>
-          <summary>本文档本机运行记录</summary>
-          {[...history]
-            .reverse()
-            .slice(0, 10)
-            .map((run) => (
-              <section key={run.id} className="document-review-text">
-                <h3>{run.prompt}</h3>
-                <p>{run.status === 'succeeded' ? run.output : run.message}</p>
-              </section>
-            ))}
-        </details>
-      )}
+        )}
+        {(notice || error) && <p role="status">{notice || error?.message}</p>}
+        {history.length > 0 && (
+          <details>
+            <summary>本文档本机运行记录</summary>
+            {[...history]
+              .reverse()
+              .slice(0, 10)
+              .map((run) => (
+                <section key={run.id} className="document-review-text">
+                  <h3>{run.prompt}</h3>
+                  <p>{run.status === 'succeeded' ? run.output : run.message}</p>
+                </section>
+              ))}
+          </details>
+        )}
+      </div>
       {
         <EditorConversation
           messages={messages.map((message) => ({

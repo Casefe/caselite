@@ -750,17 +750,23 @@
   padding: 0;
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
-.inspector-ai-scroll .document-review > :not(.editor-agent-thread) {
-  flex-shrink: 0;
+.inspector-ai-scroll .document-review-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 .inspector-ai-scroll [aria-label='正文 AI 侧栏'],
 .inspector-ai-scroll [aria-label='正文 AI 侧栏'] > div:not([hidden]) {
   height: 100%;
 }
 .inspector-ai-scroll .editor-agent-thread {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-height: 100px;
 }
 .inspector-ai-scroll .editor-agent-viewport {
   flex: 1 1 auto;
