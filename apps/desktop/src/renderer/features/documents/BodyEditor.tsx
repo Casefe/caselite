@@ -7,7 +7,7 @@ import type { Task, TaskRequest } from '../../../preload/caselite-api';
 import { Icon } from '../../shared/ui/Icon';
 import { mutation, check } from '../../shared/data/taskCommand';
 import { EditorSurface, localExtensions } from '../../editors/RichEditor';
-import DocumentReview from './review/DocumentReview';
+import DocumentReview, { WritingSkillMenu, type WritingSkillHandle } from './review/DocumentReview';
 import DeliverySnapshots from './delivery/DeliverySnapshots';
 import { useLocalPreferences } from '../../shared/data/LocalPreferences';
 
@@ -44,6 +44,8 @@ export default function BodyEditor({
   const [dirty, setDirty] = useState(false);
   const [hasPending, setHasPending] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const skillHandle = useRef<WritingSkillHandle>(null);
+  const [skillAvailable, setSkillAvailable] = useState(false);
   const changes = useRef(0);
   const reviewHydrating = useRef(false);
   const editorReady = useRef(false);
@@ -142,6 +144,25 @@ export default function BodyEditor({
           editor={editor}
           mode={editorProfiles.document.mode}
           documentScheme={preferences.editor_mode ?? 'markdown'}
+          selectionActions={
+            editor &&
+            reviewDock && (
+              <WritingSkillMenu
+                editor={editor}
+                revision={revision}
+                enabled={
+                  skillAvailable &&
+                  !dirty &&
+                  !busy &&
+                  !hasPending &&
+                  !disabled &&
+                  !reviewSaving &&
+                  !task.document_archived_at
+                }
+                onPick={(request) => skillHandle.current?.pick(request)}
+              />
+            )
+          }
         />
         <footer>
           <span role="status" data-testid="save-status">
@@ -189,6 +210,8 @@ export default function BodyEditor({
               key={task.document_id}
               variant={reviewVariant}
               editor={editor}
+              skillHandle={skillHandle}
+              onSkillAvailability={setSkillAvailable}
               identity={{
                 task_id: task.id,
                 document_id: task.document_id,

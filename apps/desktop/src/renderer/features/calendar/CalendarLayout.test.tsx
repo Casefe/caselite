@@ -75,6 +75,20 @@ function setup(fault = '') {
       <>
         <button onClick={() => setShow(!show)}>切换日历消费者</button>
         <output aria-label="个人偏好有草稿">{String(preferences.dirty)}</output>
+        <output aria-label="技能设置草稿">
+          {JSON.stringify(preferences.draft.writing_skills ?? [])}
+        </output>
+        <button
+          onClick={() =>
+            preferences.change({
+              writing_skills: [
+                { id: 'draft', name: '未保存技能', instruction: '合成指令', enabled: true },
+              ],
+            })
+          }
+        >
+          编辑技能草稿
+        </button>
         <input
           aria-label="个人设置草稿"
           value={preferences.draft.name}
@@ -190,6 +204,36 @@ it('removes global drag listeners on cancel, blur and consumer unmount without s
     fireEvent.pointerUp(window, { clientX: 360, pointerId: 9 });
   }
   expect(s.api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(0);
+});
+it('keeps unsaved writing skills while committing only calendar preferences', async () => {
+  const s = setup(),
+    separator = await ready();
+  fireEvent.click(screen.getByText('编辑技能草稿'));
+  fireEvent.keyDown(separator, { key: 'ArrowRight' });
+  fireEvent.keyUp(separator, { key: 'ArrowRight' });
+  await screen.findByText('日历布局已保存。');
+  expect(s.saved().writing_skills).toBeUndefined();
+  expect(screen.getByLabelText('技能设置草稿').textContent).toContain('未保存技能');
+  expect(screen.getByLabelText('个人偏好有草稿').textContent).toBe('true');
+});
+it('takes latest saved skill values after an old receipt instead of mistaking cloned arrays for edits', async () => {
+  const s = setup('unknown'),
+    separator = await ready();
+  const first = { id: 'saved', name: '已存技能', instruction: '合成指令', enabled: true };
+  s.replace({ writing_skills: [first], version: 1 });
+  fireEvent.click(screen.getByText('重读布局偏好'));
+  await waitFor(() =>
+    expect(screen.getByLabelText('技能设置草稿').textContent).toContain('已存技能'),
+  );
+  fireEvent.keyDown(separator, { key: 'ArrowRight' });
+  fireEvent.keyUp(separator, { key: 'ArrowRight' });
+  await screen.findByText('合成布局未知结果');
+  s.replace({ writing_skills: [{ ...first, name: '其他窗口最新技能' }], version: 3 });
+  fireEvent.click(screen.getByText('核对布局保存结果'));
+  await screen.findByText('日历布局已保存。');
+  expect(screen.getByLabelText('技能设置草稿').textContent).toContain('其他窗口最新技能');
+  expect(screen.getByLabelText('个人偏好有草稿').textContent).toBe('false');
+  expect(s.api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
 });
 it('retains the original unknown layout request across calendar unmount, verifies once, then restores the saved width', async () => {
   const s = setup('unknown'),

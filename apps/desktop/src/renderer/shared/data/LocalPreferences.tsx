@@ -9,6 +9,13 @@ import type {
 import { mutation } from './taskCommand';
 type Write = Extract<LocalPreferencesRequest, { operation: 'set' }>;
 type Phase = 'idle' | 'verify' | 'retry';
+// 回执须逐值相同；Schema重排对象键不改变含义，技能数组的顺序仍参与比较。
+const preferenceJson = (values: unknown) =>
+  JSON.stringify(values, (_key, value: unknown) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value,
+  );
 const fields = ({ version, ...values }: LocalPreferences): LocalPreferenceValues => {
   void version;
   return values;
@@ -67,8 +74,8 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     setDraft((old) => {
       if (!base) return fields(value);
       const edited = Object.fromEntries(
-        (['name', 'email', 'avatar', 'show_word_count', 'editor_mode'] as const)
-          .filter((key) => old[key] !== base[key])
+        (['name', 'email', 'avatar', 'show_word_count', 'editor_mode', 'writing_skills'] as const)
+          .filter((key) => preferenceJson(old[key]) !== preferenceJson(base[key]))
           .map((key) => [key, old[key]]),
       );
       return { ...fields(value), ...edited };
@@ -127,7 +134,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
         if (
           r.receipt !== original.idempotency_key ||
           r.preferences.version !== original.expected_version + 1 ||
-          JSON.stringify(fields(r.preferences)) !== JSON.stringify(original.values)
+          preferenceJson(fields(r.preferences)) !== preferenceJson(original.values)
         )
           throw new Error('Unexpected receipt');
         accept(r.preferences, requestKind.current === 'calendar' ? original.values : undefined);
@@ -187,6 +194,18 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     )
       return false;
     const values = { ...draft, name: draft.name.trim(), email: draft.email.trim() };
+    if (values.writing_skills) {
+      values.writing_skills = values.writing_skills.map(({ id, name, instruction, enabled }) => ({
+        id,
+        name: name.trim(),
+        instruction: instruction.trim(),
+        enabled,
+      }));
+      if (values.writing_skills.some((skill) => !skill.name || !skill.instruction)) {
+        setError('请填写每个技能的名称和执行指令。');
+        return false;
+      }
+    }
     if (!values.name) {
       setError('请填写名称。');
       return false;

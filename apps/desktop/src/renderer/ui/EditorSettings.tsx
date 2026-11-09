@@ -1,4 +1,5 @@
 import { useLocalPreferences } from '../shared/data/LocalPreferences';
+import WritingSkillsSettings from './WritingSkillsSettings';
 
 export default function EditorSettings() {
   const s = useLocalPreferences();
@@ -42,6 +43,7 @@ export default function EditorSettings() {
       <p className="editor-settings-note">
         保存后生效，正文和已有格式会保留。Word 当前为连续纸张视图，尚不提供自动分页、页眉或页脚。
       </p>
+      <WritingSkillsSettings disabled={disabled} />
       {s.error && <p role="alert">{s.error}</p>}
       {s.notice && <p role="status">{s.notice}</p>}
       <div className="personal-settings-actions">
