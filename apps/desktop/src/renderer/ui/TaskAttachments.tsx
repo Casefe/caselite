@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DocxOriginalReader } from './DocxOriginalReader';
 import { isDocx, useMaterials } from './useMaterials';
 import ImportantDates from '../features/calendar/ImportantDates';
-import MaterialBatchImport from './MaterialBatchImport';
 import type { Task } from '../../preload/caselite-api';
 
 const PdfReader = lazy(() => import('./PdfReader'));
@@ -31,7 +30,6 @@ export default function TaskAttachments({
 }) {
   // 属性栏只消费材料，不把导入或阅读动作变成 AI 选材授权。
   const c = useMaterials(taskId, true, false);
-  const [batchMode, setBatchMode] = useState<'files' | 'folder' | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const reader = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -70,31 +68,6 @@ export default function TaskAttachments({
           添加附件
         </button>
       </header>
-      {typeof window.caselite?.materialBatch === 'function' && (
-        <div className="material-batch-actions">
-          <button
-            type="button"
-            disabled={disabled || c.busy || Boolean(c.staged)}
-            onClick={() => setBatchMode('files')}
-          >
-            批量添加
-          </button>
-          <button
-            type="button"
-            disabled={disabled || c.busy || Boolean(c.staged)}
-            onClick={() => setBatchMode('folder')}
-          >
-            导入文件夹
-          </button>
-        </div>
-      )}
-      <MaterialBatchImport
-        key={taskId}
-        scope={taskId}
-        mode={batchMode}
-        onRequested={() => setBatchMode(null)}
-        disabled={disabled || c.busy}
-      />
       {task && onDateBlocked && onTaskChanged && (
         <ImportantDates
           key={task.id}

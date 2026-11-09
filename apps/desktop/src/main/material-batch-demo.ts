@@ -2,7 +2,7 @@ import type { BrowserWindow } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { createMaterialBatchApplication } from '@caselite/application';
-import type { MaterialBatchResponse, MaterialResponse } from '@caselite/contracts';
+import type { MaterialBatchResponse } from '@caselite/contracts';
 import { scanMaterialBatch } from './adapters/material-batch-files';
 
 export async function runMaterialBatchDemo(
@@ -13,13 +13,13 @@ export async function runMaterialBatchDemo(
 ) {
   const read = phase === 'materials-batch-read';
   if (!read) {
-    // 固定合成临时目录替代系统选择器；保存/回读仍走真实Renderer→Preload→IPC→Application。
+    // 保留一份旧批次，验证撤下界面后不会显示清单或错误，也不删除已有数据。
     const preview = await batches.create(
       'home',
-      '合成补件批次',
+      '合成旧批次',
       await scanMaterialBatch([join(directory, 'batch-input')], true),
     );
-    if (!preview.ok || !preview.batch) throw new Error('Batch preview failed');
+    if (!preview.ok || !preview.batch) throw new Error('Legacy batch fixture failed');
   }
   const window = await create();
   window.webContents.debugger.attach('1.3');
@@ -30,67 +30,52 @@ export async function runMaterialBatchDemo(
     mobile: false,
   });
   const evaluate = (code: string) => window.webContents.executeJavaScript(code);
-  async function waitFor(code: string) {
-    for (let i = 0; i < 150; i++) {
-      if (await evaluate(code)) return;
-      await new Promise((done) => setTimeout(done, 200));
-    }
-    throw new Error('Batch UI timeout: ' + code);
+  for (let i = 0; i < 150; i++) {
+    if (await evaluate("Boolean(document.querySelector('.material-menu-trigger'))")) break;
+    await new Promise((done) => setTimeout(done, 200));
   }
-  async function capture(name: string) {
-    await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
-    const shot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
-      format: 'png',
-      captureBeyondViewport: false,
-    });
-    writeFileSync(join(directory, name + '.png'), Buffer.from(shot.data, 'base64'));
-  }
-  await waitFor("Boolean(document.querySelector('[aria-label=材料批次] li'))");
-  await capture(read ? 'batch-reopened' : 'batch-preview');
-  if (!read) {
-    await evaluate(
-      "[...document.querySelectorAll('button')].find(el=>el.textContent==='保存本批材料').click()",
-    );
-    await waitFor(
-      "document.querySelector('[aria-label=材料批次]').textContent.includes('已保存 2 项') && document.querySelector('[aria-label=材料批次]').textContent.includes('继续保存未完成项')",
-    );
-  }
+  const trigger = await evaluate("Boolean(document.querySelector('.material-menu-trigger'))");
+  if (!trigger) throw new Error('Upload composer unavailable');
+  await evaluate("document.querySelector('.material-menu-trigger').click()");
+  const ui = await evaluate(`({
+    actions: [...document.querySelectorAll('[role=menuitem]')].map(el=>el.textContent.trim()),
+    batchPanel: Boolean(document.querySelector('[aria-label=材料批次]')),
+    batchError: document.body.textContent.includes('批次请求无效')
+  })`);
+  if (
+    ui.batchPanel ||
+    ui.batchError ||
+    ui.actions.some((text: string) => text.includes('批量保存文件') || text.includes('保存文件夹'))
+  )
+    throw new Error('Retired batch UI is still mounted');
+  if (!ui.actions.some((text: string) => text.includes('PDF / DOCX')))
+    throw new Error('Normal file upload missing');
+  await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+  const shot = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: false,
+  });
+  writeFileSync(
+    join(directory, read ? 'upload-menu-reopened.png' : 'upload-menu-clean.png'),
+    Buffer.from(shot.data, 'base64'),
+  );
   const result = (await evaluate(
     "window.caselite.materialBatch({protocol_version:1,operation:'list',scope:'home'})",
   )) as MaterialBatchResponse;
-  const materials = (await evaluate(
-    "window.caselite.material({protocol_version:1,operation:'list',scope:'home'})",
-  )) as MaterialResponse;
-  if (
-    !result.ok ||
-    !result.batch ||
-    !materials.ok ||
-    materials.materials.length !== 2 ||
-    result.batch.items.filter((item) => item.state === 'failed').length !== 1 ||
-    result.batch.items.filter((item) => item.state === 'skipped').length !== 1
-  )
-    throw new Error('Batch mixed result mismatch');
-  const ids = materials.materials.map((item) => item.id);
+  if (!result.ok || !result.batch) throw new Error('Existing batch data was removed');
   if (read) {
-    const before = JSON.parse(readFileSync(join(directory, 'batch-write.json'), 'utf8'));
-    if (JSON.stringify(ids) !== JSON.stringify(before.ids))
-      throw new Error('Saved source identity changed after restart');
-    await evaluate(
-      `[...document.querySelectorAll('button')].find(el=>el.textContent==='继续保存未完成项').click()`,
-    );
-    await waitFor(
-      "document.querySelector('[aria-label=材料批次]').textContent.includes('重新选择原文件')",
-    );
+    const before = JSON.parse(readFileSync(join(directory, 'batch-ui-removed-write.json'), 'utf8'));
+    if (JSON.stringify(before.batch) !== JSON.stringify(result.batch))
+      throw new Error('Legacy batch changed during UI removal');
   }
-  await capture(read ? 'batch-recovery' : 'batch-partial');
   writeFileSync(
-    join(directory, read ? 'batch-read.json' : 'batch-write.json'),
+    join(directory, read ? 'batch-ui-removed-read.json' : 'batch-ui-removed-write.json'),
     JSON.stringify(
       {
         phase,
-        ids,
+        ui,
         batch: result.batch,
-        rawFilePersistence: 'PASS_REAL',
+        nativeUI: 'PASS_REAL',
         nativePicker: 'NOT_RUN',
         providerCalls: 0,
       },
@@ -98,5 +83,5 @@ export async function runMaterialBatchDemo(
       2,
     ),
   );
-  await window.webContents.debugger.detach();
+  window.webContents.debugger.detach();
 }

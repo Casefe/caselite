@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import {
   mkdtempSync,
   realpathSync,
@@ -254,6 +254,33 @@ it('rejects an over-limit selection without importing a hidden subset', async ()
     return file;
   });
   await expect(scanMaterialBatch(files, false)).rejects.toThrow('最多16项');
+});
+it('lets ordinary attachment uploads proceed while retaining an old batch manifest', async () => {
+  const s = setup(),
+    app = s.open();
+  try {
+    const preview = success(
+      await app.batch.create('home', '旧批次', await scanMaterialBatch([s.one], false)),
+    )!;
+    const batchRead = vi.spyOn(app.store.materials, 'activeBatch');
+    const staged = await app.materials.stage(s.two, 'home');
+    expect(staged.ok).toBe(true);
+    if (!staged.ok || !staged.staged) throw new Error('Ordinary staging failed');
+    const saved = await app.materials.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'commit',
+      token: staged.staged.token,
+    });
+    expect(saved.ok).toBe(true);
+    expect(batchRead).not.toHaveBeenCalled();
+    batchRead.mockRestore();
+    expect(app.store.materials.activeBatch('home')?.id).toBe(preview.id);
+    expect(app.store.materials.list('home')).toHaveLength(1);
+    app.materials.close();
+  } finally {
+    app.store.close();
+  }
 });
 it('does not persist or return absolute source paths when a selected file disappears', async () => {
   const s = setup(),

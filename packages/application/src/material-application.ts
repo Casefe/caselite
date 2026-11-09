@@ -225,8 +225,7 @@ export function createMaterialApplication(ports: {
     ): Promise<MaterialResponse> {
       try {
         if (scope !== 'home' && !ports.taskExists(scope)) return fail('SCOPE', '任务不存在。');
-        const active = store.activeBatch?.(scope);
-        if (active && active.id !== batch?.id) return fail('BUSY', '请先处理当前材料批次。');
+        const active = batch ? store.activeBatch?.(scope) : undefined;
         if (batch) {
           if (
             !active ||
@@ -256,8 +255,9 @@ export function createMaterialApplication(ports: {
           await files.discard(staged.token);
           return fail('SCOPE', '任务范围已变化。');
         }
-        const currentBatch = store.activeBatch?.(scope);
-        if (currentBatch?.id !== batch?.id || store.pending(scope)) {
+        const currentBatch = batch ? store.activeBatch?.(scope) : undefined;
+        // 批量入口已移除；旧清单不能阻断普通附件，批次内部仍核对原批次身份。
+        if ((batch && currentBatch?.id !== batch.id) || store.pending(scope)) {
           await files.discard(staged.token);
           return fail('BUSY', '另一项导入已先登记，请先处理当前材料。');
         }
