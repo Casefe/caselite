@@ -73,6 +73,13 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
       const oldAiTop = a.top;
       if (Math.abs(ai.getBoundingClientRect().top - oldAiTop) > 1) throw new Error('Property scrolling moved AI');
       const scrollTop=properties.scrollTop;
+      const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
+      if(last) {
+        last.scrollIntoView({block:'nearest'});
+        const l=last.getBoundingClientRect();
+        if(l.top<p.top-1 || l.bottom>p.bottom+1 || !last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+          throw new Error('Last property control is covered: '+last.outerHTML.slice(0,120)+' '+JSON.stringify({l:l.toJSON(),p:p.toJSON()}));
+      }
       properties.scrollTop=0;
       button.focus();
       return {width: innerWidth, height: innerHeight, theme:document.documentElement.dataset.theme, sidebar: r.toJSON(), ai:a.toJSON(), properties:p.toJSON(),ratio,
@@ -106,6 +113,14 @@ export async function checkSidebarResize(window: BrowserWindow, root: string, la
         await evaluate(`(() => {
         const split=document.querySelector('${selector}');
         const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
+        const properties=split.querySelector('.inspector-properties-scroll');
+        const last=[...properties.querySelectorAll('input:not(:disabled),select:not(:disabled),button:not(:disabled),summary')].filter(node=>node.getClientRects().length).at(-1);
+        if(last) {
+          last.scrollIntoView({block:'nearest'});
+          const l=last.getBoundingClientRect();
+          if(!last.contains(document.elementFromPoint(l.left+l.width/2,l.top+l.height/2)))
+            throw new Error('Last property control unreachable after toggle');
+        }
         if(split.dataset.aiExpanded==='false' && Math.abs(ai.width-split.getBoundingClientRect().width)>2)
           throw new Error('Minimized AI does not match property width');
         if(split.dataset.aiExpanded==='false' && (ai.height>166 || [...split.querySelectorAll('.assistant-thread,.assistant-run-status,.document-review > h2,.document-review > .caption')].some(node=>node.getClientRects().length)))

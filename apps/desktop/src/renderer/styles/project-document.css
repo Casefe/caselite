@@ -554,6 +554,9 @@
   flex: 0 0 164px;
   max-height: 100%;
 }
+.inspector-split[data-ai-expanded='true']::after {
+  flex-basis: min(max(240px, 75%), calc(100% - min(64px, 20%)));
+}
 .inspector-split[data-ai-expanded='false']
   .inspector-ai-scroll
   .assistant-panel--compact
