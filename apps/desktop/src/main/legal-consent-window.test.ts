@@ -17,7 +17,8 @@ vi.mock('electron', async () => {
     BrowserWindow: class extends EventEmitter {
       destroyed = false;
       webContents = Object.assign(new EventEmitter(), {
-        mainFrame: {},
+        mainFrame: { url: 'file:///legal.html' },
+        isDestroyed: () => false,
         setWindowOpenHandler: vi.fn(),
       });
       constructor() {

@@ -5,7 +5,10 @@ import {
   legalConsentResponseSchema,
 } from '@caselite/contracts';
 import type { createLegalConsentApplication } from '@caselite/application';
-import { isTrustedDesktopSender } from './ipc/register-application-ipc';
+import {
+  registerDesktopWindowCapabilities,
+  isTrustedConsentSender,
+} from './ipc/window-capabilities';
 import { appearanceBackground, type createWindowAppearance } from './window-appearance';
 
 export async function showLegalConsent(
@@ -34,6 +37,7 @@ export async function showLegalConsent(
       webviewTag: false,
     },
   });
+  registerDesktopWindowCapabilities(window, 'consent', LEGAL_WINDOW_WEBPACK_ENTRY);
   appearance?.attach(window);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -52,7 +56,7 @@ export async function showLegalConsent(
     window.webContents.once('render-process-gone', () => finish(false));
     // 窗口尚未确认时不注册任何业务IPC；本通道只信任该窗口的主Frame。
     ipcMain.handle(LEGAL_CONSENT_CHANNEL, (event, input) => {
-      if (finished || !isTrustedDesktopSender(event, [window]))
+      if (finished || !isTrustedConsentSender(event))
         return { ok: false, message: '当前页面无权确认软件协议。' };
       const request = legalConsentRequestSchema.safeParse(input);
       const response = legalConsentResponseSchema.parse(application.execute(input));

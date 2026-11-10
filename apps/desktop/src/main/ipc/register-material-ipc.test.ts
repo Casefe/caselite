@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
   },
 }));
 vi.mock('node:fs/promises', () => ({ writeFile: mock.write }));
-vi.mock('./register-application-ipc', () => ({ isTrustedDesktopSender: mock.trusted }));
+vi.mock('./window-capabilities', () => ({ isTrustedBusinessSender: mock.trusted }));
 import { registerMaterialIpc } from './register-material-ipc';
 import {
   MATERIAL_CHANNEL,
@@ -75,6 +75,15 @@ it('writes only reread fixed original bytes to a new file', async () => {
     flag: 'wx',
     mode: 0o600,
   });
+});
+
+it('does not return original metadata to a revoked document after a completed file write', async () => {
+  const execute = vi.fn().mockResolvedValue(read);
+  mock.write.mockImplementationOnce(async () => {
+    mock.trusted.mockReturnValue(false);
+  });
+  expect(await setup(execute)()).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+  expect(mock.write).toHaveBeenCalledTimes(1);
 });
 
 it('rejects a changed original and releases the dialog lock without writing', async () => {

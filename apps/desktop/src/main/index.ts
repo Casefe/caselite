@@ -1,3 +1,5 @@
+import { runWindowCapabilityProbe } from './window-capability-probe';
+import { registerDesktopWindowCapabilities, isTrustedProbeSender } from './ipc/window-capabilities';
 import { runTaskViewsDemo } from './task-views-demo';
 import { needsLegalConsent } from './startup-policy';
 import { runExportStyleDemo } from './export-style-demo';
@@ -124,7 +126,7 @@ import {
   openTaskStore,
 } from '@caselite/local-db';
 
-import { isTrustedDesktopSender, registerApplicationIpc } from './ipc/register-application-ipc';
+import { registerApplicationIpc } from './ipc/register-application-ipc';
 
 function reportStartupFailure(): void {
   // Keep internal paths and stack traces out of user-facing errors.
@@ -194,6 +196,7 @@ async function createWindow(
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await observe?.(window);
+  registerDesktopWindowCapabilities(window, 'workbench', MAIN_WINDOW_WEBPACK_ENTRY);
   await window.loadURL(entry.toString());
   if (CASELITE_LOCAL_TEST_BUILD) window.setTitle('CaseLite · 本地测试版');
   let paintTimer: ReturnType<typeof setTimeout> | undefined;
@@ -290,7 +293,7 @@ function registerIpcSpike(offlineProbe?: ReturnType<typeof createOfflineProbeApp
       createId: randomUUID,
       now: () => new Date().toISOString(),
     }),
-    isTrustedSender: (event) => isTrustedDesktopSender(event, BrowserWindow.getAllWindows()),
+    isTrustedSender: isTrustedProbeSender,
   });
 }
 
@@ -368,6 +371,12 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
   let rendererGone = false;
   let stage = 'window';
   try {
+    // 离线探针也走真实首帧外观入口；缺少同步监听会阻塞preload，不能靠延长超时掩盖。
+    windowAppearance = createWindowAppearance(
+      createAppearanceApplication(
+        createAppearancePreferences(join(validatedIntegrationRoot(), 'electron-profile')),
+      ),
+    );
     registerIpcSpike(createOfflineProbeApplication(port));
     window = await createWindow(false, workerFault);
     window.webContents.on('render-process-gone', () => {
@@ -586,6 +595,8 @@ async function runOfflineIntegrationProbe(phase: 'write' | 'read'): Promise<void
     if (!afterFailure.ok || afterFailure.value?.stored_value !== 'offline-integration-verified') {
       throw new Error('Synthetic database record changed after PDF failure');
     }
+    stage = 'window-capabilities';
+    await runWindowCapabilityProbe(window);
     process.stdout.write(`CaseLite packaged offline integration ${phase} passed.\n`);
   } catch {
     process.stderr.write(`CaseLite offline integration failed at ${stage}.\n`);
@@ -959,7 +970,8 @@ app
         files: createDeliveryExportFiles(
           join(taskRoot, 'delivery-exports'),
           (path) => shell.openPath(path),
-          async (row) => {
+          async (row, signal) => {
+            signal?.throwIfAborted();
             // 绑定发起时的原生窗口，避免无父级保存面板被工作台遮挡后留下等待中的调用。
             const owner = BrowserWindow.getFocusedWindow();
             if (!owner) throw new Error('No active export window');
@@ -970,6 +982,7 @@ app
               filters: [{ name: row.format === 'pdf' ? 'PDF' : 'Word', extensions: [row.format] }],
               properties: ['createDirectory'],
             });
+            signal?.throwIfAborted();
             return result.canceled ? null : (result.filePath ?? null);
           },
         ),

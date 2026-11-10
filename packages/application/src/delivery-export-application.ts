@@ -26,9 +26,9 @@ export interface DeliveryExportStorePort {
 }
 export interface DeliveryExportFilesPort {
   verify(row: DeliveryExport): Promise<boolean>;
-  put(row: DeliveryExport, bytes: Uint8Array): Promise<void>;
-  open(row: DeliveryExport): Promise<void>;
-  save?(row: DeliveryExport): Promise<boolean>;
+  put(row: DeliveryExport, bytes: Uint8Array, signal?: AbortSignal): Promise<void>;
+  open(row: DeliveryExport, signal?: AbortSignal): Promise<void>;
+  save?(row: DeliveryExport, signal?: AbortSignal): Promise<boolean>;
   read?(row: DeliveryExport): Promise<Uint8Array>;
 }
 export function createDeliveryExportApplication(ports: {
@@ -79,6 +79,7 @@ export function createDeliveryExportApplication(ports: {
     });
   }
   async function execute(input: unknown, signal?: AbortSignal): Promise<TaskResponse> {
+    if (signal?.aborted) return failure('CANCELLED', '窗口已失效，未执行排队中的操作。');
     const parsed = taskRequestSchema.safeParse(input);
     if (!parsed.success) return { ok: false, code: 'INVALID_REQUEST', message: '交付请求无效。' };
     const request = parsed.data;
@@ -144,9 +145,9 @@ export function createDeliveryExportApplication(ports: {
         }
         if (request.operation === 'save_export') {
           if (!ports.files.save) throw new Error('Save not available');
-          return success({ exports: [row], export_saved: await ports.files.save(row) });
+          return success({ exports: [row], export_saved: await ports.files.save(row, signal) });
         }
-        await ports.files.open(row);
+        await ports.files.open(row, signal);
         return success({ exports: [row], export_opened: true });
       }
       let row = ports.store.reserve(request, configuration);
@@ -169,7 +170,7 @@ export function createDeliveryExportApplication(ports: {
         signal?.throwIfAborted();
         if (!bytes.length || bytes.length > 20_000_000) throw new Error('Export size limit');
         row = ports.store.stage(row, ports.hash(bytes), bytes.length);
-        await ports.files.put(row, bytes);
+        await ports.files.put(row, bytes, signal);
       }
       signal?.throwIfAborted();
       if (!(await ports.files.verify(row))) throw new Error('Export not durable');
@@ -214,7 +215,9 @@ export function createDeliveryExportApplication(ports: {
     }
   }
   return {
-    execute(input: unknown): Promise<TaskResponse> {
+    execute(input: unknown, signal?: AbortSignal): Promise<TaskResponse> {
+      if (signal?.aborted)
+        return Promise.resolve(failure('CANCELLED', '窗口已失效，未执行此操作。'));
       const parsed = taskRequestSchema.safeParse(input);
       if (parsed.success && parsed.data.operation === 'cancel_export') {
         const request = parsed.data,
@@ -268,14 +271,17 @@ export function createDeliveryExportApplication(ports: {
             ? previous.promise
             : Promise.resolve(failure('CONFLICT', '该提交身份正在执行其他导出，请核对原提交。'));
         const controller = new AbortController();
+        const activeSignal = signal
+          ? AbortSignal.any([controller.signal, signal])
+          : controller.signal;
         const promise = tail
-          .then(() => execute(request, controller.signal))
+          .then(() => execute(request, activeSignal))
           .finally(() => active.delete(request.idempotency_key));
         active.set(request.idempotency_key, { request, controller, promise });
         tail = promise.catch(() => undefined);
         return promise;
       }
-      const result = tail.then(() => execute(input));
+      const result = tail.then(() => execute(input, signal));
       tail = result.catch(() => undefined);
       return result;
     },

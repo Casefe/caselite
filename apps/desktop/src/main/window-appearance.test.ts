@@ -29,15 +29,22 @@ vi.mock('electron', () => ({
   nativeTheme: state.native,
   BrowserWindow: { getAllWindows: () => state.windows },
 }));
+import { registerDesktopWindowCapabilities } from './ipc/window-capabilities';
 import { createWindowAppearance, appearanceBackground } from './window-appearance';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
-const fakeWindow = () =>
-  Object.assign(new EventEmitter(), {
-    webContents: { mainFrame: {} },
+const fakeWindow = () => {
+  const window = Object.assign(new EventEmitter(), {
+    webContents: Object.assign(new EventEmitter(), {
+      mainFrame: { url: 'file:///workbench.html' },
+      isDestroyed: () => false,
+    }),
     isDestroyed: () => false,
     setBackgroundColor: vi.fn(),
   }) as unknown as BrowserWindow;
+  registerDesktopWindowCapabilities(window, 'workbench', 'file:///workbench.html');
+  return window;
+};
 beforeEach(() => {
   state.windows = [];
   state.native.themeSource = 'system';

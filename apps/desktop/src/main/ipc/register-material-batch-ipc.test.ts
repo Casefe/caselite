@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
     },
   },
 }));
-vi.mock('./register-application-ipc', () => ({ isTrustedDesktopSender: mock.trusted }));
+vi.mock('./window-capabilities', () => ({ isTrustedBusinessSender: mock.trusted }));
 vi.mock('../adapters/material-batch-files', () => ({
   scanMaterialBatch: mock.scan,
   MaterialBatchSelectionError: class extends Error {},
@@ -26,6 +26,19 @@ beforeEach(() => {
   mock.scan.mockReset();
 });
 const request = { protocol_version: 1, operation: 'pick', scope: 'home', mode: 'folder' };
+it('does not open a picker after authorization is revoked while reading the current batch', async () => {
+  const app = setup();
+  app.execute.mockImplementationOnce(async () => {
+    mock.trusted.mockReturnValue(false);
+    return { ok: true, batch: null };
+  });
+  expect(await mock.handler!({ sender: {} }, request)).toMatchObject({
+    ok: false,
+    code: 'FORBIDDEN',
+  });
+  expect(mock.picker).not.toHaveBeenCalled();
+  expect(app.create).not.toHaveBeenCalled();
+});
 function setup() {
   const application = {
     execute: vi.fn(async () => ({ ok: true, batch: null })),

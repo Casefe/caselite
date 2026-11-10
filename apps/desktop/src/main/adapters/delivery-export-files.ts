@@ -8,7 +8,7 @@ import type { DeliveryExportFilesPort } from '@caselite/application';
 export function createDeliveryExportFiles(
   directory: string,
   openPath: (path: string) => Promise<string>,
-  choosePath?: (row: DeliveryExport) => Promise<string | null>,
+  choosePath?: (row: DeliveryExport, signal?: AbortSignal) => Promise<string | null>,
 ): DeliveryExportFilesPort {
   const root = resolve(directory);
   async function folder(name: string) {
@@ -94,11 +94,14 @@ export function createDeliveryExportFiles(
         await file.close();
       }
     },
-    async save(row) {
+    async save(row, signal) {
+      signal?.throwIfAborted();
       const source = await location(row);
       if (!(await checked(source, row)) || !choosePath)
         throw new Error('Missing export or save dialog');
-      const target = await choosePath(row);
+      signal?.throwIfAborted();
+      const target = await choosePath(row, signal);
+      signal?.throwIfAborted();
       if (!target) return false;
       if (extname(target).toLowerCase() !== '.' + row.format) throw new Error('Wrong extension');
       const parent = await realpath(dirname(target));
@@ -113,6 +116,8 @@ export function createDeliveryExportFiles(
       // 最终目标只用排他写入，不接受对话框的同名覆盖；失败只清理本次创建的副本。
       let created = false;
       try {
+        // 对话框与路径核验都可能让出执行权；复制前必须仍属于原窗口代际。
+        signal?.throwIfAborted();
         await copyFile(source, target, constants.COPYFILE_EXCL);
         created = true;
         if (!(await checked(target, row))) throw new Error('Copy validation failed');
@@ -137,7 +142,8 @@ export function createDeliveryExportFiles(
     async verify(row) {
       return checked(await location(row), row);
     },
-    async put(row, bytes) {
+    async put(row, bytes, signal) {
+      signal?.throwIfAborted();
       const dest = await location(row),
         temp = dest + '.part';
       if (await checked(dest, row)) return;
@@ -149,6 +155,7 @@ export function createDeliveryExportFiles(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
+      signal?.throwIfAborted();
       const file = await open(
         temp,
         constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
@@ -161,6 +168,7 @@ export function createDeliveryExportFiles(
         await file.close();
       }
       // 不覆盖已有落位文件；中断后按SQLite预期hash恢复同一产物身份。
+      signal?.throwIfAborted();
       await link(temp, dest);
       await unlink(temp);
       const dir = await open(await folder('fixed'), constants.O_RDONLY);
@@ -170,7 +178,8 @@ export function createDeliveryExportFiles(
         await dir.close();
       }
     },
-    async open(row) {
+    async open(row, signal) {
+      signal?.throwIfAborted();
       const source = await location(row);
       if (!(await checked(source, row))) throw new Error('Missing fixed export');
       const work = join(
@@ -178,6 +187,7 @@ export function createDeliveryExportFiles(
         `${row.format === 'pdf' ? 'PDF' : 'Word'}草稿-${id(row)}.${row.format}`,
       );
       try {
+        signal?.throwIfAborted();
         await copyFile(source, work, constants.COPYFILE_EXCL);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -191,6 +201,7 @@ export function createDeliveryExportFiles(
       )
         throw new Error('Unsafe work copy');
       // 已有工作副本可能含用户外部编辑，不用固定产物覆盖；只把副本交给系统应用。
+      signal?.throwIfAborted();
       const error = await openPath(work);
       if (error) throw new Error('Associated application failed');
     },

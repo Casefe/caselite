@@ -5,7 +5,7 @@ import {
   appearanceResponseSchema,
   type Theme,
 } from '@caselite/contracts';
-import { isTrustedDesktopSender } from './ipc/register-application-ipc';
+import { isTrustedAppearanceSender } from './ipc/window-capabilities';
 
 export const appearanceBackground = (theme: Theme) => (theme === 'dark' ? '#1c1c1f' : '#f7f7f8');
 
@@ -24,7 +24,7 @@ export function createWindowAppearance(
   ipcMain.on(APPEARANCE_INITIAL_CHANNEL, (event, ...args: unknown[]) => {
     try {
       const live = [...windows].filter((window) => !window.isDestroyed());
-      if (args.length !== 0 || !isTrustedDesktopSender(event, live)) {
+      if (args.length !== 0 || !isTrustedAppearanceSender(event)) {
         event.returnValue = { ok: false, message: '当前页面无权读取初始外观。' };
         return;
       }
