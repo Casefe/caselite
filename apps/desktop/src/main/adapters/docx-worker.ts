@@ -55,6 +55,7 @@ export async function inspectZip(bytes: Buffer) {
   const names = new Set<string>();
   const entries = new Map<string, Buffer>();
   const checked = new Set<string>();
+  let hasStylesRelationship = false;
   let size = 0;
   function xmlText(name: string, data: Buffer) {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(data);
@@ -65,6 +66,18 @@ export async function inspectZip(bytes: Buffer) {
         throw new Error(message);
       },
     }).parseFromString(text, 'application/xml');
+    if (/\.rels$/i.test(name)) {
+      const relationships = root.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/package/2006/relationships',
+        'Relationship',
+      );
+      for (let i = 0; i < relationships.length; i++) {
+        const type = relationships.item(i)!.getAttribute('Type');
+        hasStylesRelationship ||=
+          type === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles' ||
+          type === 'http://purl.oclc.org/ooxml/officeDocument/relationships/styles';
+      }
+    }
     for (const ns of wordNamespaces) {
       const elements = root.getElementsByTagNameNS(ns, '*');
       for (let i = 0; i < elements.length; i++) {
@@ -130,6 +143,13 @@ export async function inspectZip(bytes: Buffer) {
     });
     if (!entries.has('[Content_Types].xml') || !entries.has('word/document.xml'))
       throw new Error('Missing DOCX parts');
+    if (!entries.has('word/styles.xml') && !hasStylesRelationship) {
+      // Mammoth缺省样式对象缺少表格/编号字典。仅在解析内存中补空表并执行同一XML检查；
+      // 有关系声明时保留原路径选择，避免补出的默认路径遮蔽后续实际存在的样式。
+      const emptyStyles = Buffer.from(`<w:styles xmlns:w="${wordNamespaces[0]}"/>`);
+      xmlText('word/styles.xml', emptyStyles);
+      entries.set('word/styles.xml', emptyStyles);
+    }
     return {
       review,
       file: {
@@ -152,7 +172,7 @@ export async function inspectZip(bytes: Buffer) {
 }
 
 // Mammoth 1.13.0 的 openZip 支持 file adapter，类型声明只公开 path/buffer。
-// 只提供通过预检的部件，避免 Mammoth 的第二套 ZIP 解析器看到额外或不同名的内容。
+// 只提供通过检查的原部件及内存缺省样式，避免第二套ZIP解析器重新解释输入。
 type CheckedMammothInput = { file: Awaited<ReturnType<typeof inspectZip>>['file'] };
 const checkedHtml = convertToHtml as unknown as (
   input: CheckedMammothInput,
