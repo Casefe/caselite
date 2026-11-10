@@ -123,7 +123,7 @@ export async function checkStatisticsCards(
       }
       card.scrollIntoView({block:'nearest'});
       const r=card.getBoundingClientRect(), s=scroll.getBoundingClientRect();
-      if(r.width<=0 || r.height<=0 || scroll.clientHeight<=0 || s.left< -1 || s.right>innerWidth+1 || r.left<s.left-1 || r.right>s.right+1 || scroll.scrollWidth>scroll.clientWidth+1) throw new Error('Statistics overflow horizontally');
+      if(r.width<=0 || r.height<=0 || scroll.clientHeight<=0 || s.left< -1 || s.right>innerWidth+1 || r.left<s.left-1 || r.right>s.right+1 || scroll.scrollWidth>scroll.clientWidth+1) throw new Error('Statistics overflow horizontally: '+JSON.stringify({module:${JSON.stringify(module)},position:${JSON.stringify(position)},card:r.toJSON(),scroll:s.toJSON(),viewport:{width:innerWidth,height:innerHeight},scrollWidth:scroll.scrollWidth,clientWidth:scroll.clientWidth}));
       if(scroll.scrollHeight>scroll.clientHeight+1 && !['auto','scroll'].includes(getComputedStyle(scroll).overflowY)) throw new Error('Statistics is clipped without scrolling');
       const ai=scroll.closest('.inspector-split').querySelector('.inspector-ai-region').getBoundingClientRect();
       if(s.bottom>ai.top+1) throw new Error('Statistics area overlaps AI');

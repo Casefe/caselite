@@ -130,3 +130,10 @@
 .inspector-cards-fallback {
   height: 100%;
 }
+
+@media (max-width: 900px) {
+  /* 旧财务窄窗父容器有18px内边距；仅显示统计时留出空间，避免卡片右缘被裁切。 */
+  .finance-sidebar:has([data-statistics-module='finance']) {
+    max-width: calc(100% - 18px);
+  }
+}
