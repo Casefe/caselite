@@ -28,6 +28,12 @@ export const initialLocalPreferences: LocalPreferences = {
   show_word_count: false,
   version: 0,
 };
+export const defaultStatisticsCards: NonNullable<LocalPreferenceValues['statistics_cards']> = {
+  tasks: { enabled: true, position: 'top' },
+  projects: { enabled: true, position: 'top' },
+  finance: { enabled: true, position: 'top' },
+  contacts: { enabled: false, position: 'top' },
+};
 const initial = fields(initialLocalPreferences);
 const Context = createContext({
   preferences: initialLocalPreferences,
@@ -88,7 +94,26 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
           .filter((key) => preferenceJson(old[key]) !== preferenceJson(base[key]))
           .map((key) => [key, old[key]]),
       );
-      return { ...fields(value), ...edited };
+      const statistics = { ...(value.statistics_cards ?? defaultStatisticsCards) };
+      let statisticsEdited = false;
+      // 嵌套设置按真正改动的字段保留，冲突重读不能把其他窗口的模块/位置改回旧值。
+      for (const module of ['tasks', 'projects', 'finance', 'contacts'] as const) {
+        const before = base.statistics_cards?.[module] ?? defaultStatisticsCards[module];
+        const draft = old.statistics_cards?.[module] ?? defaultStatisticsCards[module];
+        if (draft.enabled !== before.enabled) {
+          statistics[module] = { ...statistics[module], enabled: draft.enabled };
+          statisticsEdited = true;
+        }
+        if (draft.position !== before.position) {
+          statistics[module] = { ...statistics[module], position: draft.position };
+          statisticsEdited = true;
+        }
+      }
+      return {
+        ...fields(value),
+        ...edited,
+        ...(statisticsEdited ? { statistics_cards: statistics } : {}),
+      };
     });
   };
   useEffect(() => {

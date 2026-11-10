@@ -1,3 +1,5 @@
+import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
+import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   invalidateOrdinaryCatalog,
@@ -498,28 +500,53 @@ export default function FinanceView({
     finance.state?.payouts.filter(
       (row) => !row.reversed_at && matches.some((project) => project.id === row.project_id),
     ) ?? [];
-  const payable = allocations.reduce((sum, row) => sum + BigInt(row.payable_cents), 0n);
-  const paid = payouts.reduce((sum, row) => sum + BigInt(row.amount_cents), 0n);
   const received = finance.state?.projects
     .filter((row) => matches.some((item) => item.id === row.project_id))
     .reduce((sum, row) => sum + BigInt(row.received_cents), 0n);
-  const reimbursementWaiting = finance.state?.expenses
-    .filter(
-      (row) =>
-        !row.reversed_at &&
-        row.reimbursable &&
-        row.payer === 'lawyer' &&
-        matches.some((project) => project.id === row.project_id),
-    )
-    .reduce(
-      (sum, row) =>
-        sum +
-        BigInt(row.amount_cents) -
-        (finance.state?.reimbursements
-          .filter((paid) => paid.expense_id === row.id && !paid.reversed_at)
-          .reduce((s, paid) => s + BigInt(paid.amount_cents), 0n) ?? 0n),
-      0n,
-    );
+  const contracts = finance.state?.projects.filter((row) =>
+    matches.some((item) => item.id === row.project_id),
+  );
+  const totalsKnown = Boolean(
+    projects && !read.error && !finance.readFailed && finance.state && contracts?.length,
+  );
+  const income = totalsKnown
+    ? (contracts ?? []).reduce((sum, row) => sum + BigInt(row.amount_cents), 0n)
+    : null;
+  const invoiced = totalsKnown
+    ? finance
+        .state!.invoices.filter((row) => matches.some((item) => item.id === row.project_id))
+        .reduce(
+          (sum, row) =>
+            sum +
+            (row.kind === 'red_invoice' ? -BigInt(row.amount_cents) : BigInt(row.amount_cents)),
+          0n,
+        )
+    : null;
+  const cards = useStatisticsCards(
+    'finance',
+    <StatisticsCard
+      module="finance"
+      title="财务统计"
+      totalLabel="总收入"
+      total={formatCents(income)}
+      rows={[
+        { label: '已开票', amount: invoiced, tone: 'blue' as const },
+        { label: '已收款', amount: totalsKnown ? received : null, tone: 'green' as const },
+        {
+          label: '待收款',
+          amount: projects && !read.error && registered.length ? outstanding : null,
+          tone: 'amber' as const,
+        },
+      ].map(({ label, amount, tone }) => ({
+        label,
+        value: amount != null && amount < 0n ? `−${formatCents(-amount)}` : formatCents(amount),
+        progress: income != null && amount != null ? statisticsProgress(amount, income) : null,
+        tone,
+      }))}
+      note={totalsKnown ? '总收入为有效收费合同总额；进度独立对比，单位：元。' : '数据尚未确认'}
+    />,
+    !opened,
+  );
   const openProject = (id: string) => {
     if (isBlocked) return;
     setSelected(id);
@@ -588,35 +615,6 @@ export default function FinanceView({
           {!projects && !read.error && <p>正在读取项目…</p>}
           {projects?.length === 0 && <p>请先在「项目」创建项目，再登记合同或款项。</p>}
           <div hidden={opened}>
-            <dl className="finance-result-cards finance-summary" aria-label="筛选结果总览">
-              <div>
-                <dt>客户待收</dt>
-                <dd>{formatCents(registered.length ? outstanding : null)}</dd>
-                <small>
-                  匹配项目 {matches.length} · 已建账 {registered.length}
-                </small>
-              </div>
-              <div>
-                <dt>客户已付</dt>
-                <dd>{received === undefined ? '—' : formatCents(received)}</dd>
-                <small>已确认有效回款</small>
-              </div>
-              <div>
-                <dt>我的待结算</dt>
-                <dd>
-                  {finance.state && allocations.length ? formatCents(payable - paid) : '待核对'}
-                </dd>
-                <small>按已确认分配累计</small>
-              </div>
-              <div>
-                <dt>我的已到账</dt>
-                <dd>{finance.state ? formatCents(paid) : '—'}</dd>
-                <small>
-                  另有待报销{' '}
-                  {reimbursementWaiting === undefined ? '—' : formatCents(reimbursementWaiting)} 元
-                </small>
-              </div>
-            </dl>
             <div className="finance-filters">
               <label>
                 搜索财务项目
@@ -739,6 +737,7 @@ export default function FinanceView({
       </div>
       <aside className="project-properties finance-sidebar" aria-label="财务辅助栏">
         <InspectorLayout
+          cards={cards}
           blocked={finance.busy}
           properties={
             <div className="finance-sidebar-properties">

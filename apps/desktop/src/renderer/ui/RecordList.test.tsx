@@ -1,3 +1,4 @@
+import { LocalPreferencesProvider, initialLocalPreferences } from '../shared/data/LocalPreferences';
 // @vitest-environment jsdom
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { invalidateTaskPages } from './task-list-query';
@@ -57,6 +58,12 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
     }),
   } as unknown as Window['caselite'];
   const changed = vi.fn();
+  window.caselite = {
+    ...window.caselite,
+    preferences:
+      window.caselite.preferences ??
+      vi.fn(async () => ({ ok: true, preferences: initialLocalPreferences, receipt: null })),
+  };
   const client = createWorkbenchQueryClient();
   function Host() {
     const [state, setState] = useState<TaskListState>(initial),
@@ -83,7 +90,9 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
   return {
     ...render(
       <QueryClientProvider client={client}>
-        <Host />
+        <LocalPreferencesProvider>
+          <Host />
+        </LocalPreferencesProvider>
       </QueryClientProvider>,
     ),
     changed,
@@ -264,7 +273,9 @@ it('keeps the project assignment guard until a confirmed write can be read back'
   }
   render(
     <QueryClientProvider client={client}>
-      <Host />
+      <LocalPreferencesProvider>
+        <Host />
+      </LocalPreferencesProvider>
     </QueryClientProvider>,
   );
   if (screen.getByRole('button', { name: '筛选任务' }).getAttribute('aria-expanded') === 'false')
@@ -406,4 +417,15 @@ it('retains the batch recovery lock while the preview is open and disables unrel
       ([r]) => r.operation === 'status' && r.idempotency_key === command!.idempotency_key,
     ),
   ).toBe(true);
+});
+
+it('retains workspace statistics in an empty preview without enabling a task AI', async () => {
+  show(async () => result([]));
+  const card = await screen.findByRole('region', { name: '任务统计' });
+  expect(card.closest('[aria-label="任务辅助栏"]')).toBeTruthy();
+  expect(document.querySelector('.collection-main [data-statistics-module]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+  const emptyPreview = screen.getByLabelText('任务属性');
+  expect(emptyPreview.querySelector('[data-statistics-module="tasks"]')).toBeTruthy();
+  expect(emptyPreview.querySelector('[aria-label="AI 对话"]')).toBeNull();
 });

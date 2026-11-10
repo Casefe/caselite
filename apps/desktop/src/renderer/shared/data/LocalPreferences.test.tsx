@@ -232,3 +232,154 @@ it('keeps a conflicting draft and only updates the expected version when explici
   );
   expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
 });
+
+it('preserves an unsaved statistics draft through a lost calendar ACK, original-key verification and refresh', async () => {
+  const config = {
+    tasks: { enabled: true, position: 'top' as const },
+    projects: { enabled: true, position: 'top' as const },
+    finance: { enabled: true, position: 'top' as const },
+    contacts: { enabled: false, position: 'top' as const },
+  };
+  let persisted = { ...defaultLocalPreferences, statistics_cards: config };
+  let original: Extract<LocalPreferencesRequest, { operation: 'set' }> | undefined;
+  const api = vi.fn(async (r: LocalPreferencesRequest) => {
+    if (r.operation === 'read')
+      return { ok: true, preferences: structuredClone(persisted), receipt: null };
+    if (r.operation === 'set') {
+      original = r;
+      persisted = { ...r.values, statistics_cards: config, version: r.expected_version + 1 };
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '合成布局回执丢失' };
+    }
+    expect(r.idempotency_key).toBe(original!.idempotency_key);
+    return {
+      ok: true,
+      preferences: structuredClone(persisted),
+      receipt: original!.idempotency_key,
+    };
+  });
+  window.caselite = { preferences: api } as unknown as Window['caselite'];
+  function Controls() {
+    const s = useLocalPreferences();
+    return (
+      <>
+        <button
+          disabled={!s.ready}
+          onClick={() =>
+            s.change({
+              statistics_cards: { ...config, tasks: { enabled: false, position: 'bottom' } },
+            })
+          }
+        >
+          修改统计草稿
+        </button>
+        <button
+          onClick={() => void s.saveCalendarLayout({ dates_width: 300, inspector_width: 340 })}
+        >
+          保存日历布局
+        </button>
+        <button onClick={() => void s.verify()}>核对布局</button>
+        <output aria-label="统计草稿">{JSON.stringify(s.draft.statistics_cards?.tasks)}</output>
+        <output aria-label="已存统计">
+          {JSON.stringify(s.preferences.statistics_cards?.tasks)}
+        </output>
+        <output aria-label="布局阶段">{s.phase}</output>
+      </>
+    );
+  }
+  render(
+    <LocalPreferencesProvider>
+      <Controls />
+    </LocalPreferencesProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '修改统计草稿' }).disabled).toBe(
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '修改统计草稿' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存日历布局' }));
+  await waitFor(() => expect(screen.getByLabelText('布局阶段').textContent).toBe('verify'));
+  expect(original!.values.statistics_cards?.tasks).toEqual(config.tasks);
+  fireEvent.click(screen.getByRole('button', { name: '核对布局' }));
+  await waitFor(() => expect(screen.getByLabelText('布局阶段').textContent).toBe('idle'));
+  expect(JSON.parse(screen.getByLabelText('统计草稿').textContent!)).toEqual({
+    enabled: false,
+    position: 'bottom',
+  });
+  expect(JSON.parse(screen.getByLabelText('已存统计').textContent!)).toEqual(config.tasks);
+  expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
+});
+
+it.each([false, true])(
+  'merges only edited statistics fields after a conflict while retaining another window choices (saved map: %s)',
+  async (withSavedMap) => {
+    const config = {
+      tasks: { enabled: true, position: 'top' as const },
+      projects: { enabled: true, position: 'top' as const },
+      finance: { enabled: true, position: 'top' as const },
+      contacts: { enabled: false, position: 'top' as const },
+    };
+    let persisted: typeof defaultLocalPreferences = {
+      ...defaultLocalPreferences,
+      ...(withSavedMap ? { statistics_cards: config } : {}),
+    };
+    let writes = 0;
+    const api = vi.fn(async (r: LocalPreferencesRequest) => {
+      if (r.operation === 'read')
+        return { ok: true, preferences: structuredClone(persisted), receipt: null };
+      if (r.operation !== 'set') throw new Error('Unexpected status');
+      writes += 1;
+      if (writes === 1) {
+        persisted = {
+          ...persisted,
+          version: 1,
+          statistics_cards: {
+            ...config,
+            tasks: { enabled: false, position: 'top' },
+            projects: { enabled: true, position: 'middle' },
+            finance: { enabled: true, position: 'middle' },
+          },
+        };
+        return { ok: false, code: 'CONFLICT', message: '合成其他窗口修改' };
+      }
+      persisted = { ...r.values, version: r.expected_version + 1 };
+      return { ok: true, preferences: structuredClone(persisted), receipt: r.idempotency_key };
+    });
+    window.caselite = { preferences: api } as unknown as Window['caselite'];
+    render(
+      <LocalPreferencesProvider>
+        <PersonalSettings preferencesOnly />
+      </LocalPreferencesProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLInputElement>('checkbox', { name: '启用任务统计' }).disabled,
+      ).toBe(false),
+    );
+    fireEvent.change(screen.getByLabelText('任务统计位置'), { target: { value: 'bottom' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '启用财务统计' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存个人设置' }));
+    await screen.findByText('合成其他窗口修改');
+    fireEvent.click(screen.getByRole('button', { name: '重新读取（保留输入）' }));
+    await waitFor(() =>
+      expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '启用任务统计' }).checked).toBe(
+        false,
+      ),
+    );
+    expect(screen.getByLabelText<HTMLSelectElement>('任务统计位置').value).toBe('bottom');
+    expect(screen.getByLabelText<HTMLSelectElement>('项目统计位置').value).toBe('middle');
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '启用财务统计' }).checked).toBe(
+      false,
+    );
+    expect(screen.getByLabelText<HTMLSelectElement>('财务统计位置').value).toBe('middle');
+    fireEvent.click(screen.getByRole('button', { name: '保存个人设置' }));
+    await waitFor(() => expect(persisted.version).toBe(2));
+    expect(persisted.statistics_cards).toEqual({
+      tasks: { enabled: false, position: 'bottom' },
+      projects: { enabled: true, position: 'middle' },
+      finance: { enabled: false, position: 'middle' },
+      contacts: config.contacts,
+    });
+    expect(writes).toBe(2);
+  },
+);

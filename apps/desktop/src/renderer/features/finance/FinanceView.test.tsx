@@ -1,8 +1,12 @@
+import {
+  LocalPreferencesProvider,
+  initialLocalPreferences,
+} from '../../shared/data/LocalPreferences';
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   FinanceRequest,
   FinanceResponse,
@@ -129,12 +133,21 @@ function show(
     catalog: vi.fn(async () => ({ ok: true, projects, documents: [] })),
   } as unknown as Window['caselite'];
   const onDirty = vi.fn();
+  const client = createWorkbenchQueryClient();
+  window.caselite = {
+    ...window.caselite,
+    preferences:
+      window.caselite.preferences ??
+      vi.fn(async () => ({ ok: true, preferences: initialLocalPreferences, receipt: null })),
+  };
   render(
-    <QueryClientProvider client={createWorkbenchQueryClient()}>
-      <FinanceView initialProject={project.id} onDirty={onDirty} />
+    <QueryClientProvider client={client}>
+      <LocalPreferencesProvider>
+        <FinanceView initialProject={project.id} onDirty={onDirty} />
+      </LocalPreferencesProvider>
     </QueryClientProvider>,
   );
-  return { finance, onDirty };
+  return { finance, onDirty, client };
 }
 async function register() {
   fireEvent.change(await screen.findByLabelText('合同编号'), { target: { value: 'SYNTH' } });
@@ -257,17 +270,21 @@ it('filters known balances without changing the open ledger or treating missing 
   await screen.findByTestId('finance-outstanding');
   fireEvent.click(await screen.findByRole('button', { name: '← 财务一览' }));
   const list = await screen.findByRole('table', { name: '财务项目列表' });
-  const totals = screen.getByLabelText('筛选结果总览');
+  const totals = await screen.findByRole('region', { name: '财务统计' });
   expect(within(totals).getByText('1.01')).toBeDefined();
   fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'unregistered' } });
   expect(within(list).getByRole('button', { name: '合成未建账项目 →' })).toBeDefined();
-  expect(within(totals).getByText('—')).toBeDefined();
+  expect(
+    [...totals.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(['—', '—', '—', '—']);
   fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'registered' } });
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
     target: { value: '结清' },
   });
   expect(within(list).getByRole('button', { name: '合成结清项目 →' })).toBeDefined();
-  expect(within(within(totals).getByText('客户待收').parentElement!).getByText('0')).toBeDefined();
+  expect(within(within(totals).getByText('待收款').parentElement!).getByText('0')).toBeDefined();
   expect(screen.getByRole('heading', { name: project.title })).toBeDefined();
   expect(finance.mock.calls.filter(([request]) => request.operation === 'read')).toHaveLength(1);
 });
@@ -550,4 +567,110 @@ it('keeps an unreadable original available without submitting an unknown financi
     finance.mock.calls.filter(([request]) => request.operation === 'm_prepare_source'),
   ).toHaveLength(0);
   expect(screen.getByRole('button', { name: '手动输入' }).hasAttribute('disabled')).toBe(false);
+});
+
+it('places contract income, net invoices and valid client receipts in the inspector without changing table payout columns', async () => {
+  const second = {
+    ...project,
+    id: crypto.randomUUID(),
+    title: '合成收费项目乙',
+    outstanding_cents: 2000,
+  };
+  const first = { ...project, outstanding_cents: 4000 };
+  const invoice = (project_id: string, amount_cents: number, kind: 'invoice' | 'red_invoice') => ({
+    id: crypto.randomUUID(),
+    project_id,
+    installment_id: crypto.randomUUID(),
+    invoice_number: 'SYNTH-INVOICE',
+    amount_cents,
+    kind,
+    original_invoice_id: null,
+    occurred_on: '2026-11-10',
+    note: '',
+    created_at: '2026-11-10T00:00:00.000Z',
+  });
+  const { finance } = show(async () => read(true), [first, second], {
+    state: {
+      projects: [
+        {
+          project_id: first.id,
+          amount_cents: 10000,
+          received_cents: 6000,
+          outstanding_cents: 4000,
+        },
+        {
+          project_id: second.id,
+          amount_cents: 20000,
+          received_cents: 18000,
+          outstanding_cents: 2000,
+        },
+      ],
+      invoices: [
+        invoice(first.id, 9000, 'invoice'),
+        invoice(first.id, 1000, 'red_invoice'),
+        invoice(second.id, 20000, 'invoice'),
+      ],
+    },
+  });
+  await screen.findByTestId('finance-outstanding');
+  fireEvent.click(screen.getByRole('button', { name: '← 财务一览' }));
+  const card = await screen.findByRole('region', { name: '财务统计' });
+  const values = () =>
+    [...card.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
+      (node) => node.textContent,
+    );
+  expect(values()).toEqual(['300.00', '280.00', '240.00', '60.00']);
+  expect(card.closest('[aria-label="财务辅助栏"]')).toBeTruthy();
+  expect(card.closest('.collection-main')).toBeNull();
+  expect(screen.getByRole('columnheader', { name: '我的待结算' })).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: '我的已到账' })).toBeTruthy();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
+    target: { value: first.title },
+  });
+  // “甲”项目原名是另一个项目名称的前缀；用唯一后缀筛选乙，再核对所有口径。
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
+    target: { value: '项目乙' },
+  });
+  expect(values()).toEqual(['200.00', '200.00', '180.00', '20.00']);
+  expect(
+    finance.mock.calls.every(([request]) => ['read', 'm_read'].includes(request.operation)),
+  ).toBe(true);
+});
+
+it('marks management-dependent statistics unknown if a later read fails while the query cache retains old state', async () => {
+  const { finance, client } = show(
+    async () => read(true),
+    [{ ...project, outstanding_cents: 4000 }],
+    {
+      state: {
+        projects: [
+          {
+            project_id: project.id,
+            amount_cents: 10000,
+            received_cents: 6000,
+            outstanding_cents: 4000,
+          },
+        ],
+      },
+    },
+  );
+  await screen.findByTestId('finance-outstanding');
+  fireEvent.click(screen.getByRole('button', { name: '← 财务一览' }));
+  const card = await screen.findByRole('region', { name: '财务统计' });
+  expect(card.querySelector('[data-statistic-total]')?.textContent).toBe('100.00');
+  const original = finance.getMockImplementation()!;
+  finance.mockImplementation((request) =>
+    request.operation === 'm_read'
+      ? Promise.resolve({ ok: false, code: 'UNAVAILABLE', message: '合成管理查询失败' })
+      : original(request),
+  );
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['finance', 'management'] });
+  });
+  await waitFor(() => expect(card.querySelector('[data-statistic-total]')?.textContent).toBe('—'));
+  expect(
+    [...card.querySelectorAll('.statistics-card-value')].map((node) => node.textContent),
+  ).toEqual(['—', '—', '40.00']);
+  expect(within(card).getByText('数据尚未确认')).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: '我的待结算' })).toBeTruthy();
 });

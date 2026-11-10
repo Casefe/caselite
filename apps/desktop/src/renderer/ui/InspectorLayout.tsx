@@ -1,3 +1,4 @@
+import InspectorCards, { type InspectorCard } from './InspectorCards';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 // 只调整两个区域的尺寸；保持子树和 dock 身份，伸缩不能重启运行或丢失草稿。
@@ -7,8 +8,10 @@ export default function InspectorLayout({
   blocked = false,
   className = '',
   expandedActions,
+  cards,
 }: {
   properties: ReactNode;
+  cards?: readonly InspectorCard[];
   children: ReactNode;
   blocked?: boolean;
   className?: string;
@@ -121,7 +124,11 @@ export default function InspectorLayout({
   return (
     <div ref={layout} className={`inspector-split ${className}`} data-ai-expanded={expanded}>
       <div className="inspector-properties-scroll" tabIndex={0} aria-label="属性滚动区域">
-        {properties}
+        {cards === undefined ? (
+          properties
+        ) : (
+          <InspectorCards properties={properties} cards={cards} />
+        )}
       </div>
       <section
         ref={section}
