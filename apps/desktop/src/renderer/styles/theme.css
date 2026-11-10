@@ -9,13 +9,13 @@
   --line: #e8e8eb;
   --line-strong: #dddde1;
   --canvas: #f7f7f8;
-  --nav: #f3f3f4;
+  --nav: #f7f7f8;
   --theme-panel: #ffffff;
-  --theme-subtle: #f5f5f6;
-  --theme-hover: #ededf0;
+  --theme-subtle: #f7f7f8;
+  --theme-hover: #f2f2f6;
   --theme-secondary: #66666f;
   --theme-accent: #5e6ad2;
-  --theme-selected: #e8eee7;
+  --theme-selected: #eeeef5;
   /* 旧消费者沿用同一主题真值，避免变量缺失后在深色界面回退为浅色边框。 */
   --theme-border: var(--line);
   --theme-muted: var(--muted);
@@ -443,4 +443,58 @@ select,
 .settings-pill,
 .simple-toolbar {
   border-color: var(--line);
+}
+
+/* 浅色以留白和淡灰紫选中态分组；保留输入、表格、拖拽与焦点的功能边界。 */
+html[data-theme='light'] button.primary {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: #fff;
+}
+html[data-theme='light'] button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-accent) 90%, #000);
+}
+html[data-theme='light'] :is(button, input, textarea, select):focus-visible {
+  outline-color: var(--theme-accent);
+}
+html[data-theme='light']
+  :is(
+    .primary-navigation button[aria-current='page'],
+    .settings-navigation nav button[aria-current='page'],
+    .provider-list > button[aria-pressed='true'],
+    .collection-workspace .task-row[aria-current='true'],
+    .project-row[aria-current='true'],
+    .catalog-table tbody tr[aria-selected='true'],
+    .format-bar button[aria-pressed='true']
+  ) {
+  background: var(--theme-selected);
+}
+html[data-theme='light']
+  :is(
+    .project-tabs button[aria-selected='true'],
+    .view-tabs button.current,
+    .task-query-list .task-view-switcher button[aria-pressed='true']
+  ) {
+  color: var(--theme-accent);
+}
+html[data-theme='light'] .project-tabs button[aria-selected='true']::after,
+html[data-theme='light'] .view-tabs button.current::after {
+  background: var(--theme-accent);
+}
+html[data-theme='light'] .task-query-list .task-view-switcher button[aria-pressed='true'] {
+  border-bottom-color: var(--theme-accent);
+}
+html[data-theme='light'] .task-inspector-content > .inspector-disclosure {
+  border-bottom: 0;
+}
+html[data-theme='light']
+  :is(.task-inspector-content, .project-properties)
+  > .project-inspector-section {
+  border-top: 0;
+}
+html[data-theme='light'] .task-inspector-content .task-calendar-editor {
+  border-block: 0;
+}
+html[data-theme='light'] .task-work-area :is(.detail-tabs, .document-bar, .simple-toolbar) {
+  border-block: 0;
 }
