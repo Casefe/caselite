@@ -73,7 +73,24 @@ export async function runAppearanceFlashDemo(
     maxWidth: 1280,
     maxHeight: 800,
   });
-  const evaluate = (source: string) => window.webContents.executeJavaScript(source);
+  const evaluate = async (source: string) => {
+    try {
+      return await window.webContents.executeJavaScript(source);
+    } catch (error) {
+      writeFileSync(
+        join(root, 'evaluation-failure.json'),
+        JSON.stringify(
+          {
+            source,
+            error: error instanceof Error ? error.message : 'unknown',
+          },
+          null,
+          2,
+        ),
+      );
+      throw error;
+    }
+  };
   const wait = async (condition: string) => {
     for (let i = 0; i < 200; i++) {
       if (await evaluate(`Boolean(${condition})`)) return;
@@ -142,11 +159,13 @@ export async function runAppearanceFlashDemo(
     await wait("document.querySelector('.theme-option:not(:disabled)')");
     const switches: unknown[] = [];
     const choose = async (theme: 'light' | 'dark') => {
+      await wait("document.querySelector('.theme-option:not(:disabled)')");
       await evaluate('window.__appearanceFrames=[]');
       await evaluate(
         `document.querySelector('.theme-option:nth-child(${theme === 'light' ? 1 : 2})').click()`,
       );
       await wait(`document.documentElement.dataset.theme==='${theme}'`);
+      await wait("document.querySelector('.theme-option:not(:disabled)')");
       await new Promise((resolve) => setTimeout(resolve, 200));
       switches.push({
         target: theme,
