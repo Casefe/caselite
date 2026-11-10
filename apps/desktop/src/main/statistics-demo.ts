@@ -110,6 +110,9 @@ export async function checkStatisticsCards(
       if(getComputedStyle(stack).display!=='flex' || getComputedStyle(stack).flexDirection!=='column' || Number(getComputedStyle(slot).order)!==${{ top: 0, middle: 20, bottom: 40 }[position as 'top' | 'middle' | 'bottom']}) throw new Error('Statistics position CSS is inactive');
       const before=slot.getBoundingClientRect(), prop=properties.getBoundingClientRect();
       if(${JSON.stringify(position)}==='top' ? before.bottom>prop.top+1 : before.top<prop.bottom-1) throw new Error('Statistics order differs from properties');
+      // 窄窗工作区可横向滚动；先露出完整属性视口，再测卡片，不能只滚到数字边缘。
+      scroll.scrollIntoView({block:'nearest',inline:'nearest'});
+      await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
       const reachable=[];
       for(const value of card.querySelectorAll('[data-statistic-total],.statistics-card-value')) {
         value.scrollIntoView({block:'center'});
@@ -123,11 +126,12 @@ export async function checkStatisticsCards(
       }
       card.scrollIntoView({block:'nearest'});
       const r=card.getBoundingClientRect(), s=scroll.getBoundingClientRect();
-      if(r.width<=0 || r.height<=0 || scroll.clientHeight<=0 || s.left< -1 || s.right>innerWidth+1 || r.left<s.left-1 || r.right>s.right+1 || scroll.scrollWidth>scroll.clientWidth+1) throw new Error('Statistics overflow horizontally: '+JSON.stringify({module:${JSON.stringify(module)},position:${JSON.stringify(position)},card:r.toJSON(),scroll:s.toJSON(),viewport:{width:innerWidth,height:innerHeight},scrollWidth:scroll.scrollWidth,clientWidth:scroll.clientWidth}));
+      const ancestors=[...document.querySelectorAll('.finance-workspace,.workspace-main')].map(e=>({className:e.className,bounds:e.getBoundingClientRect().toJSON(),scrollLeft:e.scrollLeft,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth,overflowX:getComputedStyle(e).overflowX}));
+      if(r.width<=0 || r.height<=0 || scroll.clientHeight<=0 || s.left< -1 || s.right>innerWidth+1 || r.left<s.left-1 || r.right>s.right+1 || scroll.scrollWidth>scroll.clientWidth+1) throw new Error('Statistics overflow horizontally: '+JSON.stringify({module:${JSON.stringify(module)},position:${JSON.stringify(position)},card:r.toJSON(),scroll:s.toJSON(),viewport:{width:innerWidth,height:innerHeight},scrollWidth:scroll.scrollWidth,clientWidth:scroll.clientWidth,ancestors}));
       if(scroll.scrollHeight>scroll.clientHeight+1 && !['auto','scroll'].includes(getComputedStyle(scroll).overflowY)) throw new Error('Statistics is clipped without scrolling');
       const ai=scroll.closest('.inspector-split').querySelector('.inspector-ai-region').getBoundingClientRect();
       if(s.bottom>ai.top+1) throw new Error('Statistics area overlaps AI');
-      return {module:${JSON.stringify(module)},position:${JSON.stringify(position)},values:reachable,viewport:{width:innerWidth,height:innerHeight},card:r.toJSON(),scroll:s.toJSON(),ai:ai.toJSON(),scrollHeight:scroll.scrollHeight,clientHeight:scroll.clientHeight};
+      return {module:${JSON.stringify(module)},position:${JSON.stringify(position)},values:reachable,viewport:{width:innerWidth,height:innerHeight},card:r.toJSON(),scroll:s.toJSON(),ai:ai.toJSON(),scrollHeight:scroll.scrollHeight,clientHeight:scroll.clientHeight,ancestors};
     })()`);
   };
   const measurements: unknown[] = [];
