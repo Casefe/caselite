@@ -5,8 +5,11 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -56,9 +59,49 @@ const evidence = {
 };
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'caselite-integration-'));
+const outsideProfile = mkdtempSync(join(tmpdir(), 'caselite-outside-profile-'));
+const sentinel = join(outsideProfile, 'synthetic-sentinel.txt');
+writeFileSync(sentinel, 'do-not-modify', { flag: 'wx' });
 mkdirSync(join(temporaryRoot, '中文 路径'));
 let passed = false;
 try {
+  const profile = join(temporaryRoot, 'electron-profile');
+  const rejectProfile = (scenario, directory) => {
+    const result = spawnSync(executable, [], {
+      cwd: root,
+      env: {
+        ...process.env,
+        CASELITE_INTEGRATION_PHASE: 'write',
+        CASELITE_INTEGRATION_DIR: directory,
+      },
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    const rejected =
+      !result.error &&
+      result.status === 1 &&
+      result.stderr.includes('CaseLite integration profile rejected.') &&
+      readdirSync(outsideProfile).length === 1 &&
+      readFileSync(sentinel, 'utf8') === 'do-not-modify' &&
+      !existsSync(join(temporaryRoot, '中文 路径', 'probe.sqlite'));
+    evidence.phases.push({
+      phase: 'write',
+      scenario,
+      status: rejected ? 'passed' : 'failed',
+      profileRejected: rejected,
+    });
+    if (!rejected) throw new Error(`Packaged integration profile rejection failed: ${scenario}`);
+  };
+  // 只使用自有合成目录；被拒绝的链接目标、文件与业务库必须保持原状。
+  symlinkSync(outsideProfile, profile, 'dir');
+  rejectProfile('profile-symlink', temporaryRoot);
+  unlinkSync(profile);
+  writeFileSync(profile, 'preserve-profile-file', { flag: 'wx' });
+  rejectProfile('profile-is-file', temporaryRoot);
+  if (readFileSync(profile, 'utf8') !== 'preserve-profile-file')
+    throw new Error('Rejected profile file was modified');
+  unlinkSync(profile);
+  rejectProfile('profile-invalid-root', outsideProfile);
   // The last restart uses a copy of the identical package under a Unicode
   // and space-bearing resource path; it is not a second build.
   const relocatedApp = join(temporaryRoot, '中文 应用');
@@ -96,6 +139,7 @@ try {
     const success =
       !result.error &&
       result.status === 0 &&
+      result.stdout.includes('CaseLite integration profile isolated.') &&
       result.stdout.includes(
         `CaseLite packaged offline integration ${workerFault ? `worker-${workerFault}` : phase} passed.`,
       ) &&
@@ -119,6 +163,7 @@ try {
       scenario: workerFault ? `pdf-worker-${workerFault}` : 'normal',
       packageLocation: binary === executable ? 'original' : 'unicode-space-copy',
       status: success ? 'passed' : 'failed',
+      profileIsolation: Boolean(success),
       ...(workerFault ? {} : { realBusinessIpc: 'CreateMatter and CreateAnchor (DEV-1578)' }),
       ...(safeStage ? { failureStage: safeStage } : {}),
       ...(safePdfState ? { failureState: safePdfState } : {}),
@@ -136,6 +181,7 @@ try {
   passed = true;
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
+  rmSync(outsideProfile, { recursive: true, force: true });
   evidence.temporaryDataRemoved = !existsSync(temporaryRoot);
   evidence.status = passed ? 'passed' : 'failed';
   const evidencePath = join(root, 'artifacts/evidence/dev-1566-packaged-integration.json');
