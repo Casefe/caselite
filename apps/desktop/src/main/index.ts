@@ -41,6 +41,7 @@ import { createCatalogQueryProbe, runCatalogQueryProbe } from './catalog-query-p
 import { createTaskQueryProbe, runTaskQueryProbe } from './task-query-probe';
 import { runTaskStatusDemo } from './task-status-demo';
 import { runAppearanceDemo } from './appearance-demo';
+import { runAppearanceFlashDemo } from './appearance-flash-demo';
 import { runHomeContextDemo } from './home-context-demo';
 import {
   runAgentDemo,
@@ -56,6 +57,7 @@ import { createCatalogApplication, createFinanceApplication } from '@caselite/ap
 import { createAppearanceApplication } from '@caselite/application';
 import { createAppearancePreferences } from './adapters/appearance-preferences';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { appearanceBackground, createWindowAppearance } from './window-appearance';
 import { createLegalConsentApplication } from '@caselite/application';
 import { createLegalAcceptance, loadLegalBundle } from './adapters/legal-acceptance';
 import { showLegalConsent } from './legal-consent-window';
@@ -123,13 +125,16 @@ function reportStartupFailure(): void {
 
 // 协议窗口到工作台之间可能短暂没有窗口；Windows/Linux不能因此提前退出。
 let startingProductWindow = true;
+let windowAppearance: ReturnType<typeof createWindowAppearance> | undefined;
 
 async function createWindow(
   show = true,
   pdfWorkerFault?: 'missing' | 'mismatch',
+  observe?: (window: BrowserWindow) => Promise<void>,
 ): Promise<BrowserWindow> {
   // 以1080p工作区为设计基准；小屏按可用桌面缩放窗口尺寸，不缩放正文或降低像素清晰度。
   const available = screen.getPrimaryDisplay().workAreaSize;
+  const appearance = windowAppearance?.snapshot();
   const window = new BrowserWindow({
     width: Math.min(1920, available.width),
     height: Math.min(1080, Math.max(480, available.height - 32)),
@@ -138,6 +143,7 @@ async function createWindow(
     minHeight: 480,
     title: 'CaseLite',
     show: false,
+    backgroundColor: appearanceBackground(appearance?.theme ?? 'light'),
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -147,6 +153,8 @@ async function createWindow(
       webviewTag: false,
     },
   });
+  windowAppearance?.attach(window);
+  const painted = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()));
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -176,7 +184,19 @@ async function createWindow(
   )
     entry.searchParams.set('mock-agent', '1');
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
+  await observe?.(window);
   await window.loadURL(entry.toString());
+  let paintTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      painted,
+      new Promise<never>((_resolve, reject) => {
+        paintTimer = setTimeout(() => reject(new Error('Workbench first paint timed out')), 10000);
+      }),
+    ]);
+  } finally {
+    if (paintTimer) clearTimeout(paintTimer);
+  }
   startingProductWindow = false;
   credentialWindowLoaded();
   if (show && !window.isDestroyed()) window.show();
@@ -714,6 +734,7 @@ if (taskDemoPhase) {
       'finance-preview',
       'appearance-write',
       'appearance-read',
+      'appearance-flash',
     ].includes(taskDemoPhase)
   )
     throw new Error('Invalid demo phase');
@@ -824,6 +845,10 @@ app
     }
     const taskRoot = app.getPath('userData');
     mkdirSync(taskRoot, { recursive: true });
+    const appearanceApplication = createAppearanceApplication(
+      createAppearancePreferences(taskRoot),
+    );
+    windowAppearance = createWindowAppearance(appearanceApplication);
     // 普通入口必须先确认协议；业务IPC、案件库、凭据和Agent都在确认后初始化。
     const accepted = await showLegalConsent(
       createLegalConsentApplication(
@@ -837,6 +862,7 @@ app
       taskDemoRoot
         ? (window) => observeLegalConsentDemo(window, taskDemoRoot!, taskDemoPhase!)
         : undefined,
+      windowAppearance,
     );
     if (
       taskDemoRoot &&
@@ -860,7 +886,7 @@ app
       return;
     }
     registerIpcSpike();
-    registerAppearanceIpc(createAppearanceApplication(createAppearancePreferences(taskRoot)));
+    registerAppearanceIpc(appearanceApplication, windowAppearance.confirm);
     if (taskDemoPhase === 'delivery-preview' && taskDemoRoot) {
       // 原型只使用合成内存状态；在初始化业务库、凭据和Agent前返回。
       session.defaultSession.webRequest.onBeforeRequest((details, callback) =>
@@ -1075,6 +1101,7 @@ app
     };
     const baseAgentCredentials =
       taskDemoPhase?.startsWith('legal-') ||
+      taskDemoPhase?.startsWith('appearance-') ||
       performanceDemo ||
       documentReviewDemo ||
       customerDemo ||
@@ -1505,6 +1532,15 @@ app
     }
     if (taskDemoRoot && taskDemoPhase?.startsWith('agent-home-')) {
       await runHomeContextDemo(() => createWindow(), taskDemoRoot, taskDemoPhase);
+      app.exit(0);
+      return;
+    }
+    if (taskDemoRoot && taskDemoPhase === 'appearance-flash') {
+      await runAppearanceFlashDemo(
+        (observe) => createWindow(false, undefined, observe),
+        taskDemoRoot,
+        windowAppearance.confirm,
+      );
       app.exit(0);
       return;
     }
