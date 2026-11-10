@@ -72,7 +72,7 @@ export async function runAppearanceDemo(
     } else {
       await wait("document.documentElement.dataset.theme==='dark'");
       const colors = await evaluate(
-        `(()=>{const a=getComputedStyle(document.querySelector('.agent-main')); const h=getComputedStyle(document.querySelector('.agent-start h1')); const empty=getComputedStyle(document.querySelector('.home-task-feed > p')); const reminder=getComputedStyle(document.querySelector('.home-reminder-card h3, .agent-context-section h3')); const card=getComputedStyle(document.querySelector('.home-reminder-card, .agent-context')); return {background:a.backgroundColor,text:h.color,empty:empty.backgroundColor,reminder:reminder.color,card:card.backgroundColor}})()`,
+        `(()=>{const a=getComputedStyle(document.querySelector('.agent-main')); const h=getComputedStyle(document.querySelector('.agent-start h1')); const empty=getComputedStyle(document.querySelector('.home-agents > p')); const reminder=getComputedStyle(document.querySelector('.home-reminder-card h3, .agent-context-section h3')); const card=getComputedStyle(document.querySelector('.home-reminder-card, .agent-context')); return {background:a.backgroundColor,text:h.color,empty:empty.backgroundColor,reminder:reminder.color,card:card.backgroundColor}})()`,
       );
       const luminance = (s: string) => {
         const rgb = (s.match(/[\d.]+/g) ?? [])
