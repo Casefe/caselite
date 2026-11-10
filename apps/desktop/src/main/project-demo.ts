@@ -3148,20 +3148,13 @@ export async function runProjectDemo(
       if (phase === 'project-files') {
         const before = new Set((await listContacts()).map((row) => row.id));
         await clickVisible('.contacts-workbench .collection-heading button');
-        await wait("document.querySelector('.customer-profile-form [aria-label=联系人姓名]')");
+        await wait("document.querySelector('.contact-create-dialog [aria-label=联系人姓名]')");
         await input('联系人姓名', syntheticContact);
-        await wait(`[...(document.querySelector('.customer-profile-form select[aria-label=关联项目]')?.options ?? [])]
-          .some(item => item.value === ${JSON.stringify(projectId)})`);
-        await evaluate(`(() => {
-          const select = document.querySelector('.customer-profile-form select[aria-label=关联项目]');
-          const option = [...select.options].find(item => item.value === ${JSON.stringify(projectId)});
-          if (!option) throw new Error('Missing test project for contact');
-          option.selected = true;
-          select.dispatchEvent(new Event('change',{bubbles:true}));
-        })()`);
-        await clickVisible('.customer-profile-form button[type=submit]');
+        await clickVisible('.contact-create-projects summary');
+        await clickVisible(`.contact-create-project-options input[value="${projectId}"]`);
+        await clickVisible('.contact-create-dialog button[type=submit]');
         await wait(
-          "!document.querySelector('.customer-profile-form') && document.querySelector('.customer-open-detail')",
+          "!document.querySelector('.contact-create-dialog') && document.querySelector('.customer-open-detail')",
         );
         const created = (await listContacts()).filter((row) => !before.has(row.id));
         if (

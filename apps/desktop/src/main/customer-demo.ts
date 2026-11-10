@@ -87,7 +87,7 @@ export async function runCustomerDemo(
       field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const field = (label: string) =>
-    `Array.from(document.querySelectorAll('.contacts-inspector label')).find(e=>e.textContent.trim().startsWith(${literal(label)}))?.querySelector('input,textarea')`;
+    `Array.from((document.querySelector('.contact-create-dialog') ?? document.querySelector('.contacts-inspector')).querySelectorAll('label')).find(e=>e.textContent.trim().startsWith(${literal(label)}))?.querySelector('input,textarea')`;
   const select = async (selector: string, id: string) => {
     await wait(`${query(selector)}?.querySelector('option[value="${id}"]')`);
     await evaluate(
@@ -155,6 +155,19 @@ export async function runCustomerDemo(
   await click(query('[data-nav=contacts]'));
   if (phase === 'customer-write') {
     await button('＋ 新建联系人');
+    await wait(
+      `${query('.contact-create-dialog')}?.matches(':modal') && document.activeElement===${query('[aria-label="联系人姓名"]')}`,
+    );
+    const geometry = await evaluate(`(()=>{
+      const modal=${query('.contact-create-dialog')};
+      const rect=modal.getBoundingClientRect();
+      const submit=modal.querySelector('button[type=submit]').getBoundingClientRect();
+      if(Math.abs(rect.x+rect.width/2-innerWidth/2)>2 || rect.top<0 || rect.bottom>innerHeight || submit.bottom>innerHeight)
+        throw Error('Contact creation dialog is not centered or reachable');
+      return {width:rect.width,height:rect.height,x:rect.x,y:rect.y,viewport:[innerWidth,innerHeight]};
+    })()`);
+    writeFileSync(join(root, 'contact-create-geometry.json'), JSON.stringify(geometry, null, 2));
+    await capture('00-contact-create-dialog.png');
     await fill(query('[aria-label="联系人姓名"]'), '合成客户张某');
     for (const [label, value] of [
       ['电话', '010-00000000'],
@@ -164,8 +177,22 @@ export async function runCustomerDemo(
       ['标签', '合同业务，长期合作'],
     ])
       await fill(field(label), value);
-    await select('.customer-profile-form select[multiple]', seed.project);
-    await button('保存联系人');
+    await click(query('.contact-create-projects summary'));
+    await click(
+      `Array.from(document.querySelectorAll('.contact-create-project-options label')).find(e=>e.textContent.trim()==='合成客户验收项目')?.querySelector('input')`,
+    );
+    await capture('01-contact-create-filled.png');
+    window.setContentSize(640, 520);
+    await wait(`(()=>{
+      const modal=${query('.contact-create-dialog')};
+      const rect=modal.getBoundingClientRect();
+      const submit=modal.querySelector('button[type=submit]').getBoundingClientRect();
+      return rect.left>=0 && rect.right<=innerWidth && rect.top>=0 && rect.bottom<=innerHeight && submit.bottom<=innerHeight;
+    })()`);
+    await capture('02-contact-create-narrow.png');
+    window.setContentSize(1440, 960);
+    await button('创建联系人');
+    await wait(`!${query('.contact-create-dialog')}`);
     await wait(
       `${query('[aria-label="编辑电话"]')} && !${query('[aria-label="编辑电话"]')}.disabled`,
     );
