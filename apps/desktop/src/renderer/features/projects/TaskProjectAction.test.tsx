@@ -60,7 +60,7 @@ describe('task promotion UI', () => {
     render(<TaskProjectAction task={task} disabled={false} onDirty={dirty} onChanged={changed} />);
     fireEvent.click(screen.getByText('从任务创建项目'));
     expect((screen.getByLabelText('项目名称') as HTMLInputElement).value).toBe(task.title);
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
     fireEvent.click(await screen.findByText('核对原提交'));
     await waitFor(() => {
       expect(changed).toHaveBeenCalledWith(actual, null);
@@ -95,7 +95,7 @@ describe('task promotion UI', () => {
     } as unknown as Window['caselite'];
     render(<TaskProjectAction task={task} disabled={false} onDirty={dirty} onChanged={changed} />);
     fireEvent.click(screen.getByText('从任务创建项目'));
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
     await screen.findByRole('alert');
     expect(screen.queryByText('从任务创建项目')).toBeNull();
     const retry = screen.getByRole('button', { name: '重新读取任务关联' });

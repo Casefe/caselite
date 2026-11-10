@@ -211,6 +211,7 @@ export default function ProjectFields({
         autoFocus={creating}
         aria-label={creating ? '项目名称' : sidebar ? '侧栏项目名称' : '编辑项目名称'}
         value={value.title}
+        placeholder={creating ? '项目名称' : undefined}
         maxLength={160}
         autoComplete="off"
         onChange={(e) => onChange({ ...value, title: e.target.value })}
@@ -240,7 +241,7 @@ export default function ProjectFields({
       <input
         disabled={disabled}
         aria-label="项目负责人"
-        placeholder="未分配"
+        placeholder={creating ? '负责人 · 未分配' : '未分配'}
         value={a.assignee ?? ''}
         maxLength={80}
         onChange={(e) => attribute('assignee', e.target.value || null)}
@@ -249,11 +250,8 @@ export default function ProjectFields({
   );
   const properties = (
     <>
-      <fieldset className="project-fields">
-        <legend className={creating ? undefined : 'sr-only'}>
-          {creating ? '项目属性' : '编辑项目属性'}
-        </legend>
-        {creating && nameRow}
+      <fieldset className={`project-fields${creating ? ' project-create-fields' : ''}`}>
+        <legend className="sr-only">{creating ? '项目属性' : '编辑项目属性'}</legend>
         {creating && typeRow}
         <ProjectPropertyRow label="状态" icon="status">
           <PropertySelect
@@ -331,7 +329,8 @@ export default function ProjectFields({
           <input
             disabled={disabled}
             aria-label="项目标签"
-            placeholder="用逗号分隔，最多20项"
+            placeholder={creating ? '标签' : '用逗号分隔，最多20项'}
+            title="用逗号分隔，最多20项"
             value={a.tags.join(',')}
             onChange={(e) => attribute('tags', e.target.value ? e.target.value.split(/[,，]/) : [])}
           />
@@ -343,7 +342,14 @@ export default function ProjectFields({
   );
   return (
     <>
-      {creating ? properties : <InspectorSection title="属性">{properties}</InspectorSection>}
+      {creating ? (
+        <>
+          <div className="project-create-name">{nameRow}</div>
+          {properties}
+        </>
+      ) : (
+        <InspectorSection title="属性">{properties}</InspectorSection>
+      )}
       <InspectorSection title="领域" ref={professionalCard} className="project-professional-card">
         <fieldset className="project-fields" disabled={disabled} aria-label="专业属性">
           {group ? (
@@ -356,7 +362,7 @@ export default function ProjectFields({
                 <input
                   aria-label={label}
                   value={fields[key] ?? ''}
-                  placeholder="未填写"
+                  placeholder={creating ? label : '未填写'}
                   maxLength={professionalTextLimit}
                   autoComplete="off"
                   onChange={(event) =>

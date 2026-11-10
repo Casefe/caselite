@@ -89,6 +89,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     request: Extract<CatalogRequest, { operation: 'create_project' | 'promote_task' }>,
     now: string,
   ) => {
+    const bodyId = randomUUID();
     const a = request.attributes ?? {
       project_type: 'general',
       assignee: null,
@@ -104,7 +105,7 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       workspace,
       request.title,
       request.status ?? 'planned',
-      randomUUID(),
+      bodyId,
       now,
       a.project_type,
       a.assignee,
@@ -115,6 +116,14 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       request.attributes?.professional_type ?? null,
       JSON.stringify(request.attributes?.professional_fields ?? {}),
     );
+    // 初始概述与项目、关联及回执同事务落盘，失败不能留下缺少正文的项目。
+    if (request.state) {
+      db.prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,1,?)').run(
+        bodyId,
+        Buffer.from(request.state),
+      );
+      db.prepare('UPDATE matters SET body_revision=1 WHERE id=?').run(target);
+    }
   };
   const documents = (): CatalogDocument[] =>
     (
@@ -434,6 +443,16 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
               'INSERT INTO catalog_activity(id,workspace_id,target_id,operation,created_at) VALUES(?,?,?,?,?)',
             ).run(randomUUID(), workspace, request.project_id, request.operation, now);
           return saveReceipt(narrowResult(target, request.idempotency_key));
+        }
+        if (
+          (request.operation === 'create_project' || request.operation === 'promote_task') &&
+          request.state
+        ) {
+          try {
+            validateBody(Uint8Array.from(request.state));
+          } catch {
+            return fail('INVALID_REQUEST', '说明正文格式不支持，输入已保留。');
+          }
         }
         let target: string;
         const now = new Date().toISOString();

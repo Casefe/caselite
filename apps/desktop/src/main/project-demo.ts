@@ -1863,7 +1863,7 @@ export async function runProjectDemo(
     const professional = process.env.CASELITE_PROJECT_PROFESSIONAL === '1';
     const assertPropertyRows = async (scope: string) => {
       const layout = await evaluate(
-        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&display==='grid'&&flat(v)&&v.offsetHeight<=32&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:(()=>{const card=panel.querySelector('.project-professional-card');const s=getComputedStyle(card);const divider=card.closest('.project-catalog')?'1px':'0px';return s.borderTopWidth===divider&&s.borderRightWidth==='0px'&&s.borderBottomWidth==='0px'&&s.borderLeftWidth==='0px'&&s.boxShadow==='none';})(),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
+        `(()=>{const panel=document.querySelector(${JSON.stringify(scope)});const rows=[...panel.querySelectorAll('.inspector-property-row')].filter(e=>e.getClientRects().length);const flat=e=>getComputedStyle(e).borderTopWidth==='0px';return {rows:rows.length,brokenRows:rows.flatMap(e=>{const v=e.querySelector('input,select');const display=getComputedStyle(e).display;return e.querySelector('svg')&&(v.ariaLabel==='项目名称'&&panel.matches('dialog')?display==='block'&&v.offsetHeight<=60:display==='grid'&&v.offsetHeight<=32)&&flat(v)&&v.getBoundingClientRect().right<=innerWidth+1?[]:[{label:v.ariaLabel,display,height:v.offsetHeight,right:v.getBoundingClientRect().right,border:getComputedStyle(v).borderTopWidth}];}),flatCard:(()=>{const card=panel.querySelector('.project-professional-card');const s=getComputedStyle(card);const divider=card.closest('.project-catalog')?'1px':'0px';return s.borderTopWidth===divider&&s.borderRightWidth==='0px'&&s.borderBottomWidth==='0px'&&s.borderLeftWidth==='0px'&&s.boxShadow==='none';})(),noLegacyField:!panel.textContent.includes('开始日')&&!panel.querySelector('[aria-label=项目开始日]'),date:!!panel.querySelector('[aria-label=项目目标日]')};})()`,
       );
       if (
         layout.rows < 7 ||
@@ -1952,7 +1952,7 @@ export async function runProjectDemo(
         }
         window.setSize(1440, 1000);
         await evaluate("document.documentElement.dataset.theme='light'");
-        await button('保存项目');
+        await evaluate("document.querySelector('dialog button[type=submit]').click()");
         await wait(
           "document.querySelector('[aria-label=编辑项目名称]') && !document.querySelector('dialog[open]')",
         );
@@ -3369,7 +3369,7 @@ export async function runProjectDemo(
         }
         await assertPropertyRows('dialog[open]');
         await capture('project-from-task.png');
-        await button('保存项目');
+        await evaluate("document.querySelector('dialog button[type=submit]').click()");
         await wait("!document.querySelector('dialog[open]')");
         await wait(
           "!Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='从任务创建项目')",
@@ -3458,6 +3458,36 @@ export async function runProjectDemo(
       await wait("document.querySelector('dialog[open] input')===document.activeElement");
       if (!(await evaluate("document.querySelector('dialog button[type=submit]').disabled")))
         throw new Error('Empty project can be submitted');
+      if (process.env.CASELITE_PROJECT_CREATE_UI === '1') {
+        await input('项目类型', 'civil_litigation', true);
+        const layouts = [];
+        for (const width of [1440, 640]) {
+          window.setContentSize(width, 900);
+          await wait(`innerWidth===${width}`);
+          for (const theme of ['dark', 'light']) {
+            await evaluate(`document.documentElement.dataset.theme='${theme}'`);
+            const layout = await evaluate(`(() => {
+              const dialog=document.querySelector('dialog[open]');
+              const r=dialog.getBoundingClientRect();
+              const submit=dialog.querySelector('button[type=submit]').getBoundingClientRect();
+              const fields=[...dialog.querySelectorAll('input,select')].filter(e=>e.getClientRects().length);
+              const names=fields.map(e=>e.ariaLabel);
+              const titleSize=parseFloat(getComputedStyle(dialog.querySelector('[aria-label=项目名称]')).fontSize);
+              if(titleSize<26) throw new Error('Creation title lost its large typography');
+              if(dialog.textContent.includes('里程碑') || names.some(n=>['项目开始日','成员','计划','依赖关系'].includes(n))) throw new Error('Unexpected creation field');
+              if(!['项目名称','项目类型','项目状态','项目负责人','项目优先级','项目目标日','项目标签','案号','受理法院','案由','程序阶段'].every(n=>names.includes(n))) throw new Error('Missing creation field');
+              if(r.left<0 || r.right>innerWidth || r.top<0 || r.bottom>innerHeight || dialog.scrollWidth>dialog.clientWidth+1 || submit.bottom>r.bottom || fields.some(e=>e.getBoundingClientRect().right>r.right)) throw new Error('Creation controls overflow');
+              return {width:innerWidth,theme:document.documentElement.dataset.theme,dialog:r.toJSON(),submit:submit.toJSON(),fields:names,titleSize};
+            })()`);
+            layouts.push(layout);
+            await capture(`create-ui-${width}-${theme}.png`);
+          }
+        }
+        writeFileSync(join(root, 'create-ui-layout.json'), JSON.stringify(layouts, null, 2));
+        window.setContentSize(1440, 900);
+        await wait('innerWidth===1440');
+        await evaluate("document.documentElement.dataset.theme='dark'");
+      }
       await capture('project-create.png');
       // 模拟React输入事件；系统中文候选选择另记人工未测，不能用此断言替代。
       await evaluate(`(()=>{
@@ -3465,6 +3495,17 @@ export async function runProjectDemo(
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'项目创建与重启验收');
         input.dispatchEvent(new Event('input',{bubbles:true}));
       })()`);
+      if (process.env.CASELITE_PROJECT_CREATE_UI === '1') {
+        await input('受理法院', '合成法院');
+        await evaluate(`(() => {
+          const body=document.querySelector('[data-testid=project-create-overview]');
+          body.focus();document.execCommand('insertText',false,'创建时填写的合成项目概述，重启后应保留。');
+        })()`);
+        await wait(
+          "document.querySelector('[data-testid=project-create-overview]')?.textContent.includes('创建时填写的合成项目概述')",
+        );
+        await capture('create-ui-filled.png');
+      }
       await wait("!document.querySelector('dialog button[type=submit]').disabled");
       await evaluate(`(()=>{
         const form=document.querySelector('dialog form');
@@ -3484,11 +3525,28 @@ export async function runProjectDemo(
       )
         throw new Error('Project create receipt or duplicate submission failed');
       const id = result.projects[0].id;
+      let initialBody = null;
+      if (process.env.CASELITE_PROJECT_CREATE_UI === '1') {
+        const saved: CatalogResponse = await evaluate(
+          `window.caselite.catalog({operation:'read_project',protocol_version:1,id:${JSON.stringify(id)}})`,
+        );
+        if (
+          !saved.ok ||
+          !saved.state ||
+          saved.projects[0].body_revision !== 1 ||
+          saved.projects[0].attributes?.professional_fields?.civil_litigation?.court !== '合成法院'
+        )
+          throw new Error('Initial overview or professional fields were not saved');
+        initialBody = createHash('sha256').update(Uint8Array.from(saved.state)).digest('hex');
+        await wait(
+          "document.querySelector('[data-testid=project-overview-editor]')?.textContent.includes('创建时填写的合成项目概述')",
+        );
+      }
       if ((await evaluate("document.querySelector('.catalog-actions').dataset.projectId")) !== id)
         throw new Error('Created project opened a different identity');
       writeFileSync(
         join(root, 'project-expected.json'),
-        JSON.stringify({ id, isolation }, null, 2),
+        JSON.stringify({ id, isolation, initialBody }, null, 2),
       );
       await capture('project-created.png');
       await button('返回项目列表');
@@ -3544,6 +3602,22 @@ export async function runProjectDemo(
         expected.id
       )
         throw new Error('Restart changed project identity');
+      if (expected.initialBody) {
+        const saved: CatalogResponse = await evaluate(
+          `window.caselite.catalog({operation:'read_project',protocol_version:1,id:${JSON.stringify(expected.id)}})`,
+        );
+        if (
+          !saved.ok ||
+          !saved.state ||
+          saved.projects[0].body_revision !== 1 ||
+          createHash('sha256').update(Uint8Array.from(saved.state)).digest('hex') !==
+            expected.initialBody
+        )
+          throw new Error('Restart changed initial project overview');
+        await wait(
+          "document.querySelector('[data-testid=project-overview-editor]')?.textContent.includes('创建时填写的合成项目概述')",
+        );
+      }
       await capture('project-reopened.png');
       if (phase === 'project-edit') {
         await evaluate(`(()=>{
