@@ -98,7 +98,15 @@ import {
 } from 'electron';
 import { randomUUID, createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 
@@ -800,6 +808,24 @@ if (taskDemoPhase) {
 const integrationPhase = process.env.CASELITE_INTEGRATION_PHASE;
 const integrationProbe = integrationPhase === 'write' || integrationPhase === 'read';
 if (integrationPhase !== undefined && !integrationProbe) app.exit(1);
+if (integrationProbe) {
+  try {
+    // 临时业务库不足以隔离Chromium缓存；必须在创建会话或窗口前绑定同一探针目录。
+    const profile = join(validatedIntegrationRoot(), 'electron-profile');
+    mkdirSync(profile, { recursive: true, mode: 0o700 });
+    if (!lstatSync(profile).isDirectory() || realpathSync(profile) !== profile)
+      throw new Error('Invalid integration profile');
+    app.setPath('userData', profile);
+    app.setPath('sessionData', profile);
+    if (app.getPath('userData') !== profile || app.getPath('sessionData') !== profile)
+      throw new Error('Integration profile was not applied');
+    process.stdout.write('CaseLite integration profile isolated.\n');
+  } catch {
+    // 拒绝不安全的探针配置，不能回退到真实用户资料或弹出正常工作台。
+    process.stderr.write('CaseLite integration profile rejected.\n');
+    app.exit(1);
+  }
+}
 const isolatedProbe =
   process.env.CASELITE_DB_PROBE === '1' ||
   process.env.CASELITE_PDF_PROBE === '1' ||
