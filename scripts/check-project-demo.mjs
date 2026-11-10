@@ -168,4 +168,13 @@ for (const name of properties
               : []),
           ])
   copyFileSync(join(isolated, name), join(output, name));
+if (process.env.CASELITE_PROJECT_CREATE_UI === '1')
+  for (const name of [
+    'create-ui-layout.json',
+    'create-ui-filled.png',
+    ...[1440, 640].flatMap((width) =>
+      ['dark', 'light'].map((theme) => `create-ui-${width}-${theme}.png`),
+    ),
+  ])
+    copyFileSync(join(isolated, name), join(output, name));
 process.stdout.write(`Project create/reopen passed; evidence ${output}\n`);

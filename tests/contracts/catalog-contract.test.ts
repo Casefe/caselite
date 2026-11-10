@@ -3,6 +3,24 @@ import { catalogRequestSchema, CATALOG_CHANNEL } from '../../packages/contracts/
 import { createCaseLitePreloadApi } from '../../apps/desktop/src/preload/caselite-api';
 import { createCatalogApplication } from '../../packages/application/src/catalog-application';
 describe('catalog boundary', () => {
+  it('accepts optional bounded initial project bodies without adding defaults to legacy requests', () => {
+    for (const operation of ['create_project', 'promote_task'] as const) {
+      const request = {
+        protocol_version: 1,
+        operation,
+        request_id: crypto.randomUUID(),
+        idempotency_key: crypto.randomUUID(),
+        title: '初始概述',
+        ...(operation === 'promote_task'
+          ? { task_id: crypto.randomUUID(), expected_version: 1 }
+          : {}),
+      };
+      expect(catalogRequestSchema.parse(request)).toEqual(request);
+      expect(catalogRequestSchema.safeParse({ ...request, state: [1, 2] }).success).toBe(true);
+      for (const state of [[], [-1], [256], [1.5], '概述', Array(2_000_001).fill(0)])
+        expect(catalogRequestSchema.safeParse({ ...request, state }).success).toBe(false);
+    }
+  });
   it('validates promotion identity and version without accepting workspace or path overrides', () => {
     const valid = {
       operation: 'promote_task',

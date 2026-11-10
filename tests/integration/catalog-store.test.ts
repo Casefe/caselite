@@ -39,6 +39,72 @@ function setup() {
   return { root, file, store, app: createCatalogApplication(store.catalog) };
 }
 describe('Five-page catalog persistence', () => {
+  it('commits the initial project overview once and reads the same revision after restart', () => {
+    const { file, store, app } = setup();
+    const request = {
+      ...ids(),
+      operation: 'create_project' as const,
+      title: '概述原子创建',
+      state: binary('创建时填写的项目概述'),
+    };
+    const saved = ok(app.execute(request));
+    const project = saved.projects[0];
+    expect(project.body_revision).toBe(1);
+    expect(ok(app.execute({ ...request, request_id: randomUUID() })).target_id).toBe(project.id);
+    expect(app.execute({ ...request, state: binary('同键修改概述') })).toMatchObject({
+      ok: false,
+      code: 'CONFLICT',
+    });
+    store.close();
+    const reopened = openTaskStore(file, migrations);
+    const read = ok(
+      reopened.catalog.execute({ protocol_version: 1, operation: 'read_project', id: project.id }),
+    );
+    expect(read.state).toEqual(request.state);
+    expect(read.projects).toHaveLength(1);
+    expect(read.projects[0]).toMatchObject({
+      id: project.id,
+      body_id: project.body_id,
+      body_revision: 1,
+    });
+    reopened.close();
+  });
+  it('rejects malformed initial bodies and rolls back body, activity or receipt failures before retrying the same request', () => {
+    for (const table of ['body_revisions', 'catalog_activity', 'catalog_receipts']) {
+      const { file, store, app } = setup();
+      const request = {
+        ...ids(),
+        operation: 'create_project' as const,
+        title: '失败保全',
+        state: binary('完整概述'),
+      };
+      expect(app.execute({ ...request, state: [1, 2, 3] })).toMatchObject({
+        ok: false,
+        code: 'INVALID_REQUEST',
+      });
+      const connection = openToolchainProbe(file, migrations);
+      connection.sqlite.exec(
+        `CREATE TRIGGER reject_initial_body BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic initial body failure'); END`,
+      );
+      expect(app.execute(request)).toMatchObject({ ok: false });
+      for (const name of ['matters', 'body_revisions', 'catalog_activity', 'catalog_receipts'])
+        expect(connection.sqlite.prepare(`SELECT count(*) AS n FROM ${name}`).get()).toEqual({
+          n: 0,
+        });
+      expect(
+        app.execute({
+          protocol_version: 1,
+          operation: 'status',
+          idempotency_key: request.idempotency_key,
+        }),
+      ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+      connection.sqlite.exec('DROP TRIGGER reject_initial_body');
+      expect(ok(app.execute(request)).projects).toHaveLength(1);
+      expect(ok(app.execute(request)).projects).toHaveLength(1);
+      connection.sqlite.close();
+      store.close();
+    }
+  });
   it('promotes an original Task once and preserves its document, body and receipt across restart', () => {
     const { file, store, app } = setup();
     const created = ok(
@@ -66,9 +132,14 @@ describe('Five-page catalog persistence', () => {
       task_id: task.id,
       expected_version: task.version,
       title: '由原任务创建',
+      state: binary('项目初始概述'),
     };
     const result = ok(app.execute(request));
     const projectId = result.target_id;
+    expect(result.projects[0].body_revision).toBe(1);
+    expect(
+      ok(app.execute({ protocol_version: 1, operation: 'read_project', id: projectId })).state,
+    ).toEqual(request.state);
     expect(projectId).toBe(result.projects[0].id);
     expect(ok(app.execute({ ...request, request_id: randomUUID() })).target_id).toBe(projectId);
     expect(app.execute({ ...request, title: '同键异内容' })).toMatchObject({
@@ -101,6 +172,10 @@ describe('Five-page catalog persistence', () => {
     ).toBe(projectId);
     expect(ok(next.catalog.execute(request)).projects).toHaveLength(1);
     expect(
+      ok(next.catalog.execute({ protocol_version: 1, operation: 'read_project', id: projectId }))
+        .state,
+    ).toEqual(request.state);
+    expect(
       ok(next.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).state,
     ).toEqual(original.state);
     next.close();
@@ -115,6 +190,9 @@ describe('Five-page catalog persistence', () => {
         store.execute({ ...ids(), operation: 'create', title: '原任务', objective: '' }),
       ).tasks[0];
       const connection = openToolchainProbe(file, migrations);
+      const initialBodies = connection.sqlite
+        .prepare('SELECT count(*) AS n FROM body_revisions')
+        .get();
       connection.sqlite.exec(trigger);
       const request = {
         ...ids(),
@@ -122,9 +200,13 @@ describe('Five-page catalog persistence', () => {
         task_id: task.id,
         expected_version: task.version,
         title: '原子项目',
+        state: binary('失败必须回滚的项目概述'),
       };
       expect(app.execute(request)).toMatchObject({ ok: false });
       expect(ok(app.execute({ operation: 'list', protocol_version: 1 })).projects).toEqual([]);
+      expect(connection.sqlite.prepare('SELECT count(*) AS n FROM body_revisions').get()).toEqual(
+        initialBodies,
+      );
       expect(
         ok(store.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0],
       ).toMatchObject({ version: task.version, matter_id: null });

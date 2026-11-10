@@ -76,6 +76,9 @@ function renderProject(ui: ReactElement) {
     <QueryClientProvider client={createWorkbenchQueryClient()}>{ui}</QueryClientProvider>,
   );
 }
+function createButton() {
+  return within(screen.getByRole('dialog')).getByRole('button', { name: '创建项目' });
+}
 function show(tasks: Task[] = []) {
   const changed = vi.fn();
   renderProject(
@@ -268,9 +271,9 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.click(screen.getByText('创建项目'));
     const name = screen.getByLabelText('项目名称');
     expect(document.activeElement).toBe(name);
-    expect((screen.getByText('保存项目') as HTMLButtonElement).disabled).toBe(true);
+    expect((createButton() as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(name, { target: { value: ' 中文项目 ' } });
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(createButton());
     await waitFor(() =>
       expect((screen.getByLabelText('编辑项目名称') as HTMLInputElement).value).toBe('中文项目'),
     );
@@ -302,13 +305,21 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.click(screen.getByText('创建项目'));
     const name = screen.getByLabelText('项目名称');
     fireEvent.change(name, { target: { value: '验收项目' } });
+    const overview = screen.getByLabelText('项目概述');
+    fireEvent.change(overview, { target: { value: '失败后保留初始概述' } });
     fireEvent.compositionStart(name);
     fireEvent.submit(name.closest('form')!);
     expect(sent).toHaveLength(0);
     fireEvent.compositionEnd(name);
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.compositionStart(overview);
+    fireEvent.submit(overview.closest('form')!);
+    expect(sent).toHaveLength(0);
+    fireEvent.compositionEnd(overview);
+    fireEvent.click(createButton());
     await screen.findByRole('alert');
     expect((name as HTMLInputElement).value).toBe('验收项目');
+    expect((overview as HTMLTextAreaElement).value).toBe('失败后保留初始概述');
+    expect(sent[0]).toMatchObject({ state: [1, '失败后保留初始概述'.length] });
     expect(screen.getByRole('dialog', { name: '新建项目' })).toBeTruthy();
     expect(screen.queryByLabelText('编辑项目名称')).toBeNull();
   });
@@ -322,13 +333,34 @@ describe('durable project UI receipts and target identity', () => {
     trigger.focus();
     fireEvent.click(trigger);
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '未提交项目' } });
-    fireEvent.click(screen.getByText('取消'));
+    fireEvent.click(screen.getByRole('button', { name: '关闭新建项目' }));
     expect(screen.getByLabelText('项目名称')).toBeTruthy();
     confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByText('取消'));
+    fireEvent.click(screen.getByRole('button', { name: '关闭新建项目' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(trigger);
     expect(catalog.mock.calls).toHaveLength(1);
+  });
+  it('protects an overview-only draft when closing before naming the project', async () => {
+    const catalog = vi.fn(async () => response([]));
+    window.caselite = { catalog } as unknown as Window['caselite'];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    show();
+    await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    const trigger = screen.getByText('创建项目');
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText('项目概述'), { target: { value: '尚未命名的概述' } });
+    fireEvent.click(screen.getByRole('button', { name: '关闭新建项目' }));
+    expect(confirm).toHaveBeenCalledWith('放弃尚未创建的项目？');
+    expect((screen.getByLabelText('项目概述') as HTMLTextAreaElement).value).toBe('尚未命名的概述');
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: '关闭新建项目' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(
+      catalog.mock.calls.flat().some((r) => (r as CatalogRequest).operation === 'create_project'),
+    ).toBe(false);
   });
   it('retries opening a saved ID after a read failure without creating a second project', async () => {
     const p = project();
@@ -346,7 +378,7 @@ describe('durable project UI receipts and target identity', () => {
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
     fireEvent.click(screen.getByText('创建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(createButton());
     fireEvent.click(await screen.findByText('重新打开已创建项目'));
     await screen.findByLabelText('编辑项目名称');
     expect(creates).toHaveLength(1);
@@ -371,15 +403,20 @@ describe('durable project UI receipts and target identity', () => {
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
     fireEvent.click(screen.getByText('创建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.change(screen.getByLabelText('项目概述'), { target: { value: '未知回执保全概述' } });
+    fireEvent.click(createButton());
     await screen.findByText('核对原提交');
-    expect((screen.getByText('保存项目') as HTMLButtonElement).disabled).toBe(true);
+    expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('项目概述') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByLabelText('项目概述') as HTMLTextAreaElement).value).toBe(
+      '未知回执保全概述',
+    );
     fireEvent.click(screen.getByText('核对原提交'));
     await waitFor(() => expect(screen.queryByLabelText('项目名称')).toBeNull());
     expect(sent).toHaveLength(2);
     expect(sent[0]).toEqual(sent[1]);
     expect(changed).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('保存项目')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('reloads the edited version after an unknown update instead of reusing the stale editor', async () => {
     let p = project();
@@ -421,7 +458,7 @@ describe('durable project UI receipts and target identity', () => {
     await waitFor(() => expect(reads).toBe(1));
     fireEvent.click(screen.getByText('创建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
-    fireEvent.click(screen.getByText('保存项目'));
+    fireEvent.click(createButton());
     await screen.findByText('返回项目列表');
     await act(async () => {
       resolveOld(response([]));

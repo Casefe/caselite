@@ -225,6 +225,7 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       ...mutation,
       operation: z.literal('create_project'),
       title: z.string().trim().min(1).max(160),
+      state: bytes.optional(),
       status: z.enum(['planned', 'active', 'done']).optional(),
       attributes: projectAttributesSchema.optional(),
     })
@@ -236,6 +237,7 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
       task_id: id,
       expected_version: version,
       title: z.string().trim().min(1).max(160),
+      state: bytes.optional(),
       status: z.enum(['planned', 'active', 'done']).optional(),
       attributes: projectAttributesSchema.optional(),
     })
