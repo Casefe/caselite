@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import RecordList, { initialTaskListState, type TaskListState } from './RecordList';
-vi.mock('./AgentPanel', () => ({ default: () => null }));
+vi.mock('./AgentPanel', () => ({ default: () => null, UnavailableAgentPanel: () => null }));
 afterEach(() => {
   cleanup();
   onlineManager.setOnline(true);
@@ -102,6 +102,8 @@ it('invalidates query A before B and never displays its late rows or count under
   );
   await waitFor(() => expect(pending).toHaveLength(1));
   const filter = screen.getByRole('button', { name: '筛选任务' });
+  expect(filter.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('true');
@@ -265,7 +267,8 @@ it('keeps the project assignment guard until a confirmed write can be read back'
       <Host />
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
+  if (screen.getByRole('button', { name: '筛选任务' }).getAttribute('aria-expanded') === 'false')
+    fireEvent.click(screen.getByRole('button', { name: '筛选任务' }));
   fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
   const field = await screen.findByRole<HTMLSelectElement>('combobox', { name: '所属项目' });
   await waitFor(() => expect(field.disabled).toBe(false));
@@ -356,4 +359,51 @@ it('groups the loaded page, keeps display changes local, and opens the original 
   fireEvent.keyDown(screen.getByRole('row', { name: '选择任务：已办样例' }), { key: 'Enter' });
   expect(changed.mock.lastCall?.[0].selected).toBe(complete.id);
   expect(screen.getByRole('button', { name: '返回列表' })).toBeDefined();
+});
+
+it('retains the batch recovery lock while the preview is open and disables unrelated owners', async () => {
+  const original = task('批量与预览');
+  const saved = { ...original, version: 2, status: 'done' as const };
+  let command: Extract<TaskRequest, { operation: 'change_status' }> | null = null;
+  let stored = false;
+  const api = vi.fn(async (r: TaskRequest): Promise<TaskResponse> => {
+    if (r.operation === 'change_status') {
+      command = r;
+      stored = true;
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '等待核对批量原提交。' };
+    }
+    if (r.operation === 'status')
+      return { ok: true, tasks: [saved], state: null, receipt: command!.idempotency_key };
+    return result([stored ? saved : original]);
+  });
+  window.HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  window.HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  show(api);
+  await screen.findByRole('row', { name: '选择任务：批量与预览' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+  fireEvent.click(screen.getByLabelText('批量选择当前页任务'));
+  fireEvent.click(screen.getByRole('button', { name: /标记完成/ }));
+  await screen.findByText('等待核对批量原提交。');
+  expect((screen.getByLabelText('任务状态') as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '设置任务提醒' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((screen.getByLabelText('搜索任务') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '新建任务' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '核对并继续原操作' }));
+  await waitFor(() =>
+    expect((screen.getByLabelText('搜索任务') as HTMLInputElement).disabled).toBe(false),
+  );
+  expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+  expect(
+    api.mock.calls.some(
+      ([r]) => r.operation === 'status' && r.idempotency_key === command!.idempotency_key,
+    ),
+  ).toBe(true);
 });

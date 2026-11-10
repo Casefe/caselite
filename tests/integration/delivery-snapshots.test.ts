@@ -321,6 +321,7 @@ it('upgrades the existing 17-migration database without changing old bodies, ide
       ...task,
       subscribed: false,
       calendar: emptyTaskCalendar,
+      start_date: null,
     })),
   });
   expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({

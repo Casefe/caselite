@@ -35,6 +35,20 @@ const calendarZoneSchema = z
       return false;
     }
   });
+export const initialTaskReminderSchema = z
+  .object({
+    date: ordinaryDateSchema,
+    time: calendarTimeSchema,
+    timezone: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[A-Za-z][A-Za-z0-9_+\-/]*$/),
+    instant: z.iso.datetime(),
+    confirmed: z.literal(true),
+  })
+  .strict();
+export type InitialTaskReminder = z.infer<typeof initialTaskReminderSchema>;
 export const taskCalendarSchema = z
   .object({
     planned_date: ordinaryDateSchema.nullable(),
@@ -127,6 +141,7 @@ export const taskListQuerySchema = z
     text: z.string().trim().max(160),
     status: taskStatusSchema.nullable(),
     priority: taskPrioritySchema.nullable(),
+    assignee: taskAssigneeSchema.optional(),
     dates: z.enum(['all', 'dated', 'undated']),
     from: ordinaryDateSchema.nullable(),
     to: ordinaryDateSchema.nullable(),
@@ -146,6 +161,7 @@ export const taskSchema = z.object({
   status: taskStatusSchema.default('todo'),
   priority: taskPrioritySchema.default(0),
   due_date: ordinaryDateSchema.nullable().default(null),
+  start_date: ordinaryDateSchema.nullable().optional(),
   tags: tagListSchema.optional(),
   subscribed: z.boolean().optional(),
   assignee: taskAssigneeSchema.optional(),
@@ -271,115 +287,128 @@ const mutation = {
   request_id: taskIdSchema,
   idempotency_key: taskIdSchema,
 };
-export const taskMutationSchema = z.discriminatedUnion('operation', [
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('update_calendar'),
-      task_id: taskIdSchema,
-      expected_version: z.number().int().positive(),
-      calendar: taskCalendarSchema,
-    })
-    .strict(),
-  z
-    .object({ ...mutation, operation: z.literal('set_calendar_type'), type: calendarTypeSchema })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('export_snapshot'),
-      task_id: taskIdSchema,
-      document_id: taskIdSchema,
-      snapshot_id: taskIdSchema,
-      format: deliveryFormatSchema,
-      export_style: exportStyleSchema.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('create_snapshot'),
-      task_id: taskIdSchema,
-      document_id: taskIdSchema,
-      body_id: taskIdSchema,
-      expected_revision: z.number().int().positive(),
-      expected_metadata_version: z.number().int().positive(),
-      expected_task_version: z.number().int().positive(),
-      note: z
-        .string()
-        .trim()
-        .max(200)
-        .refine((value) => !value.includes('\0')),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('set_subscription'),
-      task_id: taskIdSchema,
-      subscribed: z.boolean(),
-      expected_subscribed: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('update_attributes'),
-      task_id: taskIdSchema,
-      expected_version: z.number().int().positive(),
-      priority: taskPrioritySchema,
-      due_date: ordinaryDateSchema.nullable(),
-      tags: tagListSchema.optional(),
-      assignee: taskAssigneeSchema.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('change_status'),
-      task_id: taskIdSchema,
-      expected_version: z.number().int().positive(),
-      status: taskStatusSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('create'),
-      status: taskStatusSchema.optional(),
-      priority: taskPrioritySchema.optional(),
-      due_date: ordinaryDateSchema.nullable().optional(),
-      tags: tagListSchema.optional(),
-      matter_id: taskIdSchema.optional(),
-      title: z.string().trim().min(1).max(160),
-      objective: z.string().max(4000),
-      objective_state: richState.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('update'),
-      task_id: taskIdSchema,
-      expected_version: z.number().int().positive(),
-      title: z.string().trim().min(1).max(160),
-      objective: z.string().max(4000),
-      objective_state: richState.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      ...mutation,
-      operation: z.literal('save'),
-      task_id: taskIdSchema,
-      document_id: taskIdSchema,
-      body_id: taskIdSchema,
-      expected_revision: z.number().int().nonnegative(),
-      editor_schema: z.union([z.literal(1), z.literal(2)]),
-      state: z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000),
-    })
-    .strict(),
-]);
+export const taskMutationSchema = z
+  .discriminatedUnion('operation', [
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('update_calendar'),
+        task_id: taskIdSchema,
+        expected_version: z.number().int().positive(),
+        calendar: taskCalendarSchema,
+      })
+      .strict(),
+    z
+      .object({ ...mutation, operation: z.literal('set_calendar_type'), type: calendarTypeSchema })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('export_snapshot'),
+        task_id: taskIdSchema,
+        document_id: taskIdSchema,
+        snapshot_id: taskIdSchema,
+        format: deliveryFormatSchema,
+        export_style: exportStyleSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('create_snapshot'),
+        task_id: taskIdSchema,
+        document_id: taskIdSchema,
+        body_id: taskIdSchema,
+        expected_revision: z.number().int().positive(),
+        expected_metadata_version: z.number().int().positive(),
+        expected_task_version: z.number().int().positive(),
+        note: z
+          .string()
+          .trim()
+          .max(200)
+          .refine((value) => !value.includes('\0')),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('set_subscription'),
+        task_id: taskIdSchema,
+        subscribed: z.boolean(),
+        expected_subscribed: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('update_attributes'),
+        task_id: taskIdSchema,
+        expected_version: z.number().int().positive(),
+        priority: taskPrioritySchema,
+        due_date: ordinaryDateSchema.nullable(),
+        start_date: ordinaryDateSchema.nullable().optional(),
+        tags: tagListSchema.optional(),
+        assignee: taskAssigneeSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('change_status'),
+        task_id: taskIdSchema,
+        expected_version: z.number().int().positive(),
+        status: taskStatusSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('create'),
+        assignee: taskAssigneeSchema.optional(),
+        status: taskStatusSchema.optional(),
+        priority: taskPrioritySchema.optional(),
+        due_date: ordinaryDateSchema.nullable().optional(),
+        start_date: ordinaryDateSchema.nullable().optional(),
+        tags: tagListSchema.optional(),
+        matter_id: taskIdSchema.optional(),
+        initial_reminder: initialTaskReminderSchema.optional(),
+        title: z.string().trim().min(1).max(160),
+        objective: z.string().max(4000),
+        objective_state: richState.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('update'),
+        task_id: taskIdSchema,
+        expected_version: z.number().int().positive(),
+        title: z.string().trim().min(1).max(160),
+        objective: z.string().max(4000),
+        objective_state: richState.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...mutation,
+        operation: z.literal('save'),
+        task_id: taskIdSchema,
+        document_id: taskIdSchema,
+        body_id: taskIdSchema,
+        expected_revision: z.number().int().nonnegative(),
+        editor_schema: z.union([z.literal(1), z.literal(2)]),
+        state: z.array(z.number().int().min(0).max(255)).min(1).max(2_000_000),
+      })
+      .strict(),
+  ])
+  .refine(
+    (request) =>
+      (request.operation !== 'create' && request.operation !== 'update_attributes') ||
+      !request.start_date ||
+      !request.due_date ||
+      request.start_date <= request.due_date,
+    { message: '开始日期不能晚于截止日期。' },
+  );
 export const taskRequestSchema = z.union([taskQuerySchema, taskMutationSchema]);
 export const taskResponseSchema = z.discriminatedUnion('ok', [
   z.object({
@@ -393,6 +422,7 @@ export const taskResponseSchema = z.discriminatedUnion('ok', [
       .optional(),
     state: z.array(z.number().int().min(0).max(255)).nullable(),
     receipt: taskIdSchema.nullable(),
+    reminder_created: z.boolean().optional(),
     snapshots: z.array(deliverySnapshotSchema).max(20).optional(),
     snapshot_created: z.boolean().optional(),
     exports: z.array(deliveryExportSchema).max(1).optional(),

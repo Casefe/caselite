@@ -1,3 +1,5 @@
+import { taskPriorityNames } from './task-priority';
+import { taskStatusNames } from './task-status';
 import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
 import { flexRender, getCoreRowModel, createTable, type ColumnDef } from '@tanstack/react-table';
 import { Icon } from '../shared/ui/Icon';
@@ -214,6 +216,8 @@ export function TaskTable({
   selectedId,
   onSelect,
   hiddenColumns = [],
+  selectedIds = [],
+  onSelection,
 }: {
   tasks: Task[];
   onOpen(id: string): void;
@@ -221,7 +225,11 @@ export function TaskTable({
   selectedId?: string;
   onSelect?(id: string): void;
   hiddenColumns?: TaskOptionalColumn[];
+  selectedIds?: string[];
+  onSelection?(ids: string[]): void;
 }) {
+  const overview = !documents && Boolean(onSelection);
+  const RowElement = overview ? 'div' : 'button';
   const titleColumn: ColumnDef<Task> = {
     id: 'title',
     header: documents ? '文档名称' : '任务名称',
@@ -260,12 +268,22 @@ export function TaskTable({
         {
           id: 'priority',
           header: '优先级',
-          cell: ({ row }) => <PriorityGlyph priority={row.original.priority ?? 0} />,
+          cell: ({ row }) => (
+            <span className="task-cell-value">
+              <PriorityGlyph priority={row.original.priority ?? 0} />
+              {overview && taskPriorityNames[row.original.priority ?? 0]}
+            </span>
+          ),
         },
         {
           id: 'status',
           header: '状态',
-          cell: ({ row }) => <StatusGlyph status={row.original.status ?? 'todo'} />,
+          cell: ({ row }) => (
+            <span className="task-cell-value" data-status={row.original.status ?? 'todo'}>
+              <StatusGlyph status={row.original.status ?? 'todo'} />
+              {overview && taskStatusNames[row.original.status ?? 'todo']}
+            </span>
+          ),
         },
         titleColumn,
         { id: 'project', header: '关联项目', accessorFn: (task) => task.matter_title ?? '—' },
@@ -277,12 +295,68 @@ export function TaskTable({
         },
         { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
       ];
-  const visible = columns.filter((column) => !hiddenColumns.some((hidden) => hidden === column.id));
+  const arranged: ColumnDef<Task>[] = overview
+    ? [
+        {
+          id: 'selection',
+          header: () => (
+            <input
+              type="checkbox"
+              aria-label="全选当前页任务"
+              checked={tasks.length > 0 && tasks.every((t) => selectedIds.includes(t.id))}
+              onChange={(e) =>
+                onSelection?.(
+                  e.target.checked
+                    ? [...new Set([...selectedIds, ...tasks.map((t) => t.id)])]
+                    : selectedIds.filter((id) => !tasks.some((t) => t.id === id)),
+                )
+              }
+            />
+          ),
+          cell: ({ row }) => (
+            <input
+              type="checkbox"
+              aria-label={`勾选任务：${row.original.title}`}
+              checked={selectedIds.includes(row.id)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                onSelection?.(
+                  e.target.checked
+                    ? [...selectedIds, row.id]
+                    : selectedIds.filter((id) => id !== row.id),
+                )
+              }
+            />
+          ),
+        },
+        ...['title', 'priority', 'status', 'due-date', 'owner', 'project'].map((id) =>
+          columns.find((c) => c.id === id)!,
+        ),
+      ]
+    : columns;
+  const visible = arranged.filter(
+    (column) => !hiddenColumns.some((hidden) => hidden === column.id),
+  );
   const rowStyle = documents
     ? undefined
     : {
         gridTemplateColumns: visible
-          .map((column) => taskColumnWidths[column.id ?? 'title'])
+          .map((column) =>
+            overview
+              ? (
+                  {
+                    selection: '32px',
+                    title: 'minmax(200px,1fr)',
+                    priority: '90px',
+                    status: '100px',
+                    'due-date': '125px',
+                    owner: '100px',
+                    project: 'minmax(130px,17%)',
+                  } as Record<string, string>
+                )[column.id ?? 'title']
+              : taskColumnWidths[column.id ?? 'title'],
+          )
           .join(' '),
       };
   const table = createTable({
@@ -297,7 +371,8 @@ export function TaskTable({
   });
   return (
     <div
-      className={`task-table${documents ? '' : ' task-table-structured'}`}
+      className={`task-table${documents ? '' : ' task-table-structured'}${overview ? ' task-table-overview' : ''}`}
+      aria-busy={undefined}
       role="table"
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
     >
@@ -311,7 +386,8 @@ export function TaskTable({
         </div>
       ))}
       {table.getRowModel().rows.map((row) => (
-        <button
+        <RowElement
+          tabIndex={overview ? 0 : undefined}
           className="task-row"
           style={rowStyle}
           role="row"
@@ -322,7 +398,10 @@ export function TaskTable({
           onClick={() => (onSelect ?? onOpen)(row.id)}
           onDoubleClick={onSelect ? () => onOpen(row.id) : undefined}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (
+              event.target === event.currentTarget &&
+              (event.key === 'Enter' || (overview && event.key === ' '))
+            ) {
               event.preventDefault();
               onOpen(row.id);
             }
@@ -333,7 +412,7 @@ export function TaskTable({
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </span>
           ))}
-        </button>
+        </RowElement>
       ))}
       {tasks.length === 0 && (
         <div className="table-empty">
