@@ -2,7 +2,12 @@ import { app, type BrowserWindow, session } from 'electron';
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import type { CatalogResponse, TaskResponse, MaterialResponse } from '@caselite/contracts';
+import type {
+  CatalogResponse,
+  TaskResponse,
+  MaterialResponse,
+  ContactsResponse,
+} from '@caselite/contracts';
 import { openToolchainProbe } from '@caselite/local-db';
 
 // 仅供既有隔离验收入口调用，使用合成数据检查布局，不触发发送或改写运行状态。
@@ -3071,79 +3076,250 @@ export async function runProjectDemo(
         phase === 'project-files' ? 'project-files-recovered.png' : 'project-files-reopened.png',
       );
       const syntheticContact = '合成验收联系人';
-      await evaluate("document.querySelector('[data-nav=contacts]').click()");
+      // 仅在本探针校验可见命中后发送原生点击，避免详情页隐藏副本被误点。
+      const clickVisible = async (selector: string) => {
+        const target = `document.querySelector(${JSON.stringify(selector)})`;
+        await wait(`${target} && !${target}.disabled && ${target}.getClientRects().length > 0`);
+        const point: { x: number; y: number } = await evaluate(`(() => {
+          const element = ${target};
+          element.scrollIntoView({block:'center',inline:'center'});
+          const r = element.getBoundingClientRect();
+          const x = r.left+r.width/2, y = r.top+r.height/2;
+          const hit = document.elementFromPoint(x,y);
+          if (element.closest('[inert]') || !hit || !element.contains(hit))
+            throw new Error('Project probe target is obscured: '+${JSON.stringify(selector)});
+          return {x:Math.round(x),y:Math.round(y)};
+        })()`);
+        window.webContents.sendInputEvent({
+          type: 'mouseDown',
+          button: 'left',
+          clickCount: 1,
+          ...point,
+        });
+        window.webContents.sendInputEvent({
+          type: 'mouseUp',
+          button: 'left',
+          clickCount: 1,
+          ...point,
+        });
+      };
+      const listContacts = async () => {
+        const result: ContactsResponse = await evaluate(
+          "window.caselite.contacts({protocol_version:1,operation:'list'})",
+        );
+        if (!result.ok) throw new Error('Cannot read probe contacts: ' + result.message);
+        return result.contacts;
+      };
+      const catalog: CatalogResponse = await evaluate(
+        "window.caselite.catalog({protocol_version:1,operation:'list'})",
+      );
+      if (!catalog.ok) throw new Error('Cannot read probe project/document catalog');
+      const project = catalog.projects.find((row) => row.id === projectId);
+      const document = catalog.documents.find((row) => row.id === expected.task.document_id);
+      if (
+        !project ||
+        !document ||
+        document.task_id !== expected.task.id ||
+        document.body_id !== expected.task.body_id ||
+        document.matter_id !== projectId
+      )
+        throw new Error('Original Task/Document/project association changed');
+      const assertOriginalBody = async () => {
+        const result: TaskResponse = await evaluate(
+          `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(expected.task.id)}})`,
+        );
+        const task = result.ok ? result.tasks[0] : undefined;
+        if (
+          !result.ok ||
+          !task ||
+          task.id !== expected.task.id ||
+          task.matter_id !== projectId ||
+          task.document_id !== document.id ||
+          task.body_id !== document.body_id ||
+          task.body_revision !== expected.task.body_revision ||
+          createHash('sha256').update(JSON.stringify(result.state)).digest('hex') !==
+            expected.bodySha256
+        )
+          throw new Error('Project probe lost original identity, saved revision or Yjs body');
+      };
+      await assertOriginalBody();
+      await clickVisible('[data-nav=contacts]');
+      let contactId: string;
       if (phase === 'project-files') {
-        await button('＋ 新建客户');
-        await input('客户姓名', syntheticContact);
-        await wait(`[...(document.querySelector('.contacts-inspector select[multiple]')?.options ?? [])]
+        const before = new Set((await listContacts()).map((row) => row.id));
+        await clickVisible('.contacts-workbench .collection-heading button');
+        await wait("document.querySelector('.customer-profile-form [aria-label=联系人姓名]')");
+        await input('联系人姓名', syntheticContact);
+        await wait(`[...(document.querySelector('.customer-profile-form select[aria-label=关联项目]')?.options ?? [])]
           .some(item => item.value === ${JSON.stringify(projectId)})`);
         await evaluate(`(() => {
-          const select = document.querySelector('.contacts-inspector select[multiple]');
+          const select = document.querySelector('.customer-profile-form select[aria-label=关联项目]');
           const option = [...select.options].find(item => item.value === ${JSON.stringify(projectId)});
           if (!option) throw new Error('Missing test project for contact');
           option.selected = true;
           select.dispatchEvent(new Event('change',{bubbles:true}));
         })()`);
-        await button('保存客户');
+        await clickVisible('.customer-profile-form button[type=submit]');
+        await wait(
+          "!document.querySelector('.customer-profile-form') && document.querySelector('.customer-open-detail')",
+        );
+        const created = (await listContacts()).filter((row) => !before.has(row.id));
+        if (
+          created.length !== 1 ||
+          created[0].name !== syntheticContact ||
+          created[0].project_ids.length !== 1 ||
+          created[0].project_ids[0] !== projectId
+        )
+          throw new Error('Contact UI save did not preserve the selected project');
+        contactId = created[0].id;
+      } else {
+        const saved = JSON.parse(readFileSync(join(root, 'project-files-details.json'), 'utf8'));
+        if (
+          saved.status !== 'PASS_REAL' ||
+          saved.projectId !== projectId ||
+          saved.taskId !== expected.task.id ||
+          saved.documentId !== document.id ||
+          typeof saved.contactId !== 'string'
+        )
+          throw new Error('Missing or mismatched write-phase identity receipt');
+        contactId = saved.contactId;
       }
+      const contact = (await listContacts()).find((row) => row.id === contactId);
+      if (
+        !contact ||
+        contact.name !== syntheticContact ||
+        contact.project_ids.length !== 1 ||
+        contact.project_ids[0] !== projectId
+      )
+        throw new Error('Saved contact/project association did not survive restart');
+      await clickVisible(`.customer-name[data-customer-id="${contactId}"]`);
       await wait(
-        `document.querySelector('.contacts-inspector h2')?.textContent === ${JSON.stringify(syntheticContact)}`,
+        `(() => {
+          const name = document.querySelector('.customer-identity h2 .customer-inline-value')?.cloneNode(true);
+          name?.querySelectorAll('[aria-hidden=true]').forEach((decoration) => decoration.remove());
+          return name?.textContent.trim() === ${JSON.stringify(contact.name)};
+        })()`,
       );
-      await evaluate(
-        "document.querySelector('.contacts-inspector [role=tab][aria-label^=项目]').click()",
-      );
-      await wait(
-        "document.querySelector('.contacts-inspector .customer-linked-list')?.textContent.includes('独立任务转项目验收')",
-      );
+      await clickVisible('.customer-open-detail');
+      await clickVisible('.customer-detail-page [role=tab][aria-label^=项目]');
+      const projectLink =
+        '.customer-detail-page [role=tabpanel][aria-label=关联项目] .customer-linked-list button';
+      await wait(`document.querySelectorAll(${JSON.stringify(projectLink)}).length===1 &&
+        document.querySelector(${JSON.stringify(projectLink)})?.textContent.trim()===${JSON.stringify(project.title)}`);
       await captureRenderer('dev-1806-contacts.png');
+      await clickVisible(projectLink);
+      await wait(`document.querySelector('.catalog-actions[data-project-id="${projectId}"]')`);
       if (phase === 'project-files-read') {
         await wait("!document.querySelector('[data-nav=reports]')");
-        await evaluate("document.querySelector('[data-nav=tasks]').click()");
+        await clickVisible('[data-nav=tasks]');
         await wait(
-          "document.querySelector('.task-table-structured [role=columnheader]:nth-child(4)')?.textContent === '截止日期'",
+          "document.querySelector('.task-table-structured [role=columnheader][data-column=due-date]')?.textContent === '截止日期'",
         );
         await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
+        await wait(
+          "document.querySelector('.task-important-information .task-list-summary')?.textContent.includes('今日到期')",
+        );
         await captureRenderer('linear-task-list.png');
-        await evaluate("document.querySelector('.task-list-preview-toggle').click()");
-        await wait(
-          "document.querySelector('.task-list-summary')?.textContent.includes('今日到期')",
-        );
+        await clickVisible('.task-list-preview-toggle');
+        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=true]')");
+        await clickVisible(`[data-row-task="${expected.task.id}"]`);
+        await wait(`document.querySelector('[data-row-task="${expected.task.id}"]')?.getAttribute('aria-current')==='true' &&
+          document.querySelector('.task-summary-sidebar .task-properties-editor [aria-label=任务状态]')`);
         await captureRenderer('dev-1803-task-list.png');
-        await evaluate("document.querySelector('[data-nav=documents]').click()");
+        await clickVisible('.task-list-preview-toggle');
+        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
+        await clickVisible(`[data-row-task="${expected.task.id}"]`);
+        await wait(`document.querySelector('[data-active-task="${expected.task.id}"]')`);
+        await showTaskResult();
         await wait(
-          "document.querySelector('.document-directory-table tbody')?.textContent.includes('独立任务转项目验收')",
+          "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
         );
-        await evaluate(`
-          Array.from(document.querySelectorAll('.document-directory-table [data-document-id]'))
-            .find(row => row.textContent.includes('独立任务转项目验收')).click()
-        `);
-        await wait(
-          "document.querySelector('[aria-label=文档正文预览]')?.textContent.includes('原任务正文与引用保全样本')",
-        );
+        await clickVisible('[data-nav=documents]');
+        const folder = `[data-folder-id="project:${projectId}"] > summary`;
+        await wait(`document.querySelector(${JSON.stringify(folder)})`);
+        if (
+          await evaluate(
+            `document.querySelector(${JSON.stringify(folder)}).getAttribute('aria-expanded')!=='true'`,
+          )
+        )
+          await clickVisible(folder);
+        const file = `[data-folder-id="project:${projectId}"] [data-document-id="${document.id}"]`;
+        const editor = '[data-preview-pane=primary] [data-testid=body-editor]';
+        const assertInlineBody = async () => {
+          await wait(`document.querySelector(${JSON.stringify(editor)})`);
+          await evaluate(
+            `document.querySelector(${JSON.stringify(editor)}).scrollIntoView({block:'center',inline:'nearest'})`,
+          );
+          await evaluate(
+            'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+          );
+          try {
+            await wait(`document.querySelector('[data-collection=documents]')?.dataset.directoryView==='preview' &&
+            (() => {
+              const body = document.querySelector(${JSON.stringify(editor)});
+              if (!body) return false;
+              const r = body.getBoundingClientRect();
+              const left = Math.max(0,r.left), right = Math.min(innerWidth,r.right);
+              const top = Math.max(0,r.top), bottom = Math.min(innerHeight,r.bottom);
+              if (right<=left || bottom<=top) return false;
+              return body.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));
+            })() &&
+            document.querySelector(${JSON.stringify(file)})?.getAttribute('aria-pressed')==='true' &&
+            document.querySelector(${JSON.stringify(editor)})?.getAttribute('contenteditable')==='true' &&
+            document.querySelector(${JSON.stringify(editor)})?.textContent.includes('原任务正文与引用保全样本') &&
+            document.querySelector('[data-preview-pane=primary] [data-testid=revision]')?.textContent===${JSON.stringify(String(expected.task.body_revision))}`);
+          } catch (error) {
+            const geometry = await evaluate(`(() => {
+              const body = document.querySelector(${JSON.stringify(editor)});
+              const ancestors = [];
+              for (let node=body; node && ancestors.length<10; node=node.parentElement) {
+                const style=getComputedStyle(node);
+                const r=node.getBoundingClientRect();
+                ancestors.push({tag:node.tagName,className:node.className,rect:r.toJSON(),
+                  overflow:style.overflow,scrollTop:node.scrollTop,scrollHeight:node.scrollHeight});
+              }
+              const r=body?.getBoundingClientRect();
+              const x=r ? (Math.max(0,r.left)+Math.min(innerWidth,r.right))/2 : 0;
+              const y=r ? (Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2 : 0;
+              const hit=document.elementFromPoint(x,y);
+              return {width:innerWidth,height:innerHeight,
+                view:document.querySelector('[data-collection=documents]')?.dataset.directoryView,
+                ancestors,hit:hit ? {tag:hit.tagName,className:hit.className,x,y} : null};
+            })()`);
+            writeFileSync(
+              join(root, phase + '-inline-visibility.json'),
+              JSON.stringify(geometry, null, 2),
+            );
+            throw error;
+          }
+        };
+        await clickVisible(file);
+        await assertInlineBody();
         await captureRenderer('dev-1803-document-preview.png');
         window.setContentSize(640, 640);
         await wait(`innerWidth===640 &&
           getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display==='none' &&
           document.querySelector('.document-directory-back').getBoundingClientRect().width>0`);
         await captureRenderer('dev-1814-document-preview-narrow.png');
-        await button('返回文档列表');
-        await wait(`getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none' &&
+        await clickVisible('.document-directory-back');
+        await wait(`document.querySelector('[data-collection=documents]')?.dataset.directoryView==='list' &&
+          getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none' &&
           document.activeElement.matches('.collection-heading h1')`);
-        await evaluate(`
-          Array.from(document.querySelectorAll('.document-directory-table [data-document-id]'))
-            .find(row => row.textContent.includes('独立任务转项目验收')).click()
-        `);
-        await button('打开编辑');
-        await wait(
-          "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
-        );
+        await clickVisible(file);
+        await assertInlineBody();
+        await captureRenderer('project-files-inline-reentered.png');
       }
+      await assertOriginalBody();
       writeFileSync(
-        join(root, phase + '.json'),
+        join(root, phase + '-details.json'),
         JSON.stringify(
           {
             status: 'PASS_REAL',
             contact: phase === 'project-files' ? 'saved' : 'reopened',
+            contactId,
+            projectId,
+            taskId: expected.task.id,
+            documentId: document.id,
             files: files.map((m) => ({ id: m.id, asset: m.asset_version_id, sha256: m.sha256 })),
             missingReadRecovery: phase === 'project-files',
             isolation,
