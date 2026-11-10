@@ -4,6 +4,7 @@ import { useCallback, useState, useRef, type ReactNode } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import InspectorLayout from './InspectorLayout';
+import InspectorCards, { type InspectorCard } from './InspectorCards';
 import TaskProjectAction from '../features/projects/TaskProjectAction';
 import TaskProperties from './TaskProperties';
 import { taskStatusNames } from './task-status';
@@ -23,8 +24,10 @@ export default function TaskInspector({
   reminder,
   showCalendar = false,
   editorAssistantDock,
+  cards,
 }: {
   content?: ReactNode;
+  cards?: readonly InspectorCard[];
   reminder?: ReactNode;
   showCalendar?: boolean;
   editorAssistantDock?(element: HTMLDivElement | null): void;
@@ -67,10 +70,16 @@ export default function TaskInspector({
     },
     [onPropertiesBlocked],
   );
-  if (!task) return <aside className="task-inspector" aria-label="任务属性" />;
+  if (!task)
+    return (
+      <aside className="task-inspector" aria-label="任务属性">
+        {cards !== undefined && <InspectorCards properties={null} cards={cards} />}
+      </aside>
+    );
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <InspectorLayout
+        cards={cards}
         blocked={reminderEditing || editing || calendarEditing || localReminderEditing}
         properties={
           <div className="inspector-content task-inspector-content" aria-label="任务属性">

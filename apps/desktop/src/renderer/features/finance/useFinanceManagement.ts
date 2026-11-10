@@ -162,6 +162,7 @@ export function useFinanceManagement() {
   }
   return {
     state: query.data?.state,
+    readFailed: query.isError,
     loading: query.isPending,
     error: error || query.error?.message || '',
     message,

@@ -258,3 +258,65 @@ it('activates and collapses the real conversation across a portal without replac
   expect(input).toBe(screen.getByRole('textbox', { name: '本轮问题' }));
   expect(input.closest('.editor-agent-thread')?.parentElement).toBe(dock);
 });
+
+it('composes several cards while preserving the property form and active AI when statistics moves or closes', () => {
+  function Host() {
+    const [position, setPosition] = useState<'top' | 'middle' | 'bottom'>('top');
+    const [enabled, setEnabled] = useState(true);
+    return (
+      <>
+        <button onClick={() => setPosition(position === 'top' ? 'middle' : 'bottom')}>
+          移动统计
+        </button>
+        <button onClick={() => setEnabled(!enabled)}>开关统计</button>
+        <InspectorLayout
+          properties={<input aria-label="属性草稿" defaultValue="原属性" />}
+          cards={[
+            ...(enabled
+              ? [
+                  {
+                    id: 'statistics',
+                    position,
+                    content: <input aria-label="卡片输入" defaultValue="卡片草稿" />,
+                  },
+                ]
+              : []),
+            { id: 'information', position: 'top', content: <p>第二张组合卡</p> },
+          ]}
+        >
+          <textarea aria-label="会话草稿" defaultValue="原会话" />
+          <p>合成附件.pdf · 运行 ID：synthetic-run-1</p>
+        </InspectorLayout>
+      </>
+    );
+  }
+  render(<Host />);
+  const property = screen.getByLabelText<HTMLInputElement>('属性草稿');
+  const ai = screen.getByLabelText<HTMLTextAreaElement>('会话草稿');
+  const card = screen.getByLabelText<HTMLInputElement>('卡片输入');
+  const region = screen.getByRole('region', { name: 'AI 对话' });
+  fireEvent.change(property, { target: { value: '未保存属性' } });
+  fireEvent.change(ai, { target: { value: '未发送会话' } });
+  fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+  for (const position of ['middle', 'bottom']) {
+    fireEvent.click(screen.getByRole('button', { name: '移动统计' }));
+    expect(
+      document
+        .querySelector('[data-inspector-card="statistics"]')
+        ?.getAttribute('data-card-position'),
+    ).toBe(position);
+    expect(screen.getByLabelText('卡片输入')).toBe(card);
+    expect(screen.getByLabelText('属性草稿')).toBe(property);
+    expect(screen.getByLabelText('会话草稿')).toBe(ai);
+    expect(screen.getByRole('region', { name: 'AI 对话' })).toBe(region);
+  }
+  fireEvent.click(screen.getByRole('button', { name: '开关统计' }));
+  expect(screen.queryByLabelText('卡片输入')).toBeNull();
+  expect(screen.getByText('第二张组合卡')).toBeTruthy();
+  expect(screen.getByLabelText('属性草稿')).toBe(property);
+  expect(property.value).toBe('未保存属性');
+  expect(screen.getByLabelText('会话草稿')).toBe(ai);
+  expect(ai.value).toBe('未发送会话');
+  expect(screen.getByRole('button', { name: '收起 AI 对话' })).toBeTruthy();
+  expect(screen.getByText('合成附件.pdf · 运行 ID：synthetic-run-1')).toBeTruthy();
+});

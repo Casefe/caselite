@@ -1,5 +1,7 @@
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ProjectMetrics from './ProjectMetrics';
+import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
+import InspectorCards from '../../ui/InspectorCards';
 import ProjectList, {
   projectListDefaults,
   projectListProperties,
@@ -421,6 +423,11 @@ export default function ProjectCatalog({
       <span className="sr-only">返回项目列表</span>
     </button>
   );
+  const cards = useStatisticsCards(
+    'projects',
+    <ProjectMetrics projects={projects} unavailable={!c.data || Boolean(c.error)} />,
+    !editor,
+  );
   return (
     <section
       ref={workspace}
@@ -511,9 +518,7 @@ export default function ProjectCatalog({
             </button>
           </div>
         )}
-        {!editor && (
-          <ProjectMetrics projects={projects} unavailable={!c.data || Boolean(c.error)} />
-        )}
+
         {!editor && <h2 className="project-dashboard-list-title">项目列表</h2>}
         {!editor && (
           <div
@@ -1194,6 +1199,7 @@ export default function ProjectCatalog({
       <aside className="project-properties" aria-label="项目辅助栏">
         {!sourceUnavailable ? (
           <InspectorLayout
+            cards={cards}
             className="project-ai-content"
             blocked={blocked}
             expandedActions={
@@ -1334,7 +1340,13 @@ export default function ProjectCatalog({
             />
           </InspectorLayout>
         ) : (
-          <p>选择项目查看实际属性。</p>
+          <div
+            className="inspector-properties-scroll inspector-cards-fallback"
+            tabIndex={0}
+            aria-label="属性滚动区域"
+          >
+            <InspectorCards cards={cards} properties={<p>选择项目查看实际属性。</p>} />
+          </div>
         )}
       </aside>
       {creating && (

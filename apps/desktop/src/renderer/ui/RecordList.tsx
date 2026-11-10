@@ -1,5 +1,6 @@
 import TaskInspector from './TaskInspector';
 import TaskListSummary from '../features/tasks/TaskListSummary';
+import { useStatisticsCards } from '../shared/statistics/statistics-preferences';
 import { Icon } from '../shared/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
@@ -161,6 +162,15 @@ export default function RecordList({
   const unavailable =
     q.scope.type === 'project' &&
     !projects.some((p) => p.id === (q.scope.type === 'project' ? q.scope.id : ''));
+  const cards = useStatisticsCards(
+    'tasks',
+    <TaskListSummary
+      tasks={tasks.filter((t) => q.scope.type === 'workspace' || t.matter_id === q.scope.id)}
+      variant="stats"
+      disabled={propertiesBlocked}
+      onOpen={openTask}
+    />,
+  );
   return (
     <section
       className="list-view collection-workspace issue-collection task-query-list"
@@ -183,12 +193,6 @@ export default function RecordList({
           </button>
         </div>
         <p className="task-overview-description">集中管理任务与工作进度</p>
-        <TaskListSummary
-          tasks={tasks.filter((t) => q.scope.type === 'workspace' || t.matter_id === q.scope.id)}
-          variant="stats"
-          disabled={propertiesBlocked}
-          onOpen={openTask}
-        />
         <div className="task-list-viewbar">
           <div className="task-view-switcher" role="group" aria-label="任务视图">
             {(
@@ -557,6 +561,7 @@ export default function RecordList({
         {previewOpen ? (
           <TaskInspector
             key={selected?.id ?? 'empty'}
+            cards={cards}
             task={error ? null : selected}
             suggestions={[...new Set(tasks.flatMap((t) => t.tags ?? []))]}
             assigneeSuggestions={tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
@@ -570,6 +575,7 @@ export default function RecordList({
           />
         ) : (
           <InspectorLayout
+            cards={cards}
             blocked={propertiesBlocked}
             properties={
               <div className="task-important-information">

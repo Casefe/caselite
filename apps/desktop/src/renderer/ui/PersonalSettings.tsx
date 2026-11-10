@@ -1,3 +1,4 @@
+import StatisticsSettings from '../shared/statistics/StatisticsSettings';
 import { useLocalPreferences } from '../shared/data/LocalPreferences';
 export default function PersonalSettings({
   preferencesOnly = false,
@@ -64,6 +65,13 @@ export default function PersonalSettings({
           </label>
           <p>仅保存到当前本地工作区；不注册云端账户，不发送邮件。</p>
         </>
+      )}
+      {preferencesOnly && (
+        <StatisticsSettings
+          value={s.draft.statistics_cards}
+          disabled={disabled}
+          onChange={(statistics_cards) => s.change({ statistics_cards })}
+        />
       )}
       {s.error && <p role="alert">{s.error}</p>}
       {s.notice && <p role="status">{s.notice}</p>}
