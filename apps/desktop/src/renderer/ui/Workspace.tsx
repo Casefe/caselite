@@ -30,11 +30,11 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
   { id: 'calendar', label: '日历', icon: 'calendar' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
-  { id: 'finance', label: '财务', icon: 'wallet' },
+  { id: 'documents', label: '文档', icon: 'file' },
 ];
 const secondaryNavigation: typeof navigation = [
   { id: 'knowledge', label: '知识库', icon: 'book' },
-  { id: 'documents', label: '文档', icon: 'file' },
+  { id: 'finance', label: '财务', icon: 'wallet' },
   { id: 'contacts', label: '联系人', icon: 'person' },
 ];
 export function WorkspaceShell({
