@@ -28,8 +28,8 @@ describe('workspace navigation and clearly bounded project prototype', () => {
           .getAllByRole('button')
           .map((button) => button.getAttribute('aria-label'));
       expect(labels('常用')).toEqual(['首页', '日历', '任务', '项目', '文档']);
-      expect(labels('工作区')).toEqual(['知识库', '财务', '客户']);
-      for (const name of ['白板', '报告', '工具', '联系人'])
+      expect(labels('工作区')).toEqual(['知识库', '财务', '联系人']);
+      for (const name of ['白板', '报告', '工具', '客户'])
         expect(sidebar.queryByRole('button', { name, exact: true })).toBeNull();
     };
     checkNavigation();
@@ -76,7 +76,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     expect(screen.getByRole('button', { name: '日历', exact: true }).title).toBe(
       '日历 · 73 个重要日期',
     );
-    fireEvent.click(screen.getByRole('button', { name: '客户', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '联系人', exact: true }));
     expect(navigate).toHaveBeenCalledWith('contacts');
     fireEvent.click(screen.getByRole('button', { name: '展开导航' }));
     expect(collapse).toHaveBeenCalledTimes(2);

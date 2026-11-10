@@ -9,6 +9,7 @@ const clean = (max: number) =>
     .max(max)
     .refine((value) => !value.includes('\0'));
 const profile = {
+  address: clean(500),
   wechat: clean(80),
   company: clean(160),
   position: clean(80),
@@ -51,6 +52,7 @@ const fields = {
 };
 export const contactSchema = z.strictObject({
   ...fields,
+  address: profile.address.default(''),
   wechat: profile.wechat.default(''),
   company: profile.company.default(''),
   position: profile.position.default(''),
@@ -78,8 +80,23 @@ export const contactEntrySchema = z.strictObject({
   updated_at: z.string(),
 });
 export type ContactEntry = z.infer<typeof contactEntrySchema>;
+const sourceScope = z.union([
+  z.literal('home'),
+  id,
+  z.templateLiteral(['project:', id]),
+  z.templateLiteral(['document:', id]),
+  z.templateLiteral(['contact:', id]),
+]);
+export const contactSourceRefSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('run'), id, scope: sourceScope }),
+  z.strictObject({ kind: z.literal('material'), id, scope: id }),
+  z.strictObject({ kind: z.literal('payment'), id, scope: id }),
+]);
+export type ContactSourceRef = z.infer<typeof contactSourceRefSchema>;
 const detail = z.strictObject({
   contact_id: id,
+  source_links: z.array(contactSourceRefSchema).default([]),
+  sources_unavailable: z.boolean().default(false),
   entries: z.array(contactEntrySchema),
   task_ids: z.array(id),
   document_ids: z.array(id),
@@ -94,6 +111,7 @@ export const contactsRequestSchema = z.discriminatedUnion('operation', [
     expected_version: z.number().int().nonnegative(),
     receipt: id,
     ...fields,
+    address: profile.address.optional(),
     wechat: profile.wechat.optional(),
     company: profile.company.optional(),
     position: profile.position.optional(),
@@ -115,6 +133,20 @@ export const contactsRequestSchema = z.discriminatedUnion('operation', [
     state: z.array(z.number().int().min(0).max(255)).min(1).max(100000),
     source_run_id: id.optional(),
   }),
+  z
+    .strictObject({
+      protocol_version: z.literal(1),
+      operation: z.literal('set_source_links'),
+      contact_id: id,
+      receipt: id,
+      expected_version: z.number().int().positive(),
+      kind: z.enum(['run', 'material', 'payment']),
+      source_refs: z
+        .array(contactSourceRefSchema)
+        .max(100)
+        .refine((rows) => new Set(rows.map((row) => row.id)).size === rows.length),
+    })
+    .refine((row) => row.source_refs.every((ref) => ref.kind === row.kind)),
   z.strictObject({
     protocol_version: z.literal(1),
     operation: z.literal('set_links'),

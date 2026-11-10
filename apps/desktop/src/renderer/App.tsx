@@ -1089,6 +1089,11 @@ function Workbench() {
           />
         ) : view === 'contacts' ? (
           <ContactsView
+            onOpenFinance={(id) => {
+              if (!canLeave()) return;
+              navigate('finance');
+              setFinanceProject(id);
+            }}
             onDirty={setDirty}
             onOpenTask={(id) => void open(id)}
             onOpenDocument={(_id, taskId) => void open(taskId, null, true)}

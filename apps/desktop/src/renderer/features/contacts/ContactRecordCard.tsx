@@ -27,7 +27,7 @@ export default function ContactRecordCard({
   const original =
     pending?.operation === 'save_entry' && pending.source_run_id === run.id ? pending : undefined;
   return (
-    <article className="customer-record-card" aria-label="AI联系记录候选">
+    <article className="customer-record-card" aria-label="AI往来记录候选">
       <header>
         <strong>{candidate.title}</strong>
         <span className="customer-pill">{saved ? '已保存' : '待保存'}</span>
@@ -62,7 +62,7 @@ export default function ContactRecordCard({
           else setError('');
         }}
       >
-        {saved ? '已保存为联系记录' : original ? '核对原提交' : '保存为联系记录'}
+        {saved ? '已保存为往来记录' : original ? '核对原提交' : '保存为往来记录'}
       </button>
       <button
         type="button"
@@ -71,7 +71,7 @@ export default function ContactRecordCard({
       >
         继续修改
       </button>
-      {!saved && <small>可继续对话补充或修改；保存后出现在联系记录中。</small>}
+      {!saved && <small>可继续对话补充或修改；保存后出现在往来记录中。</small>}
     </article>
   );
 }

@@ -975,7 +975,6 @@ app
       ? performanceApplication('contacts', baseContacts)
       : baseContacts;
     registerFinanceIpc(finance);
-    registerContactsIpc(contacts);
     const materials = createMaterialApplication({
       store: taskStore.materials,
       files: createMaterialFiles(join(taskRoot, 'materials')),
@@ -1287,6 +1286,47 @@ app
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     registerAgentIpc(agent);
+    registerContactsIpc(contacts, async (source, owner) => {
+      if (source.kind === 'run') {
+        const result = await agent.execute(
+          { protocol_version: 1, operation: 'read', scope: source.scope },
+          owner,
+        );
+        return (
+          result.ok &&
+          result.runs.some(
+            (run) =>
+              run.id === source.id &&
+              run.scope === source.scope &&
+              run.purpose !== 'important_dates',
+          )
+        );
+      }
+      if (source.kind === 'material') {
+        const result = await materials.execute({
+          protocol_version: 1,
+          operation: 'read',
+          scope: source.scope,
+          source_id: source.id,
+        });
+        return (
+          result.ok &&
+          result.materials.some(
+            (material) => material.id === source.id && material.task_id === source.scope,
+          )
+        );
+      }
+      const result = finance.execute({
+        protocol_version: 1,
+        operation: 'read',
+        project_id: source.scope,
+      });
+      return (
+        result.ok &&
+        result.kind === 'ledger' &&
+        Boolean(result.ledger?.payments.some((payment) => payment.id === source.id))
+      );
+    });
     if (performanceDemo && taskDemoRoot) {
       if (taskDemoPhase === 'performance-seed')
         seedPerformance(taskDemoRoot, tasks, catalog, contacts, finance);
