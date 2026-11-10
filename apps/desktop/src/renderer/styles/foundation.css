@@ -138,21 +138,15 @@ h3 {
 }
 .sidebar-nav-group + .sidebar-nav-group {
   position: relative;
-  margin-top: 8px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 14px;
 }
 .sidebar-nav-group + .sidebar-nav-group::before {
   content: '';
   position: absolute;
   inset: 0 10px auto;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--line-strong) 12%,
-    var(--line-strong) 88%,
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent);
 }
 .primary-navigation {
   flex-shrink: 0;
