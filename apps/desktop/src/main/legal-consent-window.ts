@@ -6,14 +6,17 @@ import {
 } from '@caselite/contracts';
 import type { createLegalConsentApplication } from '@caselite/application';
 import { isTrustedDesktopSender } from './ipc/register-application-ipc';
+import { appearanceBackground, type createWindowAppearance } from './window-appearance';
 
 export async function showLegalConsent(
   application: ReturnType<typeof createLegalConsentApplication>,
   observe?: (window: BrowserWindow) => Promise<void>,
+  appearance?: ReturnType<typeof createWindowAppearance>,
 ): Promise<boolean> {
   const initial = application.execute({ protocol_version: 1, operation: 'read' });
   if (initial.ok && initial.accepted) return true;
   const area = screen.getPrimaryDisplay().workAreaSize;
+  const initialAppearance = appearance?.snapshot();
   const window = new BrowserWindow({
     width: Math.min(1040, area.width),
     height: Math.min(840, area.height - 32),
@@ -21,6 +24,7 @@ export async function showLegalConsent(
     minHeight: 480,
     title: 'CaseLite · 软件许可与使用协议',
     show: false,
+    backgroundColor: appearanceBackground(initialAppearance?.theme ?? 'light'),
     webPreferences: {
       preload: LEGAL_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -30,6 +34,7 @@ export async function showLegalConsent(
       webviewTag: false,
     },
   });
+  appearance?.attach(window);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.on('will-redirect', (event) => event.preventDefault());

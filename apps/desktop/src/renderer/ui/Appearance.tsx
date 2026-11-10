@@ -1,5 +1,14 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Theme } from '../../preload/caselite-api';
+import { applyAppearanceTheme, readAppearanceSeed } from './appearance-theme';
 
 type AppearanceState = {
   theme: Theme;
@@ -17,66 +26,116 @@ const AppearanceContext = createContext<AppearanceState>({
 });
 export const useAppearance = () => useContext(AppearanceContext);
 
+let motionGeneration = 0;
+let operationGeneration = 0;
 export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<Theme>(() => readAppearanceSeed().theme);
+  const [resolved, setResolved] = useState(() => readAppearanceSeed().ready);
   const [pending, setPending] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const sequence = useRef(0);
+  const locked = useRef(true);
+  const synchronize = useCallback(async (next: Theme, token: number) => {
+    if (token !== sequence.current) return;
+    const root = document.documentElement;
+    const generation = String(++motionGeneration);
+    root.dataset.themeChanging = generation;
+    applyAppearanceTheme(next);
+    setTheme(next);
+    // 已确认保存后才应用DOM；Main同步核对落盘值，不能把未知回执当成可切换。
+    try {
+      const applied = await window.caselite.appearance({
+        protocol_version: 1,
+        operation: 'applied',
+        theme: next,
+      });
+      if (token !== sequence.current) return;
+      if (!applied.ok || applied.theme !== next) {
+        setError(applied.ok ? '窗口外观未同步，请重新读取。' : applied.message);
+        return;
+      }
+      setResolved(true);
+      setError('');
+    } finally {
+      // 双帧后恢复悬停过渡；旧回调不能解除下一次切换的动画锁。
+      const frame =
+        window.requestAnimationFrame ??
+        ((callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0));
+      frame(() =>
+        frame(() => {
+          if (root.dataset.themeChanging === generation) delete root.dataset.themeChanging;
+        }),
+      );
+    }
+  }, []);
   useEffect(() => {
-    let active = true;
+    const token = ++operationGeneration;
+    sequence.current = token;
+    locked.current = true;
     void window.caselite
       .appearance({ protocol_version: 1, operation: 'read' })
-      .then((result) => {
-        if (!active) return;
-        if (result.ok) {
-          setTheme(result.theme);
-          setError('');
-        } else setError(result.message);
+      .then(async (result) => {
+        if (token !== sequence.current) return;
+        if (result.ok) await synchronize(result.theme, token);
+        else setError(result.message);
       })
       .catch(() => {
-        if (active) setError('无法读取主题设置，请重试。');
+        if (token === sequence.current) setError('无法读取或同步主题设置，请重新读取。');
       })
       .finally(() => {
-        if (active) setPending(false);
+        if (token === sequence.current) {
+          locked.current = false;
+          setPending(false);
+        }
       });
     return () => {
-      active = false;
+      sequence.current = -1;
     };
-  }, [attempt]);
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    return () => {
-      delete document.documentElement.dataset.theme;
-    };
-  }, [theme]);
+  }, [attempt, synchronize]);
   const choose = (next: Theme) => {
-    if (pending || error || next === theme) return;
+    if (locked.current || error || next === theme) return;
+    locked.current = true;
+    const token = ++operationGeneration;
+    sequence.current = token;
     setPending(true);
     void window.caselite
       .appearance({ protocol_version: 1, operation: 'set', theme: next })
-      .then((result) => {
-        if (result.ok) {
-          setTheme(result.theme);
-          setError('');
-        } else setError(result.message);
+      .then(async (result) => {
+        if (token !== sequence.current) return;
+        if (result.ok) await synchronize(result.theme, token);
+        else setError(result.message);
       })
-      .catch(() => setError('无法确认主题是否保存，请重新读取。'))
-      .finally(() => setPending(false));
+      .catch(() => {
+        if (token === sequence.current) setError('无法确认主题是否保存或同步，请重新读取。');
+      })
+      .finally(() => {
+        if (token === sequence.current) {
+          locked.current = false;
+          setPending(false);
+        }
+      });
+  };
+  const retry = () => {
+    if (locked.current) return;
+    locked.current = true;
+    setPending(true);
+    setAttempt((n) => n + 1);
   };
   return (
-    <AppearanceContext.Provider
-      value={{
-        theme,
-        pending,
-        error,
-        setTheme: choose,
-        retry: () => {
-          setPending(true);
-          setAttempt((n) => n + 1);
-        },
-      }}
-    >
-      {children}
+    <AppearanceContext.Provider value={{ theme, pending, error, setTheme: choose, retry }}>
+      {resolved ? (
+        children
+      ) : (
+        <main className="theme-bootstrap" aria-busy={pending}>
+          <p role={error ? 'alert' : 'status'}>{error || '正在读取外观设置…'}</p>
+          {error && (
+            <button onClick={retry} disabled={pending}>
+              重新读取
+            </button>
+          )}
+        </main>
+      )}
     </AppearanceContext.Provider>
   );
 }
