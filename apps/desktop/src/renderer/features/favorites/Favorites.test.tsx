@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -228,4 +229,74 @@ it('refreshes favorite project labels and hides archived targets when the projec
   await waitFor(() =>
     expect(screen.queryByRole('button', { name: '项目已更名', exact: true })).toBeNull(),
   );
+});
+
+it('keeps the drag hint out of normal layout and away from pointer hit testing', async () => {
+  const style = document.createElement('style');
+  style.textContent = readFileSync('apps/desktop/src/renderer/styles/foundation.css', 'utf8');
+  document.head.appendChild(style);
+  try {
+    setup();
+    await clickReady('收藏任务');
+    const task = (await screen.findByRole('button', { name: '合成任务', exact: true }))
+      .parentElement!;
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? '',
+      effectAllowed: '',
+      dropEffect: '',
+    };
+    fireEvent.dragStart(task, { dataTransfer });
+    const hint = document.querySelector<HTMLElement>('.favorite-drop-hint')!;
+    expect(hint).not.toBeNull();
+    // jsdom只校验布局契约；实际矩形与命中须由无界面浏览器及原生包另验。
+    expect(getComputedStyle(hint).position).toBe('absolute');
+    expect(getComputedStyle(hint).pointerEvents).toBe('none');
+    expect(document.querySelector('.favorites-heading')!.contains(hint)).toBe(true);
+    expect(document.querySelector('.favorites-root-items')!.contains(hint)).toBe(false);
+    expect(screen.getByRole('button', { name: '收藏', exact: true })).toBeTruthy();
+    fireEvent.dragEnd(task, { dataTransfer });
+    expect(document.querySelector('.favorite-drop-hint')).toBeNull();
+  } finally {
+    style.remove();
+  }
+});
+
+it('cancels a drag without a save and keeps the root destination available for keyboard moves', async () => {
+  const s = setup();
+  await clickReady('收藏任务');
+  await clickReady('新建收藏文件夹');
+  fireEvent.change(screen.getByLabelText('收藏文件夹名称'), { target: { value: '取消拖动验收' } });
+  await clickReady('创建');
+  await screen.findByRole('button', { name: '取消拖动验收', exact: true });
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '新建收藏文件夹' }).disabled).toBe(
+      false,
+    ),
+  );
+  const writes = s.preferences.mock.calls.filter(([r]) => r.operation === 'set').length;
+  const before = structuredClone(s.stored().favorite_navigation);
+  const row = screen.getByRole('button', { name: '合成任务', exact: true }).parentElement!;
+  const target = screen
+    .getByRole('button', { name: '取消拖动验收', exact: true })
+    .closest('[data-favorite-folder]')!;
+  const values = new Map<string, string>();
+  const dataTransfer = {
+    setData: (type: string, value: string) => values.set(type, value),
+    getData: (type: string) => values.get(type) ?? '',
+    effectAllowed: '',
+    dropEffect: '',
+  };
+  fireEvent.dragStart(row, { dataTransfer });
+  fireEvent.dragOver(target, { dataTransfer });
+  expect(target.getAttribute('data-drop-active')).toBe('true');
+  fireEvent.dragEnd(row, { dataTransfer });
+  expect(target.getAttribute('data-drop-active')).toBe('false');
+  expect(document.querySelector('.favorite-drop-hint')).toBeNull();
+  expect(s.preferences.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(writes);
+  expect(s.stored().favorite_navigation).toEqual(before);
+  const select = screen.getByRole<HTMLSelectElement>('combobox', { name: '移动收藏 合成任务' });
+  expect(select.disabled).toBe(false);
+  expect(within(select).getByRole('option', { name: '收藏根目录' }).getAttribute('value')).toBe('');
 });

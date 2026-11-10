@@ -287,11 +287,18 @@ export function FavoritesSidebar({
       <div className="favorites-heading" {...dropProps(null)}>
         <button
           className="favorites-root"
+          aria-label="收藏"
+          data-dragging={Boolean(dragged)}
           aria-expanded={!collapsed.root}
           onClick={() => setCollapsed((old) => ({ ...old, root: !old.root }))}
         >
-          收藏
+          <span className="favorite-root-label">收藏</span>
           <Icon name="chevron" size={12} />
+          {dragged && (
+            <span className="favorite-drop-hint" aria-hidden="true">
+              拖到这里移出文件夹
+            </span>
+          )}
         </button>
         <button
           className="favorite-create-folder"
@@ -358,7 +365,6 @@ export function FavoritesSidebar({
         <div className="favorites-contents">
           <div className="favorites-root-items" data-favorite-folder="root" {...dropProps(null)}>
             {entries.filter((e) => !e.folder_id).map(item)}
-            {dragged && <p className="favorite-drop-hint">拖到这里移出文件夹</p>}
           </div>
           {navigation.folders.map((folder) => (
             <div

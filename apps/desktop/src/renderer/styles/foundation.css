@@ -1647,6 +1647,8 @@ dd {
   margin-bottom: 5px;
 }
 .favorites-tree .favorites-root {
+  position: relative;
+  min-width: 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--nav-muted);
@@ -1733,11 +1735,23 @@ dd {
   width: auto;
   padding: 5px 8px;
 }
-.favorite-drop-hint {
-  margin: 3px 6px;
-  padding: 6px 0;
+/* 提示替换同一按钮中的视觉标签，不挤动文件夹，也不截获原生拖放命中。 */
+.favorites-root[data-dragging='true'] > .favorite-root-label,
+.favorites-root[data-dragging='true'] > svg {
+  visibility: hidden;
+}
+.favorites-root .favorite-drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  margin: 0;
+  pointer-events: none;
+  white-space: nowrap;
   font-size: 10px;
-  opacity: 0.65;
+  font-weight: 400;
+  opacity: 0.85;
 }
 .favorites-tree .sidebar-empty {
   margin: 4px 6px 8px;
