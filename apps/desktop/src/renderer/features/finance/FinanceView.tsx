@@ -1,3 +1,4 @@
+import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -555,10 +556,12 @@ export default function FinanceView({
   };
   return (
     <section
-      className="collection-workspace catalog-view finance-workspace"
+      className="collection-workspace catalog-view finance-workspace property-resizable"
+      data-properties-resizable="true"
       data-layout="three-column"
       aria-label="财务工作区"
     >
+      <PropertyResizeHandle module="finance" />
       <div className="collection-main finance-main">
         <header className="collection-heading finance-workbench-heading">
           {opened && (
@@ -649,79 +652,87 @@ export default function FinanceView({
                 清除筛选
               </button>
             </div>
-            <ReadTable
-              data={matches}
-              getRowId={(item) => item.id}
-              label="财务项目列表"
-              rowProps={(item) => ({
-                'aria-selected': selected === item.id,
-                onClick: () => {
-                  if (!isBlocked) setSelected(item.id);
-                },
-              })}
-              columns={[
-                {
-                  id: 'project',
-                  header: '项目',
-                  cell: ({ row: { original: item } }) => (
-                    <button
-                      disabled={isBlocked}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openProject(item.id);
-                      }}
-                    >
-                      {item.title} →
-                    </button>
-                  ),
-                },
-                {
-                  id: 'status',
-                  header: '状态',
-                  accessorFn: (item) => (item.archived_at ? '已归档' : '在用'),
-                },
-                {
-                  id: 'received',
-                  header: '客户已付（元）',
-                  accessorFn: (item) =>
-                    formatCents(
-                      finance.state?.projects.find((row) => row.project_id === item.id)
-                        ?.received_cents,
-                    ),
-                },
-                {
-                  id: 'outstanding',
-                  header: '客户待收（元）',
-                  accessorFn: (item) => formatCents(item.outstanding_cents),
-                },
-                {
-                  id: 'mine',
-                  header: '我的待结算',
-                  accessorFn: (item) => {
-                    const own = allocations.filter((row) => row.project_id === item.id);
-                    if (!own.length) return '待核对';
-                    return formatCents(
-                      own.reduce((sum, row) => sum + BigInt(row.payable_cents), 0n) -
-                        payouts
-                          .filter((row) => row.project_id === item.id)
-                          .reduce((sum, row) => sum + BigInt(row.amount_cents), 0n),
-                    );
+            <div
+              className="finance-project-table-scroll"
+              role="region"
+              aria-label="财务项目表格，可横向滚动查看全部列"
+              tabIndex={0}
+            >
+              <ReadTable
+                data={matches}
+                getRowId={(item) => item.id}
+                label="财务项目列表"
+                rowProps={(item) => ({
+                  'aria-selected': selected === item.id,
+                  onClick: () => {
+                    if (!isBlocked) setSelected(item.id);
                   },
-                },
-                {
-                  id: 'paid',
-                  header: '我的已到账',
-                  accessorFn: (item) =>
-                    finance.state
-                      ? formatCents(
+                })}
+                columns={[
+                  {
+                    id: 'project',
+                    header: '项目',
+                    cell: ({ row: { original: item } }) => (
+                      <button
+                        title={item.title}
+                        disabled={isBlocked}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openProject(item.id);
+                        }}
+                      >
+                        {item.title} →
+                      </button>
+                    ),
+                  },
+                  {
+                    id: 'status',
+                    header: '状态',
+                    accessorFn: (item) => (item.archived_at ? '已归档' : '在用'),
+                  },
+                  {
+                    id: 'received',
+                    header: '客户已付（元）',
+                    accessorFn: (item) =>
+                      formatCents(
+                        finance.state?.projects.find((row) => row.project_id === item.id)
+                          ?.received_cents,
+                      ),
+                  },
+                  {
+                    id: 'outstanding',
+                    header: '客户待收（元）',
+                    accessorFn: (item) => formatCents(item.outstanding_cents),
+                  },
+                  {
+                    id: 'mine',
+                    header: '我的待结算',
+                    accessorFn: (item) => {
+                      const own = allocations.filter((row) => row.project_id === item.id);
+                      if (!own.length) return '待核对';
+                      return formatCents(
+                        own.reduce((sum, row) => sum + BigInt(row.payable_cents), 0n) -
                           payouts
                             .filter((row) => row.project_id === item.id)
                             .reduce((sum, row) => sum + BigInt(row.amount_cents), 0n),
-                        )
-                      : '—',
-                },
-              ]}
-            />
+                      );
+                    },
+                  },
+                  {
+                    id: 'paid',
+                    header: '我的已到账',
+                    accessorFn: (item) =>
+                      finance.state
+                        ? formatCents(
+                            payouts
+                              .filter((row) => row.project_id === item.id)
+                              .reduce((sum, row) => sum + BigInt(row.amount_cents), 0n),
+                          )
+                        : '—',
+                  },
+                ]}
+              />
+            </div>
             {matches.length === 0 && projects && <p>没有符合筛选条件的项目。</p>}
           </div>
           {opened && project && (

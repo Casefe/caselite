@@ -1,0 +1,61 @@
+/* 分隔线只占命中区域，不增加网格列，也不改变正文、表单和 AI 子树身份。 */
+.collection-workspace.property-resizable[data-properties-resizable='true'][data-layout='three-column'],
+.task-detail > .task-layout.property-resizable[data-properties-resizable='true'] {
+  position: relative;
+  grid-template-columns: minmax(280px, 1fr) var(
+      --property-panel-width,
+      var(--workspace-inspector-width)
+    );
+  min-width: calc(280px + var(--property-panel-width, var(--workspace-inspector-width)));
+}
+.property-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  right: calc(var(--property-panel-width, var(--workspace-inspector-width)) - 4px);
+  width: 8px;
+  z-index: 5;
+}
+.property-resize-handle > .resize-separator {
+  width: 100%;
+  height: 100%;
+}
+.property-resize-handle > .resize-separator::before {
+  background: transparent;
+}
+.property-resize-handle > .resize-separator:is(:hover, :active, :focus-visible)::before {
+  width: 2px;
+  background: var(--theme-accent, #7273ce);
+}
+/* 窄窗由工作区统一横滚，分隔线与实际右栏边缘保持一致。 */
+.finance-workspace.property-resizable[data-properties-resizable='true'] {
+  padding: 0 !important;
+}
+.property-resizable > .finance-sidebar:has([data-statistics-module='finance']) {
+  max-width: none;
+}
+.property-resizable > .task-summary-sidebar {
+  border-left: 1px solid var(--line);
+  border-top: 0;
+}
+/* 六列财务数据保留可读宽度；窄窗在表格内横滚，不挤成逐字换行。 */
+.finance-workspace.property-resizable .finance-project-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.finance-workspace.property-resizable .finance-project-table-scroll .catalog-table {
+  min-width: 960px;
+  table-layout: fixed;
+}
+.finance-workspace.property-resizable .finance-project-table-scroll :is(th, td) {
+  white-space: nowrap;
+}
+.finance-workspace.property-resizable .finance-project-table-scroll :is(th, td):first-child {
+  width: 240px;
+}
+.finance-workspace.property-resizable .finance-project-table-scroll td:first-child button {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

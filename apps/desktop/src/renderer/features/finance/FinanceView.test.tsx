@@ -157,6 +157,66 @@ async function register() {
   fireEvent.click(screen.getByRole('button', { name: '确认登记合同' }));
 }
 
+it('keeps the live finance and AI drafts while resizing, cancelling and temporarily clamping', async () => {
+  const size = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+  const { finance } = show(async () => read(true));
+  try {
+    const amount = await screen.findByLabelText('收款金额（元）');
+    const prompt = await screen.findByLabelText('AI 工作要求');
+    fireEvent.change(amount, { target: { value: '12.34' } });
+    fireEvent.change(prompt, { target: { value: '尚未发送的财务核对要求' } });
+    const separator = screen.getByRole('separator', { name: '调整财务属性栏宽度' });
+    fireEvent.doubleClick(separator);
+    const initial = Number(separator.getAttribute('aria-valuenow'));
+    const agentCalls = vi.mocked(window.caselite.agent).mock.calls.length;
+    const financeCalls = finance.mock.calls.length;
+    fireEvent.keyDown(separator, { key: 'End' });
+    fireEvent.keyUp(separator, { key: 'End' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('720');
+    size.mockReturnValue(600);
+    fireEvent(window, new Event('resize'));
+    expect(separator.getAttribute('aria-valuenow')).toBe('320');
+    size.mockReturnValue(1200);
+    fireEvent(window, new Event('resize'));
+    expect(separator.getAttribute('aria-valuenow')).toBe('720');
+    fireEvent.keyDown(separator, { key: 'Home' });
+    fireEvent.keyDown(separator, { key: 'Escape' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('720');
+    fireEvent.doubleClick(separator);
+    expect(Number(separator.getAttribute('aria-valuenow'))).toBe(initial);
+    expect(screen.getByLabelText('收款金额（元）')).toBe(amount);
+    expect(screen.getByLabelText('AI 工作要求')).toBe(prompt);
+    expect((amount as HTMLInputElement).value).toBe('12.34');
+    expect((prompt as HTMLTextAreaElement).value).toBe('尚未发送的财务核对要求');
+    expect(finance.mock.calls.length).toBe(financeCalls);
+    expect(vi.mocked(window.caselite.agent).mock.calls.length).toBe(agentCalls);
+  } finally {
+    size.mockRestore();
+  }
+});
+
+it('keeps all six finance columns, full project names, filtering and selection in the scroll region', async () => {
+  const longTitle = '合成项目名称用于窄窗口完整值核对'.repeat(8);
+  const { finance } = show(async () => read(true), [{ ...project, title: longTitle }]);
+  await screen.findByLabelText('收款金额（元）');
+  fireEvent.click(screen.getByRole('button', { name: '← 财务一览' }));
+  const region = screen.getByRole('region', { name: '财务项目表格，可横向滚动查看全部列' });
+  expect(region.tabIndex).toBe(0);
+  const table = within(region).getByRole('table', { name: '财务项目列表' });
+  expect(within(table).getAllByRole('columnheader')).toHaveLength(6);
+  const open = within(table).getByRole('button', { name: `${longTitle} →` });
+  expect(open.title).toBe(longTitle);
+  expect(open.closest('tr')?.getAttribute('aria-selected')).toBe('true');
+  fireEvent.change(screen.getByLabelText('搜索财务项目'), { target: { value: '无匹配值' } });
+  expect(within(table).queryByRole('button')).toBe(null);
+  fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+  fireEvent.click(within(table).getByRole('button', { name: `${longTitle} →` }));
+  await screen.findByLabelText('收款金额（元）');
+  expect(
+    finance.mock.calls.every(([request]) => ['m_read', 'read'].includes(request.operation)),
+  ).toBe(true);
+});
+
 it('checks the lost ACK without writing again and waits for a successful readback', async () => {
   let saved = false;
   let readsAfterWrite = 0;

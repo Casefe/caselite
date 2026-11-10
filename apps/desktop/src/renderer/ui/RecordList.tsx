@@ -1,3 +1,4 @@
+import PropertyResizeHandle from './PropertyResizeHandle';
 import TaskInspector from './TaskInspector';
 import TaskListSummary from '../features/tasks/TaskListSummary';
 import { useStatisticsCards } from '../shared/statistics/statistics-preferences';
@@ -173,10 +174,12 @@ export default function RecordList({
   );
   return (
     <section
-      className="list-view collection-workspace issue-collection task-query-list"
+      className="list-view collection-workspace issue-collection task-query-list property-resizable"
+      data-properties-resizable="true"
       data-layout="three-column"
       data-collection="tasks"
     >
+      <PropertyResizeHandle module="tasks" />
       <div className="collection-main">
         <div className="collection-heading">
           <Icon name="check" size={18} />
