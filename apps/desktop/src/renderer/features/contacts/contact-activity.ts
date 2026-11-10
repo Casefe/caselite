@@ -51,9 +51,8 @@ export async function readContactSources(refs: ContactSourceRef[], taskIds: stri
       if (source.kind === 'material') {
         const result = await window.caselite.material({
           protocol_version: 1,
-          operation: 'read',
+          operation: 'list',
           scope: source.scope,
-          source_id: source.id,
         });
         const file = result.ok ? result.materials.find((row) => row.id === source.id) : undefined;
         if (!file) throw Error('材料暂不可读');

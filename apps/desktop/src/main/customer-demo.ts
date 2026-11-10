@@ -1,5 +1,5 @@
 import { app, session, type BrowserWindow } from 'electron';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { syntheticTextStream } from './agent-demo';
@@ -255,6 +255,15 @@ export async function runCustomerDemo(
     if(split.dataset.aiExpanded!=='false' || rect.height>166)throw Error('Customer composer not compact');
     return {contact:result.contacts[0],detail:result.detail,aiHeight:rect.height};
   })()`);
+  const prior = join(root, 'customer-write.json');
+  if (phase === 'customer-read' && existsSync(prior)) {
+    const written = JSON.parse(readFileSync(prior, 'utf8'));
+    if (
+      JSON.stringify(written.contact) !== JSON.stringify(result.contact) ||
+      JSON.stringify(written.detail) !== JSON.stringify(result.detail)
+    )
+      throw Error('Contact profile or linked activity changed after restart');
+  }
   await capture(phase + '-final.png');
   writeFileSync(
     join(root, phase + '.json'),

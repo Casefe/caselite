@@ -1332,9 +1332,8 @@ app
       if (source.kind === 'material') {
         const result = await materials.execute({
           protocol_version: 1,
-          operation: 'read',
+          operation: 'list',
           scope: source.scope,
-          source_id: source.id,
         });
         return (
           result.ok &&
