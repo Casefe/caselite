@@ -506,3 +506,20 @@
     padding: 22px 20px;
   }
 }
+.customer-relation-toolbar input[type='search'] {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: var(--theme-panel);
+  color: var(--theme-text);
+  font: inherit;
+  min-width: 90px;
+  max-width: 230px;
+}
+.customer-relation-toolbar h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.customer-relation-toolbar {
+  flex-wrap: wrap;
+}

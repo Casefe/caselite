@@ -19,6 +19,21 @@ import ContactEntryForm, { contactChannels } from './ContactEntryForm';
 import ContactRecordCard from './ContactRecordCard';
 import { contactKey, useContactsWrite, type ContactWrite } from './useContactsWrite';
 
+function activityDate(value: string | null) {
+  if (!value) return '日期未记录';
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '日期未记录'
+    : date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+}
 type Tab = 'projects' | 'records' | 'documents' | 'tasks' | 'notes';
 export default function ContactInspector({
   contact,
@@ -475,7 +490,7 @@ export default function ContactInspector({
                                 <strong>{item.title}</strong>
                               </header>
                               <p className="caption">
-                                {item.label} · {item.date ?? '日期未记录'}
+                                {item.label} · {activityDate(item.date)}
                               </p>
                               <p>{item.content}</p>
                               <button
