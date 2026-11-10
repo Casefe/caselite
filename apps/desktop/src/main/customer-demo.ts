@@ -1,8 +1,9 @@
 import { app, session, type BrowserWindow } from 'electron';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { syntheticTextStream } from './agent-demo';
+import type { createMaterialApplication } from '@caselite/application';
 
 // 仅从已验证的隔离演示入口注入；继续经过真实 Pi/Application/IPC，不接触系统凭据。
 export function createSyntheticCustomerStream(root: string): StreamFn {
@@ -31,6 +32,7 @@ export async function runCustomerDemo(
   createWindow: (show: boolean) => Promise<BrowserWindow>,
   root: string,
   phase: 'customer-write' | 'customer-read' | 'customer-preview',
+  materials: ReturnType<typeof createMaterialApplication>,
 ) {
   for (const path of [
     app.getPath('userData'),
@@ -51,7 +53,7 @@ export async function runCustomerDemo(
   const query = (selector: string) => `document.querySelector(${literal(selector)})`;
   const wait = async (condition: string) => {
     for (let i = 0; i < 100; i++) {
-      if (await evaluate(`Boolean(${condition})`)) return;
+      if (await evaluate(`(async()=>Boolean(await (${condition})))()`)) return;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     writeFileSync(
@@ -104,7 +106,7 @@ export async function runCustomerDemo(
   };
   if (phase === 'customer-preview') {
     await click(query('[data-nav=contacts]'));
-    window.setTitle('CaseLite · 客户功能验收（Mock）');
+    window.setTitle('CaseLite · 联系人功能验收（Mock）');
     return;
   }
   const seed = await evaluate(`(async()=>{
@@ -124,24 +126,70 @@ export async function runCustomerDemo(
     if(!project || !task)throw Error('Missing reopened setup');
     return {project:project.id,task:task.id,document:task.document_id};
   })()`);
+  if (phase === 'customer-write') {
+    const image = join(root, '合成微信截图.png');
+    writeFileSync(
+      image,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aIckAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    );
+    const stage = await materials.stage(image, seed.task);
+    if (!stage.ok || !stage.staged) throw Error('Synthetic screenshot stage failed');
+    const committed = await materials.execute({
+      protocol_version: 1,
+      operation: 'commit',
+      scope: seed.task,
+      token: stage.staged.token,
+    });
+    if (!committed.ok) throw Error(committed.message);
+    await evaluate(`(async()=>{
+      const request={protocol_version:1,project_id:${literal(seed.project)},request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID()};
+      const contract=await window.caselite.finance({...request,operation:'register_contract',number:'合成联系人测试合同',amount_cents:100,installments:[{amount_cents:100,due_date:'2026-11-10'}]});
+      if(!contract.ok||contract.kind!=='ledger'||!contract.ledger)throw Error('Synthetic finance setup failed');
+      const paid=await window.caselite.finance({...request,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),operation:'record_payment',installment_id:contract.ledger.installments[0].id,amount_cents:100});
+      if(!paid.ok)throw Error(paid.message);
+    })()`);
+  }
   await click(query('[data-nav=contacts]'));
   if (phase === 'customer-write') {
-    await button('＋ 新建客户');
-    await fill(query('[aria-label="客户姓名"]'), '合成客户张某');
+    await button('＋ 新建联系人');
+    await fill(query('[aria-label="联系人姓名"]'), '合成客户张某');
     for (const [label, value] of [
       ['电话', '010-00000000'],
       ['微信', 'synthetic_wechat'],
       ['电子邮箱', 'demo@example.invalid'],
-      ['单位', '合成科技公司'],
-      ['职务', '负责人'],
-      ['城市', '北京'],
-      ['关系', '客户'],
+      ['地址', '北京合成办公地址'],
       ['标签', '合同业务，长期合作'],
     ])
       await fill(field(label), value);
     await select('.customer-profile-form select[multiple]', seed.project);
-    await button('保存客户');
-    await wait(`${query('.customer-edit')} && !${query('.customer-edit')}.disabled`);
+    await button('保存联系人');
+    await wait(
+      `${query('[aria-label="编辑电话"]')} && !${query('[aria-label="编辑电话"]')}.disabled`,
+    );
+    await click(query('[aria-label="编辑电话"]'));
+    await fill(query('input[aria-label="电话"]'), '010-00000001');
+    await click(query('[aria-label="保存电话"]'));
+    await wait(`document.body.textContent.includes('电话已保存')`);
+    await click(query('.customer-affiliation summary'));
+    for (const [label, value] of [
+      ['单位', '合成科技公司'],
+      ['职务', '负责人'],
+    ]) {
+      await click(query(`[aria-label="编辑${label}"]`));
+      await fill(query(`input[aria-label="${label}"]`), value);
+      await click(query(`[aria-label="保存${label}"]`));
+      await wait(`!${query('.customer-inline-editor')}`);
+    }
+    await evaluate(
+      `${query('.customer-name')}.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
+    );
+    await wait(query('.customer-detail-page'));
+    await capture('contact-detail-inline.png');
+    await button('← 返回联系人列表');
+    await wait(`${query('.customer-list-page')}.hidden===false`);
     await button('＋ 手动记录');
     await fill(field('标题'), '合成电话记录');
     await fill(field('沟通内容'), '已向客户说明材料清单，客户表示明天补齐。');
@@ -165,7 +213,9 @@ export async function runCustomerDemo(
     await select('.customer-link-form select', seed.document);
     await button('保存关联');
     await wait(`${query('[role=tab][aria-label="文档（1）"]')}`);
-    await click(query('[role=tab][aria-label="联系记录（1）"]'));
+    await click(query('[role=tab][aria-label^="往来记录（"]'));
+    await click(query('[role=tab][aria-label="项目（1）"]'));
+    await click(query('[role=tab][aria-label^="往来记录（"]'));
     await capture('customer-compact.png');
     await fill(
       query('.contacts-inspector .assistant-panel textarea'),
@@ -177,8 +227,8 @@ export async function runCustomerDemo(
       `${query('.customer-record-card')} && !${query('.customer-record-card button')}.disabled`,
     );
     await capture('customer-ai-candidate.png');
-    await button('保存为联系记录');
-    await wait(`${query('[role=tab][aria-label="联系记录（2）"]')}`);
+    await button('保存为往来记录');
+    await wait(`document.querySelectorAll('.customer-timeline article').length>=2`);
     await button('继续修改');
     await wait(`${query('[aria-label="已引用联系记录候选"]')}`);
     await capture('customer-explicit-reference.png');
@@ -186,7 +236,7 @@ export async function runCustomerDemo(
     await click(query('.contacts-inspector .assistant-panel button[type=submit]'));
     await wait("document.querySelectorAll('.customer-record-card').length===2");
     await click("[...document.querySelectorAll('.customer-record-card button.primary')].at(-1)");
-    await wait(`${query('[role=tab][aria-label="联系记录（3）"]')}`);
+    await wait(`document.querySelectorAll('.customer-timeline article').length>=3`);
     await click(
       "[...document.querySelectorAll('.customer-record-card button')].filter(e=>e.textContent==='继续修改').at(-1)",
     );
@@ -194,22 +244,84 @@ export async function runCustomerDemo(
     await fill(query('.contacts-inspector .assistant-panel textarea'), '修改合同需要注意什么');
     await click(query('.contacts-inspector .assistant-panel button[type=submit]'));
     await wait(`document.body.textContent.includes('合成普通回答：请核对双方约定。')`);
-    await click(query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]'));
+    const runId = await evaluate(`(async()=>{
+      const run_id=crypto.randomUUID();
+      const result=await window.caselite.agent({protocol_version:1,operation:'start',scope:'home',run_id,prompt:'修改合同需要注意什么：合成跨页往来',confirmed:true});
+      if(!result.ok)throw Error(result.message);return run_id;
+    })()`);
+    await wait(
+      `(async()=>{const r=await window.caselite.agent({protocol_version:1,operation:'read',scope:'home'});return r.ok&&r.runs.some(run=>run.id===${literal(runId)}&&run.status==='succeeded')})()`,
+    );
+    await button('关联来源');
+    await select('.customer-source-picker select[aria-label="来源所在位置"]', 'home');
+    await wait(`document.querySelectorAll('.customer-source-option').length===1`);
+    await click(query('.customer-source-option input'));
+    await button('保存来源关联');
+    await wait(`!${query('.customer-source-picker')}`);
+    await wait(`document.querySelector('.customer-timeline').textContent.includes('合成跨页往来')`);
+    for (const kind of ['material', 'payment']) {
+      await button('关联来源');
+      await select('.customer-source-picker select[aria-label="往来来源类型"]', kind);
+      await wait(`document.querySelectorAll('.customer-source-option').length===1`);
+      await click(query('.customer-source-option input'));
+      await button('保存来源关联');
+      await wait(`!${query('.customer-source-picker')}`);
+    }
+    await wait(`document.querySelector('.customer-timeline').textContent.includes('收款 ¥1.00')`);
+    await capture('contact-unified-activity.png');
+    await click(
+      `Array.from(document.querySelectorAll('.customer-timeline li')).find(li=>li.textContent.includes('收款 ¥1.00'))?.querySelector('button')`,
+    );
+    await wait(`${query('[data-nav=finance]')}?.getAttribute('aria-current')==='page'`);
+    await capture('contact-payment-source.png');
+    await click(query('[data-nav=contacts]'));
+    await wait(
+      `document.querySelector('.customer-timeline')?.textContent.includes('合成微信截图.png')`,
+    );
+    await click(
+      `Array.from(document.querySelectorAll('.customer-timeline li')).find(li=>li.textContent.includes('合成微信截图.png'))?.querySelector('button')`,
+    );
+    await wait(`${query('[data-nav=tasks]')}?.getAttribute('aria-current')==='page'`);
+    await capture('contact-material-source.png');
+    await click(query('[data-nav=contacts]'));
+    await wait(query('.customer-name'));
+    // 再次打开详情，验证来源与正式记录共存，且右下角 AI 不因开合详情丢失。
+    await evaluate(
+      `${query('.customer-name')}.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
+    );
+    await wait(query('.customer-detail-page'));
+    await capture('contact-detail-unified.png');
+    await button('← 返回联系人列表');
+    if (
+      await evaluate(
+        `Boolean(${query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]')})`,
+      )
+    )
+      await click(query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]'));
   } else {
     await wait(`${query('.customer-name')}?.textContent.includes('合成客户张某')`);
     await click(query('.customer-name'));
-    await wait(`${query('[role=tab][aria-label="联系记录（3）"]')}`);
+    await wait(`document.querySelectorAll('.customer-timeline article').length>=3`);
   }
   const result = await evaluate(`(async()=>{
     const list=await window.caselite.contacts({protocol_version:1,operation:'list'});
     if(!list.ok || list.contacts.length!==1)throw Error('Customer duplicates or read failure');
     const result=await window.caselite.contacts({protocol_version:1,operation:'read',contact_id:list.contacts[0].id});
-    if(!result.ok || result.detail.entries.length!==4 || result.detail.task_ids.length!==1 || result.detail.document_ids.length!==1 || result.contacts[0].project_ids.length!==1)throw Error('Customer workspace persistence mismatch');
+    if(!result.ok || (${phase === 'customer-write'} && (result.detail.source_links.length!==3 || result.contacts[0].address!=='北京合成办公地址' || result.contacts[0].phone!=='010-00000001')) || result.detail.entries.length!==4 || result.detail.task_ids.length!==1 || result.detail.document_ids.length!==1 || result.contacts[0].project_ids.length!==1)throw Error('Customer workspace persistence mismatch');
     const split=document.querySelector('.contacts-inspector .inspector-split');
     const rect=split.querySelector('.inspector-ai-region').getBoundingClientRect();
     if(split.dataset.aiExpanded!=='false' || rect.height>166)throw Error('Customer composer not compact');
     return {contact:result.contacts[0],detail:result.detail,aiHeight:rect.height};
   })()`);
+  const prior = join(root, 'customer-write.json');
+  if (phase === 'customer-read' && existsSync(prior)) {
+    const written = JSON.parse(readFileSync(prior, 'utf8'));
+    if (
+      JSON.stringify(written.contact) !== JSON.stringify(result.contact) ||
+      JSON.stringify(written.detail) !== JSON.stringify(result.detail)
+    )
+      throw Error('Contact profile or linked activity changed after restart');
+  }
   await capture(phase + '-final.png');
   writeFileSync(
     join(root, phase + '.json'),

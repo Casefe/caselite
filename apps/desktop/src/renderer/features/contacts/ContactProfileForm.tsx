@@ -6,6 +6,7 @@ export type ContactDraft = Pick<
   Contact,
   | 'name'
   | 'kind'
+  | 'address'
   | 'phone'
   | 'email'
   | 'wechat'
@@ -20,6 +21,7 @@ const blank: ContactDraft = {
   name: '',
   kind: 'person',
   phone: '',
+  address: '',
   email: '',
   wechat: '',
   company: '',
@@ -88,12 +90,12 @@ export default function ContactProfileForm({
         });
       }}
     >
-      <h2>{contact ? '编辑客户' : '新建客户'}</h2>
+      <h2>{contact ? '编辑联系人' : '新建联系人'}</h2>
       <fieldset disabled={blocked || Boolean(pending)}>
         <label>
           姓名／名称
           <input
-            aria-label="客户姓名"
+            aria-label="联系人姓名"
             required
             maxLength={120}
             value={draft.name}
@@ -112,10 +114,7 @@ export default function ContactProfileForm({
             ['phone', '电话', 64],
             ['wechat', '微信', 80],
             ['email', '电子邮箱', 254],
-            ['company', '单位', 160],
-            ['position', '职务', 80],
-            ['city', '城市', 80],
-            ['relationship', '关系', 40],
+            ['address', '地址', 500],
           ] as const
         ).map(([key, label, max]) => (
           <label key={key}>
@@ -131,7 +130,7 @@ export default function ContactProfileForm({
         <label>
           标签
           <input
-            aria-label="客户标签"
+            aria-label="联系人标签"
             value={tagText}
             onChange={(e) => setTagText(e.target.value)}
             placeholder="用逗号分隔"
@@ -163,7 +162,7 @@ export default function ContactProfileForm({
       </fieldset>
       <div className="contacts-actions">
         <button type="submit" className="primary" disabled={blocked || (saveBlocked && !pending)}>
-          {pending ? '核对原提交' : '保存客户'}
+          {pending ? '核对原提交' : '保存联系人'}
         </button>
         <button type="button" disabled={blocked || Boolean(pending)} onClick={onCancel}>
           取消

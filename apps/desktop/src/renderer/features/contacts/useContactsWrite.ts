@@ -31,7 +31,7 @@ export function useContactsWrite(owner: string) {
   );
   const write = async (request: ContactWrite): Promise<Confirmed | undefined> => {
     if (owner !== 'new' && request.contact_id !== owner) {
-      update({ error: '提交不属于当前客户，未发送。' });
+      update({ error: '提交不属于当前联系人，未发送。' });
       return;
     }
     if (active.state.busy) return;
@@ -51,6 +51,13 @@ export function useContactsWrite(owner: string) {
             ? { pending: undefined }
             : {}),
         });
+        if (response.code === 'CONFLICT') {
+          void client.invalidateQueries({ queryKey: contactsKey, exact: true });
+          void client.invalidateQueries({
+            queryKey: contactKey(original.contact_id),
+            exact: true,
+          });
+        }
         return;
       }
       const contact = response.contacts.find((row) => row.id === original.contact_id);

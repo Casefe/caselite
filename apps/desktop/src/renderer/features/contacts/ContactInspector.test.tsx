@@ -57,35 +57,40 @@ it('does not start edits from incomplete details, freezes v1 drafts when v2 arri
         })
       : { ok: false, code: 'CONFLICT', message: '版本冲突，草稿保留' },
   );
-  expect((screen.getByRole('button', { name: '编辑客户' }) as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(
+    (screen.getByRole('button', { name: '编辑姓名／名称' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   await act(async () => resolveRead(detail()));
   await waitFor(() =>
-    expect((screen.getByRole('button', { name: '编辑客户' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    ),
+    expect(
+      (screen.getByRole('button', { name: '编辑姓名／名称' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
   );
-  fireEvent.click(screen.getByRole('button', { name: '编辑客户' }));
-  fireEvent.change(screen.getByLabelText('客户姓名'), { target: { value: 'v1草稿' } });
+  fireEvent.click(screen.getByRole('button', { name: '编辑姓名／名称' }));
+  fireEvent.change(screen.getByLabelText('姓名／名称'), { target: { value: 'v1草稿' } });
   act(() => s.client.setQueryData(contactKey(contact.id), detail(2)));
-  fireEvent.click(screen.getByRole('button', { name: '保存客户' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存姓名／名称' }));
   await screen.findByText('版本冲突，草稿保留');
   expect(s.api.mock.calls.find(([r]) => r.operation === 'save')?.[0]).toMatchObject({
     expected_version: 1,
     name: 'v1草稿',
   });
-  expect((screen.getByLabelText('客户姓名') as HTMLInputElement).value).toBe('v1草稿');
+  expect((screen.getByLabelText('姓名／名称') as HTMLInputElement).value).toBe('v1草稿');
   s.view.rerender(
     <QueryClientProvider client={s.client}>
       <ContactInspector {...s.props} catalogReady={false} />
     </QueryClientProvider>,
   );
-  expect((screen.getByRole('button', { name: '保存客户' }) as HTMLButtonElement).disabled).toBe(
-    true,
+  expect(
+    (screen.getByRole('button', { name: '保存姓名／名称' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: '取消编辑姓名／名称' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
   );
-  fireEvent.click(screen.getByRole('button', { name: '取消' }));
-  expect(screen.queryByLabelText('客户姓名')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '取消编辑姓名／名称' }));
+  expect(screen.queryByRole('textbox', { name: '姓名／名称' })).toBeNull();
 });
 it('protects manual drafts, and keeps original-key recovery visible across remount', async () => {
   const writes: ContactsRequest[] = [];
@@ -120,14 +125,14 @@ it('protects manual drafts, and keeps original-key recovery visible across remou
     };
   });
   await waitFor(() =>
-    expect((screen.getByRole('button', { name: '编辑客户' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    ),
+    expect(
+      (screen.getByRole('button', { name: '编辑姓名／名称' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
   );
   fireEvent.click(screen.getByRole('button', { name: /手动记录/ }));
-  expect((screen.getByRole('button', { name: '编辑客户' }) as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(
+    (screen.getByRole('button', { name: '编辑姓名／名称' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   fireEvent.change(screen.getByLabelText('标题'), { target: { value: '原标题' } });
   fireEvent.change(screen.getByLabelText('沟通内容'), { target: { value: '原草稿' } });
   fireEvent.click(screen.getByRole('button', { name: '保存记录' }));
@@ -150,9 +155,9 @@ it('freezes the parent version when editing links', async () => {
     r.operation === 'read' ? detail() : { ok: false, code: 'CONFLICT', message: '关联冲突' },
   );
   await waitFor(() =>
-    expect((screen.getByRole('button', { name: '编辑客户' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    ),
+    expect(
+      (screen.getByRole('button', { name: '编辑姓名／名称' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
   );
   fireEvent.click(screen.getByRole('tab', { name: '文档（0）' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑关联' }));
@@ -162,4 +167,78 @@ it('freezes the parent version when editing links', async () => {
   expect(s.api.mock.calls.find(([r]) => r.operation === 'set_links')?.[0]).toMatchObject({
     expected_version: 1,
   });
+});
+it('retains an inline record draft when detail refresh fails and prevents search from unmounting it', async () => {
+  const entry = {
+    id: '22222222-2222-4222-8222-222222222222',
+    contact_id: contact.id,
+    kind: 'communication' as const,
+    title: '合成记录',
+    channel: 'phone' as const,
+    occurred_on: null,
+    content: '原内容',
+    version: 1,
+    body_id: '33333333-3333-4333-8333-333333333333',
+    body_revision: 1,
+    source_run_id: null,
+    created_at: '2026-11-10',
+    updated_at: '2026-11-10',
+  };
+  let failRead = false;
+  const s = setup(() =>
+    failRead
+      ? { ok: false, code: 'UNAVAILABLE', message: '合成读取失败' }
+      : { ...detail(), detail: { ...detail().detail, entries: [entry] } },
+  );
+  await screen.findByText('合成记录');
+  const target = document.createElement('div');
+  document.body.append(target);
+  s.view.rerender(
+    <QueryClientProvider client={s.client}>
+      <ContactInspector {...s.props} detailTarget={target} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '编辑记录：合成记录' }));
+  fireEvent.change(screen.getByLabelText('沟通内容'), { target: { value: '本地未保存内容' } });
+  expect(
+    (screen.getByRole('searchbox', { name: '搜索往来记录' }) as HTMLInputElement).disabled,
+  ).toBe(true);
+  failRead = true;
+  await act(async () => {
+    await s.client.invalidateQueries({ queryKey: contactKey(contact.id), exact: true });
+  });
+  await screen.findByText(/刷新未成功/);
+  expect((screen.getByLabelText('沟通内容') as HTMLTextAreaElement).value).toBe('本地未保存内容');
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  await screen.findByText('合成记录');
+  s.view.unmount();
+  target.remove();
+});
+it('keeps source linking exclusive with profile and record editing', async () => {
+  const s = setup(() => detail());
+  window.caselite.agent = vi.fn(async () => ({
+    ok: false,
+    code: 'UNAVAILABLE',
+    message: '合成来源暂不可用',
+  }));
+  window.caselite.task = vi.fn(async () => ({ ok: true, tasks: [], receipt: null }));
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '关联来源' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '关联来源' }));
+  expect((screen.getByRole('button', { name: '编辑电话' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((screen.getByRole('button', { name: /手动记录/ }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '编辑电话' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  expect(s.api.mock.calls.filter(([request]) => request.operation !== 'read')).toHaveLength(0);
 });
