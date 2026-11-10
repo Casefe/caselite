@@ -55,6 +55,10 @@ const Context = createContext({
     void layout;
     return false;
   },
+  async saveFavoriteNavigation(value: NonNullable<LocalPreferenceValues['favorite_navigation']>) {
+    void value;
+    return false;
+  },
   async reload() {},
   async verify() {},
   async retry() {},
@@ -70,7 +74,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     [notice, setNotice] = useState(''),
     [phase, setPhase] = useState<Phase>('idle');
   const request = useRef<Write | null>(null),
-    requestKind = useRef<'personal' | 'calendar'>('personal'),
+    requestKind = useRef<'personal' | 'calendar' | 'favorites'>('personal'),
     lock = useRef(false),
     mounted = useRef(false);
   const accept = (value: LocalPreferences, base?: LocalPreferenceValues) => {
@@ -172,7 +176,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
           preferenceJson(fields(r.preferences)) !== preferenceJson(original.values)
         )
           throw new Error('Unexpected receipt');
-        accept(r.preferences, requestKind.current === 'calendar' ? original.values : undefined);
+        accept(r.preferences, requestKind.current !== 'personal' ? original.values : undefined);
         request.current = null;
         setPhase('idle');
         // 原键回执可能早于其他窗口的后续修改；确认保存后只读刷新，不再提交。
@@ -185,13 +189,15 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
             if (latest.ok) {
               accept(
                 latest.preferences,
-                requestKind.current === 'calendar' ? original.values : undefined,
+                requestKind.current !== 'personal' ? original.values : undefined,
               );
               setLocations(latest.locations ?? null);
               setNotice(
                 requestKind.current === 'calendar'
                   ? '日历布局已保存。'
-                  : '个人资料与偏好已保存到此工作区。',
+                  : requestKind.current === 'favorites'
+                    ? '收藏已保存。'
+                    : '个人资料与偏好已保存到此工作区。',
               );
             } else setNotice('已保存；最新资料刷新失败，可重新读取，不必再次保存。');
           }
@@ -274,6 +280,19 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
     };
     return run('set');
   }
+  async function saveFavoriteNavigation(
+    value: NonNullable<LocalPreferenceValues['favorite_navigation']>,
+  ) {
+    if (lock.current || request.current || pending || !ready) return false;
+    requestKind.current = 'favorites';
+    request.current = {
+      ...mutation(),
+      operation: 'set',
+      expected_version: preferences.version,
+      values: { ...fields(preferences), favorite_navigation: value },
+    };
+    return run('set');
+  }
   async function reload() {
     if (lock.current || request.current || pending) return;
     const edited = JSON.stringify(draft) !== JSON.stringify(fields(preferences));
@@ -317,6 +336,7 @@ export function LocalPreferencesProvider({ children }: { children: ReactNode }) 
         },
         save,
         saveCalendarLayout,
+        saveFavoriteNavigation,
         reload,
         verify: async () => {
           await run('status');

@@ -1638,3 +1638,114 @@ dd {
     margin-top: 40px;
   }
 }
+
+/* 收藏只整理导航引用；拖放区与键盘移动入口共用同一保存动作。 */
+.favorites-tree .favorites-heading {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+  margin-bottom: 5px;
+}
+.favorites-tree .favorites-root {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nav-muted);
+  flex: 1;
+}
+.favorites-tree .favorite-create-folder {
+  width: 30px;
+  position: relative;
+  flex-shrink: 0;
+  padding: 6px;
+}
+.favorite-create-folder svg + svg {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+}
+.favorites-tree button {
+  border-radius: 5px;
+}
+.favorites-root svg {
+  transform: rotate(90deg);
+}
+.favorites-root[aria-expanded='false'] svg {
+  transform: none;
+}
+.favorites-tree [data-drop-active='true'] {
+  outline: 1px solid var(--accent, #d1a94d);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.favorite-entry {
+  position: relative;
+  min-width: 0;
+}
+.favorites-tree .favorite-entry > button {
+  padding-right: 25px;
+}
+.favorite-entry[draggable='true'] {
+  cursor: grab;
+}
+.favorite-entry svg {
+  flex-shrink: 0;
+}
+.favorite-move {
+  position: absolute;
+  right: 1px;
+  top: 5px;
+  width: 22px;
+  height: 24px;
+  opacity: 0;
+  color: inherit;
+  background: var(--surface, #24262b);
+  border: 0;
+  border-radius: 4px;
+}
+.favorite-entry:hover .favorite-move,
+.favorite-move:focus-visible {
+  opacity: 1;
+}
+.favorite-folder-items {
+  margin-left: 13px;
+  padding-left: 5px;
+  border-left: 1px solid #7773;
+}
+.favorite-folder-title svg:last-child {
+  margin-left: auto;
+  flex-shrink: 0;
+  transform: rotate(90deg);
+}
+.favorite-folder-title[aria-expanded='false'] svg:last-child {
+  transform: none;
+}
+.favorite-folder-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 8px;
+}
+.favorite-folder-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+}
+.favorites-tree .favorite-folder-form button {
+  width: auto;
+  padding: 5px 8px;
+}
+.favorite-drop-hint {
+  margin: 3px 6px;
+  padding: 6px 0;
+  font-size: 10px;
+  opacity: 0.65;
+}
+.favorites-tree .sidebar-empty {
+  margin: 4px 6px 8px;
+  line-height: 1.6;
+}
+.favorite-toggle[aria-pressed='true'] {
+  color: #e3b83d;
+}
+.favorite-toggle[aria-pressed='true'] svg {
+  fill: currentColor;
+}

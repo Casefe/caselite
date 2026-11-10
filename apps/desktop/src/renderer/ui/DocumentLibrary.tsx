@@ -1,3 +1,4 @@
+import { FavoriteButton } from '../features/favorites/Favorites';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { CatalogDocument, Task } from '../../preload/caselite-api';
@@ -197,16 +198,25 @@ export default function DocumentLibrary({
           primary={pane('primary', primary)}
           secondary={pane('secondary', secondary)}
           actions={
-            <button
-              className="document-directory-back"
-              onClick={() => {
-                setReading(false);
-                requestAnimationFrame(() => heading.current?.focus());
-              }}
-              disabled={dirty}
-            >
-              返回文件夹
-            </button>
+            <>
+              {current && (
+                <FavoriteButton
+                  kind="document"
+                  id={current.id}
+                  disabled={blocked || !!versions[selection.active]}
+                />
+              )}
+              <button
+                className="document-directory-back"
+                onClick={() => {
+                  setReading(false);
+                  requestAnimationFrame(() => heading.current?.focus());
+                }}
+                disabled={dirty}
+              >
+                返回文件夹
+              </button>
+            </>
           }
         />
       </div>

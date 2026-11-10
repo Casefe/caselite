@@ -23,6 +23,7 @@ import {
   useState,
   useRef,
   type ComponentType,
+  type ReactNode,
 } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
@@ -80,6 +81,7 @@ export default function ProjectCatalog({
   initialView,
   backSlot,
   navigationPending = false,
+  favoriteAction,
 }: {
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
@@ -90,6 +92,7 @@ export default function ProjectCatalog({
   initialView?: ProjectViewState | null;
   backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
+  favoriteAction?(project: Matter, disabled: boolean): ReactNode;
   onDirty(v: boolean): void;
   onChanged(): void | Promise<boolean>;
 }) {
@@ -446,6 +449,10 @@ export default function ProjectCatalog({
             <>
               <Icon name="folder" size={16} />
               <h1>{(p ?? editor.project).title}</h1>
+              {favoriteAction?.(
+                p ?? editor.project,
+                blocked || !!(p ?? editor.project).archived_at,
+              )}
             </>
           ) : (
             <div className="project-dashboard-title">
