@@ -15,7 +15,7 @@ import { themeSchema, type Theme } from '@caselite/contracts';
 export function createAppearancePreferences(root: string) {
   const file = join(root, 'appearance-preferences.json');
   const read = (): Theme => {
-    if (!existsSync(file)) return 'light';
+    if (!existsSync(file)) return 'dark';
     const stored: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (
       !stored ||

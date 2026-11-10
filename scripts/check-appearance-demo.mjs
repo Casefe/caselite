@@ -24,6 +24,7 @@ for (const phase of ['appearance-write', 'appearance-read']) {
 const out = join(root, 'artifacts/evidence/appearance-demo');
 mkdirSync(out, { recursive: true });
 for (const file of [
+  'home-default-dark.png',
   'settings-light.png',
   'settings-dark.png',
   'home-dark.png',
