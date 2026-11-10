@@ -44,8 +44,24 @@ export default function ContactEntryForm({
   return (
     <form
       className="customer-entry-form"
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (event.key === 'Enter') event.preventDefault();
+          return;
+        }
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          if (!blocked) event.currentTarget.requestSubmit();
+        }
+        if (event.key === 'Escape' && !blocked && !pending) {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
+        if (blocked) return;
         if (pending?.operation === 'save_entry') {
           onSave(pending);
           return;

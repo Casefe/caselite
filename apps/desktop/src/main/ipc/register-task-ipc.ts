@@ -57,10 +57,23 @@ export function registerReminderIpc(
   });
 }
 
-export function registerContactsIpc(application: ReturnType<typeof createContactsApplication>) {
-  ipcMain.handle(CONTACTS_CHANNEL, (event, payload): ContactsResponse => {
+export function registerContactsIpc(
+  application: ReturnType<typeof createContactsApplication>,
+  allowed: Parameters<ReturnType<typeof createContactsApplication>['executeForOwner']>[2],
+) {
+  ipcMain.handle(CONTACTS_CHANNEL, async (event, payload): Promise<ContactsResponse> => {
     if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
       return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问联系人。' };
-    return contactsResponseSchema.parse(application.execute(payload));
+    const result = await application.executeForOwner(
+      payload,
+      String(event.sender.id),
+      async (source, owner) =>
+        isTrustedDesktopSender(event, BrowserWindow.getAllWindows()) &&
+        (await allowed(source, owner)) &&
+        isTrustedDesktopSender(event, BrowserWindow.getAllWindows()),
+    );
+    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面已关闭或失去访问权限。' };
+    return contactsResponseSchema.parse(result);
   });
 }

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import {
   contactSchema,
   contactEntrySchema,
+  contactSourceRefSchema,
   parseContactRecord,
   agentRunSchema,
   type Contact,
@@ -17,7 +18,10 @@ export function createContactsStore(db: Database.Database, workspace: string) {
   const extended = (db.pragma('table_info(contacts)') as { name: string }[]).some(
     (v) => v.name === 'wechat',
   );
-  const columns = `id,name,kind,phone,email,version,updated_at${extended ? ',wechat,company,position,city,relationship,tags' : ''}`;
+  const hasAddress = (db.pragma('table_info(contacts)') as { name: string }[]).some(
+    (v) => v.name === 'address',
+  );
+  const columns = `${hasAddress ? 'address,' : ''}id,name,kind,phone,email,version,updated_at${extended ? ',wechat,company,position,city,relationship,tags' : ''}`;
   const getLinks = () =>
     db.prepare(
       'SELECT cp.project_id FROM contact_projects cp JOIN matters m ON m.id=cp.project_id AND m.workspace_id=cp.workspace_id WHERE cp.workspace_id=? AND cp.contact_id=? ORDER BY cp.project_id',
@@ -49,7 +53,7 @@ export function createContactsStore(db: Database.Database, workspace: string) {
   const inaccessible = (): ContactsResponse => ({
     ok: false,
     code: 'FORBIDDEN',
-    message: '客户或关联对象不存在，或不属于当前工作区。',
+    message: '联系人或关联对象不存在，或不属于当前工作区。',
   });
   const details = (contactId: string) => {
     const records = db
@@ -62,6 +66,15 @@ export function createContactsStore(db: Database.Database, workspace: string) {
       .all(workspace, contactId) as { kind: string; target_id: string }[];
     return {
       contact_id: contactId,
+      source_links: hasAddress
+        ? db
+            .prepare(
+              'SELECT kind,source_id AS id,source_scope AS scope FROM contact_source_links WHERE workspace_id=? AND contact_id=? ORDER BY kind,source_id',
+            )
+            .all(workspace, contactId)
+            .map((row) => contactSourceRefSchema.parse(row))
+        : [],
+      sources_unavailable: false,
       entries: records.map(({ state, workspace_id, ...row }) => {
         void workspace_id;
         return contactEntrySchema.parse({ ...row, content: bodyPlainText(state).trim() });
@@ -91,10 +104,10 @@ export function createContactsStore(db: Database.Database, workspace: string) {
         .prepare('SELECT 1 FROM contact_workspace_receipts WHERE workspace_id=? AND key=?')
         .get(workspace, receipt)
     )
-      return conflict('原提交身份已用于其他客户操作。');
+      return conflict('原提交身份已用于其他联系人操作。');
     const projectIds = [...request.project_ids].sort();
     const extras = Object.fromEntries(
-      ['wechat', 'company', 'position', 'city', 'relationship', 'tags']
+      ['wechat', 'company', 'position', 'city', 'relationship', 'tags', 'address']
         .filter((key) => key in request)
         .map((key) => [key, request[key as keyof Save]]),
     );
@@ -159,6 +172,12 @@ export function createContactsStore(db: Database.Database, workspace: string) {
         contact_id,
       );
     }
+    if (hasAddress && request.address !== undefined)
+      db.prepare('UPDATE contacts SET address=? WHERE workspace_id=? AND id=?').run(
+        request.address,
+        workspace,
+        contact_id,
+      );
     const addLink = db.prepare(
       'INSERT INTO contact_projects(workspace_id,contact_id,project_id) VALUES(?,?,?)',
     );
@@ -172,13 +191,16 @@ export function createContactsStore(db: Database.Database, workspace: string) {
       contacts: [decode(getContact().get(workspace, contact_id) as Row)],
     };
   });
-  // 新记录、正文和回执同事务。AI 只能引用当前客户的已落盘成功 Run，不能由 Renderer 伪造来源。
+  // 新记录、正文和回执同事务。AI 只能引用当前联系人的已落盘成功 Run，不能由 Renderer 伪造来源。
   const saveWorkspace = db.transaction(
     (
-      request: Extract<ContactsRequest, { operation: 'save_entry' | 'set_links' }>,
+      request: Extract<
+        ContactsRequest,
+        { operation: 'save_entry' | 'set_links' | 'set_source_links' }
+      >,
     ): ContactsResponse => {
       if (!extended)
-        return { ok: false, code: 'UNAVAILABLE', message: '客户工作区尚未升级，请重启后重试。' };
+        return { ok: false, code: 'UNAVAILABLE', message: '联系人工作区尚未升级，请重启后重试。' };
       const parent = getContact().get(workspace, request.contact_id) as Row | undefined;
       if (!parent) return inaccessible();
       const { receipt, ...payload } = request;
@@ -197,10 +219,57 @@ export function createContactsStore(db: Database.Database, workspace: string) {
           .prepare('SELECT 1 FROM contact_receipts WHERE workspace_id=? AND key=?')
           .get(workspace, receipt)
       )
-        return conflict('原提交身份已用于客户资料。');
-      if (request.operation === 'set_links') {
+        return conflict('原提交身份已用于联系人资料。');
+      if (request.operation === 'set_source_links') {
+        if (!hasAddress)
+          return { ok: false, code: 'UNAVAILABLE', message: '往来来源尚未升级，请重启后重试。' };
         if (parent.version !== request.expected_version)
-          return conflict('客户关联已变化，请重新读取。');
+          return conflict('联系人关联已变化，请重新读取。');
+        const sourceExists = (
+          source: Extract<
+            ContactsRequest,
+            { operation: 'set_source_links' }
+          >['source_refs'][number],
+        ) => {
+          if (source.kind === 'run')
+            return Boolean(
+              db
+                .prepare('SELECT 1 FROM agent_runs WHERE workspace_id=? AND id=? AND scope=?')
+                .get(workspace, source.id, source.scope),
+            );
+          if (source.kind === 'material')
+            return Boolean(
+              db
+                .prepare(
+                  'SELECT 1 FROM material_sources WHERE workspace_id=? AND id=? AND task_id=?',
+                )
+                .get(workspace, source.id, source.scope),
+            );
+          return Boolean(
+            db
+              .prepare(
+                'SELECT 1 FROM finance_payments p JOIN finance_installments i ON i.id=p.installment_id JOIN matters m ON m.id=i.project_id WHERE m.workspace_id=? AND m.id=? AND p.id=?',
+              )
+              .get(workspace, source.scope, source.id),
+          );
+        };
+        if (request.source_refs.some((source) => !sourceExists(source))) return inaccessible();
+        // 来源访问由 Application 调用原 Owner 核验；这里只保存关系，不复制正文或财务事实。
+        db.prepare(
+          'DELETE FROM contact_source_links WHERE workspace_id=? AND contact_id=? AND kind=?',
+        ).run(workspace, parent.id, request.kind);
+        const insert = db.prepare(
+          'INSERT INTO contact_source_links(workspace_id,contact_id,kind,source_id,source_scope,linked_at) VALUES(?,?,?,?,?,?)',
+        );
+        const now = new Date().toISOString();
+        for (const source of request.source_refs)
+          insert.run(workspace, parent.id, source.kind, source.id, source.scope, now);
+        db.prepare(
+          'UPDATE contacts SET version=version+1,updated_at=? WHERE workspace_id=? AND id=?',
+        ).run(now, workspace, parent.id);
+      } else if (request.operation === 'set_links') {
+        if (parent.version !== request.expected_version)
+          return conflict('联系人关联已变化，请重新读取。');
         const existing = db
           .prepare(
             'SELECT target_id FROM contact_links WHERE workspace_id=? AND contact_id=? AND kind=?',
@@ -339,6 +408,22 @@ export function createContactsStore(db: Database.Database, workspace: string) {
     },
   );
   return {
+    replay(
+      request: Extract<ContactsRequest, { operation: 'set_source_links' }>,
+    ): ContactsResponse | undefined {
+      const previous = db
+        .prepare(
+          'SELECT digest,contact_id FROM contact_workspace_receipts WHERE workspace_id=? AND key=?',
+        )
+        .get(workspace, request.receipt) as { digest: string; contact_id: string } | undefined;
+      if (!previous) return undefined;
+      const { receipt, ...payload } = request;
+      void receipt;
+      const digest = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+      return previous.digest === digest && previous.contact_id === request.contact_id
+        ? result(request.contact_id, request.receipt)
+        : conflict('同一提交身份已用于其他内容。');
+    },
     exists(id: string) {
       return Boolean(
         db.prepare('SELECT 1 FROM contacts WHERE workspace_id=? AND id=?').get(workspace, id),
@@ -346,7 +431,11 @@ export function createContactsStore(db: Database.Database, workspace: string) {
     },
     execute(request: ContactsRequest): ContactsResponse {
       if (request.operation === 'save') return save.immediate(request);
-      if (request.operation === 'save_entry' || request.operation === 'set_links')
+      if (
+        request.operation === 'save_entry' ||
+        request.operation === 'set_links' ||
+        request.operation === 'set_source_links'
+      )
         return saveWorkspace.immediate(request);
       if (request.operation === 'read') return result(request.contact_id, null);
       const rows = db

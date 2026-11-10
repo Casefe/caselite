@@ -369,7 +369,13 @@ export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/cont
 
 export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 
-export type { Contact, ContactEntry, ContactsRequest, ContactsResponse } from '@caselite/contracts';
+export type {
+  Contact,
+  ContactEntry,
+  ContactSourceRef,
+  ContactsRequest,
+  ContactsResponse,
+} from '@caselite/contracts';
 export type { DeliverySnapshot } from '@caselite/contracts';
 export type { DeliveryExport, DeliveryExportFormat, ExportStyle } from '@caselite/contracts';
 export type {
