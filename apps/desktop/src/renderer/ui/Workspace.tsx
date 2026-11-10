@@ -30,11 +30,11 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
   { id: 'calendar', label: '日历', icon: 'calendar' },
   { id: 'tasks', label: '任务', icon: 'check' },
   { id: 'projects', label: '项目', icon: 'folder' },
-  { id: 'documents', label: '文档', icon: 'file' },
-];
-const workspaceNavigation: typeof navigation = [
-  { id: 'knowledge', label: '知识库', icon: 'book' },
   { id: 'finance', label: '财务', icon: 'wallet' },
+];
+const secondaryNavigation: typeof navigation = [
+  { id: 'knowledge', label: '知识库', icon: 'book' },
+  { id: 'documents', label: '文档', icon: 'file' },
   { id: 'contacts', label: '联系人', icon: 'person' },
 ];
 export function WorkspaceShell({
@@ -92,10 +92,9 @@ export function WorkspaceShell({
           <nav className="primary-navigation" id="primary-navigation">
             {[
               { label: '常用', items: navigation },
-              { label: '工作区', items: workspaceNavigation },
+              { label: '更多', items: secondaryNavigation },
             ].map(({ label, items }) => (
               <div key={label} className="sidebar-nav-group" role="group" aria-label={label}>
-                {!collapsed && label === '工作区' && <p className="sidebar-caption">{label}</p>}
                 {items.map((item) => (
                   <button
                     key={item.id}
