@@ -19,6 +19,8 @@ import {
   lstatSync,
   symlinkSync,
   copyFileSync,
+  existsSync,
+  realpathSync,
 } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -39,6 +41,57 @@ import type {
 } from '../../packages/contracts/src';
 import { renderSnapshotWord } from '../../apps/desktop/src/main/adapters/snapshot-word';
 import { createDeliveryExportFiles } from '../../apps/desktop/src/main/adapters/delivery-export-files';
+
+it('rejects a late Word save choice after revocation and preserves the fixed file and original receipt', async () => {
+  const s = setup(),
+    task = seed(s.task),
+    snapshot = fixed(s.task, task),
+    original = request(task, snapshot),
+    receipt = good(await s.app.execute(original)),
+    row = receipt.exports![0];
+  const output = realpathSync(mkdtempSync(join(tmpdir(), 'caselite-word-save-revocation-')));
+  roots.push(output);
+  const target = join(output, 'copy.docx');
+  let choose!: (path: string) => void;
+  let entered!: () => void;
+  let waiting = true;
+  const choosing = new Promise<void>((resolve) => (entered = resolve));
+  const files = createDeliveryExportFiles(s.filesRoot, s.opened, async () => {
+    if (!waiting) return target;
+    entered();
+    return new Promise<string>((resolve) => (choose = resolve));
+  });
+  const app = createDeliveryExportApplication({ ...s.ports, files });
+  const command = {
+    protocol_version: 1,
+    operation: 'save_export',
+    task_id: task.id,
+    document_id: task.document_id,
+    snapshot_id: snapshot.id,
+    export_id: row.id,
+    format: 'docx',
+  };
+  const controller = new AbortController();
+  const pending = app.execute(command, controller.signal);
+  await choosing;
+  controller.abort();
+  choose(target);
+  expect(await pending).toMatchObject({ ok: false, code: 'CANCELLED' });
+  expect(existsSync(target)).toBe(false);
+  expect(s.opened).not.toHaveBeenCalled();
+  expect(await s.files.verify(row)).toBe(true);
+  expect(await s.app.execute(original)).toEqual(receipt);
+  waiting = false;
+  const next = new AbortController();
+  expect(good(await app.execute(command, next.signal)).export_saved).toBe(true);
+  const saved = readFileSync(target);
+  next.abort();
+  expect(readFileSync(target)).toEqual(saved);
+  expect(createHash('sha256').update(saved).digest('hex')).toBe(row.sha256);
+  expect(await app.execute(command)).toMatchObject({ ok: false, code: 'READ_FAILED' });
+  expect(readFileSync(target)).toEqual(saved);
+  expect(await s.app.execute(original)).toEqual(receipt);
+});
 
 const roots: string[] = [],
   closes: Array<() => void> = [];

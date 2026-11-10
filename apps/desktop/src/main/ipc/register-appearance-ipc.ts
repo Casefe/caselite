@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import {
   APPEARANCE_CHANNEL,
   appearanceRequestSchema,
@@ -6,14 +6,14 @@ import {
   type AppearanceResponse,
 } from '@caselite/contracts';
 import type { createAppearanceApplication } from '@caselite/application';
-import { isTrustedDesktopSender } from './register-application-ipc';
+import { isTrustedBusinessSender } from './window-capabilities';
 
 export function registerAppearanceIpc(
   application: ReturnType<typeof createAppearanceApplication>,
   onApplied?: (contents: Electron.WebContents, theme: 'light' | 'dark') => boolean,
 ) {
   ipcMain.handle(APPEARANCE_CHANNEL, (event, input): AppearanceResponse => {
-    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows()))
+    if (!isTrustedBusinessSender(event))
       return { ok: false, message: '当前页面无权访问外观设置。' };
     const result = appearanceResponseSchema.parse(application.execute(input));
     const request = appearanceRequestSchema.safeParse(input);

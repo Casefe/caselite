@@ -10,7 +10,7 @@ import {
   materialKind,
 } from '@caselite/contracts';
 import type { createMaterialApplication } from '@caselite/application';
-import { isTrustedDesktopSender } from './register-application-ipc';
+import { isTrustedBusinessSender } from './window-capabilities';
 export function registerMaterialIpc(
   app: ReturnType<typeof createMaterialApplication>,
   camera?: {
@@ -21,7 +21,7 @@ export function registerMaterialIpc(
   const denied = { ok: false, code: 'FORBIDDEN', message: '当前页面无权读取材料。' };
   let selecting = false;
   ipcMain.handle(MATERIAL_CHANNEL, async (event, input: unknown) => {
-    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+    if (!isTrustedBusinessSender(event)) return denied;
     const request = materialRequestSchema.safeParse(input);
     if (
       request.success &&
@@ -34,11 +34,7 @@ export function registerMaterialIpc(
       if (!camera || !app.canCapture(request.data.scope))
         return { ok: false, code: 'SCOPE', message: '当前范围不能拍照，请核对任务或项目状态。' };
       const allowed = await camera.prepare(event.sender);
-      if (
-        !allowed ||
-        !isTrustedDesktopSender(event, BrowserWindow.getAllWindows()) ||
-        !app.canCapture(request.data.scope)
-      ) {
+      if (!allowed || !isTrustedBusinessSender(event) || !app.canCapture(request.data.scope)) {
         camera.revoke(event.sender);
         return {
           ok: false,
@@ -62,7 +58,7 @@ export function registerMaterialIpc(
       selecting = true;
       try {
         const first = await app.execute(read);
-        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!isTrustedBusinessSender(event)) return denied;
         if (!first.ok) return first;
         const source = first.materials.find((item) => item.id === read.source_id);
         if (!source || materialKind(source.name) !== 'docx') return denied;
@@ -71,9 +67,9 @@ export function registerMaterialIpc(
           filters: [{ name: 'Word 原件副本', extensions: ['docx'] }],
         });
         if (choice.canceled || !choice.filePath) return { ok: true, materials: [] };
-        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!isTrustedBusinessSender(event)) return denied;
         const current = await app.execute(read);
-        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!isTrustedBusinessSender(event)) return denied;
         if (!current.ok) return current;
         if (
           !current.data ||
@@ -86,6 +82,7 @@ export function registerMaterialIpc(
         )
           return denied;
         await writeFile(choice.filePath, current.data, { flag: 'wx', mode: 0o600 });
+        if (!isTrustedBusinessSender(event)) return denied;
         return { ok: true, materials: current.materials };
       } catch {
         return { ok: false, code: 'COPY_FAILED', message: '未保存原件副本，请选一个新文件名。' };
@@ -94,12 +91,12 @@ export function registerMaterialIpc(
       }
     }
     const result = await app.execute(input);
-    if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+    if (!isTrustedBusinessSender(event)) return denied;
     return materialResponseSchema.parse(result);
   });
   for (const channel of [MATERIAL_PICK_CHANNEL, MATERIAL_DROP_CHANNEL])
     ipcMain.handle(channel, async (event, input: unknown) => {
-      if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+      if (!isTrustedBusinessSender(event)) return denied;
       const parsed = materialStageRequestSchema.safeParse(input);
       if (!parsed.success || (channel === MATERIAL_DROP_CHANNEL && !parsed.data.path))
         return denied;
@@ -114,12 +111,12 @@ export function registerMaterialIpc(
             properties: ['openFile'],
             filters: [{ name: '分析附件', extensions: ['pdf', 'docx'] }],
           });
-          if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+          if (!isTrustedBusinessSender(event)) return denied;
           if (result.canceled) return { ok: true, materials: [], staged: null };
           path = result.filePaths[0];
         }
         const result = await app.stage(path!, scope);
-        if (!isTrustedDesktopSender(event, BrowserWindow.getAllWindows())) return denied;
+        if (!isTrustedBusinessSender(event)) return denied;
         return materialResponseSchema.parse(result);
       } catch {
         return { ok: false, code: 'UNAVAILABLE', message: '无法选择文件，请重试。' };

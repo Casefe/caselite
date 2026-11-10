@@ -7,6 +7,7 @@ import {
   readdirSync,
   writeFileSync,
   realpathSync,
+  existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -25,6 +26,90 @@ import type {
 } from '../../packages/contracts/src';
 import { createDeliveryExportFiles } from '../../apps/desktop/src/main/adapters/delivery-export-files';
 import { taskRequestSchema } from '../../packages/contracts/src';
+
+it('rejects revoked queued exports before business access or file effects and permits a fresh request', async () => {
+  const s = setup(),
+    first = seed(s),
+    second = seed(s, '合成第二任务');
+  let rendered!: (bytes: Uint8Array) => void;
+  let entered!: () => void;
+  const rendering = new Promise<void>((resolve) => (entered = resolve));
+  s.render.mockImplementationOnce(async () => {
+    entered();
+    return new Promise<Uint8Array>((resolve) => (rendered = resolve));
+  });
+  const head = s.app.execute(request(first.t, first.snapshot));
+  await rendering;
+  const controller = new AbortController();
+  const commands = [
+    request(second.t, second.snapshot),
+    ...['save_export', 'open_export'].map((operation) => ({
+      protocol_version: 1,
+      operation,
+      task_id: second.t.id,
+      document_id: second.t.document_id,
+      snapshot_id: second.snapshot.id,
+      export_id: randomUUID(),
+      format: 'pdf',
+    })),
+  ];
+  const queued = commands.map((command) => s.app.execute(command, controller.signal));
+  controller.abort();
+  const business = vi.spyOn(s.task, 'execute');
+  const reserve = vi.spyOn(s.store.deliveryExports, 'reserve');
+  const open = vi.spyOn(s.files, 'open');
+  rendered(new Uint8Array(Buffer.from('synthetic queued PDF bytes')));
+  good(await head);
+  for (const pending of queued)
+    expect(await pending).toMatchObject({ ok: false, code: 'CANCELLED' });
+  expect(business).not.toHaveBeenCalled();
+  expect(reserve).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+  expect(s.render).toHaveBeenCalledTimes(1);
+  good(await s.app.execute(commands[0]));
+  expect(s.render).toHaveBeenCalledTimes(2);
+});
+
+it('does not copy a PDF after a revoked save choice and retains a subsequent completed copy', async () => {
+  const s = setup(),
+    { t, snapshot } = seed(s),
+    original = request(t, snapshot),
+    receipt = good(await s.app.execute(original)),
+    row = receipt.exports![0];
+  const output = realpathSync(mkdtempSync(join(tmpdir(), 'caselite-pdf-save-revocation-')));
+  roots.push(output);
+  const target = join(output, 'copy.pdf');
+  const controller = new AbortController();
+  let waiting = true;
+  const files = createDeliveryExportFiles(
+    join(s.root, 'exports'),
+    async () => '',
+    async () => {
+      if (waiting) controller.abort();
+      return target;
+    },
+  );
+  const app = createDeliveryExportApplication({ ...s.ports, files });
+  const command = {
+    protocol_version: 1,
+    operation: 'save_export',
+    task_id: t.id,
+    document_id: t.document_id,
+    snapshot_id: snapshot.id,
+    export_id: row.id,
+    format: 'pdf',
+  };
+  expect(await app.execute(command, controller.signal)).toMatchObject({
+    ok: false,
+    code: 'CANCELLED',
+  });
+  expect(existsSync(target)).toBe(false);
+  expect(await s.app.execute(original)).toEqual(receipt);
+  waiting = false;
+  expect(good(await app.execute(command)).export_saved).toBe(true);
+  expect(digest(readFileSync(target))).toBe(row.sha256);
+  expect(await files.verify(row)).toBe(true);
+});
 
 it('keeps legacy PDF intents, files and receipts readable when a new converter is introduced', async () => {
   const s = setup();
