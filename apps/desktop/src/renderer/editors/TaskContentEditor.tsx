@@ -19,6 +19,7 @@ export default function TaskContentEditor({
   disabled?: boolean;
 }) {
   const doc = useLocalDoc({ text: task.objective, state: initial });
+  const [title, setTitle] = useState(task.title);
   const [version, setVersion] = useState(task.version);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,7 +63,8 @@ export default function TaskContentEditor({
     editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
   async function save() {
-    if (!editor || busy || disabled || length > 4000) return;
+    if (!editor || busy || disabled || length > 4000 || !title.trim()) return;
+    const recovering = Boolean(pending.current);
     const current = pending.current ?? {
       sequence: sequence.current,
       request: {
@@ -72,7 +74,7 @@ export default function TaskContentEditor({
         operation: 'update' as const,
         task_id: task.id,
         expected_version: version,
-        title: task.title,
+        title: title.trim(),
         objective: editor.getText({ blockSeparator: '\n' }),
         objective_state: Array.from(Y.encodeStateAsUpdate(doc)),
       },
@@ -82,7 +84,17 @@ export default function TaskContentEditor({
     setBusy(true);
     setStatus('正在保存任务内容…');
     try {
-      let response = await window.caselite.task(current.request);
+      let response = await window.caselite.task(
+        recovering
+          ? {
+              operation: 'status',
+              protocol_version: 1,
+              idempotency_key: current.request.idempotency_key,
+            }
+          : current.request,
+      );
+      if (recovering && !response.ok && response.code === 'NOT_FOUND')
+        response = await window.caselite.task(current.request);
       if (!response.ok && response.code === 'RESULT_UNKNOWN') {
         response = await window.caselite.task({
           operation: 'status',
@@ -99,6 +111,16 @@ export default function TaskContentEditor({
       }
       if (!response.ok) throw new Error(response.message);
       const saved = response.tasks[0];
+      if (
+        response.receipt !== current.request.idempotency_key ||
+        response.tasks.length !== 1 ||
+        !saved ||
+        saved.id !== task.id ||
+        saved.version !== current.request.expected_version + 1 ||
+        saved.title !== current.request.title ||
+        saved.objective !== current.request.objective
+      )
+        throw Error('任务内容回执不匹配，请保留输入并核对原提交。');
       pending.current = null;
       setHasPending(false);
       setVersion(saved.version);
@@ -115,9 +137,23 @@ export default function TaskContentEditor({
   }
   return (
     <section className="task-content-panel">
-      <header>
-        <h2>内容</h2>
-      </header>
+      <h1 className="sr-only">{title}</h1>
+      <label className="task-title-editor">
+        <span className="sr-only">任务标题</span>
+        <input
+          aria-label="任务标题"
+          value={title}
+          maxLength={160}
+          disabled={disabled}
+          onChange={(event) => {
+            setTitle(event.target.value);
+            sequence.current++;
+            setDirty(true);
+            onDirty(true);
+            setStatus('任务内容有未保存修改');
+          }}
+        />
+      </label>
       <EditorSurface
         editor={editor}
         mode={editorProfiles.description.mode}
@@ -133,7 +169,7 @@ export default function TaskContentEditor({
           type="button"
           className="primary"
           data-testid="save-task-content"
-          disabled={disabled || busy || length > 4000 || (!dirty && !hasPending)}
+          disabled={disabled || busy || length > 4000 || !title.trim() || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
           {busy ? '保存中…' : hasPending ? '核对任务内容' : '保存任务内容'}

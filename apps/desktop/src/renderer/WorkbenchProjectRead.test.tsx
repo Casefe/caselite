@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type {
   CatalogRequest,
   CatalogResponse,
@@ -10,6 +10,14 @@ import type {
   TaskResponse,
 } from '../preload/caselite-api';
 import App from './App';
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open');
+  };
+});
 vi.mock('@tiptap/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tiptap/react')>()),
   useEditor: () => null,
@@ -89,6 +97,13 @@ const project: Matter = {
 const task = {
   id: 'A',
   title: '原任务',
+  objective: '',
+  status: 'todo',
+  priority: 0,
+  due_date: null,
+  version: 1,
+  editor_schema: 1,
+  updated_at: '2026-11-07',
   matter_id: 'P',
   body_revision: 1,
   document_id: 'D',
@@ -157,6 +172,8 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
       saved = { ...task, ...request, id: 'saved-task', matter_id: request.matter_id ?? null };
       return { ok: false, code: 'RESULT_UNKNOWN', message: '合成回执丢失' };
     }
+    if (request.operation === 'read' && saved && request.task_id === saved.id)
+      return { ok: true, tasks: [saved], state: null, receipt: null, objective_state: [1] };
     if (request.operation === 'status') {
       statusKeys.push(request.idempotency_key);
       if (statusKeys.length === 1 || !saved)
@@ -178,11 +195,15 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     任务内容: '保留的说明',
     任务状态: 'in_progress',
     任务优先级: '2',
-    普通截止日期: '2027-01-15',
+    任务负责人: '',
+    截止日期: '2027-01-15',
   };
   const read = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
-  for (const [name, value] of Object.entries(values))
+  for (const [name, value] of Object.entries(values).filter(([name]) => name !== '截止日期'))
     fireEvent.change(read(name), { target: { value } });
+  fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
+  fireEvent.change(read('截止日期'), { target: { value: values.截止日期 } });
+  fireEvent.click(screen.getByRole('button', { name: '确定日期' }));
   const assertDraft = (projectId: string) => {
     for (const [name, value] of Object.entries(values)) expect(read(name).value).toBe(value);
     expect(read('所属项目').value).toBe(projectId);
@@ -206,7 +227,8 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     objective_state: [1],
     status: values.任务状态,
     priority: 2,
-    due_date: values.普通截止日期,
+    assignee: null,
+    due_date: values.截止日期,
   });
   expect(creates[0].idempotency_key).not.toBe(creates[1].idempotency_key);
   fireEvent.click(screen.getByRole('button', { name: '核对创建结果' }));

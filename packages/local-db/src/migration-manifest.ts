@@ -155,4 +155,9 @@ export const integrationMigrations = [
     when: 1794236300000,
     hash: 'a0490428ddb478c0b5a366d159422e85588234738bd411cc732c220c6ac6a47e',
   },
+  {
+    tag: '0028_task_start_date',
+    when: 1794268800000,
+    hash: '02b727924ebe046246d7f661936744f2d9b8c5e636c99c0d98a096e2a41bcf57',
+  },
 ] as const;

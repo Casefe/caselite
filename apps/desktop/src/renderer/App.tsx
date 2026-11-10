@@ -19,7 +19,9 @@ import {
 } from './shared/data/ordinary-catalog-query';
 import { Icon } from './shared/ui/Icon';
 import FinanceView from './features/finance/FinanceView';
-import TagPicker from './shared/ui/TagPicker';
+import TaskCreateDialog from './features/tasks/TaskCreateDialog';
+import type { ReminderDraft } from './features/tasks/ReminderDraftPicker';
+import TaskAttachments from './ui/TaskAttachments';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -36,8 +38,6 @@ import ProjectCatalog, { type ProjectViewState } from './features/projects/Proje
 import ImportantSchedules from './features/calendar/ImportantSchedules';
 import DocumentLibrary from './ui/DocumentLibrary';
 import TaskInspector from './ui/TaskInspector';
-import { taskStatusNames } from './ui/task-status';
-import { taskPriorityNames } from './ui/task-priority';
 
 import SettingsView, { type SettingsSection } from './ui/SettingsView';
 import { SettingsNavigation } from './shared/navigation/SettingsNavigation';
@@ -45,7 +45,7 @@ import { AppearanceProvider } from './ui/Appearance';
 import RecordList, { initialTaskListState } from './ui/RecordList';
 import AgentHome from './ui/AgentHome';
 import AgentHistory from './ui/AgentHistory';
-import { DraftEditor, emptyDraft, type RichDraft } from './editors/RichEditor';
+import { emptyDraft, type RichDraft } from './editors/RichEditor';
 import ActivityList from './features/projects/ActivityList';
 import { DiscussionFeed } from './shared/discussion/DiscussionFeed';
 import TaskContentEditor from './editors/TaskContentEditor';
@@ -60,7 +60,9 @@ type TaskPosition = NonNullable<Extract<TaskResponse, { ok: true }>['navigation'
 const defaultCreateProperties = {
   status: 'todo' as Task['status'],
   priority: 0,
-  due_date: '',
+  assignee: '本人' as string | null,
+  start_date: null as string | null,
+  due_date: null as string | null,
   tags: [] as string[],
   matter_id: '',
 };
@@ -97,6 +99,9 @@ function Workbench() {
   const [creating, setCreating] = useState(false);
   const [createProperties, setCreateProperties] = useState(defaultCreateProperties);
   const [createTagDraft, setCreateTagDraft] = useState(false);
+  const [createFieldEditing, setCreateFieldEditing] = useState(false);
+  const [createReminder, setCreateReminder] = useState<ReminderDraft | null>(null);
+  const [attachmentBlocked, setAttachmentBlocked] = useState(false);
   const [createSource, setCreateSource] = useState<ProjectViewState | null>(null);
   const [projectOptions, setProjectOptions] = useState<Matter[]>([]);
   const [projectOptionsState, setProjectOptionsState] = useState<'loading' | 'ready' | 'failed'>(
@@ -109,7 +114,6 @@ function Workbench() {
   const [dirty, setDirty] = useState(false);
   const [propertiesBlocked, setPropertiesBlocked] = useState(false);
   const [reminderBlocked, setReminderBlocked] = useState(false);
-  const [reminderTask, setReminderTask] = useState<string | null>(null);
   const [commentDirty, setCommentDirty] = useState(false);
   const [financeProject, setFinanceProject] = useState('');
   const [projectDirty, setProjectDirty] = useState(false);
@@ -119,7 +123,6 @@ function Workbench() {
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const readSequence = useRef(0);
-  const composing = useRef(false);
   const createRequest = useRef<CreateTaskCommand | null>(null);
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
@@ -171,7 +174,11 @@ function Workbench() {
       objective.state ||
       createProperties.status !== defaultCreateProperties.status ||
       createProperties.priority ||
+      createProperties.assignee !== defaultCreateProperties.assignee ||
       createProperties.due_date ||
+      createProperties.start_date ||
+      createReminder ||
+      createFieldEditing ||
       createProperties.tags.length ||
       createTagDraft ||
       createProperties.matter_id !== (createSource?.projectId ?? ''),
@@ -184,6 +191,7 @@ function Workbench() {
         projectDirty ||
         propertiesBlocked ||
         reminderBlocked ||
+        attachmentBlocked ||
         busy ||
         uncertain ||
         reviewSaving ||
@@ -202,6 +210,7 @@ function Workbench() {
     projectDirty,
     propertiesBlocked,
     reminderBlocked,
+    attachmentBlocked,
     busy,
     uncertain,
     createDirty,
@@ -216,6 +225,7 @@ function Workbench() {
       projectDirty ||
       propertiesBlocked ||
       reminderBlocked ||
+      attachmentBlocked ||
       busy ||
       uncertain
     ) {
@@ -254,6 +264,8 @@ function Workbench() {
     setProjectOptionsState('loading');
     setProjectOptions([]);
     setCreateProperties({ ...defaultCreateProperties, matter_id: source?.projectId ?? '' });
+    setCreateReminder(null);
+    setCreateFieldEditing(false);
     setCreateSource(source);
     setReviewDocument(null);
     setCreating(true);
@@ -436,7 +448,13 @@ function Workbench() {
     setError('');
   }
   async function create(mode: 'submit' | 'retry') {
-    if (busy || createTagDraft || (mode === 'retry' && !createRequest.current)) return;
+    if (
+      busy ||
+      createTagDraft ||
+      createFieldEditing ||
+      (mode === 'retry' && !createRequest.current)
+    )
+      return;
     const original = createRequest.current;
 
     setBusy(true);
@@ -448,7 +466,10 @@ function Workbench() {
       objective: objective.text,
       status: createProperties.status,
       priority: createProperties.priority,
+      assignee: createProperties.assignee,
       due_date: createProperties.due_date || null,
+      start_date: createProperties.start_date || null,
+      ...(createReminder ? { initial_reminder: createReminder } : {}),
       ...(createProperties.tags.length ? { tags: createProperties.tags } : {}),
       ...(createProperties.matter_id ? { matter_id: createProperties.matter_id } : {}),
       ...(objective.state ? { objective_state: objective.state } : {}),
@@ -480,15 +501,36 @@ function Workbench() {
         throw new Error(response.message);
       }
       const r = check(response);
-      const saved = r.tasks[0];
+      const receiptTask = r.tasks[0];
       if (
         r.receipt !== command.idempotency_key ||
         r.tasks.length !== 1 ||
-        !saved ||
-        JSON.stringify(saved.tags ?? []) !== JSON.stringify(command.tags ?? []) ||
-        saved.matter_id !== (command.matter_id ?? null)
+        !receiptTask ||
+        receiptTask.title !== command.title.trim() ||
+        receiptTask.objective !== command.objective ||
+        receiptTask.status !== (command.status ?? 'todo') ||
+        receiptTask.priority !== (command.priority ?? 0) ||
+        (receiptTask.assignee === undefined ? '本人' : receiptTask.assignee) !==
+          (command.assignee === undefined ? '本人' : command.assignee) ||
+        receiptTask.due_date !== (command.due_date ?? null) ||
+        JSON.stringify(receiptTask.tags ?? []) !== JSON.stringify(command.tags ?? []) ||
+        receiptTask.matter_id !== (command.matter_id ?? null) ||
+        (receiptTask.start_date ?? null) !== (command.start_date ?? null) ||
+        (command.initial_reminder && r.reminder_created !== true)
       )
         throw new Error('创建回执与原提交不符，请核对原提交。');
+      // 创建回执只证明原提交；打开详情前重读当前对象，避免恢复迟到回执时显示旧版本。
+      const current = check(
+        await window.caselite.task({
+          protocol_version: 1,
+          operation: 'read',
+          task_id: receiptTask.id,
+        }),
+      );
+      const saved = current.tasks.find(
+        (t) => t.id === receiptTask.id && t.version >= receiptTask.version,
+      );
+      if (!saved) throw Error('任务已创建，当前版本暂时无法重读，请核对原提交。');
       setUncertain(false);
       createRequest.current = null;
       setTaskReturn(
@@ -500,8 +542,8 @@ function Workbench() {
           : null,
       );
       setActive(saved);
-      setState(null);
-      setObjectiveState(command.objective_state ?? null);
+      setState(current.state);
+      setObjectiveState(current.objective_state ?? null);
       setView('tasks');
       setDetailTab('内容');
       setCreateTagDraft(false);
@@ -548,6 +590,25 @@ function Workbench() {
     <TaskInspector
       key={active.id}
       task={active}
+      showCalendar={view === 'calendar'}
+      reminder={
+        <ReminderEditor
+          compact
+          taskId={active.id}
+          disabled={
+            loading ||
+            dirty ||
+            commentDirty ||
+            projectDirty ||
+            propertiesBlocked ||
+            attachmentBlocked ||
+            busy ||
+            uncertain
+          }
+          onBlocked={setReminderBlocked}
+          onChanged={() => setPropertiesRead((v) => v + 1)}
+        />
+      }
       editorAssistantDock={view === 'tasks' && detailTab === '成果正文' ? setReviewDock : undefined}
       content={
         view === 'calendar' ? (
@@ -568,13 +629,23 @@ function Workbench() {
         commentDirty ||
         propertiesBlocked ||
         reminderBlocked ||
+        attachmentBlocked ||
         busy ||
         uncertain
       }
       propertiesDisabled={
-        loading || dirty || commentDirty || projectDirty || reminderBlocked || busy || uncertain
+        loading ||
+        dirty ||
+        commentDirty ||
+        projectDirty ||
+        reminderBlocked ||
+        attachmentBlocked ||
+        busy ||
+        uncertain
       }
-      reminderEditing={loading || reminderBlocked || dirty || commentDirty || projectDirty}
+      reminderEditing={
+        loading || reminderBlocked || attachmentBlocked || dirty || commentDirty || projectDirty
+      }
       onPropertiesBlocked={setPropertiesBlocked}
       onTaskChanged={acceptTaskProperties}
       suggestions={tagSuggestions}
@@ -641,197 +712,32 @@ function Workbench() {
           </div>
         )}
         {creating ? (
-          <form
-            onCompositionStart={() => {
-              composing.current = true;
+          <TaskCreateDialog
+            title={title}
+            onTitle={setTitle}
+            objective={objective}
+            onObjective={setObjective}
+            properties={createProperties}
+            onProperties={setCreateProperties}
+            reminder={createReminder}
+            onReminder={setCreateReminder}
+            projects={projectOptions}
+            projectState={projectOptionsState}
+            onRetryProjects={() => {
+              setProjectOptionsState('loading');
+              setProjectOptions([]);
+              setProjectOptionsAttempt((n) => n + 1);
             }}
-            onCompositionEnd={() => {
-              composing.current = false;
-            }}
-            className="create-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!composing.current) void create('submit');
-            }}
-          >
-            <header className="create-form-header">
-              <div className="create-form-context">
-                <span className="create-workspace-icon">
-                  <Icon name="check" size={15} />
-                </span>
-                <span>本地工作区</span>
-                <Icon name="chevron" size={13} />
-                <h1>新建任务</h1>
-              </div>
-              <button
-                type="button"
-                className="create-close"
-                aria-label="取消新建任务"
-                disabled={busy || uncertain}
-                onClick={cancelCreate}
-              >
-                ×
-              </button>
-            </header>
-            <div className="create-form-body">
-              <label className="create-title-label">
-                <span className="sr-only">任务名称</span>
-                <input
-                  data-testid="task-title"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                  }}
-                  required
-                  maxLength={160}
-                  disabled={busy || uncertain}
-                  placeholder="任务标题"
-                />
-              </label>
-              <div className="create-objective">
-                <span id="task-content-label" className="sr-only">
-                  任务内容
-                </span>
-                <DraftEditor
-                  key={creating ? 'create-content' : 'closed'}
-                  value={objective}
-                  label="任务内容"
-                  testId="task-objective"
-                  disabled={busy || uncertain}
-                  onChange={(value) => {
-                    setObjective(value);
-                  }}
-                  placeholder="添加说明…"
-                />
-                {objective.text.length > 4000 && (
-                  <p role="alert" className="caption">
-                    超过4000字符，请精简后创建；输入仍保留。
-                  </p>
-                )}
-              </div>
-              <fieldset className="task-create-properties" disabled={busy || uncertain}>
-                <legend>任务属性</legend>
-                <label>
-                  <span>状态</span>
-                  <select
-                    aria-label="任务状态"
-                    value={createProperties.status}
-                    onChange={(e) =>
-                      setCreateProperties({
-                        ...createProperties,
-                        status: e.target.value as Task['status'],
-                      })
-                    }
-                  >
-                    {Object.entries(taskStatusNames).map(([value, name]) => (
-                      <option key={value} value={value}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>优先级</span>
-                  <select
-                    aria-label="任务优先级"
-                    value={createProperties.priority}
-                    onChange={(e) =>
-                      setCreateProperties({
-                        ...createProperties,
-                        priority: Number(e.target.value),
-                      })
-                    }
-                  >
-                    {Object.entries(taskPriorityNames).map(([value, name]) => (
-                      <option key={value} value={value}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>普通截止日期</span>
-                  <input
-                    type="date"
-                    aria-label="普通截止日期"
-                    min="0001-01-01"
-                    max="9999-12-31"
-                    value={createProperties.due_date}
-                    onChange={(e) =>
-                      setCreateProperties({ ...createProperties, due_date: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>所属项目</span>
-                  <select
-                    aria-label="所属项目"
-                    value={createProperties.matter_id}
-                    disabled={projectOptionsState === 'loading'}
-                    onChange={(e) =>
-                      setCreateProperties({ ...createProperties, matter_id: e.target.value })
-                    }
-                  >
-                    <option value="">独立任务</option>
-                    {createProperties.matter_id &&
-                      !projectOptions.some((p) => p.id === createProperties.matter_id) && (
-                        <option value={createProperties.matter_id}>
-                          {projectOptionsState === 'loading'
-                            ? '正在读取所选项目…'
-                            : '所选项目暂不可用'}
-                        </option>
-                      )}
-                    {projectOptions.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <TagPicker
-                  tags={createProperties.tags}
-                  onDraft={setCreateTagDraft}
-                  suggestions={tagSuggestions}
-                  onChange={(tags) => setCreateProperties({ ...createProperties, tags })}
-                />
-                {projectOptionsState !== 'ready' && (
-                  <p role="status">
-                    {projectOptionsState === 'loading' ? '正在读取项目…' : '项目列表读取失败。'}
-                    {projectOptionsState === 'failed' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProjectOptionsState('loading');
-                          setProjectOptions([]);
-                          setProjectOptionsAttempt((n) => n + 1);
-                        }}
-                      >
-                        重读项目列表
-                      </button>
-                    )}
-                  </p>
-                )}
-              </fieldset>
-            </div>
-            <footer className="create-form-footer">
-              {uncertain && (
-                <button type="button" disabled={busy} onClick={() => void create('retry')}>
-                  重试原创建请求
-                </button>
-              )}
-              <span className="create-form-spacer" />
-              <button type="button" disabled={busy || uncertain} onClick={cancelCreate}>
-                取消
-              </button>
-              <button
-                className="primary"
-                disabled={busy || createTagDraft || !title.trim() || objective.text.length > 4000}
-                data-testid="create-task"
-              >
-                {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
-              </button>
-            </footer>
-          </form>
+            suggestions={tagSuggestions}
+            assigneeSuggestions={tasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
+            onTagDraft={setCreateTagDraft}
+            onFieldEditing={setCreateFieldEditing}
+            busy={busy}
+            uncertain={uncertain}
+            onCancel={cancelCreate}
+            onCreate={() => void create('submit')}
+            onRetry={() => void create('retry')}
+          />
         ) : loading && view !== 'projects' && view !== 'calendar' ? (
           <div className="loading-state" role="status">
             正在读取本地任务…
@@ -871,6 +777,7 @@ function Workbench() {
               dirty ||
               propertiesBlocked ||
               reminderBlocked ||
+              attachmentBlocked ||
               projectDirty ||
               busy ||
               uncertain
@@ -1000,28 +907,6 @@ function Workbench() {
                   >
                     {uncertain ? '核对订阅提交' : active.subscribed ? '取消订阅' : '订阅任务'}
                   </button>
-                  <button
-                    type="button"
-                    aria-expanded={reminderTask === active.id}
-                    disabled={propertiesBlocked || reminderBlocked}
-                    onClick={() => setReminderTask(reminderTask === active.id ? null : active.id)}
-                  >
-                    本机提醒
-                  </button>
-                  {reminderTask === active.id && (
-                    <ReminderEditor
-                      taskId={active.id}
-                      disabled={
-                        dirty ||
-                        commentDirty ||
-                        projectDirty ||
-                        busy ||
-                        uncertain ||
-                        propertiesBlocked
-                      }
-                      onBlocked={setReminderBlocked}
-                    />
-                  )}
                 </div>
                 <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
                   {['内容', '成果正文', '材料'].map((t) => (
@@ -1044,7 +929,7 @@ function Workbench() {
                   ))}
                 </div>
 
-                <div className="task-title">
+                <div className="task-title" hidden={detailTab === '内容'}>
                   <div>
                     <h1>{active.title}</h1>
                   </div>
@@ -1059,7 +944,9 @@ function Workbench() {
                     reviewVariant={documentReview ? 'review' : 'assistant'}
                     reviewSaving={reviewSaving}
                     onReviewSaving={setReviewSaving}
-                    disabled={projectDirty || propertiesBlocked || reminderBlocked}
+                    disabled={
+                      projectDirty || propertiesBlocked || reminderBlocked || attachmentBlocked
+                    }
                     onSaved={(t, savedState) => {
                       setActive(t);
                       setState(savedState);
@@ -1075,7 +962,11 @@ function Workbench() {
                       initial={objectiveState}
                       onDirty={setDirty}
                       disabled={
-                        commentDirty || projectDirty || propertiesBlocked || reminderBlocked
+                        commentDirty ||
+                        projectDirty ||
+                        propertiesBlocked ||
+                        reminderBlocked ||
+                        attachmentBlocked
                       }
                       onSaved={(saved, bytes) => {
                         setActive(saved);
@@ -1084,11 +975,27 @@ function Workbench() {
                         void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
                       }}
                     />
-                    <section className="task-detail-section">
-                      <h2>活动</h2>
+                    <TaskAttachments
+                      key={`attachments:${active.id}`}
+                      taskId={active.id}
+                      task={active}
+                      disabled={
+                        dirty ||
+                        commentDirty ||
+                        projectDirty ||
+                        propertiesBlocked ||
+                        reminderBlocked
+                      }
+                      onDateBlocked={setAttachmentBlocked}
+                      onTaskChanged={acceptTaskProperties}
+                    />
+                    <section className="task-detail-section task-events">
+                      <h2>活动与评论</h2>
                       <ActivityList
                         scope={{ type: 'task', id: active.id }}
-                        refresh={String(active.version) + ':' + active.body_revision}
+                        refresh={
+                          String(active.version) + ':' + active.body_revision + ':' + propertiesRead
+                        }
                         disabled={
                           dirty ||
                           commentDirty ||
@@ -1102,9 +1009,10 @@ function Workbench() {
                       />
                     </section>
                     <section className="task-detail-section project-discussion" aria-label="评论">
-                      <h2>评论</h2>
+                      <h2 className="sr-only">评论</h2>
                       <DiscussionFeed
                         scope={{ kind: 'task_comment', task_id: active.id }}
+                        composerPosition="end"
                         refresh={active.matter_id}
                         archived={false}
                         disabled={dirty || projectDirty || propertiesBlocked || reminderBlocked}
@@ -1114,11 +1022,16 @@ function Workbench() {
                     </section>
                   </div>
                 ) : (
-                  <section className="project-tab-empty">
-                    <Icon name="folder" size={30} />
-                    <h2>任务材料</h2>
-                    <p>当前版本尚未接入材料导入。你可以先编写和保存成果正文。</p>
-                  </section>
+                  <TaskAttachments
+                    key={`materials:${active.id}`}
+                    taskId={active.id}
+                    task={active}
+                    disabled={
+                      dirty || commentDirty || projectDirty || propertiesBlocked || reminderBlocked
+                    }
+                    onDateBlocked={setAttachmentBlocked}
+                    onTaskChanged={acceptTaskProperties}
+                  />
                 )}
               </div>
               {documentReview ? (

@@ -429,7 +429,7 @@ it('matches the generated Drizzle snapshot while applying additive DDL without r
   const s = setup(),
     db = openToolchainProbe(s.file, migrations).sqlite;
   try {
-    const snapshot = JSON.parse(readFileSync(join(migrations, 'meta/0021_snapshot.json'), 'utf8'));
+    const snapshot = JSON.parse(readFileSync(join(migrations, 'meta/0028_snapshot.json'), 'utf8'));
     const t = create(s.app);
     for (const name of ['task_items', 'calendar_types']) {
       const columns = (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>)
