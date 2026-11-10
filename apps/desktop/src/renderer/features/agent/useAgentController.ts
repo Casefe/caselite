@@ -21,9 +21,12 @@ const draftRevisions = new Map<string, number>();
 const submissionRevisions = new Map<string, number>();
 const confirmedMaterials = new Map<string, MaterialPreview>();
 const submissions = new Map<string, Extract<AgentRequest, { operation: 'start' }>>();
+// 只记录本次打开后由首页发送的Run身份；持久历史仍由SQLite Owner保存。
+const currentHomeRunIds = new Set<string>();
 
 export type AgentControllerOptions = {
   scope: string;
+  freshHomeSession?: boolean;
   draft?: RichDraft;
   onDraft?(value: RichDraft): void;
   onConversationChange?(hasRuns: boolean): void;
@@ -33,6 +36,7 @@ export type AgentControllerOptions = {
 
 export function useAgentController({
   scope,
+  freshHomeSession = false,
   draft: controlled,
   onDraft,
   onConversationChange,
@@ -150,7 +154,13 @@ export function useAgentController({
     const result = await window.caselite.agent({ protocol_version: 1, operation: 'read', scope });
     if (!alive.current) return;
     if (result.ok) {
-      setRuns(result.runs.filter((run) => run.scope === scope));
+      setRuns(
+        result.runs.filter(
+          (run) =>
+            run.scope === scope &&
+            (!freshHomeSession || scope !== 'home' || currentHomeRunIds.has(run.id)),
+        ),
+      );
       setProviders(result.providers);
       setModel(result.model);
       setCredentialReading(Boolean(result.credential_reading));
@@ -170,7 +180,13 @@ export function useAgentController({
         });
         if (stopped) return;
         if (result.ok) {
-          setRuns(result.runs.filter((run) => run.scope === scope));
+          setRuns(
+            result.runs.filter(
+              (run) =>
+                run.scope === scope &&
+                (!freshHomeSession || scope !== 'home' || currentHomeRunIds.has(run.id)),
+            ),
+          );
           setProviders(result.providers);
           setModel(result.model);
           setCredentialReading(Boolean(result.credential_reading));
@@ -193,7 +209,7 @@ export function useAgentController({
       stopped = true;
       clearTimeout(timer);
     };
-  }, [scope]);
+  }, [scope, freshHomeSession]);
   const loadProjectPreview = async () => {
     if (projectVersion === undefined) return;
     const token = ++previewRequest.current;
@@ -318,6 +334,7 @@ export function useAgentController({
         if (context) confirmedMaterials.set(scope, context);
         else confirmedMaterials.delete(scope);
       }
+      if (scope === 'home' && freshHomeSession) currentHomeRunIds.add(request.run_id);
       const result = await window.caselite.agent(request);
       // 卸载实例不能清掉重挂载后的新输入，由当前实例按 Run ID 轮询核对。
       if (!alive.current) return;
@@ -325,7 +342,13 @@ export function useAgentController({
         if (result.runs.some((run) => run.id === request!.run_id)) acceptResponse.current(request);
         else if (project && submissions.get(scope)?.run_id === request.run_id) setUnknown(true);
         if (alive.current) {
-          setRuns(result.runs.filter((run) => run.scope === scope));
+          setRuns(
+            result.runs.filter(
+              (run) =>
+                run.scope === scope &&
+                (!freshHomeSession || scope !== 'home' || currentHomeRunIds.has(run.id)),
+            ),
+          );
           setProviders(result.providers);
           setModel(result.model);
           setCredentialReading(Boolean(result.credential_reading));
@@ -369,7 +392,14 @@ export function useAgentController({
       setModel(result.model);
       setCredentialReading(Boolean(result.credential_reading));
       setCredentialUnavailable(Boolean(result.credential_errors?.[agentProviderFor(result.model)]));
-      if ('scope' in request) setRuns(result.runs.filter((run) => run.scope === scope));
+      if ('scope' in request)
+        setRuns(
+          result.runs.filter(
+            (run) =>
+              run.scope === scope &&
+              (!freshHomeSession || scope !== 'home' || currentHomeRunIds.has(run.id)),
+          ),
+        );
       setError('');
     } else setError(result.message);
   };

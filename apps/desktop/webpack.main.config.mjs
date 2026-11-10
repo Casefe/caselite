@@ -1,8 +1,14 @@
 import { fileURLToPath } from 'node:url';
+import webpack from 'webpack';
 
 const localPath = (relativePath) => fileURLToPath(new URL(relativePath, import.meta.url));
 
 export default {
+  plugins: [
+    new webpack.DefinePlugin({
+      CASELITE_LOCAL_TEST_BUILD: JSON.stringify(process.env.CASELITE_LOCAL_TEST_BUILD === '1'),
+    }),
+  ],
   entry: {
     main: { import: localPath('./src/main/index.ts'), filename: 'index.cjs' },
     docxWorker: {

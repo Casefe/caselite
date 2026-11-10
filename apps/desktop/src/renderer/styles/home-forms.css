@@ -1,4 +1,67 @@
 /* 首页以工作目标、建议操作、最近任务为顺序；复用既有 Agent 和任务入口。 */
+.agent-home {
+  grid-template-rows: 40px minmax(0, 1fr);
+}
+.home-topbar {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 20px;
+  z-index: 20;
+}
+.home-history-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--theme-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+.home-history-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.home-history-menu > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-history-popover {
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  width: 440px;
+  max-width: calc(100% - 32px);
+  max-height: min(70vh, 600px);
+  overflow: auto;
+  padding: 16px;
+  background: var(--theme-panel, white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px #0002;
+}
+.home-history-popover > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.home-history-popover h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.home-history-popover > header > span {
+  font-size: 11px;
+  color: var(--theme-secondary);
+}
+.home-history-open strong,
+.home-history-open small {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .agent-main {
   background: #fff;
 }

@@ -101,7 +101,8 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
   expect(screen.queryByRole('button', { name: '新建任务' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重要日程' }));
   expect(reminders.querySelector('header > button')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '历史对话' }));
+  fireEvent.click(screen.getByText('历史对话', { selector: 'summary' }));
+  fireEvent.click(screen.getByRole('button', { name: '查看全部对话' }));
   expect(onNavigate.mock.calls).toEqual([['calendar'], ['agent-history']]);
   expect(screen.getByRole('button', { name: '创建项目' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '生成文书' })).toBeTruthy();
@@ -152,9 +153,10 @@ it('shows stored rounds, opens details, and sends only a pin command', async () 
       onOpen={vi.fn()}
     />,
   );
+  fireEvent.click(screen.getByText('历史对话', { selector: 'summary' }));
   const row = await screen.findByRole('button', { name: /示例问题.*首页对话/ });
   const history = screen.getByRole('region', { name: '历史对话' });
-  expect(screen.getByLabelText('Agent 首页').querySelector('.agent-main')?.contains(history)).toBe(
+  expect(screen.getByLabelText('Agent 首页').querySelector('.home-topbar')?.contains(history)).toBe(
     true,
   );
   fireEvent.click(row);
