@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { BrowserWindow, WebContents } from 'electron';
 import { createAppearanceApplication } from '@caselite/application';
 import { APPEARANCE_INITIAL_CHANNEL, type Theme } from '@caselite/contracts';
@@ -28,6 +31,7 @@ vi.mock('electron', () => ({
 }));
 import { createWindowAppearance, appearanceBackground } from './window-appearance';
 import { registerAppearanceIpc } from './ipc/register-appearance-ipc';
+import { createAppearancePreferences } from './adapters/appearance-preferences';
 const fakeWindow = () =>
   Object.assign(new EventEmitter(), {
     webContents: { mainFrame: {} },
@@ -39,6 +43,34 @@ beforeEach(() => {
   state.native.themeSource = 'system';
 });
 describe('appearance first frame and native confirmation', () => {
+  it('uses the real preference owner for a fresh dark seed and an explicitly saved light seed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-appearance-seed-'));
+    try {
+      const preferences = createAppearancePreferences(root);
+      const host = createWindowAppearance(createAppearanceApplication(preferences));
+      const window = fakeWindow();
+      host.attach(window);
+      const event = {
+        sender: window.webContents,
+        senderFrame: window.webContents.mainFrame,
+        returnValue: undefined as unknown,
+      };
+      expect(host.snapshot().theme).toBe('dark');
+      expect(state.native.themeSource).toBe('dark');
+      state.initial!(event);
+      expect(event.returnValue).toEqual({ ok: true, theme: 'dark' });
+      expect(window.setBackgroundColor).toHaveBeenLastCalledWith(appearanceBackground('dark'));
+      expect(existsSync(join(root, 'appearance-preferences.json'))).toBe(false);
+      preferences.write('light');
+      state.initial!(event);
+      expect(event.returnValue).toEqual({ ok: true, theme: 'light' });
+      expect(window.setBackgroundColor).toHaveBeenLastCalledWith(appearanceBackground('light'));
+      expect(createAppearancePreferences(root).read()).toBe('light');
+      window.emit('closed');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it('returns fresh read-only snapshots only to a managed main frame, including reload and corrupt data', () => {
     let theme: Theme = 'dark';
     let corrupt = false;
