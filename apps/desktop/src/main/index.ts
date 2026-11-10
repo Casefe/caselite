@@ -1632,7 +1632,7 @@ app
         taskDemoPhase === 'customer-read' ||
         taskDemoPhase === 'customer-preview')
     ) {
-      await runCustomerDemo(createWindow, taskDemoRoot, taskDemoPhase);
+      await runCustomerDemo(createWindow, taskDemoRoot, taskDemoPhase, materials);
       if (taskDemoPhase !== 'customer-preview') app.quit();
       return;
     }

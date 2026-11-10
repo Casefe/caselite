@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { syntheticTextStream } from './agent-demo';
+import type { createMaterialApplication } from '@caselite/application';
 
 // 仅从已验证的隔离演示入口注入；继续经过真实 Pi/Application/IPC，不接触系统凭据。
 export function createSyntheticCustomerStream(root: string): StreamFn {
@@ -31,6 +32,7 @@ export async function runCustomerDemo(
   createWindow: (show: boolean) => Promise<BrowserWindow>,
   root: string,
   phase: 'customer-write' | 'customer-read' | 'customer-preview',
+  materials: ReturnType<typeof createMaterialApplication>,
 ) {
   for (const path of [
     app.getPath('userData'),
@@ -124,6 +126,32 @@ export async function runCustomerDemo(
     if(!project || !task)throw Error('Missing reopened setup');
     return {project:project.id,task:task.id,document:task.document_id};
   })()`);
+  if (phase === 'customer-write') {
+    const image = join(root, '合成微信截图.png');
+    writeFileSync(
+      image,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aIckAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    );
+    const stage = await materials.stage(image, seed.task);
+    if (!stage.ok || !stage.staged) throw Error('Synthetic screenshot stage failed');
+    const committed = await materials.execute({
+      protocol_version: 1,
+      operation: 'commit',
+      scope: seed.task,
+      token: stage.staged.token,
+    });
+    if (!committed.ok) throw Error(committed.message);
+    await evaluate(`(async()=>{
+      const request={protocol_version:1,project_id:${literal(seed.project)},request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID()};
+      const contract=await window.caselite.finance({...request,operation:'register_contract',number:'合成联系人测试合同',amount_cents:100,installments:[{amount_cents:100,due_date:'2026-11-10'}]});
+      if(!contract.ok||contract.kind!=='ledger'||!contract.ledger)throw Error('Synthetic finance setup failed');
+      const paid=await window.caselite.finance({...request,request_id:crypto.randomUUID(),idempotency_key:crypto.randomUUID(),operation:'record_payment',installment_id:contract.ledger.installments[0].id,amount_cents:100});
+      if(!paid.ok)throw Error(paid.message);
+    })()`);
+  }
   await click(query('[data-nav=contacts]'));
   if (phase === 'customer-write') {
     await button('＋ 新建联系人');
@@ -231,7 +259,32 @@ export async function runCustomerDemo(
     await button('保存来源关联');
     await wait(`!${query('.customer-source-picker')}`);
     await wait(`document.querySelector('.customer-timeline').textContent.includes('合成跨页往来')`);
+    for (const kind of ['material', 'payment']) {
+      await button('关联来源');
+      await select('.customer-source-picker select[aria-label="往来来源类型"]', kind);
+      await wait(`document.querySelectorAll('.customer-source-option').length===1`);
+      await click(query('.customer-source-option input'));
+      await button('保存来源关联');
+      await wait(`!${query('.customer-source-picker')}`);
+    }
+    await wait(`document.querySelector('.customer-timeline').textContent.includes('收款 ¥1.00')`);
     await capture('contact-unified-activity.png');
+    await click(
+      `Array.from(document.querySelectorAll('.customer-timeline li')).find(li=>li.textContent.includes('收款 ¥1.00'))?.querySelector('button')`,
+    );
+    await wait(`${query('[data-nav=finance]')}?.getAttribute('aria-current')==='page'`);
+    await capture('contact-payment-source.png');
+    await click(query('[data-nav=contacts]'));
+    await wait(
+      `document.querySelector('.customer-timeline')?.textContent.includes('合成微信截图.png')`,
+    );
+    await click(
+      `Array.from(document.querySelectorAll('.customer-timeline li')).find(li=>li.textContent.includes('合成微信截图.png'))?.querySelector('button')`,
+    );
+    await wait(`${query('[data-nav=tasks]')}?.getAttribute('aria-current')==='page'`);
+    await capture('contact-material-source.png');
+    await click(query('[data-nav=contacts]'));
+    await wait(query('.customer-name'));
     // 再次打开详情，验证来源与正式记录共存，且右下角 AI 不因开合详情丢失。
     await evaluate(
       `${query('.customer-name')}.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
@@ -239,7 +292,12 @@ export async function runCustomerDemo(
     await wait(query('.customer-detail-page'));
     await capture('contact-detail-unified.png');
     await button('← 返回联系人列表');
-    await click(query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]'));
+    if (
+      await evaluate(
+        `Boolean(${query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]')})`,
+      )
+    )
+      await click(query('.contacts-inspector .inspector-ai-heading button[aria-expanded=true]'));
   } else {
     await wait(`${query('.customer-name')}?.textContent.includes('合成客户张某')`);
     await click(query('.customer-name'));
@@ -249,7 +307,7 @@ export async function runCustomerDemo(
     const list=await window.caselite.contacts({protocol_version:1,operation:'list'});
     if(!list.ok || list.contacts.length!==1)throw Error('Customer duplicates or read failure');
     const result=await window.caselite.contacts({protocol_version:1,operation:'read',contact_id:list.contacts[0].id});
-    if(!result.ok || (${phase === 'customer-write'} && (result.detail.source_links.length!==1 || result.contacts[0].address!=='北京合成办公地址' || result.contacts[0].phone!=='010-00000001')) || result.detail.entries.length!==4 || result.detail.task_ids.length!==1 || result.detail.document_ids.length!==1 || result.contacts[0].project_ids.length!==1)throw Error('Customer workspace persistence mismatch');
+    if(!result.ok || (${phase === 'customer-write'} && (result.detail.source_links.length!==3 || result.contacts[0].address!=='北京合成办公地址' || result.contacts[0].phone!=='010-00000001')) || result.detail.entries.length!==4 || result.detail.task_ids.length!==1 || result.detail.document_ids.length!==1 || result.contacts[0].project_ids.length!==1)throw Error('Customer workspace persistence mismatch');
     const split=document.querySelector('.contacts-inspector .inspector-split');
     const rect=split.querySelector('.inspector-ai-region').getBoundingClientRect();
     if(split.dataset.aiExpanded!=='false' || rect.height>166)throw Error('Customer composer not compact');
