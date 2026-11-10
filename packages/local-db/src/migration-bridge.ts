@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { integrationMigrations } from './migration-manifest';
 
 type Migration = { tag: string; when: number; hash: string; sql: string };
@@ -20,8 +21,10 @@ function schema(db: Database.Database) {
 
 function validate(db: Database.Database, migrations: Migration[]) {
   const exists = db
-    .prepare("SELECT name FROM sqlite_schema WHERE name='__drizzle_migrations' AND type='table'")
-    .get();
+    .prepare("SELECT type FROM sqlite_schema WHERE name='__drizzle_migrations'")
+    .get() as { type: string } | undefined;
+  // 迁移记录必须是真实表；不能把同名视图误判成空历史后再尝试写入。
+  if (exists && exists.type !== 'table') throw rejected();
   const rows = exists
     ? (db
         .prepare('SELECT hash,created_at FROM __drizzle_migrations ORDER BY rowid')
@@ -103,5 +106,39 @@ export function bridgeMigrationHistories(db: Database.Database, folder: string) 
       );
     }
     if (missing.length) validate(db, migrations);
+  }).immediate();
+  return migrations;
+}
+
+/** 同一个写事务覆盖历史核验和后续升级；第二个连接只能读取已提交的迁移状态。 */
+export function migrateDatabase(db: Database.Database, folder: string) {
+  if (db.inTransaction) throw new Error('工作区升级必须从顶层事务开始。');
+  const plan = readMigrationFiles({ migrationsFolder: folder });
+  db.transaction(() => {
+    const verified = bridgeMigrationHistories(db, folder);
+    // 公共读取器与冻结目录须描述同一份原 SQL，不能只验证随后又重新读取的另一份文件。
+    if (
+      verified &&
+      (plan.length !== verified.length ||
+        plan.some(
+          (entry, i) =>
+            entry.hash !== verified[i].hash ||
+            entry.folderMillis !== verified[i].when ||
+            entry.bps !== true,
+        ))
+    )
+      throw rejected();
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)',
+    );
+    const latest = db
+      .prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1')
+      .get() as { created_at: number } | undefined;
+    const record = db.prepare('INSERT INTO __drizzle_migrations(hash,created_at) VALUES(?,?)');
+    for (const entry of plan) {
+      if (latest && !(Number(latest.created_at) < entry.folderMillis)) continue;
+      for (const statement of entry.sql) db.prepare(statement).run();
+      record.run(entry.hash, entry.folderMillis);
+    }
   }).immediate();
 }

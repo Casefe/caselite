@@ -12,8 +12,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { openToolchainProbe } from '../../packages/local-db/src/connection';
-import { bridgeMigrationHistories } from '../../packages/local-db/src/migration-bridge';
+import {
+  bridgeMigrationHistories,
+  migrateDatabase,
+} from '../../packages/local-db/src/migration-bridge';
 import { integrationMigrations } from '../../packages/local-db/src/migration-manifest';
 import { openTaskStore } from '../../packages/local-db/src/task-store';
 import { createTaskApplication, createReminderApplication } from '../../packages/application/src';
@@ -362,6 +366,7 @@ it.each([
     values: f.db.prepare('SELECT * FROM toolchain_probe').all(),
   };
   expect(() => bridgeMigrationHistories(f.db, migrations)).toThrow('无法识别');
+  expect(() => migrateDatabase(f.db, migrations)).toThrow('无法识别');
   expect({
     history: history(f.db),
     schema: schema(f.db),
@@ -387,7 +392,15 @@ it('rolls every bridge DDL and original migration record back on a mid-bridge fa
   expect(history(recovered)).toHaveLength(integrationMigrations.length);
   recovered.close();
 });
-type WorkerMessage = { phase: string; ok?: boolean; error?: string };
+type WorkerMessage = {
+  phase: string;
+  ok?: boolean;
+  error?: string;
+  pid?: number;
+  targetOpened?: boolean;
+  runtime?: Record<string, string>;
+  inTransaction?: boolean;
+};
 function child(file: string, mode = 'open', release = '') {
   const process = fork(
     resolve('tests/fixtures/migration-histories/worker.cjs'),
@@ -397,6 +410,9 @@ function child(file: string, mode = 'open', release = '') {
     },
   );
   const messages: WorkerMessage[] = [];
+  const closed = new Promise<{ code: number | null; signal: string | null }>((resolve) => {
+    process.once('close', (code, signal) => resolve({ code, signal }));
+  });
   const next = (phase: string) =>
     new Promise<WorkerMessage>((resolve, reject) => {
       const prior = messages.find((m) => m.phase === phase);
@@ -412,7 +428,7 @@ function child(file: string, mode = 'open', release = '') {
       process.once('error', reject);
     });
   process.on('message', (m) => messages.push(m as WorkerMessage));
-  return { process, next };
+  return { process, next, closed };
 }
 it('preserves the A library after process death inside the uncommitted bridge', async () => {
   const f = fixture('A');
@@ -488,5 +504,294 @@ it('reports the stale Drizzle read/BEGIN competitor as a failure and safely reop
   } finally {
     a.process.kill('SIGKILL');
     b.process.kill('SIGKILL');
+  }
+});
+
+it('reads the latest migration only inside the complete write transaction', () => {
+  const f = fixture('A', 21);
+  const prepare = f.db.prepare.bind(f.db);
+  let reads = 0;
+  vi.spyOn(f.db, 'prepare').mockImplementation((sql) => {
+    if (sql.includes('ORDER BY created_at DESC LIMIT 1')) {
+      expect(f.db.inTransaction).toBe(true);
+      reads++;
+    }
+    return prepare(sql);
+  });
+  migrateDatabase(f.db, migrations);
+  expect(reads).toBe(1);
+  expect(history(f.db)).toHaveLength(integrationMigrations.length);
+  f.db.close();
+});
+
+it('refuses an already active transaction rather than mistaking a savepoint for a write lock', () => {
+  const f = fixture('A', 21);
+  const before = { history: history(f.db), schema: schema(f.db) };
+  f.db.transaction(() => {
+    expect(() => migrateDatabase(f.db, migrations)).toThrow('顶层事务');
+  })();
+  expect({ history: history(f.db), schema: schema(f.db) }).toEqual(before);
+  f.db.close();
+});
+
+it.each(['sql', 'when', 'breakpoints', 'length'])(
+  'rejects a %s plan changed between public parsing and frozen-directory validation',
+  (kind) => {
+    const f = fixture('A', 21);
+    const changing = join(f.root, 'changing-plan');
+    cpSync(migrations, changing, { recursive: true });
+    const target = join(
+      changing,
+      kind === 'sql' ? '0017_task_subscription.sql' : 'meta/_journal.json',
+    );
+    const original = readFileSync(target, 'utf8');
+    if (kind === 'sql') writeFileSync(target, original + '\n-- Synthetic alternate plan bytes\n');
+    else {
+      const journal = JSON.parse(original);
+      if (kind === 'length') journal.entries.pop();
+      if (kind === 'when') journal.entries[17].when++;
+      if (kind === 'breakpoints') journal.entries[17].breakpoints = false;
+      writeFileSync(target, JSON.stringify(journal));
+    }
+    const transaction = f.db.transaction.bind(f.db);
+    vi.spyOn(f.db, 'transaction').mockImplementationOnce((callback) => {
+      // 模拟文件在两次读取之间换版，仅操作测试自有副本；桥接看到原版但计划来自另一版。
+      writeFileSync(target, original);
+      return transaction(callback);
+    });
+    const before = { history: history(f.db), schema: schema(f.db) };
+    expect(() => migrateDatabase(f.db, changing)).toThrow('无法识别');
+    expect(f.db.inTransaction).toBe(false);
+    expect({ history: history(f.db), schema: schema(f.db) }).toEqual(before);
+    f.db.close();
+  },
+);
+
+it('rejects a view masquerading as the migration ledger without creating application tables', () => {
+  const db = new Database(':memory:');
+  const last = integrationMigrations.at(-1)!;
+  db.exec(
+    `CREATE VIEW __drizzle_migrations AS SELECT '${last.hash}' AS hash, ${last.when} AS created_at`,
+  );
+  const before = schema(db);
+  expect(() => migrateDatabase(db, migrations)).toThrow('无法识别');
+  expect(schema(db)).toEqual(before);
+  db.close();
+});
+
+it('rolls back bridge additions as well as later DDL when the complete upgrade fails', () => {
+  const f = fixture('A', 21);
+  const before = { history: history(f.db), schema: schema(f.db) };
+  const prepare = f.db.prepare.bind(f.db);
+  vi.spyOn(f.db, 'prepare').mockImplementation((sql) => {
+    const statement = prepare(sql);
+    if (sql.includes('ADD COLUMN attention_timezone')) {
+      const run = statement.run.bind(statement);
+      vi.spyOn(statement, 'run').mockImplementation((...args: unknown[]) => {
+        run(...args);
+        throw Error('synthetic later migration failure');
+      });
+    }
+    return statement;
+  });
+  expect(() => migrateDatabase(f.db, migrations)).toThrow('synthetic later migration failure');
+  expect(f.db.inTransaction).toBe(false);
+  expect({ history: history(f.db), schema: schema(f.db) }).toEqual(before);
+  vi.restoreAllMocks();
+  migrateDatabase(f.db, migrations);
+  expect(history(f.db)).toHaveLength(integrationMigrations.length);
+  f.db.close();
+});
+
+it.each(['ledger', 'commit'])(
+  'rolls back the full upgrade when the final %s operation fails',
+  (failure) => {
+    const f = fixture('A', 21);
+    f.db.pragma('foreign_keys = ON');
+    const before = { history: history(f.db), schema: schema(f.db) };
+    const prepare = f.db.prepare.bind(f.db);
+    vi.spyOn(f.db, 'prepare').mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (sql === 'INSERT INTO __drizzle_migrations(hash,created_at) VALUES(?,?)') {
+        const run = statement.run.bind(statement);
+        vi.spyOn(statement, 'run').mockImplementation((...args: unknown[]) => {
+          const result = run(...args);
+          if (args[1] === integrationMigrations.at(-1)!.when) {
+            if (failure === 'ledger') throw Error('synthetic final ledger failure');
+            // 延迟外键在真实 COMMIT 才失败，证明异常不只覆盖回调内部的 SQL。
+            f.db.exec(`CREATE TABLE synthetic_commit_failure (
+              task_id TEXT REFERENCES task_items(id) DEFERRABLE INITIALLY DEFERRED
+            ); INSERT INTO synthetic_commit_failure VALUES('missing-synthetic-task')`);
+          }
+          return result;
+        });
+      }
+      return statement;
+    });
+    expect(() => migrateDatabase(f.db, migrations)).toThrow(
+      failure === 'ledger' ? 'synthetic final ledger failure' : 'FOREIGN KEY constraint failed',
+    );
+    expect(f.db.inTransaction).toBe(false);
+    expect({ history: history(f.db), schema: schema(f.db) }).toEqual(before);
+    f.db.close();
+  },
+);
+
+it('reports a bounded busy lock without retrying or changing the old library', () => {
+  const f = fixture('A', 21);
+  const before = { history: history(f.db), schema: schema(f.db) };
+  const competitor = new Database(f.file, { timeout: 20 });
+  f.db.exec('BEGIN IMMEDIATE');
+  const transaction = vi.spyOn(competitor, 'transaction');
+  try {
+    expect(() => migrateDatabase(competitor, migrations)).toThrow(
+      expect.objectContaining({ code: 'SQLITE_BUSY' }),
+    );
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(competitor.inTransaction).toBe(false);
+  } finally {
+    f.db.exec('ROLLBACK');
+    competitor.close();
+  }
+  expect({ history: history(f.db), schema: schema(f.db) }).toEqual(before);
+  f.db.close();
+});
+
+it.each(['fresh', 'current'])(
+  'successfully opens a %s library through two independent production connections',
+  async (state) => {
+    const root = mkdtempSync(join(tmpdir(), 'caselite-production-concurrency-'));
+    roots.push(root);
+    const file = join(root, 'synthetic.sqlite');
+    if (state === 'current') openToolchainProbe(file, migrations).sqlite.close();
+    const workers = [child(file), child(file)];
+    try {
+      await Promise.all(workers.map((worker) => worker.next('ready')));
+      for (const worker of workers) worker.process.send('go');
+      for (const result of await Promise.all(workers.map((worker) => worker.next('done'))))
+        expect(result).toMatchObject({ ok: true });
+      expect(await Promise.all(workers.map((worker) => worker.closed))).toEqual([
+        { code: 0, signal: null },
+        { code: 0, signal: null },
+      ]);
+      const db = openToolchainProbe(file, migrations).sqlite;
+      expect(history(db)).toHaveLength(integrationMigrations.length);
+      expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
+      expect(db.pragma('foreign_key_check')).toEqual([]);
+      db.close();
+    } finally {
+      for (const worker of workers) worker.process.kill('SIGKILL');
+    }
+  },
+);
+
+it.each(['A', 'B'] as const)(
+  'serializes complete independent upgrades of %s while preserving committed Yjs and receipts',
+  async (branch) => {
+    const f = fixture(branch);
+    const store = openTaskStore(f.file, f.folder);
+    const app = createTaskApplication(store);
+    const identity = () => ({
+      protocol_version: 1 as const,
+      request_id: randomUUID(),
+      idempotency_key: randomUUID(),
+    });
+    const created = app.execute({
+      ...identity(),
+      operation: 'create',
+      title: '合成并发正文保全',
+      objective: '',
+    });
+    if (!created.ok) throw Error('Synthetic create failed');
+    const task = created.tasks[0];
+    const doc = new Y.Doc(),
+      block = new Y.XmlElement('paragraph'),
+      text = new Y.XmlText();
+    text.insert(0, '非空旧正文与原键回执保全🙂');
+    block.insert(0, [text]);
+    doc.getXmlFragment('default').push([block]);
+    const saved = app.execute({
+      ...identity(),
+      operation: 'save',
+      task_id: task.id,
+      document_id: task.document_id,
+      body_id: task.body_id,
+      expected_revision: 0,
+      editor_schema: 1,
+      state: Array.from(Y.encodeStateAsUpdate(doc)),
+    });
+    expect(saved.ok).toBe(true);
+    doc.destroy();
+    const protectedRows = () =>
+      ['body_revisions', 'task_receipts', 'documents'].map((table) =>
+        f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+      );
+    const before = protectedRows();
+    expect((before[0] as unknown[]).length).toBe(1);
+    store.close();
+    f.db.close();
+    const release = join(f.root, 'release-atomic');
+    const a = child(f.file, 'atomic-pause', release),
+      b = child(f.file, 'atomic');
+    try {
+      const ready = await Promise.all([a.next('ready'), b.next('ready')]);
+      expect(new Set(ready.map((r) => r.pid)).size).toBe(2);
+      for (const r of ready) {
+        expect(r.targetOpened).toBe(false);
+        expect(Object.keys(r.runtime ?? {})).length.greaterThanOrEqual(6);
+        for (const [path, hash] of Object.entries(r.runtime ?? {}))
+          expect(createHash('sha256').update(readFileSync(path)).digest('hex')).toBe(hash);
+      }
+      a.process.send('go');
+      expect(await a.next('atomic-read')).toMatchObject({ inTransaction: true });
+      b.process.send('go');
+      await b.next('opening');
+      let secondFinished = false;
+      const second = b.next('done').then((result) => {
+        secondFinished = true;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(secondFinished).toBe(false);
+      writeFileSync(release, 'release');
+      expect(await a.next('done')).toMatchObject({ ok: true });
+      expect(await second).toMatchObject({ ok: true });
+      expect(await a.closed).toEqual({ code: 0, signal: null });
+      expect(await b.closed).toEqual({ code: 0, signal: null });
+      const upgraded = openToolchainProbe(f.file, migrations).sqlite;
+      const after = ['body_revisions', 'task_receipts', 'documents'].map((table) =>
+        upgraded.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+      );
+      expect(after).toEqual(before);
+      expect(history(upgraded)).toHaveLength(integrationMigrations.length);
+      expect(upgraded.pragma('integrity_check', { simple: true })).toBe('ok');
+      expect(upgraded.pragma('foreign_key_check')).toEqual([]);
+      upgraded.close();
+    } finally {
+      a.process.kill('SIGKILL');
+      b.process.kill('SIGKILL');
+    }
+  },
+);
+
+it('preserves the pre-upgrade library after process death in later DDL of the complete transaction', async () => {
+  const f = fixture('A', 21);
+  const before = { history: history(f.db), schema: schema(f.db) };
+  f.db.close();
+  const c = child(f.file, 'atomic-crash');
+  try {
+    await c.next('ready');
+    c.process.send('go');
+    await c.next('uncommitted-later-ddl');
+    c.process.kill('SIGKILL');
+    expect(await c.closed).toEqual({ code: null, signal: 'SIGKILL' });
+    const old = openToolchainProbe(f.file, f.folder).sqlite;
+    expect({ history: history(old), schema: schema(old) }).toEqual(before);
+    old.close();
+    const recovered = openToolchainProbe(f.file, migrations).sqlite;
+    expect(history(recovered)).toHaveLength(integrationMigrations.length);
+    recovered.close();
+  } finally {
+    c.process.kill('SIGKILL');
   }
 });
