@@ -486,11 +486,17 @@ export async function runProjectDemo(
     await wait(
       `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(row)}`,
     );
-    const taskAi = await evaluate(
-      "document.querySelector('.inspector-ai-region').getBoundingClientRect().toJSON()",
-    );
-    if (Math.abs(taskAi.width - 300) > 1 || Math.abs(taskAi.height - 164) > 1)
-      throw new Error('Task and dashboard compact AI geometry differs');
+    await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+    const taskAi = await evaluate(`(() => {
+      const sidebar=document.querySelector('.task-inspector');
+      const host=sidebar.getBoundingClientRect();
+      const ai=sidebar.querySelector('.inspector-ai-region').getBoundingClientRect();
+      const declared=parseFloat(getComputedStyle(sidebar).getPropertyValue('--workspace-inspector-width'));
+      // 任务消费者已采用360栏宽；仍严格核对宿主、共享AI及164紧凑高度，不沿用旧300常量。
+      if(declared!==360 || Math.abs(host.width-declared)>1 || Math.abs(ai.width-host.width)>1 || Math.abs(ai.height-164)>1)
+        throw new Error('Task compact AI differs from its declared sidebar: '+JSON.stringify({declared,host:host.toJSON(),ai:ai.toJSON()}));
+      return ai.toJSON();
+    })()`);
     await captureRenderer('dashboard-important-task.png');
     await evaluate("document.querySelector('[data-nav=projects]').click()");
     await wait("document.querySelector('[aria-label=搜索项目]')");

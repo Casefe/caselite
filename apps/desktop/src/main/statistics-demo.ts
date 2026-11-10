@@ -237,7 +237,7 @@ export async function checkStatisticsCards(
       measurements.push(result);
     }
     for (const [width, height] of [
-      [1440, 900],
+      [1440, 800],
       [1100, 600],
       [640, 500],
     ]) {
