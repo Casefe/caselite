@@ -137,10 +137,22 @@ h3 {
   gap: 2px;
 }
 .sidebar-nav-group + .sidebar-nav-group {
-  margin-top: 7px;
+  position: relative;
+  margin-top: 8px;
+  padding-top: 12px;
 }
-.sidebar-nav-group .sidebar-caption {
-  margin: 2px 0;
+.sidebar-nav-group + .sidebar-nav-group::before {
+  content: '';
+  position: absolute;
+  inset: 0 10px auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line-strong) 12%,
+    var(--line-strong) 88%,
+    transparent
+  );
 }
 .primary-navigation {
   flex-shrink: 0;
