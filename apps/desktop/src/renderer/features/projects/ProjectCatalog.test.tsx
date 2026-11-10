@@ -1,3 +1,7 @@
+import {
+  LocalPreferencesProvider,
+  initialLocalPreferences,
+} from '../../shared/data/LocalPreferences';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, act, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -72,8 +76,16 @@ const response = (
   receipt: null,
 });
 function renderProject(ui: ReactElement) {
+  window.caselite = {
+    ...window.caselite,
+    preferences:
+      window.caselite.preferences ??
+      vi.fn(async () => ({ ok: true, preferences: initialLocalPreferences, receipt: null })),
+  };
   return render(
-    <QueryClientProvider client={createWorkbenchQueryClient()}>{ui}</QueryClientProvider>,
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <LocalPreferencesProvider>{ui}</LocalPreferencesProvider>
+    </QueryClientProvider>,
   );
 }
 function createButton() {
@@ -947,14 +959,18 @@ it('keeps real totals independent of filters and resets paging on search', async
     })),
   } as unknown as Window['caselite'];
   show();
-  const metrics = screen.getByRole('region', { name: '项目统计' });
+  const metrics = await screen.findByRole('region', { name: '项目统计' });
   expect(
-    [...metrics.querySelectorAll('dd:not(.project-metric-hint)')].map((node) => node.textContent),
+    [...metrics.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
+      (node) => node.textContent,
+    ),
   ).toEqual(['—', '—', '—', '—']);
   await act(async () => resolve(response(projects)));
   await screen.findByRole('button', { name: '项目00', exact: true });
   const totals = () =>
-    [...metrics.querySelectorAll('dd:not(.project-metric-hint)')].map((node) => node.textContent);
+    [...metrics.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
+      (node) => node.textContent,
+    );
   expect(totals()).toEqual(['11', '6', '3', '2']);
   expect(document.querySelectorAll('[data-project-id]')).toHaveLength(8);
   fireEvent.click(screen.getByRole('button', { name: '项目下一页' }));
@@ -1035,4 +1051,49 @@ it('opens authoritative important task IDs and offers guarded quick actions only
     ),
   ).toBe(true);
   expect(catalog.mock.calls).toHaveLength(1);
+});
+
+it('keeps workspace statistics when the restored source project is unavailable without activating its AI', async () => {
+  const missing = crypto.randomUUID();
+  window.caselite = {
+    catalog: vi.fn(async (request: CatalogRequest) =>
+      request.operation === 'read_project' ? response([]) : response([project()]),
+    ),
+    task: vi.fn(async () => ({
+      ok: true,
+      tasks: [],
+      calendar_types: [],
+      page: { total: 0, has_more: false },
+    })),
+  } as unknown as Window['caselite'];
+  renderProject(
+    <ProjectCatalog
+      tasks={[]}
+      onOpen={vi.fn()}
+      onDirty={vi.fn()}
+      onChanged={vi.fn()}
+      initialView={{
+        selected: missing,
+        projectId: missing,
+        section: 'overview',
+        query: '',
+        statusFilter: 'all',
+        order: 'updated',
+        columns: { status: true, tasks: true, updated: true },
+        scrollTop: 0,
+        workspaceScrollTop: 0,
+        returnTaskId: '',
+      }}
+    />,
+  );
+  await screen.findByText('来源项目已失效，未能读取该项目。');
+  const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
+  const card = within(sidebar).getByRole('region', { name: '项目统计' });
+  expect(
+    [...card.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(['1', '0', '1', '0']);
+  expect(within(sidebar).queryByRole('region', { name: 'AI 对话' })).toBeNull();
+  expect(within(sidebar).getByText('选择项目查看实际属性。')).toBeTruthy();
 });

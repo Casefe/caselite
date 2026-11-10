@@ -1,3 +1,4 @@
+import { checkStatisticsCards } from './statistics-demo';
 import { app, type BrowserWindow, session } from 'electron';
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join, sep } from 'node:path';
@@ -434,7 +435,7 @@ export async function runProjectDemo(
         const ai=split.querySelector('.inspector-ai-region').getBoundingClientRect();
         const r=split.getBoundingClientRect();
         const input=split.querySelector('[data-testid=assistant-input]');
-        const totals=[...document.querySelectorAll('.project-metric dd:not(.project-metric-hint)')].map(e=>e.textContent).join(',');
+        const totals=[...document.querySelectorAll('[data-statistics-module=projects] [data-statistic-total], [data-statistics-module=projects] .statistics-card-value')].map(e=>e.textContent).join(',');
         if(totals!=='23,12,3,8') throw new Error('Dashboard totals do not match committed data: '+totals);
         if(split.dataset.aiExpanded!=='false' || Math.abs(ai.width-r.width)>1 || Math.abs(ai.height-164)>1 || !input || input.disabled || document.querySelector('.project-ai-actions'))
           throw new Error('Dashboard default AI does not use shared compact design: '+JSON.stringify({ai:ai.toJSON(),r:r.toJSON()}));
@@ -3552,6 +3553,8 @@ export async function runProjectDemo(
       await button('返回项目列表');
       await wait("document.querySelector('.project-title-link')");
       if (process.env.CASELITE_PROJECT_DASHBOARD === '1') await checkDashboard();
+      if (process.env.CASELITE_STATISTICS_CARDS === '1')
+        await checkStatisticsCards(window, root, 'write');
       const originalBounds = window.getBounds();
       const layouts = [];
       for (const width of [640, 1440]) {
@@ -3587,6 +3590,8 @@ export async function runProjectDemo(
       await button('项目创建与重启验收');
       await wait("document.querySelector('[aria-label=编辑项目名称]')");
     } else {
+      if (process.env.CASELITE_STATISTICS_CARDS === '1' && phase === 'project-read')
+        await checkStatisticsCards(window, root, 'read');
       const expected = JSON.parse(readFileSync(join(root, 'project-expected.json'), 'utf8'));
       const restored = phase === 'project-restore';
       const title = restored ? '验收项目（已编辑）' : '项目创建与重启验收';

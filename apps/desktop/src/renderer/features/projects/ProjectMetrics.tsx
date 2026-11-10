@@ -1,5 +1,5 @@
 import type { Matter } from '../../../preload/caselite-api';
-import { Icon } from '../../shared/ui/Icon';
+import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
 
 export default function ProjectMetrics({
   projects,
@@ -31,19 +31,20 @@ export default function ProjectMetrics({
     },
   ];
   return (
-    <section className="project-dashboard-metrics" aria-label="项目统计">
-      {metrics.map((metric, index) => (
-        <div key={metric.label} className={`project-metric project-metric--${index}`}>
-          <span className="project-metric-icon">
-            <Icon name={metric.icon} size={22} />
-          </span>
-          <dl>
-            <dt>{metric.label}</dt>
-            <dd>{unavailable ? '—' : metric.count}</dd>
-            <dd className="project-metric-hint">{unavailable ? '数据尚未确认' : metric.hint}</dd>
-          </dl>
-        </div>
-      ))}
-    </section>
+    <StatisticsCard
+      module="projects"
+      title="项目统计"
+      totalLabel="项目总数"
+      total={unavailable ? '—' : String(current.length)}
+      rows={metrics.slice(1).map((metric, index) => ({
+        label: metric.label,
+        value: unavailable ? '—' : String(metric.count),
+        progress: unavailable
+          ? null
+          : statisticsProgress(BigInt(metric.count), BigInt(current.length)),
+        tone: (['blue', 'amber', 'green'] as const)[index],
+      }))}
+      note={unavailable ? '数据尚未确认' : undefined}
+    />
   );
 }

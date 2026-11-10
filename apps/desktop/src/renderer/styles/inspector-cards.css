@@ -1,0 +1,131 @@
+.inspector-card-stack {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.inspector-card-properties,
+.inspector-card-slot {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.inspector-card-space {
+  flex: 1 0 0;
+}
+.inspector-card-slot {
+  padding: 10px;
+}
+.statistics-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--ink);
+}
+.statistics-card > h2 {
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.statistics-card-total {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 15px;
+}
+.statistics-card-total strong {
+  font-size: 28px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.statistics-card-total > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.statistics-card .statistics-card-rows {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.statistics-card .statistics-card-rows > div {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.statistics-card-rows dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.statistics-card .statistics-card-rows dd {
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+.statistics-card-track {
+  display: block;
+  height: 8px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--theme-subtle);
+}
+.statistics-card-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.statistics-card-bar--blue {
+  background: #3486e8;
+}
+.statistics-card-bar--amber {
+  background: #e5ad28;
+}
+.statistics-card-bar--green {
+  background: #18a57c;
+}
+.statistics-card-value {
+  max-width: 135px;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.statistics-card .statistics-card-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.statistics-settings {
+  margin: 18px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.statistics-settings > p {
+  color: var(--muted);
+  font-size: 12px;
+}
+.statistics-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 0;
+}
+.statistics-setting-row label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+
+.inspector-cards-fallback {
+  height: 100%;
+}
