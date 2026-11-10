@@ -1,5 +1,6 @@
 /* 工作台主题仅控制视觉，偏好由桌面受控接口保存。 */
 :root {
+  color-scheme: light;
   --font:
     system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
     'Noto Sans CJK SC', sans-serif;
@@ -44,6 +45,21 @@ html[data-theme='dark'] {
   --theme-secondary: #b1b1ba;
   --theme-accent: #a0a8ff;
   --theme-selected: #32323f;
+}
+html {
+  background: var(--canvas);
+}
+/* 只在整体换肤期间关闭颜色过渡，避免按钮颜色落后于页面；普通悬停仍保留。 */
+html[data-theme-changing] *,
+html[data-theme-changing] *::before,
+html[data-theme-changing] *::after {
+  transition: none !important;
+}
+.theme-bootstrap {
+  min-height: 100vh;
+  padding: 32px;
+  background: var(--canvas);
+  color: var(--ink);
 }
 body {
   background: var(--canvas);

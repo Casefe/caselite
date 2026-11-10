@@ -1,10 +1,36 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  --legal-ink: #232326;
+  --legal-canvas: #f7f7f8;
+  --legal-panel: #fff;
+  --legal-line: #e8e8eb;
+  --legal-line-strong: #dddde1;
+  --legal-muted: #66666f;
+  --legal-accent: #5e6ad2;
+  --legal-selected: #ededf0;
+  --legal-error: #a53636;
+  --legal-accept: #e3e5f6;
+  --legal-accept-ink: #343b80;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #e7ebed;
-  background: #161b20;
+  color: var(--legal-ink);
+  background: var(--legal-canvas);
 }
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --legal-ink: #eeeeef;
+  --legal-canvas: #1c1c1f;
+  --legal-panel: #222225;
+  --legal-line: #303036;
+  --legal-line-strong: #3a3a42;
+  --legal-muted: #b1b1ba;
+  --legal-accent: #a0a8ff;
+  --legal-selected: #32323f;
+  --legal-error: #ffb4a9;
+  --legal-accept: #b9dfcf;
+  --legal-accept-ink: #173d30;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -17,10 +43,10 @@ input {
 }
 button {
   cursor: pointer;
-  border: 1px solid #4d5964;
+  border: 1px solid var(--legal-line-strong);
   border-radius: 7px;
   padding: 10px 16px;
-  background: #28323c;
+  background: var(--legal-panel);
   color: inherit;
 }
 button:disabled {
@@ -30,7 +56,7 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 #legal-document:focus-visible {
-  outline: 3px solid #91c9ba;
+  outline: 3px solid var(--legal-accent);
   outline-offset: 2px;
 }
 .legal-shell {
@@ -42,12 +68,12 @@ input:focus-visible,
   padding: 24px 30px 18px;
 }
 .legal-brand {
-  color: #a8d7ca;
+  color: var(--legal-accent);
   font-weight: 650;
   letter-spacing: 0.4px;
 }
 .legal-brand span {
-  color: #a2afb8;
+  color: var(--legal-muted);
   font-size: 12px;
   margin-left: 10px;
   font-weight: 400;
@@ -58,7 +84,7 @@ h1 {
   margin: 14px 0 10px;
 }
 .legal-header p {
-  color: #b4bfc7;
+  color: var(--legal-muted);
   font-size: 13px;
   line-height: 1.8;
   margin: 0;
@@ -68,7 +94,7 @@ h1 {
   grid-template-columns: 214px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
-  border-top: 1px solid #37424b;
+  border-top: 1px solid var(--legal-line);
 }
 nav {
   padding: 18px 12px;
@@ -86,16 +112,16 @@ nav button {
   padding: 13px 10px;
 }
 nav button[aria-selected='true'] {
-  color: #b9e7d9;
-  background: #243b37;
-  border-color: #456c61;
+  color: var(--legal-accent);
+  background: var(--legal-selected);
+  border-color: var(--legal-line-strong);
 }
 nav button span {
   font-size: 11px;
   opacity: 0.75;
 }
 .legal-note {
-  color: #9aa8b3;
+  color: var(--legal-muted);
   font-size: 12px;
   line-height: 1.8;
   padding: 4px 10px;
@@ -104,8 +130,8 @@ nav button span {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #f9f8f4;
-  color: #272d31;
+  background: var(--legal-panel);
+  color: var(--legal-ink);
 }
 #legal-document {
   overflow: auto;
@@ -132,19 +158,19 @@ nav button span {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid #d5d8d5;
+  border-top: 1px solid var(--legal-line);
   padding: 11px 20px;
   font-size: 12px;
 }
 .legal-reading-footer button {
-  background: #ecf1ed;
-  color: #243c34;
-  border-color: #b6c8be;
+  background: var(--legal-selected);
+  color: var(--legal-ink);
+  border-color: var(--legal-line-strong);
   font-size: 12px;
 }
 .legal-actions {
   padding: 16px 26px 20px;
-  border-top: 1px solid #37424b;
+  border-top: 1px solid var(--legal-line);
 }
 .legal-confirm {
   display: flex;
@@ -154,7 +180,7 @@ nav button span {
   line-height: 1.7;
 }
 .legal-confirm input {
-  accent-color: #9dd5c1;
+  accent-color: var(--legal-accent);
   margin-top: 5px;
 }
 .legal-action-row {
@@ -166,20 +192,20 @@ nav button span {
 }
 .legal-action-row > span {
   font-size: 12px;
-  color: #9cabb5;
+  color: var(--legal-muted);
 }
 .legal-action-row > div {
   display: flex;
   gap: 10px;
 }
 #legal-accept {
-  background: #b9dfcf;
-  border-color: #b9dfcf;
-  color: #173d30;
+  background: var(--legal-accept);
+  border-color: var(--legal-accept);
+  color: var(--legal-accept-ink);
   font-weight: 600;
 }
 #legal-error {
-  color: #ffb4a9;
+  color: var(--legal-error);
   font-size: 13px;
 }
 @media (max-width: 760px) {
