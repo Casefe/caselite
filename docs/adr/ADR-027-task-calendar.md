@@ -25,3 +25,13 @@ UI复用TaskInspector、TaskProperties、TaskContentEditor、SidebarAgent（按T
 代码回退保留0020和已保存列/类型及读取能力；旧应用不得删除/反向迁移新库。升级真实验收库前由主控先保全一致性备份，使用隔离合成工作区完成真实Electron验证。rollback不删除Task、Yjs、原件、提醒或凭据。
 
 允许路径为Issue列明的contracts/application/local-db、main/preload、日历/Home/Inspector/Settings必要消费者、样式/测试/probe与本ADR；不改规则/CI/依赖。验证为quick/review/security/integration、唯一Forge打包、真实IPC/SQLite重开及640/1440，真实Provider调用0。高风险迁移/协议由主控独立审查，工程通过不等于律师接收。
+
+## 2026-11-10｜预测式三栏的只读增量
+
+本次沿用户已确认原型与主控正式交回范围，基线 `b900a7237abbd8c01ef675b6c24f97fad2bd5eed`。现行02/05/06及DEV-1824已实时回读；旧Issue中的checkout/base不作为本次写入目标。
+
+`calendar_query` 增加 `past` 与 `future` 两个严格枚举，只读原工作区Task：past按边界日之前的截止日排序查询，界面称“日期已过·待核对”，不认定法律逾期；future查询边界日之后任一截止、计划、时段或明确重要的自选关注日期。两者沿原关闭状态筛选、50条稳定分页、全范围总数及权限绑定，不从当前页估算数量，不写Task、日期、Activity或回执。无表、迁移、存储格式或写命令变化，旧view与旧请求不变；date-only沿原本地日期比较。
+
+月历与预测日期条合并取计数区间，跨月仍覆盖所有可见日期，同Task按日去重。中间保留时段与其他当日Task，历史截止Task从过去入口可达，无日期任务与完成/取消筛选、布局恢复仍可展开。左侧重要日期紧凑模式仅压缩呈现和条数，保留原跨日期范围及排序，未来和日期待确认事项不被默认隐藏，首页消费者不变。右侧直接使用原TaskInspector→InspectorLayout→SidebarAgent，保留原Task ID、保存回执及草稿守卫，不增加Runtime。
+
+验证采用受影响单元/合同、真实SQLite分页/隔离/不写数据检查、quick/security/review及本轮模型/权限独立回归；真实命令结果留本机证据。GUI前台时段尚未交回，真实Electron布局/属性/AI上下文操作不得预报通过；先冻结构建与候选，待统一验收。回退本次只读接口与UI补丁，不回退数据库或删除旧数据。

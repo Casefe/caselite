@@ -70,3 +70,28 @@ it('guards the existing typed Task IPC boundary for calendar values, rejects for
   }));
   expect(await unknown.task(command)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
 });
+
+it('validates forecast range views through the existing read-only typed calendar entry', async () => {
+  const invoke = vi.fn(async () => ({ ok: true, tasks: [], state: null, receipt: null }));
+  const api = createCaseLitePreloadApi(invoke);
+  for (const view of ['past', 'future'] as const) {
+    const request: TaskRequest = {
+      protocol_version: 1,
+      operation: 'calendar_query',
+      query: {
+        view,
+        date: '2026-11-10',
+        from: '2026-11-01',
+        to: '2026-11-30',
+        home: false,
+        include_closed: false,
+        include_overdue: false,
+        offset: 50,
+      },
+    };
+    expect(taskRequestSchema.safeParse(request).success).toBe(true);
+    expect(await api.task(request)).toMatchObject({ ok: true });
+    expect(invoke).toHaveBeenLastCalledWith('caselite:task:v1', request);
+    expect(taskRequestSchema.safeParse({ ...request, workspace: 'forged' }).success).toBe(false);
+  }
+});

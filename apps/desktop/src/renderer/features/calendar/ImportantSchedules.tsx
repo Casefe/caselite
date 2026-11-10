@@ -13,9 +13,11 @@ export function ImportantScheduleRow({
   task,
   types,
   onOpen,
+  blocked = false,
 }: {
   task: Task;
   types: CalendarType[];
+  blocked?: boolean;
   onOpen(id: string): void;
 }) {
   const type = types.find((t) => t.id === task.calendar?.type_id),
@@ -25,6 +27,7 @@ export function ImportantScheduleRow({
     <button
       className="important-schedule-row"
       data-important-task={task.id}
+      disabled={blocked}
       onClick={() => onOpen(task.id)}
     >
       <span>
@@ -59,11 +62,15 @@ export function ImportantScheduleRow({
 }
 export default function ImportantSchedules({
   home = false,
+  compact = false,
+  blocked = false,
   onOpen,
   onCalendar,
   title = '重要日程',
 }: {
   home?: boolean;
+  compact?: boolean;
+  blocked?: boolean;
   onOpen(id: string): void;
   onCalendar?(): void;
   title?: string;
@@ -101,16 +108,24 @@ export default function ImportantSchedules({
         className={`${home ? 'important-preview-home' : 'important-preview-calendar'} ${expanded ? 'is-expanded' : ''}`}
       >
         {visible.map((task) => (
-          <ImportantScheduleRow key={task.id} task={task} types={types} onOpen={onOpen} />
+          <ImportantScheduleRow
+            key={task.id}
+            task={task}
+            types={types}
+            onOpen={onOpen}
+            blocked={blocked}
+          />
         ))}
       </div>
       {read.data && !rows.length && <p>暂无重要日程</p>}
-      <p className="calendar-caption">
-        {read.data
-          ? `日期待确认 ${read.data.calendar_pending_count ?? 0} 项`
-          : '待确认数量尚未读取'}{' '}
-        · 展示不会创建通知
-      </p>
+      {(!compact || expanded) && (
+        <p className="calendar-caption">
+          {read.data
+            ? `日期待确认 ${read.data.calendar_pending_count ?? 0} 项`
+            : '待确认数量尚未读取'}{' '}
+          · 展示不会创建通知
+        </p>
+      )}
       <button disabled={!read.data} onClick={() => setExpanded(!expanded)}>
         {expanded ? '收起' : '查看全部'}
         {read.data ? ` ${read.data.page?.total ?? 0} 项` : ''}

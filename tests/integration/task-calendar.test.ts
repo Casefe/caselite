@@ -488,3 +488,75 @@ it('atomically rolls type configuration back on receipt failure and retains scop
     db.close();
   }
 });
+
+it('reads complete forecast past/future pages without changing task identity, dates or activity, including workspace isolation and closed items', () => {
+  const { app, file } = setup();
+  const past = good(
+    app.execute({
+      ...identity(),
+      operation: 'create',
+      title: '合成日期已过任务',
+      objective: '保留说明',
+      due_date: '2026-11-08',
+    }),
+  ).tasks[0];
+  good(
+    app.execute({
+      ...identity(),
+      operation: 'create',
+      title: '合成边界日任务',
+      objective: '',
+      due_date: '2026-11-09',
+    }),
+  );
+  const futureTasks = Array.from({ length: 61 }, (_, i) => {
+    const task = create(app, `合成预测远期 ${i}`);
+    return good(
+      app.execute(
+        command(task, {
+          planned_date: '2026-11-18',
+          schedule: { ...timed, date: '2026-11-19' },
+          important: true,
+          type_id: 'hearing',
+          attention_source: 'custom',
+          attention_date: '2026-11-20',
+        }),
+      ),
+    ).tasks[0];
+  });
+  const probe = openToolchainProbe(file, migrations);
+  closes.push(() => probe.sqlite.close());
+  const activity = () => probe.sqlite.prepare('SELECT count(*) AS n FROM task_activity').get();
+  const before = activity();
+  expect(good(app.execute(query('past'))).tasks.map((t) => t.id)).toEqual([past.id]);
+  const first = good(app.execute(query('future', { date: '2026-11-17' })));
+  const second = good(app.execute(query('future', { date: '2026-11-17', offset: 50 })));
+  expect(first.page).toEqual({ offset: 0, total: 61, has_more: true });
+  expect(second.tasks).toHaveLength(11);
+  expect(new Set([...first.tasks, ...second.tasks].map((t) => t.id)).size).toBe(61);
+  expect(
+    first.tasks.find((t) => t.id === futureTasks[0].id) ??
+      second.tasks.find((t) => t.id === futureTasks[0].id),
+  ).toEqual(futureTasks[0]);
+  expect(good(app.execute(query('future', { date: '2026-11-20' }))).page?.total).toBe(0);
+  expect(activity()).toEqual(before);
+  const isolated = openTaskStore(file, migrations, 'forecast-other');
+  closes.push(isolated.close);
+  expect(
+    good(createTaskApplication(isolated).execute(query('future', { date: '2026-11-17' }))).page
+      ?.total,
+  ).toBe(0);
+  good(
+    app.execute({
+      ...identity(),
+      operation: 'change_status',
+      task_id: futureTasks[0].id,
+      expected_version: futureTasks[0].version,
+      status: 'done',
+    }),
+  );
+  expect(good(app.execute(query('future', { date: '2026-11-17' }))).page?.total).toBe(60);
+  expect(
+    good(app.execute(query('future', { date: '2026-11-17', include_closed: true }))).page?.total,
+  ).toBe(61);
+});

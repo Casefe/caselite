@@ -71,6 +71,7 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
   await wait(
     `document.querySelector('[data-calendar-task="${seeded[0]}"]') && document.querySelector('.resize-separator[aria-disabled=false]')`,
   );
+  await evaluate("document.querySelector('.calendar-undated-tasks > summary')?.click()");
   await evaluate(`document.querySelector('[data-calendar-task="${seeded[0]}"]').click()`);
   await wait(
     "document.querySelector('.calendar-task-row[aria-pressed=true]') && document.querySelector('.calendar-selected-task')",
@@ -121,7 +122,7 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
     throw new Error('Resize keyboard focus is not visible');
   await capture('dark-calendar-focus.png');
   await evaluate(
-    "document.querySelector('.calendar-agenda h1').setAttribute('tabindex','-1');document.querySelector('.calendar-agenda h1').focus()",
+    "document.querySelector('.calendar-forecast-strip button[aria-pressed=true]').focus()",
   );
   await command('Emulation.setDeviceMetricsOverride', {
     width: 1180,
