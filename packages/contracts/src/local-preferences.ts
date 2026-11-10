@@ -28,6 +28,17 @@ export const writingSkillsSchema = z
   .array(writingSkillSchema)
   .max(20)
   .refine((skills) => new Set(skills.map((skill) => skill.id)).size === skills.length);
+const statisticsCardPreferenceSchema = z
+  .object({ enabled: z.boolean(), position: z.enum(['top', 'middle', 'bottom']) })
+  .strict();
+const statisticsCardsSchema = z
+  .object({
+    tasks: statisticsCardPreferenceSchema,
+    projects: statisticsCardPreferenceSchema,
+    finance: statisticsCardPreferenceSchema,
+    contacts: statisticsCardPreferenceSchema,
+  })
+  .strict();
 export const localPreferenceValuesSchema = z
   .object({
     name: z
@@ -61,6 +72,8 @@ export const localPreferenceValuesSchema = z
     writing_skills: writingSkillsSchema.optional(),
     // 省略时保留旧请求形状与已保存样式；缺省展示值不能注入旧幂等摘要。
     export_style: exportStyleSchema.optional(),
+    // 缺省由显示消费者解释；不改变旧请求摘要和历史回执。
+    statistics_cards: statisticsCardsSchema.optional(),
   })
   .strict();
 export const localPreferencesSchema = localPreferenceValuesSchema.extend({
