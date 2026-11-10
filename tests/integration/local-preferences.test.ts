@@ -413,3 +413,114 @@ it('upgrades the actual previous 19 migrations without changing existing rows', 
   expect(next.sqlite.prepare('SELECT * FROM toolchain_probe').all()).toEqual(before);
   expect(next.sqlite.pragma('integrity_check', { simple: true })).toBe('ok');
 });
+
+it('retains statistics configuration and unchanged legacy receipts through legacy writes, replay and reopen', () => {
+  const s = setup();
+  const legacy = set();
+  const { request_id, ...content } = legacy;
+  void request_id;
+  const ack = {
+    ok: true,
+    preferences: { ...legacy.values, version: 1 },
+    receipt: legacy.idempotency_key,
+  };
+  s.sqlite
+    .prepare('INSERT INTO local_preferences(workspace_id,value,version) VALUES(?,?,?)')
+    .run('synthetic-workspace', JSON.stringify(legacy.values), 1);
+  s.sqlite
+    .prepare(
+      'INSERT INTO local_preference_receipts(workspace_id,key,digest,result) VALUES(?,?,?,?)',
+    )
+    .run(
+      'synthetic-workspace',
+      legacy.idempotency_key,
+      createHash('sha256').update(JSON.stringify(content)).digest('hex'),
+      JSON.stringify(ack),
+    );
+  const request = set('统计卡片', 1);
+  request.values.statistics_cards = {
+    tasks: { enabled: false, position: 'bottom' },
+    projects: { enabled: true, position: 'middle' },
+    finance: { enabled: true, position: 'top' },
+    contacts: { enabled: false, position: 'top' },
+  };
+  const saved = s.app.execute(request);
+  expect(saved).toMatchObject({
+    ok: true,
+    preferences: { version: 2, statistics_cards: request.values.statistics_cards },
+  });
+  expect(s.app.execute({ ...legacy, request_id: randomUUID() })).toEqual(ack);
+  expect(
+    s.app.execute({
+      protocol_version: 1,
+      operation: 'status',
+      idempotency_key: legacy.idempotency_key,
+    }),
+  ).toEqual(ack);
+  expect(s.app.execute(set('旧客户端字段', 2))).toMatchObject({
+    ok: true,
+    preferences: { version: 3, statistics_cards: request.values.statistics_cards },
+  });
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  const store = createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace');
+  expect(store.execute(read)).toMatchObject({
+    ok: true,
+    preferences: { version: 3, statistics_cards: request.values.statistics_cards },
+  });
+  expect(store.execute(request)).toEqual(saved);
+  expect(store.execute(legacy)).toEqual(ack);
+  const changed = {
+    ...request,
+    values: {
+      ...request.values,
+      statistics_cards: {
+        ...request.values.statistics_cards,
+        tasks: { enabled: true, position: 'top' as const },
+      },
+    },
+  };
+  expect(store.execute(changed)).toMatchObject({ ok: false, code: 'CONFLICT' });
+});
+
+it('rejects malformed statistics settings and rolls back configuration and version when the receipt fails', () => {
+  const s = setup();
+  const request = set();
+  request.values.statistics_cards = {
+    tasks: { enabled: true, position: 'top' },
+    projects: { enabled: true, position: 'middle' },
+    finance: { enabled: false, position: 'bottom' },
+    contacts: { enabled: false, position: 'top' },
+  };
+  for (const statistics_cards of [
+    { tasks: request.values.statistics_cards.tasks },
+    { ...request.values.statistics_cards, tasks: { enabled: true, position: 'left' } },
+    {
+      ...request.values.statistics_cards,
+      finance: { enabled: false, position: 'bottom', path: '/synthetic' },
+    },
+  ])
+    expect(
+      s.app.execute({ ...request, values: { ...request.values, statistics_cards } }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  s.sqlite.exec(
+    "CREATE TRIGGER fail_statistics_receipt BEFORE INSERT ON local_preference_receipts BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
+  );
+  expect(s.app.execute(request)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  expect(s.app.execute(read)).toMatchObject({ ok: true, preferences: { version: 0 } });
+  expect(s.sqlite.prepare('SELECT count(*) AS n FROM local_preferences').get()).toEqual({ n: 0 });
+  expect(
+    s.app.execute({
+      protocol_version: 1,
+      operation: 'status',
+      idempotency_key: request.idempotency_key,
+    }),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  s.sqlite.exec('DROP TRIGGER fail_statistics_receipt');
+  const saved = s.app.execute(request);
+  expect(saved).toMatchObject({
+    ok: true,
+    preferences: { version: 1, statistics_cards: request.values.statistics_cards },
+  });
+  expect(s.app.execute(request)).toEqual(saved);
+});

@@ -27,3 +27,28 @@ it('sanitizes malformed or rejected IPC without exposing raw details', async () 
     expect(JSON.stringify(response)).not.toContain('private');
   }
 });
+
+it('sanitizes malformed statistics responses and preserves an unchanged legacy read response', async () => {
+  const preferences = {
+    name: '合成律师',
+    email: '',
+    avatar: 'initials' as const,
+    show_word_count: false,
+    version: 1,
+  };
+  let response: unknown = { ok: true, preferences, receipt: null };
+  const invoke = vi.fn(async () => response);
+  const api = createCaseLitePreloadApi(invoke);
+  const read = { protocol_version: 1 as const, operation: 'read' as const };
+  expect(await api.preferences(read)).toEqual(response);
+  response = {
+    ok: true,
+    preferences: {
+      ...preferences,
+      statistics_cards: { tasks: { enabled: true, position: 'left' } },
+    },
+    receipt: null,
+  };
+  expect(await api.preferences(read)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  expect(invoke).toHaveBeenCalledTimes(2);
+});

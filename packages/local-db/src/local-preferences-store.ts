@@ -76,6 +76,10 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
             ...(request.values.export_style === undefined && current.export_style !== undefined
               ? { export_style: current.export_style }
               : {}),
+            ...(request.values.statistics_cards === undefined &&
+            current.statistics_cards !== undefined
+              ? { statistics_cards: current.statistics_cards }
+              : {}),
           });
           const next = { ...values, version: current.version + 1 };
           // 资料、版本与原键回执同事务；未知结果只能核对原键，不能换键重复写入。
