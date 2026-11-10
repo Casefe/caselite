@@ -209,6 +209,7 @@ export function UnavailableAgentPanel({ reason }: { reason: string }) {
 
 export default function AgentPanel({
   scope,
+  freshHomeSession = false,
   variant = 'default',
   draft: controlled,
   onDraft,
@@ -219,6 +220,7 @@ export default function AgentPanel({
   renderRun,
 }: {
   scope: string;
+  freshHomeSession?: boolean;
   variant?: 'default' | 'compact';
   draft?: RichDraft;
   onDraft?(value: RichDraft): void;
@@ -265,6 +267,7 @@ export default function AgentPanel({
     preparing,
   } = useAgentController({
     scope,
+    freshHomeSession,
     draft: controlled,
     onDraft,
     onConversationChange,

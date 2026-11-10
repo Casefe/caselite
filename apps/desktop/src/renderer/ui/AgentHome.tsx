@@ -114,6 +114,75 @@ export default function AgentHome({
       data-layout="three-column"
       aria-label="Agent 首页"
     >
+      <div className="home-topbar">
+        <details className="home-history-menu">
+          <summary>
+            <Icon name="clock" size={16} />
+            历史对话
+          </summary>
+          <section className="home-history-popover" aria-label="历史对话">
+            <header>
+              <h2>
+                <button className="home-section-link" onClick={() => onNavigate('agent-history')}>
+                  查看全部对话
+                </button>
+              </h2>
+              <span>最近五轮 · 最多置顶三轮</span>
+            </header>
+            {historyError && (
+              <p role="alert" className="home-task-empty">
+                {historyError}
+              </p>
+            )}
+            {!history && !historyError && <p className="home-task-empty">正在读取历史对话…</p>}
+            {history && !history.length && (
+              <p className="home-task-empty">还没有 AI 对话，开始提问后会显示在这里。</p>
+            )}
+            {history?.map((run) => (
+              <article key={run.id} className="home-history-item">
+                <div className="home-history-row">
+                  <button
+                    className="home-history-open"
+                    aria-expanded={expandedRun === run.id}
+                    onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
+                  >
+                    <Icon name="clock" size={16} />
+                    <span>
+                      <strong>{run.prompt}</strong>
+                      <small>
+                        {run.scope === 'home'
+                          ? '首页对话'
+                          : `任务对话 · ${tasks.find((task) => task.id === run.scope)?.title ?? '任务'}`}
+                        {run.created_at
+                          ? ` · ${new Date(run.created_at).toLocaleString('zh-CN')}`
+                          : ''}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    className="home-history-pin"
+                    disabled={pinBusy}
+                    aria-label={`${run.pinned ? '取消置顶' : '置顶'}：${run.prompt}`}
+                    aria-pressed={Boolean(run.pinned)}
+                    onClick={() => void changePin(run)}
+                  >
+                    {run.pinned ? '已置顶' : '置顶'}
+                  </button>
+                </div>
+                {expandedRun === run.id && (
+                  <div className="home-history-detail">
+                    <p>{run.prompt}</p>
+                    <p>{run.output || run.message || '等待模型响应…'}</p>
+                    {run.scope !== 'home' && (
+                      <button onClick={() => onOpen(run.scope)}>打开所属任务</button>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+          </section>
+        </details>
+      </div>
       <div className="agent-main">
         {conversation && (
           <header className="home-conversation-toolbar">
@@ -132,6 +201,7 @@ export default function AgentHome({
           </div>
           <AgentPanel
             scope="home"
+            freshHomeSession
             draft={prompt}
             onDraft={onPrompt}
             editorRef={draft}
@@ -174,67 +244,6 @@ export default function AgentHome({
             </div>
           )}
         </div>
-        <section className="home-task-feed home-history" aria-label="历史对话">
-          <header>
-            <h2>
-              <button className="home-section-link" onClick={() => onNavigate('agent-history')}>
-                历史对话
-              </button>
-            </h2>
-            <span>最近五轮 · 最多置顶三轮</span>
-          </header>
-          {historyError && (
-            <p role="alert" className="home-task-empty">
-              {historyError}
-            </p>
-          )}
-          {!history && !historyError && <p className="home-task-empty">正在读取历史对话…</p>}
-          {history && !history.length && (
-            <p className="home-task-empty">还没有 AI 对话，开始提问后会显示在这里。</p>
-          )}
-          {history?.map((run) => (
-            <article key={run.id} className="home-history-item">
-              <div className="home-history-row">
-                <button
-                  className="home-history-open"
-                  aria-expanded={expandedRun === run.id}
-                  onClick={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
-                >
-                  <Icon name="clock" size={16} />
-                  <span>
-                    <strong>{run.prompt}</strong>
-                    <small>
-                      {run.scope === 'home'
-                        ? '首页对话'
-                        : `任务对话 · ${tasks.find((task) => task.id === run.scope)?.title ?? '任务'}`}
-                      {run.created_at
-                        ? ` · ${new Date(run.created_at).toLocaleString('zh-CN')}`
-                        : ''}
-                    </small>
-                  </span>
-                </button>
-                <button
-                  className="home-history-pin"
-                  disabled={pinBusy}
-                  aria-label={`${run.pinned ? '取消置顶' : '置顶'}：${run.prompt}`}
-                  aria-pressed={Boolean(run.pinned)}
-                  onClick={() => void changePin(run)}
-                >
-                  {run.pinned ? '已置顶' : '置顶'}
-                </button>
-              </div>
-              {expandedRun === run.id && (
-                <div className="home-history-detail">
-                  <p>{run.prompt}</p>
-                  <p>{run.output || run.message || '等待模型响应…'}</p>
-                  {run.scope !== 'home' && (
-                    <button onClick={() => onOpen(run.scope)}>打开所属任务</button>
-                  )}
-                </div>
-              )}
-            </article>
-          ))}
-        </section>
         <div className="agent-local">
           <i className="local-dot" />
           本地工作区 <span>无需登录即可开始</span>

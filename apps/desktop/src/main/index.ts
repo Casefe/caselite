@@ -1,4 +1,5 @@
 import { runTaskViewsDemo } from './task-views-demo';
+import { needsLegalConsent } from './startup-policy';
 import { runExportStyleDemo } from './export-style-demo';
 import { performanceApplication, seedPerformance, runPerformance } from './performance-demo';
 import { runFinanceDemo } from './finance-demo';
@@ -186,6 +187,7 @@ async function createWindow(
   if (pdfWorkerFault) entry.searchParams.set('caselite-pdf-worker-fault', pdfWorkerFault);
   await observe?.(window);
   await window.loadURL(entry.toString());
+  if (CASELITE_LOCAL_TEST_BUILD) window.setTitle('CaseLite · 本地测试版');
   let paintTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
@@ -849,21 +851,23 @@ app
       createAppearancePreferences(taskRoot),
     );
     windowAppearance = createWindowAppearance(appearanceApplication);
-    // 普通入口必须先确认协议；业务IPC、案件库、凭据和Agent都在确认后初始化。
-    const accepted = await showLegalConsent(
-      createLegalConsentApplication(
-        createLegalAcceptance(taskRoot),
-        loadLegalBundle(
-          app.isPackaged
-            ? join(process.resourcesPath, 'legal')
-            : resolve(app.getAppPath(), '../../legal'),
+    // 普通构建先确认协议；本地测试构建直接启动，不写入虚假的同意回执。
+    const accepted =
+      !needsLegalConsent(CASELITE_LOCAL_TEST_BUILD, taskDemoPhase) ||
+      (await showLegalConsent(
+        createLegalConsentApplication(
+          createLegalAcceptance(taskRoot),
+          loadLegalBundle(
+            app.isPackaged
+              ? join(process.resourcesPath, 'legal')
+              : resolve(app.getAppPath(), '../../legal'),
+          ),
         ),
-      ),
-      taskDemoRoot
-        ? (window) => observeLegalConsentDemo(window, taskDemoRoot!, taskDemoPhase!)
-        : undefined,
-      windowAppearance,
-    );
+        taskDemoRoot
+          ? (window) => observeLegalConsentDemo(window, taskDemoRoot!, taskDemoPhase!)
+          : undefined,
+        windowAppearance,
+      ));
     if (
       taskDemoRoot &&
       taskDemoPhase?.startsWith('legal-') &&
