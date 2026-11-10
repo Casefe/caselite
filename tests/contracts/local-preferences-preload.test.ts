@@ -52,3 +52,48 @@ it('sanitizes malformed statistics responses and preserves an unchanged legacy r
   expect(await api.preferences(read)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
   expect(invoke).toHaveBeenCalledTimes(2);
 });
+
+it('validates favorite locations without inventing a document favorite flag or changing old responses', async () => {
+  const folder = '020ce80d-93bc-45cd-bd2b-24592f64213f';
+  const task = '9501230c-9e53-4af7-b2b4-98b402807848';
+  const preferences = {
+    name: '合成律师',
+    email: '',
+    avatar: 'initials',
+    show_word_count: false,
+    version: 2,
+    favorite_navigation: {
+      folders: [{ id: folder, name: '诉讼案件' }],
+      references: [{ kind: 'task', id: task, folder_id: folder }],
+      document_folders: [],
+    },
+  };
+  let response: unknown = { ok: true, preferences, receipt: null };
+  const api = createCaseLitePreloadApi(async () => response);
+  const request = { protocol_version: 1 as const, operation: 'read' as const };
+  expect(await api.preferences(request)).toEqual(response);
+  for (const favorite_navigation of [
+    {
+      ...preferences.favorite_navigation,
+      references: [{ kind: 'document', id: task, folder_id: folder }],
+    },
+    {
+      ...preferences.favorite_navigation,
+      references: [{ kind: 'task', id: task, folder_id: 'c05affba-3d70-4e4f-8bb4-5ce1a9321b01' }],
+    },
+    {
+      ...preferences.favorite_navigation,
+      references: [
+        preferences.favorite_navigation.references[0],
+        preferences.favorite_navigation.references[0],
+      ],
+    },
+    {
+      ...preferences.favorite_navigation,
+      document_folders: [{ id: task, folder_id: folder, favorite: true }],
+    },
+  ]) {
+    response = { ok: true, preferences: { ...preferences, favorite_navigation }, receipt: null };
+    expect(await api.preferences(request)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  }
+});

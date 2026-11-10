@@ -45,6 +45,110 @@ function set(
   };
 }
 const read = { protocol_version: 1, operation: 'read' } as const;
+it('persists favorite references and folder moves without changing legacy receipts or another workspace', () => {
+  const s = setup(),
+    first = set();
+  const folder = randomUUID(),
+    task = randomUUID(),
+    project = randomUUID(),
+    document = randomUUID();
+  first.values.favorite_navigation = {
+    folders: [{ id: folder, name: '诉讼案件' }],
+    references: [
+      { kind: 'task', id: task, folder_id: null },
+      { kind: 'project', id: project, folder_id: folder },
+    ],
+    document_folders: [{ id: document, folder_id: folder }],
+  };
+  const ack = s.app.execute(first);
+  expect(ack).toMatchObject({
+    ok: true,
+    preferences: { favorite_navigation: first.values.favorite_navigation },
+  });
+  expect(s.app.execute(set('旧版资料更新', 1))).toMatchObject({
+    ok: true,
+    preferences: { version: 2, favorite_navigation: first.values.favorite_navigation },
+  });
+  expect(s.app.execute(first)).toEqual(ack);
+  const move = set('旧版资料更新', 2);
+  move.values.favorite_navigation = {
+    ...first.values.favorite_navigation,
+    references: [{ kind: 'task', id: task, folder_id: folder }],
+  };
+  const moved = s.app.execute(move);
+  expect(moved).toMatchObject({ ok: true });
+  expect(
+    s.app.execute({
+      ...move,
+      values: { ...move.values, favorite_navigation: first.values.favorite_navigation },
+    }),
+  ).toMatchObject({ ok: false, code: 'CONFLICT' });
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  expect(
+    createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace').execute(read),
+  ).toMatchObject({
+    ok: true,
+    preferences: { version: 3, favorite_navigation: move.values.favorite_navigation },
+  });
+  expect(createLocalPreferencesStore(reopened.sqlite, 'another-workspace').execute(read)).toEqual({
+    ok: true,
+    preferences: defaultLocalPreferences,
+    receipt: null,
+  });
+  for (const value of [
+    {
+      ...move.values.favorite_navigation,
+      references: [{ kind: 'task', id: task, folder_id: randomUUID() }],
+    },
+    {
+      ...move.values.favorite_navigation,
+      references: [
+        { kind: 'task', id: task, folder_id: null },
+        { kind: 'task', id: task, folder_id: null },
+      ],
+    },
+    { ...move.values.favorite_navigation, folders: [{ id: folder, name: '客户\0数据' }] },
+  ])
+    expect(
+      s.app.execute({
+        ...set('非法引用', 3),
+        values: { ...move.values, favorite_navigation: value },
+      }),
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  expect(s.app.execute(read)).toMatchObject({ ok: true, preferences: { version: 3 } });
+});
+
+it('rolls back favorite preferences and their receipt together when the receipt write fails', () => {
+  const s = setup(),
+    request = set();
+  request.values.favorite_navigation = {
+    folders: [{ id: randomUUID(), name: '失败演练' }],
+    references: [],
+    document_folders: [],
+  };
+  s.sqlite.exec(
+    "CREATE TRIGGER fail_favorite_receipt BEFORE INSERT ON local_preference_receipts BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END",
+  );
+  expect(s.app.execute(request)).toMatchObject({ ok: false, code: 'RESULT_UNKNOWN' });
+  expect(s.app.execute(read)).toEqual({
+    ok: true,
+    preferences: defaultLocalPreferences,
+    receipt: null,
+  });
+  expect(
+    s.app.execute({
+      protocol_version: 1,
+      operation: 'status',
+      idempotency_key: request.idempotency_key,
+    }),
+  ).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  s.sqlite.exec('DROP TRIGGER fail_favorite_receipt');
+  expect(s.app.execute(request)).toMatchObject({
+    ok: true,
+    preferences: { favorite_navigation: request.values.favorite_navigation },
+  });
+});
 it('keeps the saved export style through legacy and calendar writes, replay and SQLite reopen', () => {
   const s = setup();
   const first = set();
@@ -523,4 +627,71 @@ it('rejects malformed statistics settings and rolls back configuration and versi
     preferences: { version: 1, statistics_cards: request.values.statistics_cards },
   });
   expect(s.app.execute(request)).toEqual(saved);
+});
+
+it('keeps favorites, statistics and calendar settings through mixed versioned writes and original receipt digests', () => {
+  const s = setup(),
+    first = set();
+  const favorite_navigation = {
+    folders: [{ id: randomUUID(), name: '工作收藏' }],
+    references: [],
+    document_folders: [],
+  };
+  first.values.favorite_navigation = favorite_navigation;
+  first.values.statistics_cards = {
+    tasks: { enabled: false, position: 'bottom' },
+    projects: { enabled: true, position: 'middle' },
+    finance: { enabled: true, position: 'top' },
+    contacts: { enabled: false, position: 'top' },
+  };
+  first.values.calendar_layout = { dates_width: 280, inspector_width: 350 };
+  const firstAck = s.app.execute(first);
+  const legacy = set('旧资料更新', 1);
+  expect(s.app.execute(legacy)).toMatchObject({
+    ok: true,
+    preferences: {
+      favorite_navigation,
+      statistics_cards: first.values.statistics_cards,
+      calendar_layout: first.values.calendar_layout,
+    },
+  });
+  const { request_id, ...content } = legacy;
+  void request_id;
+  expect(
+    s.sqlite
+      .prepare('SELECT digest FROM local_preference_receipts WHERE key=?')
+      .get(legacy.idempotency_key),
+  ).toEqual({ digest: createHash('sha256').update(JSON.stringify(content)).digest('hex') });
+  const conflict = { ...first, idempotency_key: randomUUID() };
+  expect(s.app.execute(conflict)).toMatchObject({ ok: false, code: 'CONFLICT' });
+  const calendar = set('旧资料更新', 2);
+  calendar.values.calendar_layout = { dates_width: 300, inspector_width: 390 };
+  expect(s.app.execute(calendar)).toMatchObject({
+    ok: true,
+    preferences: { favorite_navigation, statistics_cards: first.values.statistics_cards },
+  });
+  const cleared = set('旧资料更新', 3);
+  cleared.values.favorite_navigation = { folders: [], references: [], document_folders: [] };
+  expect(s.app.execute(cleared)).toMatchObject({
+    ok: true,
+    preferences: {
+      favorite_navigation: cleared.values.favorite_navigation,
+      statistics_cards: first.values.statistics_cards,
+      calendar_layout: calendar.values.calendar_layout,
+    },
+  });
+  expect(s.app.execute(first)).toEqual(firstAck);
+  const reopened = openToolchainProbe(s.file, migrations);
+  closes.push(() => reopened.sqlite.close());
+  expect(
+    createLocalPreferencesStore(reopened.sqlite, 'synthetic-workspace').execute(read),
+  ).toMatchObject({
+    ok: true,
+    preferences: {
+      version: 4,
+      favorite_navigation: cleared.values.favorite_navigation,
+      statistics_cards: first.values.statistics_cards,
+      calendar_layout: calendar.values.calendar_layout,
+    },
+  });
 });

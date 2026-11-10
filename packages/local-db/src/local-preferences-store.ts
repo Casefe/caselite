@@ -80,6 +80,10 @@ export function createLocalPreferencesStore(db: Database.Database, workspace: st
             current.statistics_cards !== undefined
               ? { statistics_cards: current.statistics_cards }
               : {}),
+            ...(request.values.favorite_navigation === undefined &&
+            current.favorite_navigation !== undefined
+              ? { favorite_navigation: current.favorite_navigation }
+              : {}),
           });
           const next = { ...values, version: current.version + 1 };
           // 资料、版本与原键回执同事务；未知结果只能核对原键，不能换键重复写入。

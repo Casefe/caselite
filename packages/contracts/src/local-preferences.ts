@@ -39,6 +39,44 @@ const statisticsCardsSchema = z
     contacts: statisticsCardPreferenceSchema,
   })
   .strict();
+export const favoriteNavigationSchema = z
+  .strictObject({
+    folders: z
+      .array(
+        z.strictObject({
+          id: z.uuid(),
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .refine((v) => !/[\p{Cc}]/u.test(v)),
+        }),
+      )
+      .max(100),
+    references: z
+      .array(
+        z.strictObject({
+          kind: z.enum(['task', 'project']),
+          id: z.uuid(),
+          folder_id: z.uuid().nullable(),
+        }),
+      )
+      .max(2000),
+    // 文档星标仍以 documents.favorite 为准；这里只保存收藏中的位置。
+    document_folders: z.array(z.strictObject({ id: z.uuid(), folder_id: z.uuid() })).max(2000),
+  })
+  .refine((v) => {
+    const folders = new Set(v.folders.map((f) => f.id));
+    return (
+      folders.size === v.folders.length &&
+      new Set(v.references.map((r) => `${r.kind}:${r.id}`)).size === v.references.length &&
+      new Set(v.document_folders.map((r) => r.id)).size === v.document_folders.length &&
+      [...v.references, ...v.document_folders].every(
+        (r) => r.folder_id === null || folders.has(r.folder_id),
+      )
+    );
+  });
 export const localPreferenceValuesSchema = z
   .object({
     name: z
@@ -74,6 +112,7 @@ export const localPreferenceValuesSchema = z
     export_style: exportStyleSchema.optional(),
     // 缺省由显示消费者解释；不改变旧请求摘要和历史回执。
     statistics_cards: statisticsCardsSchema.optional(),
+    favorite_navigation: favoriteNavigationSchema.optional(),
   })
   .strict();
 export const localPreferencesSchema = localPreferenceValuesSchema.extend({
