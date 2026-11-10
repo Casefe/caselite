@@ -5,6 +5,7 @@ import { useOrdinaryCatalog } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
 import { Icon } from '../../shared/ui/Icon';
 import ContactInspector from './ContactInspector';
+import ContactCreateDialog from './ContactCreateDialog';
 import { contactsKey } from './useContactsWrite';
 
 const names = { person: '个人', organization: '组织' };
@@ -45,9 +46,9 @@ export default function ContactsView({
     [blocked, setBlocked] = useState(false),
     [recent, setRecent] = useState(false);
   useEffect(() => {
-    onDirty(blocked);
+    onDirty(blocked || creating);
     return () => onDirty(false);
-  }, [blocked, onDirty]);
+  }, [blocked, creating, onDirty]);
   const contacts = read.data ?? [];
   const projects = catalog.error ? [] : (catalog.data?.projects ?? []);
   const documents = catalog.error ? [] : (catalog.data?.documents ?? []);
@@ -327,9 +328,8 @@ export default function ContactsView({
         </div>
       </div>
       <ContactInspector
-        key={creating ? 'new' : (contact?.id ?? 'empty')}
-        contact={creating ? undefined : contact}
-        creating={creating}
+        key={contact?.id ?? 'empty'}
+        contact={contact}
         contactOptions={contacts}
         projects={projects}
         documents={documents}
@@ -345,6 +345,15 @@ export default function ContactsView({
         onOpenDocument={onOpenDocument}
         onOpenFinance={onOpenFinance}
       />
+      {creating && (
+        <ContactCreateDialog
+          projects={projects}
+          catalogReady={Boolean(catalog.data) && !catalog.error}
+          onRetryProjects={() => void catalog.load().catch(() => undefined)}
+          onCreated={created}
+          onCancel={() => setCreating(false)}
+        />
+      )}
     </section>
   );
 }
