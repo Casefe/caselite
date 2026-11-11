@@ -692,3 +692,39 @@
     --workspace-inspector-width: 280px;
   }
 }
+
+@media (max-width: 900px) {
+  /* 窄主区保留栏目与订阅两行；横向溢出只在栏目内滚动，不挤占正文和 AI。 */
+  .task-detail .task-work-area {
+    padding-inline: 12px;
+  }
+  .task-detail .task-reminder-entry {
+    position: static;
+    align-self: end;
+    padding: 4px 0 0;
+  }
+  .task-detail .task-reminder-entry:not(:has([aria-expanded='true'])) {
+    padding: 4px 0 0;
+  }
+  .task-detail .task-reminder-entry > button {
+    min-height: 24px;
+    padding: 2px 0;
+    line-height: 20px;
+  }
+  .task-detail .detail-tabs {
+    flex-wrap: nowrap;
+    gap: 16px;
+    height: auto;
+    min-height: 28px;
+    padding: 0;
+    margin-bottom: 12px;
+    overflow-x: auto;
+  }
+  .task-detail .detail-tabs > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .task-detail .task-content-overview {
+    padding-inline: 0;
+  }
+}
