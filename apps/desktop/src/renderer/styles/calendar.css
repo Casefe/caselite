@@ -565,3 +565,130 @@
 .date-candidate button {
   margin: 6px;
 }
+
+/* 预测工作台只重排现有任务投影；属性编辑、保存恢复和 AI 会话仍由共用右栏承接。 */
+.calendar-forecast-strip {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 2px;
+  border-bottom: 1px solid var(--theme-border);
+  margin-bottom: 18px;
+}
+.calendar-forecast-strip > button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 2px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--theme-muted);
+  font-size: 11px;
+}
+.calendar-forecast-strip > button strong {
+  font-size: 20px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.calendar-forecast-strip > button[aria-pressed='true'] {
+  color: var(--theme-accent);
+  background: var(--theme-selected);
+  border-bottom-color: var(--theme-accent);
+}
+.calendar-forecast-strip > .calendar-open-dates {
+  display: none;
+}
+.calendar-workbench .calendar-forecast-task {
+  padding: 13px 10px;
+  gap: 10px;
+  border-radius: 6px;
+}
+.calendar-workbench .calendar-forecast-task > .work-list-glyph,
+.calendar-workbench .calendar-forecast-task.is-timed > .work-list-glyph {
+  flex: 0 0 18px;
+  margin-top: 2px;
+}
+.calendar-workbench .calendar-forecast-task > .calendar-task-content {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+}
+.calendar-task-metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin-top: 7px;
+  color: var(--theme-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.calendar-task-metadata > span {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.calendar-task-metadata > .calendar-task-project {
+  flex-basis: 100%;
+}
+.calendar-task-metadata > .calendar-task-tag {
+  background: var(--theme-subtle);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.calendar-options,
+.calendar-undated-tasks {
+  font-size: 12px;
+  margin-top: 16px;
+}
+.calendar-options > summary,
+.calendar-undated-tasks > summary {
+  cursor: pointer;
+  padding: 7px 0;
+  color: var(--theme-muted);
+}
+.calendar-options > label {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0;
+  align-items: center;
+  font-size: 11px;
+}
+.calendar-options .calendar-layout-controls {
+  margin-top: 8px;
+}
+.calendar-close-inspector {
+  display: none;
+}
+.calendar-task-open .calendar-task-inspector {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.calendar-task-open .calendar-task-inspector > .task-inspector:has(> .inspector-split) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+@media (max-width: 1200px) {
+  .calendar-close-inspector {
+    display: block;
+    flex: none;
+    align-self: flex-end;
+    font-size: 11px;
+    margin: 6px 10px;
+  }
+}
+@media (max-width: 760px) {
+  .calendar-forecast-strip > .calendar-open-dates {
+    display: block;
+    grid-column: 1 / -1;
+    text-align: left;
+    padding: 7px;
+  }
+}

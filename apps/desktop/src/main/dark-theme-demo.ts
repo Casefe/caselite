@@ -23,28 +23,7 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
   };
   const pages: unknown[] = [];
   const audit = async (page: string) => {
-    const result = await evaluate(`(()=>{
-      const root=document.querySelector('.workspace-main');
-      const bright=[];
-      for(const el of root.querySelectorAll('*')){
-        if(el.closest('.theme-swatch,.appearance-preview,.pdf-page,.react-pdf__Page,.error,.key-delete-confirm,.sample-badge,.document-comment-anchor,.annotation-composer,.annotation-list')) continue;
-        const rect=el.getBoundingClientRect();
-        if(!rect.width||!rect.height||getComputedStyle(el).visibility==='hidden') continue;
-        const style=getComputedStyle(el);
-        const bg=style.backgroundColor.match(/[\\d.]+/g)?.map(Number)??[];
-        if(rect.width*rect.height>4000&&bg.length>=3&&(bg.length<4||bg[3]>=0.5)&&Math.min(...bg.slice(0,3))>160)
-          bright.push({tag:el.tagName,class:el.className,background:style.backgroundColor});
-        for(const side of ['Top','Right','Bottom','Left']){
-          const width=parseFloat(style['border'+side+'Width']);
-          if(!width||style['border'+side+'Style']==='none') continue;
-          if((side==='Top'||side==='Bottom'?rect.width:rect.height)<90) continue;
-          const c=style['border'+side+'Color']; const n=c.match(/[\\d.]+/g)?.map(Number)??[];
-          if(n.length<3||(n.length===4&&n[3]<0.5)) continue;
-          if(Math.min(...n.slice(0,3))>120) bright.push({tag:el.tagName,class:el.className,side,color:c,width});
-        }
-      }
-      return {page:${JSON.stringify(page)},bright,theme:document.documentElement.dataset.theme};
-    })()`);
+    const result = await evaluate(darkThemeAuditScript(page));
     pages.push(result);
     writeFileSync(join(root, 'dark-theme-audit.json'), JSON.stringify({ pages }, null, 2));
     if (result.theme !== 'dark' || result.bright.length)
@@ -71,6 +50,7 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
   await wait(
     `document.querySelector('[data-calendar-task="${seeded[0]}"]') && document.querySelector('.resize-separator[aria-disabled=false]')`,
   );
+  await evaluate("document.querySelector('.calendar-undated-tasks > summary')?.click()");
   await evaluate(`document.querySelector('[data-calendar-task="${seeded[0]}"]').click()`);
   await wait(
     "document.querySelector('.calendar-task-row[aria-pressed=true]') && document.querySelector('.calendar-selected-task')",
@@ -121,7 +101,7 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
     throw new Error('Resize keyboard focus is not visible');
   await capture('dark-calendar-focus.png');
   await evaluate(
-    "document.querySelector('.calendar-agenda h1').setAttribute('tabindex','-1');document.querySelector('.calendar-agenda h1').focus()",
+    "document.querySelector('.calendar-forecast-strip button[aria-pressed=true]').focus()",
   );
   await command('Emulation.setDeviceMetricsOverride', {
     width: 1180,
@@ -174,4 +154,43 @@ export async function checkDarkTheme(window: BrowserWindow, root: string) {
       2,
     ),
   );
+}
+
+// 单一脚本同时用于真实窗口审计与隔离渲染正负例，防止测试复制另一套规则。
+export function darkThemeAuditScript(page: string) {
+  return `(()=>{
+      const root=document.querySelector('.workspace-main');
+      const bright=[];
+      const theme=getComputedStyle(document.documentElement);
+      // 当前主题token为六位hex；无法确认主题值时不豁免，保持原审计的拒绝行为。
+      const color=(token)=>{
+        const hex=token.trim().match(/^#([a-f0-9]{6})$/i);
+        return hex ? 'rgb('+[0,2,4].map(i=>parseInt(hex[1].slice(i,i+2),16)).join(', ')+')' : null;
+      };
+      const accent=color(theme.getPropertyValue('--theme-accent'));
+      const selected=color(theme.getPropertyValue('--theme-selected'));
+      for(const el of root.querySelectorAll('*')){
+        if(el.closest('.theme-swatch,.appearance-preview,.pdf-page,.react-pdf__Page,.error,.key-delete-confirm,.sample-badge,.document-comment-anchor,.annotation-composer,.annotation-list')) continue;
+        const rect=el.getBoundingClientRect();
+        if(!rect.width||!rect.height||getComputedStyle(el).visibility==='hidden') continue;
+        const style=getComputedStyle(el);
+        const bg=style.backgroundColor.match(/[\\d.]+/g)?.map(Number)??[];
+        if(rect.width*rect.height>4000&&bg.length>=3&&(bg.length<4||bg[3]>=0.5)&&Math.min(...bg.slice(0,3))>160)
+          bright.push({tag:el.tagName,class:el.className,background:style.backgroundColor});
+        for(const side of ['Top','Right','Bottom','Left']){
+          const width=parseFloat(style['border'+side+'Width']);
+          if(!width||style['border'+side+'Style']==='none') continue;
+          if((side==='Top'||side==='Bottom'?rect.width:rect.height)<90) continue;
+          const c=style['border'+side+'Color']; const n=c.match(/[\\d.]+/g)?.map(Number)??[];
+          if(n.length<3||(n.length===4&&n[3]<0.5)) continue;
+          // 只识别唯一选中预测键的合法底部指示；该元素背景、其他边和其他元素仍须逐项审计。
+          if(side==='Bottom' && width===3 && style.borderBottomStyle==='solid' &&
+             el.matches('.calendar-forecast-strip > button[aria-pressed="true"]') &&
+             el.parentElement.querySelectorAll(':scope > button[aria-pressed="true"]').length===1 &&
+             accent && selected && c===accent && style.color===accent && style.backgroundColor===selected) continue;
+          if(Math.min(...n.slice(0,3))>120) bright.push({tag:el.tagName,class:el.className,side,color:c,width});
+        }
+      }
+      return {page:${JSON.stringify(page)},bright,theme:document.documentElement.dataset.theme};
+    })()`;
 }

@@ -1,3 +1,4 @@
+import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ProjectMetrics from './ProjectMetrics';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
@@ -23,6 +24,7 @@ import {
   useState,
   useRef,
   type ComponentType,
+  type ReactNode,
 } from 'react';
 import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
@@ -80,6 +82,7 @@ export default function ProjectCatalog({
   initialView,
   backSlot,
   navigationPending = false,
+  favoriteAction,
 }: {
   tasks: Task[];
   onOpen(id: string, source: ProjectViewState): void;
@@ -90,6 +93,7 @@ export default function ProjectCatalog({
   initialView?: ProjectViewState | null;
   backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
+  favoriteAction?(project: Matter, disabled: boolean): ReactNode;
   onDirty(v: boolean): void;
   onChanged(): void | Promise<boolean>;
 }) {
@@ -433,11 +437,13 @@ export default function ProjectCatalog({
       ref={workspace}
       inert={navigationPending}
       aria-busy={navigationPending}
-      className="collection-workspace catalog-view project-catalog"
+      className="collection-workspace catalog-view project-catalog property-resizable"
+      data-properties-resizable="true"
       data-project-view={editor ? section : 'list'}
       data-layout="three-column"
       data-testid="project-catalog"
     >
+      <PropertyResizeHandle module="projects" />
       <div className="collection-main">
         {backSlot && createPortal(backButton, backSlot)}
         <div className="collection-heading project-catalog-heading">
@@ -446,6 +452,10 @@ export default function ProjectCatalog({
             <>
               <Icon name="folder" size={16} />
               <h1>{(p ?? editor.project).title}</h1>
+              {favoriteAction?.(
+                p ?? editor.project,
+                blocked || !!(p ?? editor.project).archived_at,
+              )}
             </>
           ) : (
             <div className="project-dashboard-title">

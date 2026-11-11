@@ -119,6 +119,17 @@ export function queryCalendar<Row>(
     params.push(q.date, q.date);
     order = 'CASE WHEN t.schedule_date=? THEN t.schedule_start ELSE t.attention_time END,t.id';
     orderParams.push(q.date);
+  } else if (q.view === 'past') {
+    // 过去区按截止日查询完整范围；不用已加载的一页任务推测数量，也不认定法律逾期。
+    clauses.push('t.due_date<?');
+    params.push(q.date);
+    order = 't.due_date,(t.priority=0),t.priority,t.id';
+  } else if (q.view === 'future') {
+    clauses.push(
+      "(t.due_date>? OR t.planned_date>? OR t.schedule_date>? OR (t.is_important=1 AND t.attention_source='custom' AND t.attention_date>?))",
+    );
+    params.push(q.date, q.date, q.date, q.date);
+    order = '(t.priority=0),t.priority,t.id';
   } else if (q.view === 'undated') {
     order = '(t.priority=0),t.priority,t.id';
     clauses.push(

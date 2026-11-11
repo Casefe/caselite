@@ -383,3 +383,96 @@ it.each([false, true])(
     expect(writes).toBe(2);
   },
 );
+
+it.each(['ack', 'unknown', 'refresh-failure'] as const)(
+  'preserves unsaved statistics and profile drafts during favorite %s recovery',
+  async (mode) => {
+    const config = {
+      tasks: { enabled: true, position: 'top' as const },
+      projects: { enabled: true, position: 'middle' as const },
+      finance: { enabled: true, position: 'bottom' as const },
+      contacts: { enabled: false, position: 'top' as const },
+    };
+    let persisted = { ...defaultLocalPreferences, statistics_cards: config };
+    let submitted: Extract<LocalPreferencesRequest, { operation: 'set' }> | null = null;
+    const api = vi.fn(async (r: LocalPreferencesRequest) => {
+      if (r.operation === 'read') {
+        if (mode === 'refresh-failure' && submitted) throw new Error('read failed after ACK');
+        return { ok: true, preferences: structuredClone(persisted), receipt: null };
+      }
+      if (r.operation === 'status')
+        return {
+          ok: true,
+          preferences: structuredClone(persisted),
+          receipt: submitted!.idempotency_key,
+        };
+      submitted = r;
+      persisted = {
+        ...r.values,
+        statistics_cards: r.values.statistics_cards as typeof config,
+        version: r.expected_version + 1,
+      };
+      if (mode === 'unknown') throw new Error('lost ACK');
+      return { ok: true, preferences: structuredClone(persisted), receipt: r.idempotency_key };
+    });
+    window.caselite = { preferences: api } as unknown as Window['caselite'];
+    function Controls() {
+      const p = useLocalPreferences();
+      return (
+        <>
+          <button
+            disabled={!p.ready}
+            onClick={() =>
+              p.change({
+                name: '未保存称呼',
+                statistics_cards: { ...config, tasks: { enabled: false, position: 'bottom' } },
+              })
+            }
+          >
+            填写草稿
+          </button>
+          <button
+            onClick={() =>
+              void p.saveFavoriteNavigation({
+                folders: [{ id: 'f50b69b1-f8bc-4cb4-881b-0c607b842eae', name: '诉讼案件' }],
+                references: [],
+                document_folders: [],
+              })
+            }
+          >
+            保存收藏
+          </button>
+          <button onClick={() => void p.verify()}>核对收藏</button>
+          <output aria-label="阶段">{p.phase}</output>
+          <output aria-label="草稿">{JSON.stringify(p.draft)}</output>
+          <output aria-label="收藏提示">{p.notice}</output>
+        </>
+      );
+    }
+    render(
+      <LocalPreferencesProvider>
+        <Controls />
+      </LocalPreferencesProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '填写草稿' }).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '填写草稿' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存收藏' }));
+    if (mode === 'unknown') {
+      await waitFor(() => expect(screen.getByLabelText('阶段').textContent).toBe('verify'));
+      fireEvent.click(screen.getByRole('button', { name: '核对收藏' }));
+    }
+    await waitFor(() => expect(screen.getByLabelText('收藏提示').textContent).toContain('已保存'));
+    const draft = JSON.parse(screen.getByLabelText('草稿').textContent!);
+    expect(draft.name).toBe('未保存称呼');
+    expect(draft.statistics_cards.tasks).toEqual({ enabled: false, position: 'bottom' });
+    expect(persisted.name).toBe(defaultLocalPreferences.name);
+    expect(persisted.statistics_cards).toEqual(config);
+    expect(persisted.favorite_navigation?.folders).toHaveLength(1);
+    expect(api.mock.calls.filter(([r]) => r.operation === 'set')).toHaveLength(1);
+    expect(screen.getByLabelText('阶段').textContent).toBe('idle');
+  },
+);

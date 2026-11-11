@@ -43,11 +43,9 @@ export function WorkspaceShell({
   onCollapse,
   projectBackSlot,
   onNavigate,
-  tasks,
   importantDatesCount,
-  favorites = [],
+  favoritesPanel,
   agentDraft = false,
-  onOpen,
   children,
 }: {
   view: WorkspaceView;
@@ -57,7 +55,7 @@ export function WorkspaceShell({
   onNavigate(view: WorkspaceView): void;
   tasks: Task[];
   importantDatesCount?: number;
-  favorites?: string[];
+  favoritesPanel?: ReactNode;
   agentDraft?: boolean;
   onOpen(id: string): void;
   children: ReactNode;
@@ -130,29 +128,12 @@ export function WorkspaceShell({
               </div>
             ))}
           </nav>
-          {!collapsed && (
-            <section className="shortcuts" aria-label="收藏">
-              <p className="sidebar-caption">
-                收藏 <span title="当前为界面原型，收藏在本次会话内有效">本次会话</span>
-              </p>
-              {tasks
-                .filter((t) => favorites.includes(t.id))
-                .map((t) => (
-                  <button
-                    key={t.id}
-                    data-task-id={t.id}
-                    onClick={() => onOpen(t.id)}
-                    title={t.title}
-                  >
-                    <Icon name="star" size={14} />
-                    <span>{t.title}</span>
-                  </button>
-                ))}
-              {!tasks.some((task) => favorites.includes(task.id)) && (
-                <p className="sidebar-empty">在任务标题旁点 ☆ 添加收藏</p>
-              )}
-            </section>
-          )}
+          {!collapsed &&
+            (favoritesPanel ?? (
+              <section className="shortcuts" aria-label="收藏">
+                <p className="sidebar-caption">收藏</p>
+              </section>
+            ))}
         </div>
         <div className="sidebar-bottom">
           {agentDraft && view !== 'home' && (

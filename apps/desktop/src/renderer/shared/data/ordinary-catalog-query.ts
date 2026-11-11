@@ -59,7 +59,8 @@ export function useProjectCatalog() {
     error: read.error?.message ?? '',
     isFetching: read.isFetching,
     onCommit: () => {
-      void invalidateOrdinaryCatalog(client);
+      // 收藏侧栏常驻解析项目引用，提交后须刷新当前标题和归档状态。
+      void invalidateOrdinaryCatalog(client, true, true);
     },
     async load() {
       await client.cancelQueries({ queryKey: projectCatalog.queryKey, exact: true });

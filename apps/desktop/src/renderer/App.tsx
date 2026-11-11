@@ -1,3 +1,10 @@
+import {
+  FavoriteButton,
+  FavoritesProvider,
+  FavoritesSidebar,
+  useFavorites,
+} from './features/favorites/Favorites';
+import PropertyResizeHandle from './ui/PropertyResizeHandle';
 import CalendarView from './features/calendar/CalendarView';
 import InspectorLayout from './ui/InspectorLayout';
 import { DocumentPropertyValues } from './ui/DocumentInspector';
@@ -66,6 +73,33 @@ const defaultCreateProperties = {
   tags: [] as string[],
   matter_id: '',
 };
+function FavoriteNavigation({
+  tasks,
+  onTask,
+  onProject,
+}: {
+  tasks: Task[];
+  onTask(id: string, document: boolean): void;
+  onProject(id: string): void;
+}) {
+  const favorites = useFavorites();
+  return (
+    <FavoritesSidebar
+      tasks={tasks}
+      onOpen={(target) => {
+        if (target.kind === 'project') {
+          onProject(target.id);
+          return;
+        }
+        const id =
+          target.kind === 'document'
+            ? favorites.documents.find((doc) => doc.id === target.id)?.task_id
+            : target.id;
+        if (id) onTask(id, target.kind === 'document');
+      }}
+    />
+  );
+}
 function Workbench() {
   const queryClient = useQueryClient();
   const importantDates = useCalendar(calendarQuery('important'));
@@ -75,7 +109,6 @@ function Workbench() {
   const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
   const [collapsed, setCollapsed] = useState(false);
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
   const [projectView, setProjectView] = useState<ProjectViewState | null>(null);
   const [taskReturn, setTaskReturn] = useState<{ taskId: string; source: ProjectViewState } | null>(
@@ -128,7 +161,7 @@ function Workbench() {
   const refresh = useCallback(async () => {
     invalidateTaskPages(queryClient);
     invalidateCalendar(queryClient);
-    void invalidateOrdinaryCatalog(queryClient);
+    void invalidateOrdinaryCatalog(queryClient, true, true);
     void invalidateProjectCatalog(queryClient);
     const sequence = ++listReadSequence.current;
     const r = check(await window.caselite.task({ operation: 'list', protocol_version: 1 }));
@@ -694,7 +727,28 @@ function Workbench() {
         projectBackSlot={setProjectBackSlot}
         tasks={tasks}
         importantDatesCount={importantDates.isError ? undefined : importantDates.data?.page?.total}
-        favorites={favorites}
+        favoritesPanel={
+          <FavoriteNavigation
+            tasks={tasks}
+            onTask={(id, document) => void open(id, null, document, document)}
+            onProject={(id) => {
+              if (!canLeave()) return;
+              setProjectView({
+                selected: id,
+                projectId: id,
+                section: 'overview',
+                query: '',
+                statusFilter: 'all',
+                order: 'updated',
+                columns: projectListDefaults,
+                scrollTop: 0,
+                workspaceScrollTop: 0,
+                returnTaskId: '',
+              });
+              navigate('projects');
+            }}
+          />
+        }
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
       >
@@ -744,6 +798,9 @@ function Workbench() {
           </div>
         ) : view === 'projects' ? (
           <ProjectCatalog
+            favoriteAction={(project, disabled) => (
+              <FavoriteButton kind="project" id={project.id} disabled={disabled} />
+            )}
             tasks={tasks}
             initialView={projectView}
             backSlot={projectBackSlot}
@@ -854,22 +911,11 @@ function Workbench() {
                 <span className="task-breadcrumb-title" title={active.title}>
                   {active.title}
                 </span>
-                <button
-                  type="button"
-                  className="favorite-toggle"
-                  data-testid="toggle-favorite"
-                  aria-label={favorites.includes(active.id) ? '取消收藏任务' : '收藏任务'}
-                  aria-pressed={favorites.includes(active.id)}
-                  onClick={() =>
-                    setFavorites((ids) =>
-                      ids.includes(active.id)
-                        ? ids.filter((id) => id !== active.id)
-                        : [...ids, active.id],
-                    )
-                  }
-                >
-                  <Icon name="star" size={15} />
-                </button>
+                <FavoriteButton
+                  kind={documentEntry ? 'document' : 'task'}
+                  id={documentEntry ? active.document_id : active.id}
+                  disabled={busy || uncertain}
+                />
               </div>
               {taskPosition && (
                 <div className="task-adjacent" role="group" aria-label="任务列表顺序">
@@ -896,7 +942,8 @@ function Workbench() {
               )}
             </div>
 
-            <div className="task-layout">
+            <div className="task-layout property-resizable" data-properties-resizable="true">
+              <PropertyResizeHandle module="tasks" />
               <div className="task-work-area" aria-label="阅读与编辑工作区">
                 <div className="task-reminder-entry">
                   <button
@@ -1169,7 +1216,9 @@ export default function App() {
             <DeliveryPrototype />
           </Suspense>
         ) : (
-          <Workbench />
+          <FavoritesProvider>
+            <Workbench />
+          </FavoritesProvider>
         )}
       </QueryClientProvider>
     </AppearanceProvider>

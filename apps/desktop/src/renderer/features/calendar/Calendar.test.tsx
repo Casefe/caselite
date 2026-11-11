@@ -151,6 +151,7 @@ it('shows only timed Tasks in the lower sidebar, including explicit important po
   expect(left.querySelectorAll('[data-calendar-task]')).toHaveLength(2);
   fireEvent.click(within(left).getByText('重要时点'));
   expect(open).toHaveBeenCalledWith(b.id);
+  fireEvent.click(screen.getByText('无日期任务'));
   fireEvent.click(
     within(screen.getByRole('region', { name: '待安排任务' })).getByText('无日期普通任务'),
   );
