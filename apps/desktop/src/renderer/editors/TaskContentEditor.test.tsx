@@ -41,6 +41,8 @@ it('soft-wraps one controlled title while retaining single-line text and origina
   const { api, saved, props, rerender } = show();
   const title = await screen.findByRole('textbox', { name: '任务标题' });
   expect(title.tagName).toBe('TEXTAREA');
+  fireEvent.change(title, { target: { value: props.task.title + '\n' } });
+  expect((screen.getByTestId('save-task-content') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(title, { target: { value: '单行\r\n标题\n保留' } });
   expect((title as HTMLTextAreaElement).value).toBe('单行标题保留');
   const enter = createEvent.keyDown(title, { key: 'Enter' });

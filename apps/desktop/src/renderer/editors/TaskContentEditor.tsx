@@ -178,7 +178,9 @@ export default function TaskContentEditor({
           }}
           onChange={(event) => {
             // 只改变标题的显示行数，继续沿用原 text input 剔除换行的内容语义。
-            setTitle(event.target.value.replace(/[\r\n]/g, ''));
+            const next = event.target.value.replace(/[\r\n]/g, '');
+            setTitle(next);
+            if (next === title) return;
             sequence.current++;
             setDirty(true);
             onDirty(true);
