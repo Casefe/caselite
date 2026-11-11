@@ -54,9 +54,14 @@ it('marks the first external text drop dirty even when the editor dispatches wit
   click('交付版本');
   expect(screen.getByRole('button', { name: '固定当前修订' }).hasAttribute('disabled')).toBe(true);
 });
-function fixFirstVersion() {
+async function fixFirstVersion() {
   click('交付版本');
   click('固定当前修订');
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '返回工作稿' }).disabled).toBe(
+      false,
+    ),
+  );
 }
 function exportVersion(format: 'Word' | 'PDF') {
   click(format);
@@ -90,7 +95,7 @@ it.each(['Word', 'PDF'] as const)(
   'keeps an old fixed revision for %s after editing and fixing the new draft',
   async (format) => {
     render(<DeliveryPrototype />);
-    fixFirstVersion();
+    await fixFirstVersion();
     await screen.findByRole('button', { name: /修订 1 草稿/ });
     click('返回工作稿');
     fireEvent.input(screen.getByRole('textbox', { name: '演示工作稿正文' }), {
@@ -100,8 +105,13 @@ it.each(['Word', 'PDF'] as const)(
     click('交付版本');
     click('固定当前修订');
     await screen.findByRole('button', { name: /修订 2 草稿/ });
+    // 版本行先出现、创建状态后结束；等按钮可交互，再核对切换后的旧版本正文。
+    await waitFor(() =>
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: /修订 1 草稿/ }).disabled).toBe(
+        false,
+      ),
+    );
     click(/修订 1 草稿/);
-    // 选中版本后等待固定正文读回，避免把前一版本的临时画面当成读取结果。
     await waitFor(() =>
       expect(
         (screen.getByRole('textbox', { name: '固定版本正文' }) as HTMLTextAreaElement).value,
@@ -119,7 +129,7 @@ it.each(['Word', 'PDF'] as const)(
 
 it('keeps fixed content on failure and cancellation without creating another version', async () => {
   render(<DeliveryPrototype />);
-  fixFirstVersion();
+  await fixFirstVersion();
   await screen.findByRole('button', { name: /修订 1 草稿/ });
   click('失败');
   fireEvent.click(within(exportVersion('PDF')).getByRole('button', { name: '演示导出' }));
