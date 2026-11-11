@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { readFileSync } from 'node:fs';
 import { createPortal } from 'react-dom';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AgentRequest, AgentResponse } from '../../preload/caselite-api';
 import SidebarAgent from './SidebarAgent';
 import userEvent from '@testing-library/user-event';
@@ -59,22 +59,22 @@ it('floats at property width, expands on conversation click, supports keyboard w
     expect(panel.style.width).toBe('320px');
     expect(screen.queryByRole('separator')).toBeNull();
     fireEvent.click(screen.getByText('点击会话区域'));
-    expect(panel.style.width).toBe(`${Math.max(280, window.innerWidth / 4)}px`);
+    expect(panel.style.width).toBe(`${Math.max(320, window.innerWidth / 4)}px`);
     expect(panel.style.height).toBe('510px');
     expect(outer.scrollTop).toBe(900);
     expect(history.scrollTop).toBe(640);
     const handle = screen.getByRole('separator', { name: '调整 AI 对话宽度' });
     handle.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(panel.style.width).toBe(`${Math.max(280, window.innerWidth / 4) + 24}px`);
+    expect(panel.style.width).toBe(`${Math.max(320, window.innerWidth / 4) + 24}px`);
     await userEvent.keyboard('{End}');
     expect(panel.style.width).toBe(`${window.innerWidth - 36}px`);
     await userEvent.keyboard('{Home}');
-    expect(panel.style.width).toBe('280px');
+    expect(panel.style.width).toBe('320px');
     fireEvent.click(screen.getByTitle('最小化 AI 对话'));
     expect(panel.style.width).toBe('320px');
     fireEvent.click(screen.getByText('点击会话区域'));
-    expect(panel.style.width).toBe(`${Math.max(280, window.innerWidth / 4)}px`);
+    expect(panel.style.width).toBe(`${Math.max(320, window.innerWidth / 4)}px`);
     expect((screen.getByLabelText('草稿') as HTMLTextAreaElement).value).toBe('保留输入');
   } finally {
     geometry.mockRestore();
@@ -465,7 +465,7 @@ it('maximizes inside the workspace, keeps navigation and property scroll state, 
     restore.focus();
     fireEvent.click(restore);
     expect(document.activeElement).toBe(restore);
-    expect(panel.style.width).toBe('280px');
+    expect(panel.style.width).toBe('320px');
     expect(screen.getByLabelText('工作面草稿')).toBe(input);
     expect(properties.scrollTop).toBe(180);
     fireEvent.keyDown(input, { key: 'Escape' });
@@ -474,6 +474,102 @@ it('maximizes inside the workspace, keeps navigation and property scroll state, 
     geometry.mockRestore();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: previousHeight });
+  }
+});
+
+it.each([1440, 800, 640, 260])(
+  'keeps expansion, pointer and keyboard resizing above property width within the safe viewport at %s (MOCK_ONLY geometry)',
+  (viewportWidth) => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth });
+    const geometry = vi
+      .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(() => new DOMRect(viewportWidth - 464, 48, 440, 600));
+    try {
+      render(
+        <InspectorLayout properties={null}>
+          <textarea aria-label="宽度草稿" defaultValue="保留原节点" />
+        </InspectorLayout>,
+      );
+      const panel = screen.getByRole('region', { name: 'AI 对话' });
+      const draft = screen.getByLabelText('宽度草稿');
+      const floor = Math.min(440, viewportWidth - 36);
+      expect(panel.style.width).toBe(`${Math.min(440, viewportWidth - 24)}px`);
+      fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+      expect(panel.style.width).toBe(`${floor}px`);
+      const handle = screen.getByRole('separator', { name: '调整 AI 对话宽度' });
+      expect(handle.getAttribute('aria-valuemin')).toBe(`${floor}`);
+      for (const key of ['End', 'Home', 'ArrowRight']) fireEvent.keyDown(handle, { key });
+      expect(panel.style.width).toBe(`${floor}px`);
+      handle.setPointerCapture = vi.fn();
+      for (const [type, clientX] of [
+        ['pointerdown', 100],
+        ['pointermove', 900],
+      ] as const) {
+        const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+        Object.defineProperty(event, 'pointerId', { value: 7 });
+        fireEvent(handle, event);
+      }
+      fireEvent.pointerUp(handle);
+      expect(panel.style.width).toBe(`${floor}px`);
+      fireEvent.click(screen.getByRole('button', { name: '最大化 AI 对话' }));
+      expect(panel.style.width).toBe(`${viewportWidth}px`);
+      fireEvent.click(screen.getByRole('button', { name: '还原 AI 对话' }));
+      expect(panel.style.width).toBe(`${floor}px`);
+      expect(screen.getByLabelText('宽度草稿')).toBe(draft);
+      expect((draft as HTMLTextAreaElement).value).toBe('保留原节点');
+    } finally {
+      geometry.mockRestore();
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+    }
+  },
+);
+
+it('follows live property width changes after custom resizing and max restore without remounting', () => {
+  const previousObserver = globalThis.ResizeObserver;
+  let resized = () => {};
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        resized = () => callback([], this as unknown as ResizeObserver);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  let propertyWidth = 320;
+  const geometry = vi
+    .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(
+      () => new DOMRect(window.innerWidth - propertyWidth, 48, propertyWidth, 600),
+    );
+  try {
+    render(
+      <InspectorLayout properties={null}>
+        <textarea aria-label="动态草稿" defaultValue="保留附件和运行的原会话" />
+      </InspectorLayout>,
+    );
+    const panel = screen.getByRole('region', { name: 'AI 对话' });
+    const draft = screen.getByLabelText('动态草稿');
+    fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+    fireEvent.keyDown(screen.getByRole('separator', { name: '调整 AI 对话宽度' }), { key: 'Home' });
+    expect(panel.style.width).toBe('320px');
+    propertyWidth = 520;
+    act(resized);
+    expect(panel.style.width).toBe('520px');
+    fireEvent.click(screen.getByRole('button', { name: '最大化 AI 对话' }));
+    propertyWidth = 560;
+    act(resized);
+    fireEvent.click(screen.getByRole('button', { name: '还原 AI 对话' }));
+    expect(panel.style.width).toBe('560px');
+    fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+    expect(panel.style.width).toBe('560px');
+    expect(screen.getByLabelText('动态草稿')).toBe(draft);
+    expect((draft as HTMLTextAreaElement).value).toBe('保留附件和运行的原会话');
+  } finally {
+    geometry.mockRestore();
+    vi.stubGlobal('ResizeObserver', previousObserver);
   }
 });
 

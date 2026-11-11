@@ -46,8 +46,8 @@ export default function InspectorLayout({
   const region = useId();
   const right = Math.min(window.innerWidth, Math.max(0, bounds.right));
   const maximumWidth = Math.max(0, right - 12);
-  const minimumWidth = Math.min(280, maximumWidth);
-  // 窄窗优先保证输入和停止控件可读；紧凑态仍严格跟随原属性栏。
+  const minimumWidth = Math.min(Math.max(280, bounds.width), maximumWidth);
+  // 展开和调宽的下界实时跟随属性栏；窄窗仍受视口安全上限约束，不能挤出控件。
   const width = expanded
     ? Math.min(maximumWidth, Math.max(minimumWidth, customWidth ?? window.innerWidth / 4))
     : Math.min(bounds.width, right);
