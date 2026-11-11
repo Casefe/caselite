@@ -150,6 +150,10 @@
   padding: 0;
   min-width: 0;
 }
+/* 每个预览栏独立横滚整个显示稿，不能把保存和格式工具挤成纵排。 */
+.document-workspace .split-preview-scroll > :is(.document-inline-editor, .rich-editor) {
+  min-width: 600px;
+}
 /* 纸张边距不能随属性栏挤掉正文；窄预览沿原正文容器横滚，不改保存或导出纸张。 */
 .document-workspace .rich-editor[data-editor-scheme='word'] .tiptap {
   min-width: 560px;
