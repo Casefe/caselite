@@ -175,6 +175,8 @@ export function DiscussionFeed({
         composing.current = false;
       }}
       onKeyDownCapture={(event) => {
+        if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          return;
         if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
         if (event.repeat) {
           event.preventDefault();
@@ -182,10 +184,7 @@ export function DiscussionFeed({
         }
         event.preventDefault();
         event.stopPropagation();
-        if (!composing.current && !event.nativeEvent.isComposing)
-          event.currentTarget
-            .querySelector<HTMLButtonElement>('[data-publish-discussion]')
-            ?.click();
+        event.currentTarget.querySelector<HTMLButtonElement>('[data-publish-discussion]')?.click();
       }}
     >
       {publicationOptions?.(editorDisabled, (value) => {

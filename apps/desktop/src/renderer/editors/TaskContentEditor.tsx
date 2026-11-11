@@ -146,6 +146,8 @@ export default function TaskContentEditor({
         composing.current = false;
       }}
       onKeyDownCapture={(event) => {
+        if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          return;
         if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
         if (event.repeat) {
           event.preventDefault();
@@ -153,8 +155,7 @@ export default function TaskContentEditor({
         }
         event.preventDefault();
         event.stopPropagation();
-        if (!composing.current && !event.nativeEvent.isComposing && (dirty || hasPending))
-          void save();
+        if (dirty || hasPending) void save();
       }}
     >
       <h1 className="sr-only">{title}</h1>

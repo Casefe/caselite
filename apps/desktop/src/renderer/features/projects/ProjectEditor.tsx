@@ -40,6 +40,8 @@ export default function ProjectEditor({
         composing.current = false;
       }}
       onKeyDownCapture={(event) => {
+        if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          return;
         if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
         if (event.repeat) {
           event.preventDefault();
@@ -47,10 +49,9 @@ export default function ProjectEditor({
         }
         event.preventDefault();
         event.stopPropagation();
-        if (!composing.current && !event.nativeEvent.isComposing)
-          event.currentTarget
-            .querySelector<HTMLButtonElement>('[data-save-project-overview]')
-            ?.click();
+        event.currentTarget
+          .querySelector<HTMLButtonElement>('[data-save-project-overview]')
+          ?.click();
       }}
     >
       <h2>项目概述</h2>

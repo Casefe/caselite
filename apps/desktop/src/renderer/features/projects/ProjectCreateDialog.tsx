@@ -71,6 +71,12 @@ export default function ProjectCreateDialog({
           composing.current = false;
         }}
         onKeyDownCapture={(event) => {
+          if (
+            composing.current ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          )
+            return;
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             if (event.repeat) {
               event.preventDefault();
@@ -81,8 +87,6 @@ export default function ProjectCreateDialog({
               event.currentTarget.requestSubmit();
             return;
           }
-          if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing))
-            event.preventDefault();
         }}
         onSubmit={(event) => {
           event.preventDefault();

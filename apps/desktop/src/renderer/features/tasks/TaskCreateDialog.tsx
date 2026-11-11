@@ -99,8 +99,11 @@ export default function TaskCreateDialog({
           composing.current = false;
         }}
         onKeyDownCapture={(event) => {
-          if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing)) {
-            event.preventDefault();
+          if (
+            composing.current ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          ) {
             return;
           }
           if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;

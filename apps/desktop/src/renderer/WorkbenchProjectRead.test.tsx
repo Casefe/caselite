@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type {
   CatalogRequest,
@@ -237,9 +245,22 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
   expect(creates).toHaveLength(0);
   fireEvent.change(read('任务内容'), { target: { value: values.任务内容 } });
   fireEvent.compositionStart(read('任务名称'));
+  const candidateEnter = createEvent.keyDown(read('任务名称'), { key: 'Enter', isComposing: true });
+  fireEvent(read('任务名称'), candidateEnter);
+  expect(candidateEnter.defaultPrevented).toBe(false);
+  fireEvent.submit(read('任务名称').closest('form')!);
+  expect(creates).toHaveLength(0);
   fireEvent.keyDown(read('任务名称'), { key: 'Enter', metaKey: true, isComposing: true });
   expect(creates).toHaveLength(0);
   fireEvent.compositionEnd(read('任务名称'));
+  const finishingEnter = createEvent.keyDown(read('任务名称'), {
+    key: 'Enter',
+    keyCode: 229,
+    metaKey: true,
+  });
+  fireEvent(read('任务名称'), finishingEnter);
+  expect(finishingEnter.defaultPrevented).toBe(false);
+  expect(creates).toHaveLength(0);
   fireEvent.keyDown(read('任务名称'), { key: 'Enter', metaKey: true });
   await screen.findByText('所选项目已归档');
   expect(
@@ -281,4 +302,19 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     creates[1].idempotency_key,
     creates[1].idempotency_key,
   ]);
+  for (const editor of [
+    screen.getByLabelText('任务标题'),
+    document.querySelector('.project-discussion-compose')!,
+  ]) {
+    expect(editor).toBeTruthy();
+    fireEvent.compositionStart(editor);
+    const confirm = createEvent.keyDown(editor, { key: 'Enter', metaKey: true, isComposing: true });
+    fireEvent(editor, confirm);
+    expect(confirm.defaultPrevented).toBe(false);
+    fireEvent.compositionEnd(editor);
+    const finishing = createEvent.keyDown(editor, { key: 'Enter', ctrlKey: true, keyCode: 229 });
+    fireEvent(editor, finishing);
+    expect(finishing.defaultPrevented).toBe(false);
+  }
+  expect(taskApi.mock.calls.filter(([r]) => r.operation === 'update')).toHaveLength(0);
 });
