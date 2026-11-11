@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import type { createMaterialApplication } from '@caselite/application';
 import type { TaskResponse } from '@caselite/contracts';
+import { runCreationDemo } from './creation-demo';
 
 // 只从宿主已验证的合成目录进入；不访问普通工作区、系统凭据或真实 Provider。
 export async function runTaskViewsDemo(
@@ -12,6 +13,7 @@ export async function runTaskViewsDemo(
   phase: string,
   materials: ReturnType<typeof createMaterialApplication>,
 ) {
+  if (phase.startsWith('task-views-creation-')) return runCreationDemo(create, root, phase);
   for (const path of [app.getPath('userData'), app.getPath('sessionData')])
     if (!path.startsWith(root + sep)) throw Error('Task views isolation failed');
   session.defaultSession.webRequest.onBeforeRequest((details, callback) =>

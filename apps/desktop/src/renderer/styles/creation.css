@@ -1,0 +1,170 @@
+.calendar-workbench {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.calendar-creation-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.calendar-workbench .calendar-creation-toolbar h1 {
+  margin: 0;
+  font-size: 18px;
+}
+.calendar-creation-toolbar > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.calendar-creation-toolbar > div {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.calendar-creation-toolbar button {
+  white-space: nowrap;
+}
+.task-create-dialog .creation-planned-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  font-size: 12px;
+  width: fit-content;
+}
+.task-create-dialog .creation-planned-date input {
+  width: 138px;
+}
+.task-create-dialog .creation-planned-date button {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+}
+.creation-schedule-fields {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 12px;
+}
+.creation-schedule-fields label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.creation-schedule-fields > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.creation-schedule-fields input:not([type='checkbox']) {
+  min-width: 0;
+  width: 140px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.creation-schedule-fields .creation-important {
+  margin: 14px 0 8px;
+  width: fit-content;
+}
+.task-create-dialog .creation-important input[type='checkbox'] {
+  width: 14px;
+  min-width: 14px;
+  flex: 0 0 14px;
+  margin: 0;
+}
+.is-schedule:not(.show-more) .task-create-choices > .create-property-extra {
+  display: none;
+}
+.creation-more {
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+.creation-attachments {
+  margin-top: 16px;
+  font-size: 12px;
+}
+.creation-attachments:empty {
+  display: none;
+}
+.file-upload-list > header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+}
+.file-upload-list > header > span {
+  margin-left: auto;
+  font-size: 11px;
+}
+.file-upload-list ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow: auto;
+}
+.file-upload-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+.file-upload-list li > span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.file-upload-list li small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.file-upload-list .file-upload-status {
+  margin-left: auto;
+}
+.file-upload-list li button {
+  border: 0;
+  background: transparent;
+  padding: 2px 6px;
+}
+.file-upload-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.creation-local-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .calendar-creation-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+  }
+  .calendar-creation-toolbar > span {
+    display: none;
+  }
+  .creation-local-hint {
+    display: none;
+  }
+  .creation-schedule-fields > div {
+    align-items: flex-start;
+  }
+  .file-upload-list li {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}

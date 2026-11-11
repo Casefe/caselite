@@ -50,6 +50,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
       </>
     ),
     plus: <path d="M12 4v16M4 12h16" />,
+    paperclip: <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9m-7 12 9-9" />,
     panel: (
       <>
         <rect x="3" y="4" width="18" height="16" rx="2" />

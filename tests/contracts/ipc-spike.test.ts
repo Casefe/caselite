@@ -7,6 +7,10 @@ import {
   IPC_PROTOCOL_VERSION,
   createAnchorRequestSchema,
   createMatterRequestSchema,
+  emptyTaskCalendar,
+  MATERIAL_FILE_EXTENSIONS,
+  MATERIAL_MAX_BYTES,
+  CREATION_ATTACHMENT_LIMIT,
 } from '@caselite/contracts';
 import { createSpikeApplication } from '@caselite/application';
 import { describe, expect, it, vi } from 'vitest';
@@ -114,6 +118,7 @@ describe('typed preload to main IPC Spike', () => {
       'contacts',
       'createAnchor',
       'createMatter',
+      'creationPolicy',
       'dropPdf',
       'exportStyleDefaults',
       'finance',
@@ -124,6 +129,7 @@ describe('typed preload to main IPC Spike', () => {
       'preferences',
       'reminder',
       'task',
+      'validateTaskCalendar',
     ]);
   });
 
@@ -134,6 +140,32 @@ describe('typed preload to main IPC Spike', () => {
     expect(first.exportStyleDefaults).not.toBe(second.exportStyleDefaults);
     first.exportStyleDefaults!.margins.top = 30;
     expect(second.exportStyleDefaults?.margins.top).toBe(20);
+  });
+
+  it('exposes immutable creation policy and strict pure calendar validation without dispatching IPC', () => {
+    const invoke = vi.fn(async () => undefined);
+    const api = createCaseLitePreloadApi(invoke);
+    expect(api.creationPolicy).toEqual({
+      file_extensions: [...MATERIAL_FILE_EXTENSIONS],
+      max_file_bytes: MATERIAL_MAX_BYTES,
+      max_files: CREATION_ATTACHMENT_LIMIT,
+    });
+    expect(Object.isFrozen(api.creationPolicy)).toBe(true);
+    expect(Object.isFrozen(api.creationPolicy!.file_extensions)).toBe(true);
+    expect(api.validateTaskCalendar!(emptyTaskCalendar)).toBe(true);
+    expect(
+      api.validateTaskCalendar!({
+        ...emptyTaskCalendar,
+        schedule: { date: '2026-11-11', start: '15:00', end: '14:00', timezone: 'Asia/Shanghai' },
+      }),
+    ).toBe(false);
+    expect(
+      api.validateTaskCalendar!({
+        ...emptyTaskCalendar,
+        unknown: true,
+      } as typeof emptyTaskCalendar),
+    ).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('uses only the fixed material batch channel and rejects malformed or unknown replies', async () => {

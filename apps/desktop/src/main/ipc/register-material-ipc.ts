@@ -8,6 +8,7 @@ import {
   materialResponseSchema,
   materialRequestSchema,
   materialKind,
+  MATERIAL_FILE_EXTENSIONS,
 } from '@caselite/contracts';
 import type { createMaterialApplication } from '@caselite/application';
 import { isTrustedBusinessSender } from './window-capabilities';
@@ -109,7 +110,7 @@ export function registerMaterialIpc(
         if (channel === MATERIAL_PICK_CHANNEL) {
           const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
             properties: ['openFile'],
-            filters: [{ name: '分析附件', extensions: ['pdf', 'docx'] }],
+            filters: [{ name: '附件', extensions: [...MATERIAL_FILE_EXTENSIONS] }],
           });
           if (!isTrustedBusinessSender(event)) return denied;
           if (result.canceled) return { ok: true, materials: [], staged: null };

@@ -27,6 +27,9 @@ import {
 import { Icon } from './shared/ui/Icon';
 import FinanceView from './features/finance/FinanceView';
 import TaskCreateDialog from './features/tasks/TaskCreateDialog';
+import type { TaskCalendar } from '../preload/caselite-api';
+import { emptyCalendar as emptyTaskCalendar } from './shared/data/calendar-query';
+import { useTaskCreationAttachments } from './features/tasks/useTaskCreationAttachments';
 import type { ReminderDraft } from './features/tasks/ReminderDraftPicker';
 import TaskAttachments from './ui/TaskAttachments';
 import ReminderEditor from './ui/ReminderEditor';
@@ -130,6 +133,12 @@ function Workbench() {
   const [active, setActive] = useState<Task | null>(null);
   const [state, setState] = useState<number[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const creationAttachments = useTaskCreationAttachments();
+  const [creationMode, setCreationMode] = useState<'task' | 'schedule'>('task');
+  const [createCalendar, setCreateCalendar] = useState<TaskCalendar>(emptyTaskCalendar);
+  const [initialCreateCalendar, setInitialCreateCalendar] =
+    useState<TaskCalendar>(emptyTaskCalendar);
+  const createOrigin = useRef<'tasks' | 'calendar'>('tasks');
   const [createProperties, setCreateProperties] = useState(defaultCreateProperties);
   const [createTagDraft, setCreateTagDraft] = useState(false);
   const [createFieldEditing, setCreateFieldEditing] = useState(false);
@@ -158,6 +167,42 @@ function Workbench() {
   const [uncertain, setUncertain] = useState(false);
   const readSequence = useRef(0);
   const createRequest = useRef<CreateTaskCommand | null>(null);
+  const recoveredTaskId = creationAttachments.recovered
+    ? creationAttachments.draft?.task_id
+    : undefined;
+  useEffect(() => {
+    if (!creating || !recoveredTaskId) return;
+    let current = true;
+    void window.caselite
+      .task({ protocol_version: 1, operation: 'read', task_id: recoveredTaskId })
+      .then((result) => {
+        if (!current) return;
+        if (!result.ok || !result.tasks[0]) {
+          setError('原任务暂不可读取，请保留附件后重试。');
+          return;
+        }
+        const task = result.tasks[0];
+        setTitle(task.title);
+        setObjective({ text: task.objective, state: result.objective_state ?? null });
+        setCreateProperties({
+          status: task.status,
+          priority: task.priority,
+          assignee: task.assignee ?? '本人',
+          start_date: task.start_date ?? null,
+          due_date: task.due_date,
+          tags: task.tags ?? [],
+          matter_id: task.matter_id ?? '',
+        });
+        setCreateCalendar(task.calendar ?? emptyTaskCalendar);
+        setCreationMode(task.calendar?.schedule ? 'schedule' : 'task');
+      })
+      .catch(() => {
+        if (current) setError('原任务暂不可读取，附件草稿已保留。');
+      });
+    return () => {
+      current = false;
+    };
+  }, [creating, recoveredTaskId]);
   const listReadSequence = useRef(0);
   const refresh = useCallback(async () => {
     invalidateTaskPages(queryClient);
@@ -215,6 +260,8 @@ function Workbench() {
       createFieldEditing ||
       createProperties.tags.length ||
       createTagDraft ||
+      creationAttachments.draft?.files.length ||
+      JSON.stringify(createCalendar) !== JSON.stringify(initialCreateCalendar) ||
       createProperties.matter_id !== (createSource?.projectId ?? ''),
     );
   useEffect(() => {
@@ -289,7 +336,7 @@ function Workbench() {
     setCreating(false);
     setError('');
   }
-  function newTask(source: ProjectViewState | null = null) {
+  function newTask(source: ProjectViewState | null = null, mode: 'task' | 'schedule' = 'task') {
     if (!canLeave()) return;
     readSequence.current++;
     setLoading(false);
@@ -299,6 +346,24 @@ function Workbench() {
     setProjectOptions([]);
     setCreateProperties({ ...defaultCreateProperties, matter_id: source?.projectId ?? '' });
     setCreateReminder(null);
+    createOrigin.current = view === 'calendar' ? 'calendar' : 'tasks';
+    const calendar: TaskCalendar = {
+      ...emptyTaskCalendar,
+      planned_date: view === 'calendar' ? calendarDate : null,
+      schedule:
+        mode === 'schedule'
+          ? {
+              date: calendarDate,
+              start: '',
+              end: '',
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            }
+          : null,
+    };
+    setInitialCreateCalendar(calendar);
+    setCreateCalendar(calendar);
+    setCreationMode(mode);
+    void creationAttachments.resume();
     setCreateFieldEditing(false);
     setCreateSource(source);
     setCreating(true);
@@ -468,9 +533,16 @@ function Workbench() {
       setBusy(false);
     }
   }
-  function cancelCreate() {
-    if (busy || createRequest.current) return;
-    if (createDirty && !window.confirm('放弃尚未创建的任务？')) return;
+  async function cancelCreate() {
+    if (
+      busy ||
+      createRequest.current ||
+      creationAttachments.busy ||
+      creationAttachments.draft?.task_id
+    )
+      return;
+    if (createDirty && !window.confirm('放弃尚未创建的任务和本轮附件选择？')) return;
+    if (creationAttachments.draft && !(await creationAttachments.discard())) return;
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
@@ -480,9 +552,34 @@ function Workbench() {
       busy ||
       createTagDraft ||
       createFieldEditing ||
-      (mode === 'retry' && !createRequest.current)
+      creationAttachments.busy ||
+      !creationAttachments.ready ||
+      (mode === 'retry' && !createRequest.current && !creationAttachments.draft?.task_id)
     )
       return;
+    const recoveredTask = creationAttachments.draft?.task_id;
+    if (recoveredTask && !createRequest.current) {
+      setBusy(true);
+      setError('');
+      try {
+        if (!(await creationAttachments.save(recoveredTask))) return;
+        const result = check(
+          await window.caselite.task({
+            protocol_version: 1,
+            operation: 'read',
+            task_id: recoveredTask,
+          }),
+        );
+        const saved = result.tasks.find((task) => task.id === recoveredTask);
+        if (!saved) throw Error('原任务暂不可读取，请重新打开任务列表。');
+        showCreated(result, saved);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : '原任务暂不可读取。');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const original = createRequest.current;
 
     setBusy(true);
@@ -498,6 +595,10 @@ function Workbench() {
       due_date: createProperties.due_date || null,
       start_date: createProperties.start_date || null,
       ...(createReminder ? { initial_reminder: createReminder } : {}),
+      ...(creationAttachments.draft ? { creation_draft_id: creationAttachments.draft.id } : {}),
+      ...(JSON.stringify(createCalendar) !== JSON.stringify(emptyTaskCalendar)
+        ? { initial_calendar: createCalendar }
+        : {}),
       ...(createProperties.tags.length ? { tags: createProperties.tags } : {}),
       ...(createProperties.matter_id ? { matter_id: createProperties.matter_id } : {}),
       ...(objective.state ? { objective_state: objective.state } : {}),
@@ -544,9 +645,13 @@ function Workbench() {
         JSON.stringify(receiptTask.tags ?? []) !== JSON.stringify(command.tags ?? []) ||
         receiptTask.matter_id !== (command.matter_id ?? null) ||
         (receiptTask.start_date ?? null) !== (command.start_date ?? null) ||
-        (command.initial_reminder && r.reminder_created !== true)
+        (command.initial_reminder && r.reminder_created !== true) ||
+        (command.initial_calendar &&
+          JSON.stringify(receiptTask.calendar) !== JSON.stringify(command.initial_calendar))
       )
         throw new Error('创建回执与原提交不符，请核对原提交。');
+      if (!(await creationAttachments.save(receiptTask.id)))
+        throw Error('任务已创建，附件尚未全部确认保存，请继续原提交。');
       // 创建回执只证明原提交；打开详情前重读当前对象，避免恢复迟到回执时显示旧版本。
       const current = check(
         await window.caselite.task({
@@ -559,34 +664,37 @@ function Workbench() {
         (t) => t.id === receiptTask.id && t.version >= receiptTask.version,
       );
       if (!saved) throw Error('任务已创建，当前版本暂时无法重读，请核对原提交。');
-      setUncertain(false);
-      createRequest.current = null;
-      setTaskReturn(
-        createSource
-          ? {
-              taskId: saved.id,
-              source: { ...createSource, returnTaskId: saved.id },
-            }
-          : null,
-      );
-      setActive(saved);
-      setReviewDocument(null);
-      setTaskNavigation(null);
-      setState(current.state);
-      setObjectiveState(current.objective_state ?? null);
-      setView('tasks');
-      setDetailTab('内容');
-      setCreateTagDraft(false);
-      setCreating(false);
-      setTitle('');
-      setObjective(emptyDraft());
-      void refresh().catch(() => setError('任务已创建，列表刷新失败；请重试列表，不要重复创建。'));
+      showCreated(current, saved);
     } catch (e) {
       setUncertain(Boolean(createRequest.current));
       setError(e instanceof Error ? e.message : '创建失败');
     } finally {
       setBusy(false);
     }
+  }
+  function showCreated(current: Extract<TaskResponse, { ok: true }>, saved: Task) {
+    setUncertain(false);
+    createRequest.current = null;
+    setTaskReturn(
+      createSource
+        ? {
+            taskId: saved.id,
+            source: { ...createSource, returnTaskId: saved.id },
+          }
+        : null,
+    );
+    setActive(saved);
+    setReviewDocument(null);
+    setTaskNavigation(null);
+    setState(current.state);
+    setObjectiveState(current.objective_state ?? null);
+    setView(createOrigin.current);
+    setDetailTab('内容');
+    setCreateTagDraft(false);
+    setCreating(false);
+    setTitle('');
+    setObjective(emptyDraft());
+    void refresh().catch(() => setError('任务已创建，列表刷新失败；请重试列表，不要重复创建。'));
   }
   const resetTask = () => {
     if (!canLeave()) return;
@@ -786,6 +894,10 @@ function Workbench() {
         )}
         {creating && (
           <TaskCreateDialog
+            mode={creationMode}
+            calendar={createCalendar}
+            onCalendar={setCreateCalendar}
+            attachments={creationAttachments}
             title={title}
             onTitle={setTitle}
             objective={objective}
@@ -847,6 +959,7 @@ function Workbench() {
           />
         ) : view === 'calendar' ? (
           <CalendarView
+            onCreate={(mode) => newTask(null, mode)}
             date={calendarDate}
             selected={active}
             inspector={taskInspector}

@@ -359,6 +359,17 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
             return fail('INVALID_REQUEST', '任务说明超过4000字符，输入已保留。');
         }
         if (request.operation === 'create') {
+          const creationDraft = request.creation_draft_id
+            ? api.materials.creationDraft(request.creation_draft_id)
+            : undefined;
+          if (request.creation_draft_id && (!creationDraft || creationDraft.state !== 'open'))
+            return fail('INVALID_REQUEST', '创建附件草稿已变化，请恢复原提交，不能重复创建任务。');
+          if (request.initial_calendar) {
+            if (!hasCalendar) return fail('CONFLICT', '此工作区尚未升级日历格式。');
+            const typeId = request.initial_calendar.type_id;
+            if (typeId && !calendarTypes(db, workspace).some((v) => v.id === typeId && v.enabled))
+              return fail('INVALID_REQUEST', '请选择启用的重要类型。');
+          }
           if (request.assignee !== undefined && !hasAssignee)
             return fail('CONFLICT', '此工作区尚未升级负责人格式。');
           if (request.start_date && request.due_date && request.start_date > request.due_date)
@@ -391,6 +402,15 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           );
           if (request.assignee !== undefined)
             db.prepare('UPDATE task_items SET assignee=? WHERE id=?').run(request.assignee, taskId);
+          if (request.initial_calendar)
+            db.prepare(
+              `UPDATE task_items SET planned_date=?,schedule_date=?,schedule_start=?,schedule_end=?,schedule_timezone=?,is_important=?,important_type_id=?,attention_source=?,attention_date=?,attention_time=?${hasTimezone ? ',attention_timezone=?' : ''} WHERE id=? AND workspace_id=?`,
+            ).run(
+              ...calendarValues(request.initial_calendar),
+              ...(hasTimezone ? [request.initial_calendar.attention_timezone ?? null] : []),
+              taskId,
+              workspace,
+            );
           if (hasStartDate && request.start_date)
             db.prepare('UPDATE task_items SET start_date=? WHERE id=?').run(
               request.start_date,
@@ -404,6 +424,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
           db.prepare(
             'INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema) VALUES(?,?,?,0,1)',
           ).run(randomUUID(), taskId, randomUUID());
+          // Task、附件归属和根回执同事务，避免创建回执丢失后把附件绑定到第二个任务。
+          if (creationDraft) api.materials.bindCreationDraft(creationDraft, taskId);
           if (request.initial_reminder) {
             // 复用同连接的 Reminder Owner；创建、提醒、活动和两类回执共同提交或回滚。
             const reminder = api.reminders.execute({

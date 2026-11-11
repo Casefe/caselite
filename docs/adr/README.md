@@ -62,3 +62,5 @@
 - [ADR-033](./ADR-033-frozen-export-style.md) 共享导出样式、固定配置与产物身份，DEV-1629。
 
 - [ADR-034](./ADR-034-document-annotation-format.md) 文档高亮/批注正文格式2、恢复与旧版本兼容，DEV-1851。
+
+- [ADR-035](./ADR-035-creation-attachments.md) 创建共用交互、附件草稿与原 Task/文件 Owner，DEV-1883。

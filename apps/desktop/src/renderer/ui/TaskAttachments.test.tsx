@@ -113,6 +113,33 @@ it('does not expose batch controls or poll the retired batch feature', async () 
   await screen.findByText('新附件.docx');
   expect(f.pickPdf).toHaveBeenCalledWith(f.task);
 });
+it('labels saved photos correctly and uses the existing readonly photo reader without authorizing AI', async () => {
+  const task = crypto.randomUUID(),
+    file = source(task, '合成照片.png');
+  const bytes = Uint8Array.from(
+    atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jSz8AAAAASUVORK5CYII=',
+    ),
+    (c) => c.charCodeAt(0),
+  );
+  const material = vi.fn(async (request: MaterialRequest): Promise<MaterialResponse> => ({
+    ok: true,
+    materials: [file],
+    ...(request.operation === 'read' ? { data: bytes } : {}),
+  }));
+  const agent = vi.fn();
+  window.caselite = { material, agent } as unknown as Window['caselite'];
+  render(<TaskAttachments taskId={task} />);
+  const row = await screen.findByRole('button', { name: /合成照片.png/ });
+  expect(row.textContent).toContain('照片');
+  expect(row.textContent).not.toContain('PDF');
+  fireEvent.doubleClick(row);
+  expect((await screen.findByRole('img', { name: file.name })).getAttribute('src')).toContain(
+    'data:image/png;',
+  );
+  expect(screen.queryByText(/PDF 原件/)).toBeNull();
+  expect(agent).not.toHaveBeenCalled();
+});
 it('keeps one periodic list request for two mounted consumers and retains explicit AI import selection', async () => {
   vi.useFakeTimers();
   const f = fixture();

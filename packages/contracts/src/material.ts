@@ -5,6 +5,8 @@ export const MATERIAL_CHANNEL = 'caselite:material:v1';
 export const MATERIAL_PICK_CHANNEL = 'caselite:material-pick:v1';
 export const MATERIAL_DROP_CHANNEL = 'caselite:material-drop:v1';
 export const MATERIAL_MAX_BYTES = 20 * 1024 * 1024;
+export const MATERIAL_FILE_EXTENSIONS = ['pdf', 'docx', 'png', 'jpg', 'jpeg'] as const;
+export const CREATION_ATTACHMENT_LIMIT = 16;
 export const MATERIAL_MAX_PAGES = 200;
 export const MATERIAL_MAX_CONTEXT = 32_000;
 export type MaterialKind = 'pdf' | 'docx' | 'image';
@@ -21,6 +23,30 @@ export function materialLocation(name: string, page: number) {
   return `物理页 ${page}`;
 }
 const id = z.string().uuid();
+export const creationDraftRecordSchema = z
+  .object({
+    id,
+    state: z.enum(['open', 'bound', 'finished', 'discarded']),
+    tokens: z.array(id).max(CREATION_ATTACHMENT_LIMIT),
+    task_id: id.optional(),
+  })
+  .strict();
+export type CreationDraftRecord = z.infer<typeof creationDraftRecordSchema>;
+export const creationAttachmentDraftSchema = creationDraftRecordSchema.extend({
+  files: z
+    .array(
+      z
+        .object({
+          token: id,
+          name: z.string(),
+          bytes: z.number().int().positive(),
+          saved: z.boolean(),
+        })
+        .strict(),
+    )
+    .max(CREATION_ATTACHMENT_LIMIT),
+});
+export type CreationAttachmentDraft = z.infer<typeof creationAttachmentDraftSchema>;
 export const materialScopeSchema = z.union([z.literal('home'), id]);
 export const materialStageRequestSchema = z
   .object({
@@ -87,6 +113,13 @@ export const materialSelectionSchema = z
   })
   .strict();
 export const materialRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({ ...base, operation: z.literal('creation_resume') }),
+  z.strictObject({ ...base, operation: z.literal('creation_open') }),
+  z.strictObject({ ...base, operation: z.literal('creation_read') }),
+  z.strictObject({ ...base, operation: z.literal('creation_remove'), token: id }),
+  z.strictObject({ ...base, operation: z.literal('creation_discard') }),
+  z.strictObject({ ...base, operation: z.literal('creation_bind'), task_id: id }),
+  z.strictObject({ ...base, operation: z.literal('creation_finish') }),
   z.strictObject({ ...base, operation: z.literal('camera_permission') }),
   z.strictObject({ ...base, operation: z.literal('photo_ticket') }),
   z.strictObject({ ...base, operation: z.literal('camera_revoke') }),
@@ -188,6 +221,8 @@ export const materialResponseSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(true),
     materials: z.array(materialSchema),
+    creation_draft: creationAttachmentDraftSchema.nullable().optional(),
+    creation_warning: z.string().optional(),
     staged: stagedPdfSchema.nullable().optional(),
     capture_token: id.optional(),
     data: z.instanceof(Uint8Array).optional(),

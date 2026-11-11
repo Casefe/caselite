@@ -15,6 +15,8 @@
 
 ## 属性栏
 
+公共创建与附件的复用边界见 [创建与附件交互](creation-and-attachments.md)：公共 UI/流程与领域字段、权限、写入 Owner 分开；当前先接任务和日程，其余消费者按自己的 Issue 准入。
+
 - 基础构件集中在 `renderer/shared/ui`：`Icon`、`TagPicker`、`PropertyRow/PropertyValue`、`InspectorSection`。它们负责交互和语义，不保存项目、任务或文档。编辑值行与只读值行分别保留 label 和 dl/dt/dd 语义。
 - 通用评论在 `renderer/shared/discussion/DiscussionFeed.tsx`；项目包装负责项目评论/人工更新的范围，任务页面提供任务范围。不得因共用展示而合并业务 scope 或持久化真源。
 - `ui-design.css` 只登记固定加载顺序，`styles/*.css` 按原连续区段保留层叠；共享尺寸/主题与页面样式逐步归属，不在局部需求中重排整个入口。新样式优先使用所属组件或功能的类名，不扩大为全局控件覆盖。

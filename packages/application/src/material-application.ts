@@ -9,75 +9,22 @@ import {
   type MaterialPreview,
   type MaterialScope,
   type MaterialResponse,
-  type TextPage,
-  type MaterialBatch,
 } from '@caselite/contracts';
 import type { AgentContext, AgentImage } from './agent-application';
-export type MaterialStage = {
-  token: string;
-  scope: MaterialScope;
-  name: string;
-  bytes: number;
-  sha256: string;
-  state: 'staged' | 'committed' | 'cancelled';
-  task_id?: string;
-  restored_source_id?: string;
-  restore_source_id?: string;
-  batch_id?: string;
-};
-export interface MaterialStorePort {
-  activeBatch?(scope: MaterialScope): MaterialBatch | undefined;
-  stage(token: string): MaterialStage | undefined;
-  pending(scope: MaterialScope): MaterialStage | undefined;
-  putStage(stage: MaterialStage): void;
-  task(scope: MaterialScope): string | undefined;
-  home(id: string): void;
-  newHome(): void;
-  get(id: string): Material | undefined;
-  fixed?(id: string, derivation: string): Material | undefined;
-  list(scope: MaterialScope): Material[];
-  projectSources(projectId: string): Material[] | undefined;
-  commit(stage: MaterialStage, taskId: string, pageCount: number): Material;
-  begin(source: string, id: string, config: string, pages: TextPage[]): void;
-  checkpoint(source: string, id: string, status: Material['status'], pages: TextPage[]): boolean;
-  configuration(id: string): string | undefined;
-  recover(): void;
-  putPreview(scope: MaterialScope, preview: MaterialPreview): void;
-  preview(id: string, scope: MaterialScope): MaterialPreview | undefined;
-}
-export interface MaterialFilesPort {
-  stagePhoto?(
-    bytes: Uint8Array,
-    scope: MaterialScope,
-    token: string,
-  ): Promise<MaterialStage & { newly_created?: boolean }>;
-  stage(
-    path: string,
-    scope: MaterialScope,
-    token?: string,
-    expected?: MaterialFileIdentity,
-  ): Promise<MaterialStage>;
-  placedOrStaged(token: string, sha: string): Promise<Uint8Array>;
-  place(token: string, sha: string): Promise<void>;
-  read(id: string, sha: string): Promise<Uint8Array>;
-  discard(token: string): Promise<void>;
-  restore(token: string, id: string, sha: string): Promise<void>;
-}
-export type MaterialFileIdentity = { dev: number; ino: number; size: number; mtimeMs: number };
-export interface PdfProcessorPort {
-  inspect(bytes: Uint8Array): Promise<number>;
-  process(
-    bytes: Uint8Array,
-    input: {
-      ocr: boolean;
-      previous: TextPage[];
-      signal: AbortSignal;
-      onPage(page: TextPage): void;
-    },
-  ): Promise<void>;
-  render?(bytes: Uint8Array, pages: number[], signal?: AbortSignal): Promise<string[]>;
-  configuration: string;
-}
+import { createMaterialCreationDrafts } from './material-creation-draft';
+export type {
+  MaterialStage,
+  MaterialStorePort,
+  MaterialFilesPort,
+  MaterialFileIdentity,
+  PdfProcessorPort,
+} from './material-ports';
+import type {
+  MaterialStorePort,
+  MaterialFilesPort,
+  MaterialFileIdentity,
+  PdfProcessorPort,
+} from './material-ports';
 async function waitForJob(work: Promise<void>, signal: AbortSignal) {
   if (signal.aborted) throw new Error('CANCELLED');
   let stop = () => {};
@@ -107,6 +54,7 @@ export function createMaterialApplication(ports: {
   hash(text: string): string;
 }) {
   const { store, files, processor } = ports;
+  const creation = createMaterialCreationDrafts(ports);
   function processorFor(name: string) {
     const kind = materialKind(name);
     if (kind === 'docx' && ports.docxProcessor) return ports.docxProcessor;
@@ -238,6 +186,7 @@ export function createMaterialApplication(ports: {
       scope: MaterialScope,
       batch?: { id: string; token: string; expected?: MaterialFileIdentity },
     ): Promise<MaterialResponse> {
+      if (creation.find(scope)) return creation.stage(path, scope);
       try {
         if (
           (scope !== 'home' && !ports.taskExists(scope)) ||
@@ -300,6 +249,7 @@ export function createMaterialApplication(ports: {
       const parsed = materialRequestSchema.safeParse(input);
       if (!parsed.success) return fail('INVALID_REQUEST', '材料请求无效。');
       const r = parsed.data;
+      if (r.operation.startsWith('creation_')) return creation.execute(r);
       if (r.operation === 'save_project_original' || r.operation === 'save_original')
         return fail('INVALID_REQUEST', '原件另存须通过桌面受控保存入口。');
       if (r.operation === 'list_project' || r.operation === 'read_project') {
@@ -424,6 +374,11 @@ export function createMaterialApplication(ports: {
             return fail('CANCELLED', '该次导入已取消，请重新选择文件。');
           if (committing) return fail('BUSY', '另一份材料正在提交，请稍后重试。');
           if (r.operation === 'discard') {
+            if (staged.creation_draft_id)
+              return fail(
+                'CREATION_DRAFT',
+                '此附件属于创建草稿，请从新建入口继续保存；不能作为普通导入取消。',
+              );
             committing = true;
             try {
               store.putStage({ ...staged, state: 'cancelled' });

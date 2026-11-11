@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DocxOriginalReader } from './DocxOriginalReader';
+import PhotoReader from './PhotoReader';
 import { isDocx, useMaterials } from './useMaterials';
 import ImportantDates from '../features/calendar/ImportantDates';
 import type { Task } from '../../preload/caselite-api';
@@ -63,7 +64,7 @@ export default function TaskAttachments({
           type="button"
           disabled={disabled || !c.available || c.busy || Boolean(c.staged)}
           onClick={() => void c.add()}
-          title="添加 PDF 或 DOCX，每份不超过 20 MB"
+          title={`添加 ${window.caselite.creationPolicy?.file_extensions.join(' / ').toUpperCase() ?? '本地附件'}${window.caselite.creationPolicy ? `，每份不超过 ${window.caselite.creationPolicy.max_file_bytes / 1024 / 1024} MB` : ''}`}
         >
           添加附件
         </button>
@@ -82,7 +83,13 @@ export default function TaskAttachments({
       ) : !c.loaded && !c.readError ? (
         <p>正在读取附件…</p>
       ) : (
-        !c.items.length && <p>暂无附件 · PDF / DOCX</p>
+        !c.items.length && (
+          <p>
+            暂无附件 ·{' '}
+            {window.caselite.creationPolicy?.file_extensions.join(' / ').toUpperCase() ??
+              '本地附件'}
+          </p>
+        )
       )}
       {c.items.length > 0 && (
         <ul aria-label="已保存任务附件">
@@ -107,7 +114,9 @@ export default function TaskAttachments({
                 }}
                 title={`${item.name}\n固定来源版本 ${item.id}\n资产版本 ${item.asset_version_id}\nSHA-256 ${item.sha256}`}
               >
-                <span className="task-attachment-format">{isDocx(item.name) ? 'DOCX' : 'PDF'}</span>
+                <span className="task-attachment-format">
+                  {/\.(png|jpe?g)$/i.test(item.name) ? '照片' : isDocx(item.name) ? 'DOCX' : 'PDF'}
+                </span>
                 <span className="task-attachment-label">
                   <strong>{item.name}</strong>
                   <small>
@@ -150,7 +159,9 @@ export default function TaskAttachments({
             c.clearReading();
           }}
         >
-          {isDocx(reading.name) ? (
+          {/\.(png|jpe?g)$/i.test(reading.name) ? (
+            <PhotoReader name={reading.name} bytes={reading.bytes} onClose={c.clearReading} />
+          ) : isDocx(reading.name) ? (
             <DocxOriginalReader
               name={reading.name}
               material={material}

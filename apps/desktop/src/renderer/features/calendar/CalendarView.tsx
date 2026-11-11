@@ -8,6 +8,7 @@ import { useCalendarLayout } from './useCalendarLayout';
 
 export default function CalendarView({
   date,
+  onCreate,
   onDate,
   selected,
   inspector,
@@ -16,6 +17,7 @@ export default function CalendarView({
   onClose,
 }: {
   date: string;
+  onCreate?(mode: 'task' | 'schedule'): void;
   onDate(date: string): void;
   selected: Task | null;
   inspector: ReactNode;
@@ -127,6 +129,23 @@ export default function CalendarView({
       className={`calendar-workbench ${datesOpen ? 'calendar-dates-open' : ''} ${selected ? 'calendar-task-open' : ''}`}
       aria-label="日历工作台"
     >
+      <header className="calendar-creation-toolbar">
+        <h1>日历</h1>
+        <span>{date}</span>
+        <div>
+          <button aria-label="新建任务" disabled={blocked} onClick={() => onCreate?.('task')}>
+            ＋ 新建任务
+          </button>
+          <button
+            aria-label="新建日程"
+            className="primary"
+            disabled={blocked}
+            onClick={() => onCreate?.('schedule')}
+          >
+            ＋ 新建日程
+          </button>
+        </div>
+      </header>
       <aside className="calendar-dates" aria-label="日期与安排">
         <header>
           <h2>日历</h2>
