@@ -101,9 +101,12 @@ it.each(['Word', 'PDF'] as const)(
     click('固定当前修订');
     await screen.findByRole('button', { name: /修订 2 草稿/ });
     click(/修订 1 草稿/);
-    expect(
-      (screen.getByRole('textbox', { name: '固定版本正文' }) as HTMLTextAreaElement).value,
-    ).toContain('付款期限为十日。');
+    // 选中版本后等待固定正文读回，避免把前一版本的临时画面当成读取结果。
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('textbox', { name: '固定版本正文' }) as HTMLTextAreaElement).value,
+      ).toContain('付款期限为十日。'),
+    );
     const dialog = exportVersion(format);
     expect(within(dialog).getByText(`导出固定修订 1 · ${format}`)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: '演示导出' }));
