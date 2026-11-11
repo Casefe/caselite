@@ -1,3 +1,4 @@
+import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ProjectMetrics from './ProjectMetrics';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
@@ -436,11 +437,13 @@ export default function ProjectCatalog({
       ref={workspace}
       inert={navigationPending}
       aria-busy={navigationPending}
-      className="collection-workspace catalog-view project-catalog"
+      className="collection-workspace catalog-view project-catalog property-resizable"
+      data-properties-resizable="true"
       data-project-view={editor ? section : 'list'}
       data-layout="three-column"
       data-testid="project-catalog"
     >
+      <PropertyResizeHandle module="projects" />
       <div className="collection-main">
         {backSlot && createPortal(backButton, backSlot)}
         <div className="collection-heading project-catalog-heading">

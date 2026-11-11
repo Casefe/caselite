@@ -1,3 +1,4 @@
+import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { Contact } from '../../../preload/caselite-api';
@@ -122,9 +123,11 @@ export default function ContactsView({
   }
   return (
     <section
-      className="collection-workspace catalog-view contacts-workbench"
+      className="collection-workspace catalog-view contacts-workbench property-resizable"
+      data-properties-resizable="true"
       data-layout="three-column"
     >
+      <PropertyResizeHandle module="contacts" />
       <div className="collection-main">
         <div ref={setDetailTarget} className="customer-detail-slot" hidden={!detailId} />
         <div className="customer-list-page" hidden={Boolean(detailId)}>

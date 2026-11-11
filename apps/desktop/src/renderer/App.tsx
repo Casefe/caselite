@@ -4,6 +4,7 @@ import {
   FavoritesSidebar,
   useFavorites,
 } from './features/favorites/Favorites';
+import PropertyResizeHandle from './ui/PropertyResizeHandle';
 import CalendarView from './features/calendar/CalendarView';
 import InspectorLayout from './ui/InspectorLayout';
 import { DocumentPropertyValues } from './ui/DocumentInspector';
@@ -941,7 +942,8 @@ function Workbench() {
               )}
             </div>
 
-            <div className="task-layout">
+            <div className="task-layout property-resizable" data-properties-resizable="true">
+              <PropertyResizeHandle module="tasks" />
               <div className="task-work-area" aria-label="阅读与编辑工作区">
                 <div className="task-reminder-entry">
                   <button
