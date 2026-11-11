@@ -555,7 +555,7 @@
   max-height: 100%;
 }
 .inspector-split[data-ai-expanded='true']::after {
-  flex-basis: 85%;
+  flex-basis: var(--inspector-ai-height, 85%);
 }
 .inspector-split[data-ai-expanded='false']
   .inspector-ai-scroll
@@ -821,4 +821,43 @@
     height: calc(100dvh - var(--workbench-header-height, 48px));
     max-height: none;
   }
+}
+
+.inspector-ai-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 最大化只改变原 dock 的几何位置，原页面引用、草稿和正在生成的 Run 继续由原消费者持有。 */
+.inspector-split[data-ai-maximized='true'] > .inspector-ai-region {
+  z-index: 30;
+  border: 0;
+  border-radius: 0;
+  padding: 0 24px 20px;
+  box-shadow: none;
+}
+.inspector-split[data-ai-maximized='true'] .inspector-ai-heading {
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.inspector-split[data-ai-maximized='true'] .inspector-ai-scroll {
+  width: min(100%, 840px);
+  align-self: center;
+}
+.inspector-split[data-ai-maximized='true'] .assistant-input {
+  max-height: 160px;
+}
+@media (max-width: 700px) {
+  .inspector-split[data-ai-maximized='true'] > .inspector-ai-region {
+    padding-inline: 12px;
+  }
+}
+
+/* 最大化时隐藏被覆盖的工作页，保留原布局和状态；导航在工作区外仍可访问。 */
+.workspace-main:has(.inspector-split[data-ai-maximized='true']) > * {
+  visibility: hidden;
+}
+.inspector-split[data-ai-maximized='true'] > .inspector-ai-region {
+  visibility: visible;
 }

@@ -1,5 +1,13 @@
 import InspectorCards, { type InspectorCard } from './InspectorCards';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 // 只调整两个区域的尺寸；保持子树和 dock 身份，伸缩不能重启运行或丢失草稿。
 export default function InspectorLayout({
@@ -18,22 +26,40 @@ export default function InspectorLayout({
   expandedActions?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [customWidth, setCustomWidth] = useState<number | null>(null);
-  const [bounds, setBounds] = useState({ width: 0, right: 0, bottom: 0, height: 0 });
+  const [bounds, setBounds] = useState({
+    width: 0,
+    right: 0,
+    bottom: 0,
+    height: 0,
+    workspaceLeft: 0,
+    workspaceTop: 0,
+    workspaceWidth: 0,
+    workspaceHeight: 0,
+  });
   const layout = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const region = useId();
-  const maximumWidth = Math.max(bounds.width, bounds.right - 12);
-  const minimumWidth = Math.min(bounds.width, maximumWidth);
-  const width = Math.min(
-    maximumWidth,
-    Math.max(minimumWidth, expanded ? (customWidth ?? bounds.width * 1.5) : bounds.width),
-  );
+  const right = Math.min(window.innerWidth, Math.max(0, bounds.right));
+  const maximumWidth = Math.max(0, right - 12);
+  const minimumWidth = Math.min(280, maximumWidth);
+  // 窄窗优先保证输入和停止控件可读；紧凑态仍严格跟随原属性栏。
+  const width = expanded
+    ? Math.min(maximumWidth, Math.max(minimumWidth, customWidth ?? window.innerWidth / 4))
+    : Math.min(bounds.width, right);
+  const bottom = Math.min(window.innerHeight, Math.max(0, bounds.bottom));
+  const availableHeight = Math.max(0, Math.min(bounds.height, bottom));
+  const maximumHeight = Math.max(0, availableHeight - Math.min(48, availableHeight * 0.15));
+  const height = expanded
+    ? Math.min(maximumHeight, Math.max(Math.min(164, maximumHeight), availableHeight * 0.85))
+    : Math.min(availableHeight, 164);
   const collapse = () => {
     setExpanded(false);
+    setMaximized(false);
     setCustomWidth(null);
     drag.current = null;
   };
@@ -41,13 +67,33 @@ export default function InspectorLayout({
     const element = layout.current;
     if (!element) return;
     // 固定定位越过属性栏的 overflow 裁切；只跟随原栏位置，不移动或重挂载会话 dock。
+    const workspace = element.closest('.workspace-main');
     const measure = () => {
+      const area = workspace?.getBoundingClientRect();
       const rect = element.getBoundingClientRect();
-      setBounds({ width: rect.width, right: rect.right, bottom: rect.bottom, height: rect.height });
+      setBounds({
+        width: rect.width,
+        right: rect.right,
+        bottom: rect.bottom,
+        height: rect.height,
+        workspaceLeft: Math.max(0, area?.left ?? 0),
+        workspaceTop: Math.max(0, area?.top ?? 0),
+        workspaceWidth: Math.max(
+          0,
+          Math.min(area?.right ?? window.innerWidth, window.innerWidth) -
+            Math.max(0, area?.left ?? 0),
+        ),
+        workspaceHeight: Math.max(
+          0,
+          Math.min(area?.bottom ?? window.innerHeight, window.innerHeight) -
+            Math.max(0, area?.top ?? 0),
+        ),
+      });
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(element);
+    if (workspace) observer?.observe(workspace);
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
     return () => {
@@ -106,6 +152,7 @@ export default function InspectorLayout({
         return;
       event.preventDefault();
       setExpanded(false);
+      setMaximized(false);
       setCustomWidth(null);
       drag.current = null;
       toggle.current?.focus();
@@ -122,7 +169,13 @@ export default function InspectorLayout({
     };
   }, [blocked, expanded]);
   return (
-    <div ref={layout} className={`inspector-split ${className}`} data-ai-expanded={expanded}>
+    <div
+      ref={layout}
+      className={`inspector-split ${className}`}
+      data-ai-expanded={expanded}
+      data-ai-maximized={maximized}
+      style={{ '--inspector-ai-height': `${height}px` } as CSSProperties}
+    >
       <div className="inspector-properties-scroll" tabIndex={0} aria-label="属性滚动区域">
         {cards === undefined ? (
           properties
@@ -135,13 +188,15 @@ export default function InspectorLayout({
         aria-label="AI 对话"
         className="project-inspector-section inspector-ai-region"
         style={{
-          width,
-          right: Math.max(0, window.innerWidth - bounds.right),
-          bottom: Math.max(0, window.innerHeight - bounds.bottom),
-          height: expanded ? bounds.height * 0.85 : Math.min(bounds.height, 164),
+          width: maximized ? bounds.workspaceWidth : width,
+          right: maximized ? undefined : Math.max(0, window.innerWidth - right),
+          left: maximized ? bounds.workspaceLeft : undefined,
+          top: maximized ? bounds.workspaceTop : undefined,
+          bottom: maximized ? undefined : Math.max(0, window.innerHeight - bottom),
+          height: maximized ? bounds.workspaceHeight : height,
         }}
       >
-        {expanded && (
+        {expanded && !maximized && (
           <div
             className="inspector-ai-resize"
             role="separator"
@@ -196,21 +251,45 @@ export default function InspectorLayout({
           />
         )}
         <header className="inspector-ai-heading">
-          <h3>AI 对话</h3>
-          <button
-            ref={toggle}
-            type="button"
-            aria-controls={region}
-            aria-expanded={expanded}
-            aria-label={expanded ? '收起 AI 对话' : '展开 AI 对话'}
-            title={expanded ? '最小化 AI 对话' : '展开 AI 对话'}
-            disabled={blocked && !expanded}
-            onClick={() => (expanded ? collapse() : setExpanded(true))}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              {expanded ? <path d="M4 8h8" /> : <path d="M3 7V3h4M3 3l4 4m6 2v4H9m4 0L9 9" />}
-            </svg>
-          </button>
+          <h3>{maximized ? 'AI Agent' : 'AI 对话'}</h3>
+          <div className="inspector-ai-controls">
+            <button
+              ref={toggle}
+              type="button"
+              aria-controls={region}
+              aria-expanded={expanded}
+              aria-label={expanded ? '收起 AI 对话' : '展开 AI 对话'}
+              title={expanded ? '最小化 AI 对话' : '展开 AI 对话'}
+              disabled={blocked && !expanded}
+              onClick={() => (expanded ? collapse() : setExpanded(true))}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                {expanded ? <path d="M4 8h8" /> : <path d="M3 7V3h4M3 3l4 4m6 2v4H9m4 0L9 9" />}
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="inspector-ai-maximize"
+              aria-controls={region}
+              aria-label={maximized ? '还原 AI 对话' : '最大化 AI 对话'}
+              title={maximized ? '还原 AI 对话' : '最大化为 AI Agent'}
+              aria-pressed={maximized}
+              disabled={blocked && !expanded}
+              onClick={() => {
+                setExpanded(true);
+                setMaximized((value) => !value);
+                drag.current = null;
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                {maximized ? (
+                  <path d="M6 3h7v7M3 6h7v7H3z" />
+                ) : (
+                  <path d="M3 6V3h3m4 0h3v3m0 4v3h-3m-4 0H3v-3" />
+                )}
+              </svg>
+            </button>
+          </div>
         </header>
         {expanded && expandedActions}
         <div ref={content} id={region} className="inspector-ai-scroll">
