@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import type { CatalogDocument, Matter } from '../../../preload/caselite-api';
 import { Icon } from '../../shared/ui/Icon';
 
@@ -92,6 +92,53 @@ export default function DocumentFolderTree({
 }) {
   const [expanded, setExpanded] = useState(['personal', 'collection:工作文档', 'projects']);
   const groups = documentFolderGroups(documents, projects);
+  function navigate(event: KeyboardEvent<HTMLElement>) {
+    if (
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    )
+      return;
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
+      return;
+    const row = (event.target as HTMLElement).closest<HTMLElement>(
+      'summary, button[data-document-id]',
+    );
+    if (!row || !event.currentTarget.contains(row)) return;
+    event.preventDefault();
+    if (disabled) return;
+    // 折叠内容不会挂载；只在当前可见目录里移动焦点，不触发选文或绕过未保存保护。
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('summary, button[data-document-id]'),
+    );
+    const index = rows.indexOf(row);
+    if (event.key === 'Home') rows[0]?.focus();
+    else if (event.key === 'End') rows.at(-1)?.focus();
+    else if (event.key === 'ArrowDown') rows[Math.min(index + 1, rows.length - 1)]?.focus();
+    else if (event.key === 'ArrowUp') rows[Math.max(index - 1, 0)]?.focus();
+    else if (event.key === 'ArrowRight' && row.tagName === 'SUMMARY') {
+      const id = row.parentElement?.dataset.folderId;
+      if (id && !expanded.includes(id)) setExpanded((old) => [...old, id]);
+      else
+        row.parentElement
+          ?.querySelector<HTMLElement>(
+            ':scope > .document-folder-children > details > summary, :scope > .document-folder-children > button',
+          )
+          ?.focus();
+    } else if (event.key === 'ArrowLeft') {
+      const folder = row.closest<HTMLDetailsElement>('details');
+      const id = folder?.dataset.folderId;
+      if (row.tagName === 'SUMMARY' && id && expanded.includes(id))
+        setExpanded((old) => old.filter((value) => value !== id));
+      else {
+        const parent =
+          row.tagName === 'SUMMARY' ? folder?.parentElement?.closest('details') : folder;
+        parent?.querySelector<HTMLElement>(':scope > summary')?.focus();
+      }
+    }
+  }
   function folder(node: DocumentFolder) {
     const open = expanded.includes(node.id);
     return (
@@ -154,7 +201,7 @@ export default function DocumentFolderTree({
     );
   }
   return (
-    <nav className="document-folder-tree" aria-label="文件夹">
+    <nav className="document-folder-tree" aria-label="文件夹" onKeyDown={navigate}>
       {groups.map(folder)}
     </nav>
   );
