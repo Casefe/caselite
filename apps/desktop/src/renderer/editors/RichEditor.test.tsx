@@ -35,6 +35,91 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 describe('rich input locking', () => {
+  it('refreshes after rapid lock and unlock commits even when the final editability equals the initial value', async () => {
+    const doc = draftDoc({ text: '快速切换仍须保全正文', state: null });
+    const editor = new Editor({ extensions: localExtensions(doc), injectCSS: false });
+    const updates = vi.fn();
+    editor.on('update', updates);
+    function Owner({ disabled }: { disabled: boolean }) {
+      useEffect(() => {
+        editor.setEditable(!disabled, false);
+      }, [disabled]);
+      return <EditorSurface editor={editor} mode="compact" disabled={disabled} />;
+    }
+    const view = render(<Owner disabled={false} />);
+    let scheduler: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      await waitFor(() => expect(editor.isInitialized).toBe(true));
+      const input = screen.getByRole('textbox');
+      const surface = input.closest('.editor-surface')!;
+      await waitFor(() => expect(surface.getAttribute('aria-disabled')).toBe('false'));
+      const saved = Y.encodeStateAsUpdate(doc);
+      const queued: VoidFunction[] = [];
+      scheduler = vi
+        .spyOn(globalThis, 'queueMicrotask')
+        .mockImplementation((callback) => queued.push(callback));
+      view.rerender(<Owner disabled />);
+      expect(editor.isEditable).toBe(false);
+      view.rerender(<Owner disabled={false} />);
+      expect(editor.isEditable).toBe(true);
+      act(() => {
+        while (queued.length) queued.shift()!();
+      });
+      scheduler.mockRestore();
+      await waitFor(() => expect(surface.getAttribute('aria-disabled')).toBe('false'));
+      const firstClick = createEvent.click(input);
+      fireEvent(input, firstClick);
+      expect(firstClick.defaultPrevented).toBe(false);
+      expect(screen.getByRole('textbox')).toBe(input);
+      expect(Y.encodeStateAsUpdate(doc)).toEqual(saved);
+      expect(updates).not.toHaveBeenCalled();
+    } finally {
+      scheduler?.mockRestore();
+      view.unmount();
+      editor.destroy();
+      doc.destroy();
+    }
+  });
+
+  it('refreshes a replacement editor after its owner unlocks it without a body update', async () => {
+    const firstDoc = draftDoc({ text: '前一个正文', state: null });
+    const nextDoc = draftDoc({ text: '替换后的原正文', state: null });
+    const first = new Editor({ extensions: localExtensions(firstDoc), injectCSS: false });
+    const next = new Editor({
+      extensions: localExtensions(nextDoc),
+      injectCSS: false,
+      editable: false,
+    });
+    const updates = vi.fn();
+    next.on('update', updates);
+    function Owner({ editor }: { editor: Editor }) {
+      useEffect(() => {
+        editor.setEditable(true, false);
+      }, [editor]);
+      return <EditorSurface editor={editor} mode="compact" />;
+    }
+    const view = render(<Owner editor={first} />);
+    try {
+      await waitFor(() => expect(first.isInitialized && next.isInitialized).toBe(true));
+      const saved = Y.encodeStateAsUpdate(nextDoc);
+      view.rerender(<Owner editor={next} />);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('textbox').closest('.editor-surface')?.getAttribute('aria-disabled'),
+        ).toBe('false'),
+      );
+      expect(screen.getByRole('textbox')).toBe(next.view.dom);
+      expect(Y.encodeStateAsUpdate(nextDoc)).toEqual(saved);
+      expect(updates).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      first.destroy();
+      next.destroy();
+      firstDoc.destroy();
+      nextDoc.destroy();
+    }
+  });
+
   it.each(['compact', 'simple', 'notion'] as const)(
     'restores the first click and input after the owner unlocks %s without changing saved Yjs',
     async (mode) => {

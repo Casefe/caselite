@@ -9,6 +9,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -335,7 +336,7 @@ export function EditorSurface({
   const [showFormats, setShowFormats] = useState(false);
   const [composing, setComposing] = useState(false);
   const [pasteError, setPasteError] = useState('');
-  const [appliedEditable, setAppliedEditable] = useState(() => editor?.isEditable ?? false);
+  const [, refreshEditable] = useReducer((revision: number) => revision + 1, 0);
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
@@ -343,7 +344,7 @@ export function EditorSurface({
     let active = true;
     // 等 Owner 的 setEditable(..., false) 完成后刷新显示，不制造正文 update 或放开只读守卫。
     queueMicrotask(() => {
-      if (active) setAppliedEditable(editor?.isEditable ?? false);
+      if (active) refreshEditable();
     });
     return () => {
       active = false;
@@ -395,7 +396,7 @@ export function EditorSurface({
         编辑器载入中…
       </div>
     );
-  const editable = !disabled && editor.isEditable && appliedEditable;
+  const editable = !disabled && editor.isEditable;
   const compact = mode === 'compact';
   const documentMode = mode === 'simple';
   const markdown = documentMode && documentScheme === 'markdown';
