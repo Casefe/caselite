@@ -1,5 +1,6 @@
 import {
   agentRequestSchema,
+  explicitThemeTarget,
   parseContactRecord,
   agentProviderFor,
   type AgentModel,
@@ -11,12 +12,24 @@ import {
   type ReviewRange,
   type ReviewAction,
   type ReviewSaved,
+  type Theme,
 } from '@caselite/contracts';
+import type { createAppearanceApplication } from './appearance-application';
 import type { createImportantDateApplication } from './important-date-application';
 
 // 候选只在受控响应中派生；丢弃历史中的派生字段，原Run和序列保持不变。
 function publicRun(run: AgentRun): AgentRun {
   const raw = { ...run };
+  if (raw.status === 'interrupted' && raw.theme_command?.state === 'pending') {
+    // 文件可能已提交而Run检查点尚未落盘；重启只显示未知，绝不从目标值反推成功。
+    raw.theme_command = {
+      ...raw.theme_command,
+      state: 'unknown',
+      current: false,
+      can_undo: false,
+      message: '进程已中断，主题结果待核对；不会自动重试。',
+    };
+  }
   delete raw.contact_record_candidate;
   const candidate =
     raw.scope.startsWith('contact:') && raw.status === 'succeeded' && !raw.output_incomplete
@@ -61,6 +74,7 @@ export interface AgentRuntimePort {
     prompt: string;
     images?: AgentImage[];
     key: string;
+    theme?: { target: Theme; propose(input: unknown): void };
     onText(text: string): void;
     onEnd(result: {
       status: 'succeeded' | 'failed';
@@ -76,6 +90,7 @@ export function createAgentApplication(ports: {
   credentials: AgentCredentialPort;
   runtime: AgentRuntimePort;
   history?: AgentHistoryPort;
+  appearance?: ReturnType<typeof createAppearanceApplication>;
   dates?: ReturnType<typeof createImportantDateApplication>;
   copyOutput?(text: string): void | Promise<void>;
   taskExists(id: string): boolean;
@@ -108,6 +123,7 @@ export function createAgentApplication(ports: {
   ): Promise<string | AgentContext>;
 }) {
   const runs = new Map<string, { owner: string; run: AgentRun; cancel?: () => void }>();
+  const pendingThemeRecords = new Set<string>();
   let historyUnavailable = false;
   try {
     for (const run of ports.history?.load() ?? []) runs.set(run.id, { owner: '', run });
@@ -115,11 +131,30 @@ export function createAgentApplication(ports: {
     historyUnavailable = true;
   }
   let dispatched = 0;
+  const rejectPendingTheme = (run: AgentRun, owner: string, message: string) => {
+    if (run.theme_command?.state !== 'pending') return;
+    run.theme_command = ports.appearance?.rejectPending(run.theme_command.id, owner, message) ?? {
+      ...run.theme_command,
+      state: 'rejected',
+      current: false,
+      can_undo: false,
+      message,
+    };
+    run.output = run.theme_command.message;
+  };
   const persist = (item: { run: AgentRun; cancel?: () => void }): boolean => {
     try {
       ports.history?.save(item.run);
       return true;
     } catch {
+      if (item.run.theme_command) {
+        pendingThemeRecords.add(item.run.id);
+        item.run.sequence++;
+        item.run.message = `${item.run.theme_command.message}运行记录尚未保存，请核对结果；不会重复修改主题。`;
+        item.cancel?.();
+        item.cancel = undefined;
+        return false;
+      }
       item.run.status = 'failed';
       item.run.sequence++;
       item.run.usage = null;
@@ -198,6 +233,8 @@ export function createAgentApplication(ports: {
           request.operation === 'history' ||
           request.operation === 'active_runs' ||
           request.operation === 'pin_history' ||
+          request.operation === 'theme_status' ||
+          request.operation === 'undo_theme' ||
           request.operation === 'apply_review')
       )
         return failure(
@@ -493,6 +530,40 @@ export function createAgentApplication(ports: {
             reviewSaved = result;
           }
         }
+        if (request.operation === 'theme_status' || request.operation === 'undo_theme') {
+          const item = runs.get(request.run_id);
+          if (
+            !item ||
+            item.owner !== owner ||
+            item.run.scope !== 'home' ||
+            !item.run.theme_command ||
+            !ports.appearance
+          )
+            return failure('THEME_EXPIRED', '主题操作已过期或不属于当前窗口；历史仅记录当时结果。');
+          const result =
+            request.operation === 'undo_theme'
+              ? ports.appearance.undo(item.run.theme_command.id, owner)
+              : ports.appearance.result(item.run.theme_command.id, owner);
+          if (!result.ok || !result.command)
+            return failure('THEME_CONFLICT', result.ok ? '未取得主题操作结果。' : result.message);
+          const next = result.command;
+          const changed = JSON.stringify(item.run.theme_command) !== JSON.stringify(next);
+          const recordPending = pendingThemeRecords.has(item.run.id);
+          if (changed || recordPending) {
+            item.run.theme_command = next;
+            item.run.output = next.message;
+            item.run.message = next.message;
+            item.run.sequence++;
+            try {
+              ports.history?.save(item.run);
+              pendingThemeRecords.delete(item.run.id);
+            } catch {
+              pendingThemeRecords.add(item.run.id);
+              // 偏好文件的实际效果不能被Run落盘失败否认；只读核对可重存记录，不重放主题。
+              item.run.message = `${next.message}运行记录尚未保存，请核对结果；不会重复修改主题。`;
+            }
+          }
+        }
         if (request.operation === 'copy_output') {
           if (historyUnavailable) return failure('HISTORY_UNAVAILABLE', '运行记录不可用，未复制。');
           const item = runs.get(request.run_id);
@@ -620,6 +691,22 @@ export function createAgentApplication(ports: {
                 '请先配置所选服务商的 API Key。不会使用其他软件的登录或额度。',
               );
             let runtimePrompt: string | AgentContext | undefined;
+            // 只有首页本轮纯用户指令获准；任何材料/页面/历史消费者都没有设置写工具。
+            const themeTarget =
+              ports.appearance &&
+              request.scope === 'home' &&
+              !request.context_id &&
+              !request.page_context_id &&
+              !request.contact_record_context_id &&
+              !request.project_fingerprint &&
+              !request.purpose
+                ? explicitThemeTarget(request.prompt)
+                : undefined;
+            const themeCommand = themeTarget
+              ? ports.appearance!.prepare(owner, themeTarget)
+              : undefined;
+            if (themeTarget && !themeCommand)
+              return failure('APPEARANCE_UNAVAILABLE', '无法读取或授权本机主题，本次未修改。');
             const generation = ownerGeneration.get(owner) ?? 0;
             ownerGeneration.set(owner, generation);
             preparing = true;
@@ -705,6 +792,7 @@ export function createAgentApplication(ports: {
               id: request.run_id,
               scope: request.scope,
               prompt: request.prompt,
+              ...(themeCommand ? { theme_command: themeCommand } : {}),
               ...(dateBinding
                 ? { purpose: 'important_dates' as const, date_binding: dateBinding }
                 : {}),
@@ -755,8 +843,27 @@ export function createAgentApplication(ports: {
                   prompt: typeof runtimePrompt === 'string' ? runtimePrompt : runtimePrompt.text,
                   images: typeof runtimePrompt === 'object' ? runtimePrompt.images : undefined,
                   key,
+                  ...(themeCommand && themeTarget
+                    ? {
+                        theme: {
+                          target: themeTarget,
+                          propose(input: unknown) {
+                            if (
+                              run.status !== 'running' ||
+                              (ownerGeneration.get(owner) ?? 0) !== generation
+                            )
+                              throw new Error('Theme run no longer authorized');
+                            run.theme_command = ports.appearance!.propose(
+                              themeCommand.id,
+                              owner,
+                              input,
+                            );
+                          },
+                        },
+                      }
+                    : {}),
                   onText(text) {
-                    if (run.status === 'running') {
+                    if (run.status === 'running' && !themeCommand) {
                       run.output = text.slice(0, 64_000);
                       run.sequence++;
                       if (Date.now() - lastCheckpoint >= 500) {
@@ -768,6 +875,16 @@ export function createAgentApplication(ports: {
                   onEnd(result) {
                     if (run.status === 'running') {
                       Object.assign(run, result);
+                      if (themeCommand) {
+                        rejectPendingTheme(run, owner, '模型未提出获准的主题操作，本次未修改。');
+                        const command = run.theme_command;
+                        run.output = command
+                          ? command.message
+                          : '模型未提出获准的主题操作，本次未修改。';
+                        if (!command || !['saved', 'unchanged'].includes(command.state))
+                          run.status = 'failed';
+                        run.message = run.output;
+                      }
                       if (run.purpose === 'important_dates' && result.status === 'succeeded')
                         run.date_result = ports.dates!.finish(run);
                       run.sequence++;
@@ -780,6 +897,7 @@ export function createAgentApplication(ports: {
                 else handle.cancel();
               } catch {
                 run.status = 'failed';
+                rejectPendingTheme(run, owner, '模型启动失败，本次未修改主题。');
                 if (!run.message) run.message = '模型启动失败，未自动重试。';
                 run.sequence++;
                 persist(item);
@@ -797,6 +915,7 @@ export function createAgentApplication(ports: {
             return failure('NOT_FOUND', '未找到当前范围的运行。');
           if (item.run.status === 'running') {
             item.run.status = 'cancelled';
+            rejectPendingTheme(item.run, item.owner, '已取消，本次未修改主题。');
             item.run.sequence++;
             item.run.message = '已停止本地生成；远端可能已处理或计费，用量尚不确定。';
             item.cancel?.();
@@ -841,6 +960,7 @@ export function createAgentApplication(ports: {
       }
     },
     release(owner?: string) {
+      ports.appearance?.release(owner);
       for (const [id, page] of pages) if (!owner || page.owner === owner) pages.delete(id);
       if (owner) reviews.delete(owner);
       else reviews.clear();
@@ -854,6 +974,7 @@ export function createAgentApplication(ports: {
         if (!owner || item.owner === owner) {
           if (item.run.status === 'running') {
             item.run.status = 'cancelled';
+            rejectPendingTheme(item.run, item.owner, '窗口关闭，本次未修改主题。');
             item.run.message = '窗口关闭，运行已停止；远端处理及费用可能未知。';
             item.run.sequence++;
             item.cancel?.();

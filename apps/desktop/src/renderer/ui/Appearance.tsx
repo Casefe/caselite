@@ -116,12 +116,12 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
         }
       });
   };
-  const retry = () => {
+  const retry = useCallback(() => {
     if (locked.current) return;
     locked.current = true;
     setPending(true);
     setAttempt((n) => n + 1);
-  };
+  }, []);
   return (
     <AppearanceContext.Provider value={{ theme, pending, error, setTheme: choose, retry }}>
       {resolved ? (

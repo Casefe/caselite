@@ -348,7 +348,12 @@ export type {
   DiscussionScope,
   DiscussionEntry,
 } from '@caselite/contracts';
-export type { Theme, AppearanceRequest, AppearanceResponse } from '@caselite/contracts';
+export type {
+  Theme,
+  ThemeCommand,
+  AppearanceRequest,
+  AppearanceResponse,
+} from '@caselite/contracts';
 
 export type {
   Material,

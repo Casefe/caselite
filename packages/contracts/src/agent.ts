@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { themeCommandSchema } from './appearance';
 import { contactRecordCandidateSchema } from './contacts';
 import { matterSchema, projectProfessionalTypeSchema } from './catalog';
 import { ordinaryDateSchema, taskSchema } from './task';
@@ -94,6 +95,18 @@ const agentProjectPreviewSchema = z.strictObject({
 export type AgentProjectPreview = z.infer<typeof agentProjectPreviewSchema>;
 const base = { protocol_version: z.literal(1) };
 export const agentRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({
+    ...base,
+    operation: z.literal('theme_status'),
+    scope: z.literal('home'),
+    run_id: z.string().uuid(),
+  }),
+  z.strictObject({
+    ...base,
+    operation: z.literal('undo_theme'),
+    scope: z.literal('home'),
+    run_id: z.string().uuid(),
+  }),
   z.strictObject({ ...base, operation: z.literal('date_rules') }),
   z.strictObject({
     ...base,
@@ -197,6 +210,7 @@ export const agentRequestSchema = z.discriminatedUnion('operation', [
   z.object({ ...base, operation: z.literal('cancel'), scope, run_id: z.string().uuid() }).strict(),
 ]);
 export const agentRunSchema = z.object({
+  theme_command: themeCommandSchema.optional(),
   provider: agentProviderSchema,
   model: agentModelSchema,
   id: z.string().uuid(),
