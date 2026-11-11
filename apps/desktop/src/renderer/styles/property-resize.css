@@ -37,6 +37,16 @@
   border-left: 1px solid var(--line);
   border-top: 0;
 }
+@media (max-width: 780px) {
+  /* 任务原有上下排版不能被可调双栏的最小宽度覆盖；保留原子树与宽窗选宽。 */
+  .task-detail > .task-layout.property-resizable[data-properties-resizable='true'] {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .task-detail > .task-layout.property-resizable > .property-resize-handle {
+    display: none;
+  }
+}
 /* 六列财务数据保留可读宽度；窄窗在表格内横滚，不挤成逐字换行。 */
 .finance-workspace.property-resizable .finance-project-table-scroll {
   max-width: 100%;

@@ -161,13 +161,26 @@ export default function TaskContentEditor({
       <h1 className="sr-only">{title}</h1>
       <label className="task-title-editor">
         <span className="sr-only">任务标题</span>
-        <input
+        <textarea
           aria-label="任务标题"
+          rows={1}
           value={title}
           maxLength={160}
           disabled={disabled}
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              !composing.current &&
+              !event.nativeEvent.isComposing &&
+              event.nativeEvent.keyCode !== 229
+            )
+              event.preventDefault();
+          }}
           onChange={(event) => {
-            setTitle(event.target.value);
+            // 只改变标题的显示行数，继续沿用原 text input 剔除换行的内容语义。
+            const next = event.target.value.replace(/[\r\n]/g, '');
+            setTitle(next);
+            if (next === title) return;
             sequence.current++;
             setDirty(true);
             onDirty(true);

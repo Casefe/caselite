@@ -392,7 +392,7 @@
   display: block;
   margin: 0 0 12px;
 }
-.task-title-editor input {
+.task-title-editor :is(input, textarea) {
   display: block;
   width: 100%;
   padding: 0;
@@ -404,6 +404,13 @@
   font-size: 30px;
   font-weight: 650;
   line-height: 1.35;
+}
+.task-title-editor textarea {
+  field-sizing: content;
+  height: auto;
+  min-height: 1.35em;
+  resize: none;
+  overflow-wrap: anywhere;
 }
 .task-title[hidden] {
   display: none;
