@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type {
   CatalogRequest,
@@ -176,7 +176,7 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
       return { ok: true, tasks: [saved], state: null, receipt: null, objective_state: [1] };
     if (request.operation === 'status') {
       statusKeys.push(request.idempotency_key);
-      if (statusKeys.length === 1 || !saved)
+      if (statusKeys.length <= 2 || !saved)
         return { ok: false, code: 'NOT_FOUND', message: '暂未查到回执' };
       return { ok: true, tasks: [saved], state: null, receipt: request.idempotency_key };
     }
@@ -188,6 +188,22 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
   fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
   await screen.findByLabelText('编辑项目名称');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
+  const sourcePage = document.querySelector('.project-catalog');
+  const newTask = screen.getByRole('button', { name: '新建任务' });
+  newTask.focus();
+  fireEvent.click(newTask);
+  expect(document.querySelector('.project-catalog')).toBe(sourcePage);
+  expect(document.activeElement).toBe(
+    within(screen.getByRole('dialog', { name: '新建任务' })).getByLabelText('任务名称'),
+  );
+  fireEvent.click(
+    within(screen.getByRole('dialog', { name: '新建任务' })).getByRole('button', {
+      name: '取消新建任务',
+    }),
+  );
+  expect(document.querySelector('.project-catalog')).toBe(sourcePage);
+  expect(screen.getByRole('tabpanel', { name: '任务', exact: true })).toBeTruthy();
+  expect(document.activeElement).toBe(newTask);
   fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
   await screen.findByRole('option', { name: '可用替代项目' });
   const values = {
@@ -198,7 +214,10 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     任务负责人: '',
     截止日期: '2027-01-15',
   };
-  const read = (name: string) => screen.getByLabelText(name) as HTMLInputElement;
+  const read = (name: string) =>
+    within(screen.getByRole('dialog', { name: '新建任务' })).getByLabelText(
+      name,
+    ) as HTMLInputElement;
   for (const [name, value] of Object.entries(values).filter(([name]) => name !== '截止日期'))
     fireEvent.change(read(name), { target: { value } });
   fireEvent.click(screen.getByRole('button', { name: '设置任务日期' }));
@@ -209,8 +228,23 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
     expect(read('所属项目').value).toBe(projectId);
   };
   assertDraft('P');
-  fireEvent.click(screen.getByTestId('create-task'));
+  fireEvent.change(read('任务名称'), { target: { value: '   ' } });
+  fireEvent.keyDown(read('任务名称'), { key: 'Enter', metaKey: true });
+  expect(creates).toHaveLength(0);
+  fireEvent.change(read('任务名称'), { target: { value: values.任务名称 } });
+  fireEvent.change(read('任务内容'), { target: { value: 'x'.repeat(4001) } });
+  fireEvent.keyDown(read('任务内容'), { key: 'Enter', ctrlKey: true });
+  expect(creates).toHaveLength(0);
+  fireEvent.change(read('任务内容'), { target: { value: values.任务内容 } });
+  fireEvent.compositionStart(read('任务名称'));
+  fireEvent.keyDown(read('任务名称'), { key: 'Enter', metaKey: true, isComposing: true });
+  expect(creates).toHaveLength(0);
+  fireEvent.compositionEnd(read('任务名称'));
+  fireEvent.keyDown(read('任务名称'), { key: 'Enter', metaKey: true });
   await screen.findByText('所选项目已归档');
+  expect(
+    within(screen.getByRole('dialog', { name: '新建任务' })).getByRole('alert').textContent,
+  ).toContain('所选项目已归档');
   assertDraft('P');
   expect(creates).toHaveLength(1);
 
@@ -232,10 +266,19 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
   });
   expect(creates[0].idempotency_key).not.toBe(creates[1].idempotency_key);
   fireEvent.click(screen.getByRole('button', { name: '核对创建结果' }));
+  await within(screen.getByRole('dialog', { name: '新建任务' })).findByText('暂未查到回执');
+  expect(creates).toHaveLength(2);
+  assertDraft('Q');
+  expect(read('任务名称').disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '核对创建结果' }));
   await screen.findByRole('heading', { name: values.任务名称 });
   expect(document.querySelector('.task-detail')?.getAttribute('data-active-task')).toBe(
     'saved-task',
   );
   expect(creates).toHaveLength(2);
-  expect(statusKeys).toEqual([creates[1].idempotency_key, creates[1].idempotency_key]);
+  expect(statusKeys).toEqual([
+    creates[1].idempotency_key,
+    creates[1].idempotency_key,
+    creates[1].idempotency_key,
+  ]);
 });

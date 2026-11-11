@@ -707,7 +707,31 @@ export default function ProjectCatalog({
             <p role="status">正在核对来源项目；请稍候或返回列表。</p>
           ) : editor ? (
             <>
-              <div className="project-section-tabs" role="tablist" aria-label="项目栏目">
+              <div
+                className="project-section-tabs"
+                role="tablist"
+                aria-label="项目栏目"
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                  const tabs = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]:not(:disabled)',
+                    ),
+                  );
+                  const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+                  if (current < 0) return;
+                  event.preventDefault();
+                  const next =
+                    event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? tabs.length - 1
+                        : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                          tabs.length;
+                  tabs[next]?.focus();
+                  tabs[next]?.click();
+                }}
+              >
                 {Object.entries(sections).map(([id, label]) => (
                   <button
                     key={id}
@@ -715,13 +739,29 @@ export default function ProjectCatalog({
                     id={`project-tab-${id}`}
                     aria-controls={`project-panel-${id}`}
                     aria-selected={section === id}
-                    disabled={reading || dirty || c.pending || c.unknown}
+                    tabIndex={section === id ? 0 : -1}
+                    disabled={
+                      reading ||
+                      propertyDirty ||
+                      discussionDirty ||
+                      planningDirty ||
+                      c.pending ||
+                      c.unknown
+                    }
                     onClick={() => setSection(id as keyof typeof sections)}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              {bodyDirty && section !== 'overview' && (
+                <div className="project-draft-notice" role="status">
+                  项目说明尚未保存，草稿仍保留。
+                  <button type="button" onClick={() => setSection('overview')}>
+                    返回概述保存
+                  </button>
+                </div>
+              )}
               <div
                 hidden={section !== 'overview'}
                 role="tabpanel"
@@ -754,32 +794,6 @@ export default function ProjectCatalog({
                         </span>
                       )}
                     </div>
-                  </div>
-                )}
-                {section === 'overview' && (
-                  <ProjectSummary
-                    project={p ?? editor.project}
-                    tasks={tasks}
-                    documents={c.data?.documents ?? []}
-                    unavailable={!!c.error || !c.data}
-                    disabled={navigationPending || reading || dirty || c.pending || c.unknown}
-                    onOpen={openTask}
-                    onProject={(id) => {
-                      if (!blocked) void read(id);
-                    }}
-                  />
-                )}
-                {section === 'overview' && (
-                  <div className="project-update-action">
-                    <button
-                      className="project-update-entry"
-                      type="button"
-                      disabled={blocked}
-                      onClick={() => setSection('activity')}
-                    >
-                      <Icon name="plus" size={15} />
-                      {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
-                    </button>
                   </div>
                 )}
                 <ProjectEditor
@@ -837,6 +851,32 @@ export default function ProjectCatalog({
                     handleBodyResult(result);
                   }}
                 />
+                {section === 'overview' && (
+                  <ProjectSummary
+                    project={p ?? editor.project}
+                    tasks={tasks}
+                    documents={c.data?.documents ?? []}
+                    unavailable={!!c.error || !c.data}
+                    disabled={navigationPending || reading || dirty || c.pending || c.unknown}
+                    onOpen={openTask}
+                    onProject={(id) => {
+                      if (!blocked) void read(id);
+                    }}
+                  />
+                )}
+                {section === 'overview' && (
+                  <div className="project-update-action">
+                    <button
+                      className="project-update-entry"
+                      type="button"
+                      disabled={blocked}
+                      onClick={() => setSection('activity')}
+                    >
+                      <Icon name="plus" size={15} />
+                      {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
+                    </button>
+                  </div>
+                )}
                 {section === 'overview' && (
                   <ProjectDiscussion
                     key={`overview-discussion:${editor.project.id}`}

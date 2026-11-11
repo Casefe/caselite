@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Matter } from '../../../preload/caselite-api';
 import { DraftEditor, type RichDraft } from '../../editors/RichEditor';
 
@@ -28,8 +28,31 @@ export default function ProjectEditor({
   const [draft, setDraft] = useState<RichDraft>(() => ({ text: '', state: data.state }));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const composing = useRef(false);
   return (
-    <div className="catalog-actions" data-project-id={data.project.id}>
+    <div
+      className="catalog-actions"
+      data-project-id={data.project.id}
+      onCompositionStartCapture={() => {
+        composing.current = true;
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false;
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (!composing.current && !event.nativeEvent.isComposing)
+          event.currentTarget
+            .querySelector<HTMLButtonElement>('[data-save-project-overview]')
+            ?.click();
+      }}
+    >
       <h2>项目概述</h2>
       <DraftEditor
         value={draft}
@@ -45,7 +68,10 @@ export default function ProjectEditor({
       />
       <button
         className="primary"
-        disabled={!dirty || pending || archived || !draft.state}
+        data-save-project-overview
+        aria-keyshortcuts="Meta+Enter Control+Enter"
+        title="保存项目概述（⌘ / Ctrl + Enter）"
+        disabled={disabled || saving || !dirty || pending || archived || !draft.state}
         onClick={() => {
           if (draft.state) {
             setSaving(true);
@@ -56,10 +82,10 @@ export default function ProjectEditor({
           }
         }}
       >
-        保存项目概述
+        {saving ? '正在保存项目概述…' : '保存项目概述'}
       </button>
       <button
-        disabled={pending}
+        disabled={pending || saving}
         onClick={() => {
           if (!dirty || window.confirm('放弃当前未保存修改并重新读取项目？')) onReload();
         }}
@@ -69,7 +95,11 @@ export default function ProjectEditor({
       {error && <p role="alert">项目说明保存失败。{error}</p>}
       {unknown && <button onClick={onRetry}>核对原说明提交</button>}
       <p role="status">
-        {dirty ? '有未保存的说明修改，请保存后切换。' : `说明修订 ${data.project.body_revision}`}
+        {saving
+          ? '正在保存项目概述…'
+          : dirty
+            ? '说明尚未保存 · ⌘ / Ctrl + Enter 保存'
+            : '项目概述已保存'}
       </p>
     </div>
   );

@@ -573,7 +573,9 @@ it.each(['编辑项目名称', '项目概述'])(
     expect(catalog.mock.calls.filter(([r]) => r.operation === 'read_project')).toHaveLength(before);
     expect(
       screen.getByText(
-        label === '项目概述' ? '有未保存的说明修改，请保存后切换。' : '项目属性等待保存，请稍候。',
+        label === '项目概述'
+          ? '说明尚未保存 · ⌘ / Ctrl + Enter 保存'
+          : '项目属性等待保存，请稍候。',
       ),
     ).toBeTruthy();
   },
@@ -1096,4 +1098,54 @@ it('keeps workspace statistics when the restored source project is unavailable w
   ).toEqual(['1', '0', '1', '0']);
   expect(within(sidebar).queryByRole('region', { name: 'AI 对话' })).toBeNull();
   expect(within(sidebar).getByText('选择项目查看实际属性。')).toBeTruthy();
+});
+
+it('keeps the same description draft across project tabs and saves it only after confirmation', async () => {
+  let p = project();
+  const updates: Extract<CatalogRequest, { operation: 'update_project' }>[] = [];
+  const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+    if (r.operation === 'update_project') {
+      updates.push(r);
+      p = { ...p, version: p.version + 1, body_revision: p.body_revision + 1 };
+      return { ...response([p], p.id), receipt: r.idempotency_key };
+    }
+    if (r.operation === 'list_activity')
+      return { ...response([p]), activity: [], activity_has_more: false };
+    return response([p], p.id);
+  });
+  window.caselite = { catalog } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  const draft = await screen.findByLabelText('项目概述');
+  fireEvent.change(draft, { target: { value: '仍需手动确认的说明' } });
+  fireEvent.click(screen.getByRole('tab', { name: '活动', exact: true }));
+  expect(screen.getByRole('tabpanel', { name: '活动', exact: true })).toBeTruthy();
+  expect(screen.getByText('项目说明尚未保存，草稿仍保留。')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '返回项目列表' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(updates).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '返回概述保存' }));
+  expect(screen.getByLabelText('项目概述')).toBe(draft);
+  expect((draft as HTMLTextAreaElement).value).toBe('仍需手动确认的说明');
+  fireEvent.compositionStart(draft);
+  fireEvent.keyDown(draft, { key: 'Enter', metaKey: true, isComposing: true });
+  expect(updates).toHaveLength(0);
+  fireEvent.compositionEnd(draft);
+  fireEvent.keyDown(draft, { key: 'Enter', ctrlKey: true });
+  await screen.findByText('项目概述已保存');
+  expect(updates).toHaveLength(1);
+  expect(updates[0]).toMatchObject({
+    id: p.id,
+    expected_version: 1,
+    expected_body_revision: 0,
+    state: [1, 9],
+  });
+  const overview = screen.getByRole('tab', { name: '概述', exact: true });
+  overview.focus();
+  fireEvent.keyDown(overview, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(screen.getByRole('tab', { name: '活动', exact: true }));
+  expect(screen.getByRole('tab', { name: '活动', exact: true }).getAttribute('aria-selected')).toBe(
+    'true',
+  );
 });

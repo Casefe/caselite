@@ -152,6 +152,7 @@ function Workbench() {
   const [projectDirty, setProjectDirty] = useState(false);
   const [propertiesRead, setPropertiesRead] = useState(0);
   const [error, setError] = useState('');
+  const [navigationNotice, setNavigationNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
@@ -262,13 +263,14 @@ function Workbench() {
       busy ||
       uncertain
     ) {
-      setError('请先保存当前内容或核对提交结果，再离开当前页面。');
+      setNavigationNotice('请先保存当前内容或核对提交结果，再离开当前页面。');
       return false;
     }
     if (createDirty) {
-      setError('请先完成或取消当前新建表单。');
+      setNavigationNotice('请先完成或取消当前新建表单。');
       return false;
     }
+    setNavigationNotice('');
     return true;
   }
   function navigate(next: WorkspaceView) {
@@ -291,7 +293,6 @@ function Workbench() {
     if (!canLeave()) return;
     readSequence.current++;
     setLoading(false);
-    setView('tasks');
     setTitle('');
     setObjective(emptyDraft());
     setProjectOptionsState('loading');
@@ -300,10 +301,7 @@ function Workbench() {
     setCreateReminder(null);
     setCreateFieldEditing(false);
     setCreateSource(source);
-    setReviewDocument(null);
     setCreating(true);
-    setTaskReturn(null);
-    setTaskNavigation(null);
     setError('');
   }
   async function open(
@@ -472,10 +470,7 @@ function Workbench() {
   }
   function cancelCreate() {
     if (busy || createRequest.current) return;
-    if (createSource) {
-      setProjectView(createSource);
-      setView('projects');
-    }
+    if (createDirty && !window.confirm('放弃尚未创建的任务？')) return;
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
@@ -575,6 +570,8 @@ function Workbench() {
           : null,
       );
       setActive(saved);
+      setReviewDocument(null);
+      setTaskNavigation(null);
       setState(current.state);
       setObjectiveState(current.objective_state ?? null);
       setView('tasks');
@@ -752,7 +749,29 @@ function Workbench() {
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
       >
-        {error && (
+        {navigationNotice &&
+          !creating &&
+          (reviewSaving ||
+            dirty ||
+            commentDirty ||
+            projectDirty ||
+            propertiesBlocked ||
+            reminderBlocked ||
+            attachmentBlocked ||
+            busy ||
+            uncertain) && (
+            <div className="error" role="alert">
+              {navigationNotice}
+              <button
+                className="icon-button"
+                aria-label="关闭提示"
+                onClick={() => setNavigationNotice('')}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        {error && !creating && (
           <div className="error" role="alert">
             {error}
             <button
@@ -765,7 +784,7 @@ function Workbench() {
             </button>
           </div>
         )}
-        {creating ? (
+        {creating && (
           <TaskCreateDialog
             title={title}
             onTitle={setTitle}
@@ -788,11 +807,13 @@ function Workbench() {
             onFieldEditing={setCreateFieldEditing}
             busy={busy}
             uncertain={uncertain}
+            error={error || navigationNotice}
             onCancel={cancelCreate}
             onCreate={() => void create('submit')}
             onRetry={() => void create('retry')}
           />
-        ) : loading && view !== 'projects' && view !== 'calendar' ? (
+        )}
+        {loading && view !== 'projects' && view !== 'calendar' ? (
           <div className="loading-state" role="status">
             正在读取本地任务…
           </div>

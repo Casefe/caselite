@@ -70,7 +70,17 @@ export default function ProjectCreateDialog({
         onCompositionEnd={() => {
           composing.current = false;
         }}
-        onKeyDown={(event) => {
+        onKeyDownCapture={(event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            if (event.repeat) {
+              event.preventDefault();
+              return;
+            }
+            event.preventDefault();
+            if (!locked && !composing.current && !event.nativeEvent.isComposing)
+              event.currentTarget.requestSubmit();
+            return;
+          }
           if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing))
             event.preventDefault();
         }}
@@ -168,6 +178,8 @@ export default function ProjectCreateDialog({
           <button
             className="primary"
             type="submit"
+            aria-keyshortcuts="Meta+Enter Control+Enter"
+            title="创建项目（⌘ / Ctrl + Enter）"
             disabled={!validProject(values) || dateInvalid || locked}
           >
             创建项目

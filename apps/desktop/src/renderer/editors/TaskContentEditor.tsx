@@ -27,6 +27,7 @@ export default function TaskContentEditor({
   const [status, setStatus] = useState('任务内容已保存');
   const [hasPending, setHasPending] = useState(false);
   const ready = useRef(false);
+  const composing = useRef(false);
   const sequence = useRef(0);
   const pending = useRef<{
     request: Extract<TaskRequest, { operation: 'update' }>;
@@ -136,7 +137,26 @@ export default function TaskContentEditor({
     }
   }
   return (
-    <section className="task-content-panel">
+    <section
+      className="task-content-panel"
+      onCompositionStartCapture={() => {
+        composing.current = true;
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false;
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (!composing.current && !event.nativeEvent.isComposing && (dirty || hasPending))
+          void save();
+      }}
+    >
       <h1 className="sr-only">{title}</h1>
       <label className="task-title-editor">
         <span className="sr-only">任务标题</span>
@@ -169,6 +189,8 @@ export default function TaskContentEditor({
           type="button"
           className="primary"
           data-testid="save-task-content"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
+          title="保存任务内容（⌘ / Ctrl + Enter）"
           disabled={disabled || busy || length > 4000 || !title.trim() || (!dirty && !hasPending)}
           onClick={() => void save()}
         >
