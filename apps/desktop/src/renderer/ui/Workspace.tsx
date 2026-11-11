@@ -33,7 +33,6 @@ export const navigation: Array<{ id: WorkspaceView; label: string; icon: string 
   { id: 'documents', label: '文档', icon: 'file' },
 ];
 const secondaryNavigation: typeof navigation = [
-  { id: 'knowledge', label: '知识库', icon: 'book' },
   { id: 'finance', label: '财务', icon: 'wallet' },
   { id: 'contacts', label: '联系人', icon: 'person' },
 ];
