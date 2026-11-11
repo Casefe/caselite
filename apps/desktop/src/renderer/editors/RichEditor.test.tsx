@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Editor } from '@tiptap/react';
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { DraftEditor, draftDoc, EditorSurface, localExtensions } from './RichEditor';
 import * as Y from 'yjs';
 
@@ -27,6 +35,64 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 describe('rich input locking', () => {
+  it.each(['compact', 'simple', 'notion'] as const)(
+    'restores the first click and input after the owner unlocks %s without changing saved Yjs',
+    async (mode) => {
+      const doc = draftDoc({ text: '已保存且暂时锁定的正文', state: null });
+      const editor = new Editor({
+        extensions: localExtensions(doc),
+        injectCSS: false,
+        editable: false,
+      });
+      const updates = vi.fn();
+      editor.on('update', updates);
+      function Owner({ disabled }: { disabled: boolean }) {
+        useEffect(() => {
+          editor.setEditable(!disabled, false);
+        }, [disabled]);
+        return <EditorSurface editor={editor} mode={mode} disabled={disabled} />;
+      }
+      const view = render(<Owner disabled />);
+      try {
+        await waitFor(() => expect(editor.isInitialized).toBe(true));
+        const input = screen.getByRole('textbox');
+        const surface = input.closest('.editor-surface')!;
+        const saved = Y.encodeStateAsUpdate(doc);
+        const selection = editor.state.selection.toJSON();
+        const undo = editor.can().undo();
+        for (let i = 0; i < 2; i++) {
+          view.rerender(<Owner disabled={false} />);
+          await waitFor(() => expect(surface.getAttribute('aria-disabled')).toBe('false'));
+          expect(input.getAttribute('contenteditable')).toBe('true');
+          expect(screen.getByRole('textbox')).toBe(input);
+          expect(Y.encodeStateAsUpdate(doc)).toEqual(saved);
+          expect(editor.state.selection.toJSON()).toEqual(selection);
+          expect(editor.can().undo()).toBe(undo);
+          expect(updates).not.toHaveBeenCalled();
+          view.rerender(<Owner disabled />);
+          await waitFor(() => expect(input.getAttribute('contenteditable')).toBe('false'));
+          const blocked = createEvent.click(input);
+          fireEvent(input, blocked);
+          expect(blocked.defaultPrevented).toBe(true);
+          expect(Y.encodeStateAsUpdate(doc)).toEqual(saved);
+        }
+        view.rerender(<Owner disabled={false} />);
+        await waitFor(() => expect(surface.getAttribute('aria-disabled')).toBe('false'));
+        const firstClick = createEvent.click(input);
+        fireEvent(input, firstClick);
+        expect(firstClick.defaultPrevented).toBe(false);
+        await act(async () => {
+          editor.commands.insertContent('新增输入');
+        });
+        expect(editor.getText()).toContain('新增输入');
+        expect(updates).toHaveBeenCalled();
+      } finally {
+        view.unmount();
+        editor.destroy();
+        doc.destroy();
+      }
+    },
+  );
   it('keeps selection-menu lifecycle and formatting isolated across document and compact editors', async () => {
     const firstDoc = draftDoc({ text: '文档条款独立保存', state: null });
     const secondDoc = draftDoc({ text: '项目任务评论独立保存', state: null });
@@ -193,6 +259,10 @@ describe('rich input locking', () => {
     expect(change).not.toHaveBeenCalled();
     view.rerender(<DraftEditor {...props} disabled={false} />);
     await waitFor(() => expect(input.getAttribute('contenteditable')).toBe('true'));
+    await waitFor(() =>
+      expect(input.closest('.editor-surface')?.getAttribute('aria-disabled')).toBe('false'),
+    );
+    expect(screen.getByRole('textbox', { name: props.label })).toBe(input);
     expect(change).not.toHaveBeenCalled();
     expect(input.innerHTML).toBe(content);
   });

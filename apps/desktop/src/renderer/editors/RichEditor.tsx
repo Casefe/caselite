@@ -335,9 +335,20 @@ export function EditorSurface({
   const [showFormats, setShowFormats] = useState(false);
   const [composing, setComposing] = useState(false);
   const [pasteError, setPasteError] = useState('');
+  const [appliedEditable, setAppliedEditable] = useState(() => editor?.isEditable ?? false);
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
+  useEffect(() => {
+    let active = true;
+    // 等 Owner 的 setEditable(..., false) 完成后刷新显示，不制造正文 update 或放开只读守卫。
+    queueMicrotask(() => {
+      if (active) setAppliedEditable(editor?.isEditable ?? false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [editor, disabled]);
   const ui = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -384,7 +395,7 @@ export function EditorSurface({
         编辑器载入中…
       </div>
     );
-  const editable = !disabled && editor.isEditable;
+  const editable = !disabled && editor.isEditable && appliedEditable;
   const compact = mode === 'compact';
   const documentMode = mode === 'simple';
   const markdown = documentMode && documentScheme === 'markdown';
