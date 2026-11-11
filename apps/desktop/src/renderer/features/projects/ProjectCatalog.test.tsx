@@ -1171,7 +1171,10 @@ it('keeps the same description draft across project tabs and saves it only after
 });
 
 it('does not consume project IME confirmation or submit while composing', async () => {
-  const catalog = vi.fn(async (_request: CatalogRequest) => response([]));
+  const catalog = vi.fn(async (request: CatalogRequest) => {
+    expect(request.operation).not.toBe('create_project');
+    return response([]);
+  });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
   fireEvent.click(await screen.findByRole('button', { name: '创建项目', exact: true }));
