@@ -150,6 +150,10 @@
   padding: 0;
   min-width: 0;
 }
+/* 纸张边距不能随属性栏挤掉正文；窄预览沿原正文容器横滚，不改保存或导出纸张。 */
+.document-workspace .rich-editor[data-editor-scheme='word'] .tiptap {
+  min-width: 560px;
+}
 .document-inline-editor .document > footer {
   position: sticky;
   top: 0;
