@@ -3,7 +3,16 @@ import {
   initialLocalPreferences,
 } from '../../shared/data/LocalPreferences';
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, act, within } from '@testing-library/react';
+import {
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  act,
+  within,
+} from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../../preload/caselite-api';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -573,7 +582,9 @@ it.each(['编辑项目名称', '项目概述'])(
     expect(catalog.mock.calls.filter(([r]) => r.operation === 'read_project')).toHaveLength(before);
     expect(
       screen.getByText(
-        label === '项目概述' ? '有未保存的说明修改，请保存后切换。' : '项目属性等待保存，请稍候。',
+        label === '项目概述'
+          ? '说明尚未保存 · ⌘ / Ctrl + Enter 保存'
+          : '项目属性等待保存，请稍候。',
       ),
     ).toBeTruthy();
   },
@@ -902,9 +913,11 @@ it('keeps an unknown description receipt owned by the description until original
   const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
     if (r.operation === 'update_project') {
       writes.push(r);
-      p = { ...p, version: 2, body_revision: 1 };
+      p = { ...p, version: p.version + 1, body_revision: p.body_revision + 1 };
       receipt = response([p], p.id);
-      return { ok: false, code: 'RESULT_UNKNOWN', message: '说明结果未知' };
+      return writes.length === 1
+        ? { ok: false, code: 'RESULT_UNKNOWN', message: '说明结果未知' }
+        : receipt;
     }
     if (r.operation === 'status') return receipt;
     return response([p], p.id);
@@ -929,6 +942,13 @@ it('keeps an unknown description receipt owned by the description until original
     idempotency_key: (writes[0] as Extract<CatalogRequest, { operation: 'update_project' }>)
       .idempotency_key,
   });
+  fireEvent.change(editor, { target: { value: '恢复后继续编辑' } });
+  fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
+  await screen.findByText('项目概述已保存');
+  expect(screen.getByLabelText('项目概述')).toBe(editor);
+  expect(editor.disabled).toBe(false);
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({ expected_version: 2, expected_body_revision: 1 });
 });
 
 it('keeps real totals independent of filters and resets paging on search', async () => {
@@ -1096,4 +1116,113 @@ it('keeps workspace statistics when the restored source project is unavailable w
   ).toEqual(['1', '0', '1', '0']);
   expect(within(sidebar).queryByRole('region', { name: 'AI 对话' })).toBeNull();
   expect(within(sidebar).getByText('选择项目查看实际属性。')).toBeTruthy();
+});
+
+it('keeps the same description draft across project tabs and saves it only after confirmation', async () => {
+  let p = project();
+  const updates: Extract<CatalogRequest, { operation: 'update_project' }>[] = [];
+  const catalog = vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+    if (r.operation === 'update_project') {
+      updates.push(r);
+      p = { ...p, version: p.version + 1, body_revision: p.body_revision + 1 };
+      return { ...response([p], p.id), receipt: r.idempotency_key };
+    }
+    if (r.operation === 'list_activity')
+      return { ...response([p]), activity: [], activity_has_more: false };
+    return response([p], p.id);
+  });
+  window.caselite = { catalog } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  const draft = await screen.findByLabelText('项目概述');
+  fireEvent.change(draft, { target: { value: '仍需手动确认的说明' } });
+  fireEvent.click(screen.getByRole('tab', { name: '活动', exact: true }));
+  expect(screen.getByRole('tabpanel', { name: '活动', exact: true })).toBeTruthy();
+  expect(screen.getByText('项目说明尚未保存，草稿仍保留。')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '返回项目列表' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(updates).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '返回概述保存' }));
+  expect(screen.getByLabelText('项目概述')).toBe(draft);
+  expect((draft as HTMLTextAreaElement).value).toBe('仍需手动确认的说明');
+  fireEvent.compositionStart(draft);
+  const confirm = createEvent.keyDown(draft, { key: 'Enter', metaKey: true, isComposing: true });
+  fireEvent(draft, confirm);
+  expect(confirm.defaultPrevented).toBe(false);
+  expect(updates).toHaveLength(0);
+  fireEvent.compositionEnd(draft);
+  fireEvent.keyDown(draft, { key: 'Enter', ctrlKey: true });
+  await screen.findByText('项目概述已保存');
+  expect(updates).toHaveLength(1);
+  expect(updates[0]).toMatchObject({
+    id: p.id,
+    expected_version: 1,
+    expected_body_revision: 0,
+    state: [1, 9],
+  });
+  const overview = screen.getByRole('tab', { name: '概述', exact: true });
+  overview.focus();
+  fireEvent.keyDown(overview, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(screen.getByRole('tab', { name: '活动', exact: true }));
+  expect(screen.getByRole('tab', { name: '活动', exact: true }).getAttribute('aria-selected')).toBe(
+    'true',
+  );
+});
+
+it('does not consume project IME confirmation or submit while composing', async () => {
+  const catalog = vi.fn(async (request: CatalogRequest) => {
+    expect(request.operation).not.toBe('create_project');
+    return response([]);
+  });
+  window.caselite = { catalog } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: '创建项目', exact: true }));
+  const modal = screen.getByRole('dialog', { name: '新建项目' });
+  const name = within(modal).getByLabelText('项目名称');
+  fireEvent.change(name, { target: { value: '输入法合成项目' } });
+  fireEvent.compositionStart(name);
+  const enter = createEvent.keyDown(name, { key: 'Enter', isComposing: true });
+  fireEvent(name, enter);
+  expect(enter.defaultPrevented).toBe(false);
+  fireEvent.submit(name.closest('form')!);
+  fireEvent.compositionEnd(name);
+  const finishing = createEvent.keyDown(name, { key: 'Enter', keyCode: 229, ctrlKey: true });
+  fireEvent(name, finishing);
+  expect(finishing.defaultPrevented).toBe(false);
+  expect(
+    catalog.mock.calls.every(([r]) => (r as CatalogRequest).operation !== 'create_project'),
+  ).toBe(true);
+});
+
+it('unlocks the same description after a known save failure and can save the edited draft', async () => {
+  let p = project();
+  const writes: Extract<CatalogRequest, { operation: 'update_project' }>[] = [];
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest): Promise<CatalogResponse> => {
+      if (r.operation === 'update_project') {
+        writes.push(r);
+        if (writes.length === 1)
+          return { ok: false, code: 'INVALID_REQUEST', message: '合成说明保存失败' };
+        p = { ...p, version: 2, body_revision: 1 };
+        return response([p], p.id);
+      }
+      return response([p], p.id);
+    }),
+  } as unknown as Window['caselite'];
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  const editor = (await screen.findByLabelText('项目概述')) as HTMLTextAreaElement;
+  fireEvent.change(editor, { target: { value: '保留失败说明' } });
+  fireEvent.keyDown(editor, { key: 'Enter', metaKey: true });
+  await screen.findByText(/项目说明保存失败/);
+  await waitFor(() => expect(editor.disabled).toBe(false));
+  expect(editor.value).toBe('保留失败说明');
+  fireEvent.change(editor, { target: { value: '修正后保存' } });
+  fireEvent.keyDown(editor, { key: 'Enter', metaKey: true });
+  await screen.findByText('项目概述已保存');
+  expect(screen.getByLabelText('项目概述')).toBe(editor);
+  expect(editor.disabled).toBe(false);
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({ expected_version: 1, expected_body_revision: 0 });
 });

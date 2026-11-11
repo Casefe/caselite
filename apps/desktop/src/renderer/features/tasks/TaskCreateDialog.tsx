@@ -33,6 +33,7 @@ export default function TaskCreateDialog({
   onFieldEditing,
   busy,
   uncertain,
+  error = '',
   onCancel,
   onCreate,
   onRetry,
@@ -54,6 +55,7 @@ export default function TaskCreateDialog({
   onFieldEditing(value: boolean): void;
   busy: boolean;
   uncertain: boolean;
+  error?: string;
   onCancel(): void;
   onCreate(): void;
   onRetry(): void;
@@ -65,8 +67,13 @@ export default function TaskCreateDialog({
     [tagDraft, setTagDraft] = useState(false);
   useEffect(() => {
     const element = dialog.current;
+    const previous = document.activeElement;
     element?.showModal();
-    return () => element?.close();
+    element?.querySelector<HTMLInputElement>('[data-testid="task-title"]')?.focus();
+    return () => {
+      element?.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, []);
   const locked = busy || uncertain;
   const edit = (value: boolean) => {
@@ -91,9 +98,40 @@ export default function TaskCreateDialog({
         onCompositionEnd={() => {
           composing.current = false;
         }}
+        onKeyDownCapture={(event) => {
+          if (
+            composing.current ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          ) {
+            return;
+          }
+          if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
+          if (event.repeat) {
+            event.preventDefault();
+            return;
+          }
+          event.preventDefault();
+          if (
+            !busy &&
+            !composing.current &&
+            !event.nativeEvent.isComposing &&
+            !fieldEditing &&
+            !tagDraft
+          )
+            event.currentTarget.requestSubmit();
+        }}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!composing.current && !fieldEditing && !tagDraft) onCreate();
+          if (
+            !busy &&
+            !composing.current &&
+            !fieldEditing &&
+            !tagDraft &&
+            title.trim() &&
+            objective.text.length <= 4000
+          )
+            onCreate();
         }}
       >
         <header className="create-form-header">
@@ -258,6 +296,8 @@ export default function TaskCreateDialog({
               )}
             </p>
           )}
+          {error && <p role="alert">{error}</p>}
+          {busy && <p role="status">正在创建任务…</p>}
         </div>
         <footer className="create-form-footer">
           <span className="create-attachment-hint">
@@ -275,6 +315,8 @@ export default function TaskCreateDialog({
           </button>
           <button
             className="primary"
+            aria-keyshortcuts="Meta+Enter Control+Enter"
+            title="创建任务（⌘ / Ctrl + Enter）"
             data-testid="create-task"
             disabled={
               busy || tagDraft || fieldEditing || !title.trim() || objective.text.length > 4000

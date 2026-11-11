@@ -9,6 +9,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -335,9 +336,20 @@ export function EditorSurface({
   const [showFormats, setShowFormats] = useState(false);
   const [composing, setComposing] = useState(false);
   const [pasteError, setPasteError] = useState('');
+  const [, refreshEditable] = useReducer((revision: number) => revision + 1, 0);
   useEffect(() => {
     if (disabled) dragging.current = null;
   }, [disabled]);
+  useEffect(() => {
+    let active = true;
+    // 等 Owner 的 setEditable(..., false) 完成后刷新显示，不制造正文 update 或放开只读守卫。
+    queueMicrotask(() => {
+      if (active) refreshEditable();
+    });
+    return () => {
+      active = false;
+    };
+  }, [editor, disabled]);
   const ui = useEditorState({
     editor,
     selector: ({ editor: e }) => {

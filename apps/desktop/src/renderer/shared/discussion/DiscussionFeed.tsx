@@ -174,6 +174,18 @@ export function DiscussionFeed({
       onBlurCapture={() => {
         composing.current = false;
       }}
+      onKeyDownCapture={(event) => {
+        if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          return;
+        if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return;
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.querySelector<HTMLButtonElement>('[data-publish-discussion]')?.click();
+      }}
     >
       {publicationOptions?.(editorDisabled, (value) => {
         setOptionsDirty(value);
@@ -195,6 +207,9 @@ export function DiscussionFeed({
       <button
         type="button"
         className="primary"
+        data-publish-discussion
+        aria-keyshortcuts="Meta+Enter Control+Enter"
+        title={`发布${label}（⌘ / Ctrl + Enter）`}
         disabled={editorDisabled || !draft.text.trim() || !draft.state || tooLong}
         onClick={() => {
           if (!composing.current && draft.state)
