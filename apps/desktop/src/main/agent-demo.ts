@@ -6,10 +6,65 @@ import { join } from 'node:path';
 import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { createAgentCredentials } from './adapters/agent-credentials';
+import { explicitThemeTarget } from '@caselite/contracts';
 
 // 仅被已校验的临时agent演示入口注入；没有网络Provider，也不读取真实凭据。
-export const syntheticAgentStream: StreamFn = (model, context, options) =>
-  syntheticTextStream(model, context, options);
+export const syntheticAgentStream: StreamFn = (model, context, options) => {
+  const authorized = context.messages.some(
+    (message) =>
+      message.role === 'system' && message.toolsAdded?.some((tool) => tool.name === 'set_theme'),
+  );
+  const user = context.messages.find((message) => message.role === 'user');
+  const text =
+    typeof user?.content === 'string'
+      ? user.content
+      : (user?.content.map((part) => (part.type === 'text' ? part.text : '')).join('') ?? '');
+  const target = explicitThemeTarget(text);
+  if (process.env.CASELITE_TASK_DEMO !== 'agent-preview' || !authorized || !target)
+    return syntheticTextStream(model, context, options);
+  // 仅已校验的离线验收消费者合成提案，真实效果仍经Pi和Application授权/回执链。
+  const stream = createAssistantMessageEventStream();
+  const response: AssistantMessage = {
+    role: 'assistant',
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    timestamp: Date.now(),
+    stopReason: 'toolUse',
+    content: [
+      {
+        type: 'toolCall',
+        id: 'synthetic-theme-proposal',
+        name: 'set_theme',
+        arguments: { theme: target },
+      },
+    ],
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  };
+  const abort = () => {
+    clearTimeout(timer);
+    options?.signal?.removeEventListener('abort', abort);
+    stream.push({
+      type: 'error',
+      reason: 'aborted',
+      error: { ...response, stopReason: 'aborted' },
+    });
+  };
+  const timer = setTimeout(() => {
+    options?.signal?.removeEventListener('abort', abort);
+    if (options?.signal?.aborted) abort();
+    else stream.push({ type: 'done', reason: 'toolUse', message: response });
+  }, 250);
+  options?.signal?.addEventListener('abort', abort, { once: true });
+  return stream;
+};
 
 export const syntheticDocxStream: StreamFn = (model, context, options) => {
   const user = context.messages.find((message) => message.role === 'user');

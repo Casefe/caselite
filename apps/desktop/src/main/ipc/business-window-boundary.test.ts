@@ -1,7 +1,11 @@
 import { EventEmitter } from 'node:events';
 import type { BrowserWindow } from 'electron';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { createAgentApplication } from '@caselite/application';
+import {
+  createAgentApplication,
+  createAppearanceApplication,
+  type AgentRuntimePort,
+} from '@caselite/application';
 import {
   AGENT_CHANNEL,
   TASK_CHANNEL,
@@ -62,6 +66,80 @@ function windowFixture() {
 beforeEach(() => {
   state.handlers.clear();
   state.dialog.mockClear();
+});
+
+it('binds theme readback and undo to the registered window generation and original Run', async () => {
+  const first = windowFixture(),
+    second = windowFixture();
+  second.webContents.id = 8;
+  registerDesktopWindowCapabilities(first.window, 'workbench', entry);
+  registerDesktopWindowCapabilities(second.window, 'workbench', entry);
+  let theme: 'light' | 'dark' = 'light';
+  const write = vi.fn((value: 'light' | 'dark') => {
+    theme = value;
+  });
+  let input!: Parameters<AgentRuntimePort['start']>[0];
+  const app = createAgentApplication({
+    appearance: createAppearanceApplication({ read: () => theme, write }),
+    taskExists: () => false,
+    credentials: {
+      get: () => 'synthetic-key',
+      set() {},
+      clear() {},
+      getDefaultModel: () => 'gpt-4.1-mini',
+      setDefaultModel() {},
+    },
+    runtime: {
+      start(value) {
+        input = value;
+        return { cancel() {} };
+      },
+    },
+  });
+  registerAgentIpc(app);
+  const invoke = state.handlers.get(AGENT_CHANNEL)!;
+  const id = crypto.randomUUID(),
+    originalEvent = first.event();
+  expect(
+    await invoke(originalEvent, {
+      protocol_version: 1,
+      operation: 'start',
+      scope: 'home',
+      run_id: id,
+      model: 'gpt-4.1-mini',
+      prompt: '调成深色',
+      confirmed: true,
+    }),
+  ).toMatchObject({ ok: true });
+  input.theme!.propose({ theme: 'dark' });
+  input.onEnd({ status: 'succeeded', message: '', usage: null });
+  expect(
+    await invoke(second.event(), {
+      protocol_version: 1,
+      operation: 'undo_theme',
+      scope: 'home',
+      run_id: id,
+    }),
+  ).toMatchObject({ ok: false });
+  first.webContents.emit('did-start-navigation', {}, entry, false, true);
+  expect(
+    await invoke(originalEvent, {
+      protocol_version: 1,
+      operation: 'theme_status',
+      scope: 'home',
+      run_id: id,
+    }),
+  ).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+  expect(
+    await invoke(first.event(), {
+      protocol_version: 1,
+      operation: 'undo_theme',
+      scope: 'home',
+      run_id: id,
+    }),
+  ).toMatchObject({ ok: false, code: 'THEME_EXPIRED' });
+  expect(theme).toBe('dark');
+  expect(write).toHaveBeenCalledTimes(1);
 });
 
 it('rejects auxiliary and consent windows at every production business entry before touching Application', async () => {

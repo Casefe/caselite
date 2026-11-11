@@ -1244,6 +1244,7 @@ app
       },
     );
     const agent = createAgentApplication({
+      appearance: appearanceApplication,
       contact: { exists: (id) => contacts.exists(id) },
       dates: importantDates,
       credentials: agentCredentials,

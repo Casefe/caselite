@@ -4,6 +4,7 @@ import { useAgentController } from '../features/agent/useAgentController';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
 import { AssistantMarkdown } from '../features/agent/AssistantMarkdown';
+import { ThemeCommandCard } from '../features/agent/ThemeCommandCard';
 import PageReference from '../shared/ui/PageReference';
 import {
   createContext,
@@ -466,6 +467,8 @@ export default function AgentPanel({
                 <RunContent.Provider
                   value={(id) => {
                     const run = runs.find((value) => value.id === id);
+                    if (run?.theme_command)
+                      return <ThemeCommandCard command={run.theme_command} runId={run.id} />;
                     return run
                       ? renderRun?.(
                           run,

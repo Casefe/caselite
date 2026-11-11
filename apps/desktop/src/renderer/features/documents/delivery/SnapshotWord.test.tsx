@@ -373,7 +373,10 @@ it('waits for saved preferences before enabling export instead of submitting def
     receipt: null,
   });
   await waitFor(() => expect(button.disabled).toBe(false));
-  expect(fn.mock.calls.find(([r]) => r.operation === 'read_export')?.[0]).toMatchObject({
-    export_style: expect.objectContaining({ paper: 'Letter' }),
-  });
+  // 按钮就绪与产物查询分属异步提交；等待真实查询后核对保存样式。
+  await waitFor(() =>
+    expect(fn.mock.calls.find(([r]) => r.operation === 'read_export')?.[0]).toMatchObject({
+      export_style: expect.objectContaining({ paper: 'Letter' }),
+    }),
+  );
 });
