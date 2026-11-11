@@ -1,7 +1,9 @@
 /* 文件夹和直属文件共用一棵目录树，不复制正文或建立磁盘同步。 */
 .collection-workspace.document-workspace,
 .document-workspace[data-collection='knowledge'] {
-  grid-template-columns: 288px minmax(280px, 1fr) 296px;
+  --document-directory-width: 288px;
+  --document-center-min-width: 280px;
+  --workspace-inspector-width: 296px;
 }
 .document-workspace > .collection-main {
   display: flex;
@@ -246,6 +248,8 @@
 @media (min-width: 901px) and (max-width: 1250px) {
   .collection-workspace.document-workspace,
   .document-workspace[data-collection='knowledge'] {
-    grid-template-columns: 230px minmax(200px, 1fr) 252px;
+    --document-directory-width: 230px;
+    --document-center-min-width: 200px;
+    --workspace-inspector-width: 252px;
   }
 }

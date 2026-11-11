@@ -16,6 +16,7 @@ import DocumentFolderTree, {
 } from '../features/documents/DocumentFolderTree';
 import { FixedDocumentVersion } from '../features/documents/DocumentVersions';
 import DocumentInspector from './DocumentInspector';
+import PropertyResizeHandle from './PropertyResizeHandle';
 import { useCatalog } from './useCatalog';
 
 export default function DocumentLibrary({
@@ -151,8 +152,9 @@ export default function DocumentLibrary({
   }
   return (
     <section
-      className={`collection-workspace catalog-view document-workspace ${library ? 'knowledge-view' : ''}`}
+      className={`collection-workspace catalog-view document-workspace property-resizable ${library ? 'knowledge-view' : ''}`}
       data-layout="three-column"
+      data-properties-resizable="true"
       data-collection={library ? 'knowledge' : 'documents'}
       data-directory-view={reading ? 'preview' : 'list'}
     >
@@ -249,6 +251,10 @@ export default function DocumentLibrary({
           }}
         />
       </div>
+      <PropertyResizeHandle
+        key={library ? 'knowledge' : 'documents'}
+        module={library ? 'knowledge' : 'documents'}
+      />
     </section>
   );
 }

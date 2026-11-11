@@ -1,12 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import ResizeSeparator from './ResizeSeparator';
 
-type Module = 'tasks' | 'projects' | 'finance' | 'contacts';
+type Module = 'tasks' | 'projects' | 'finance' | 'contacts' | 'documents' | 'knowledge';
 const names: Record<Module, string> = {
   tasks: '任务',
   projects: '项目',
   finance: '财务',
   contacts: '联系人',
+  documents: '文档',
+  knowledge: '知识库',
 };
 // 仅保留当前窗口的布局选择；不把临时缩窗或取消的手势当作用户偏好。
 const widths = new Map<Module, number>();
@@ -41,28 +43,37 @@ export default function PropertyResizeHandle({ module }: { module: Module }) {
   }, []);
   useLayoutEffect(() => {
     const root = handle.current?.parentElement;
-    const container = root?.parentElement;
+    const documentLayout = module === 'documents' || module === 'knowledge';
+    const container = documentLayout ? root : root?.parentElement;
     if (!root || !container) return;
+    const directory = documentLayout
+      ? root.querySelector<HTMLElement>(':scope > .collection-main')
+      : null;
     const measure = () => {
       if (!container.clientWidth) return;
-      const defaultWidth = Number.parseFloat(
-        getComputedStyle(root).getPropertyValue('--workspace-inspector-width'),
-      );
+      const style = getComputedStyle(root);
+      const defaultWidth = Number.parseFloat(style.getPropertyValue('--workspace-inspector-width'));
+      // 文档的目录与预览均保留自己的空间，不能套用普通两栏的剩余宽度。
+      const centerMinimum = documentLayout
+        ? Number.parseFloat(style.getPropertyValue('--document-center-min-width')) || 280
+        : 280;
+      const directoryWidth = directory?.getBoundingClientRect().width ?? 0;
       setLimits({
         defaultWidth: Number.isFinite(defaultWidth) ? defaultWidth : 300,
-        max: Math.max(240, Math.min(720, container.clientWidth - 280)),
+        max: Math.max(240, Math.min(720, container.clientWidth - directoryWidth - centerMinimum)),
       });
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(container);
+    if (directory) observer?.observe(directory);
     window.addEventListener('resize', measure);
     return () => {
       observer?.disconnect();
       window.removeEventListener('resize', measure);
       root.style.removeProperty('--property-panel-width');
     };
-  }, []);
+  }, [module]);
   useLayoutEffect(() => {
     handle.current?.parentElement?.style.setProperty('--property-panel-width', `${width}px`);
   }, [width]);
