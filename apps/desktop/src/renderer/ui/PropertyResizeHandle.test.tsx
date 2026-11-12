@@ -40,6 +40,39 @@ function keyboard(key: string) {
   fireEvent.keyDown(screen.getByRole('separator'), { key });
   fireEvent.keyUp(screen.getByRole('separator'), { key });
 }
+it('bounds responsive geometry and ARIA together in a very narrow workspace and restores the chosen width', () => {
+  let available = 900;
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => available);
+  render(
+    <div>
+      <section
+        style={
+          {
+            '--workspace-inspector-width': '300px',
+            '--responsive-properties': '1',
+          } as React.CSSProperties
+        }
+      >
+        <PropertyResizeHandle module="tasks" />
+      </section>
+    </div>,
+  );
+  keyboard('End');
+  const handle = screen.getByRole('separator');
+  expect(handle.getAttribute('aria-valuenow')).toBe('620');
+  available = 360;
+  fireEvent(window, new Event('resize'));
+  expect(handle.getAttribute('aria-valuemin')).toBe('180');
+  expect(handle.getAttribute('aria-valuemax')).toBe('180');
+  expect(handle.getAttribute('aria-valuenow')).toBe('180');
+  expect(
+    handle.parentElement?.parentElement?.style.getPropertyValue('--property-panel-width'),
+  ).toBe('180px');
+  available = 900;
+  fireEvent(window, new Event('resize'));
+  expect(handle.getAttribute('aria-valuenow')).toBe('620');
+  fireEvent.doubleClick(handle.parentElement!);
+});
 it('drags the boundary and preserves the live editor and its unsaved input', () => {
   render(<Panel />);
   const separator = screen.getByRole('separator');

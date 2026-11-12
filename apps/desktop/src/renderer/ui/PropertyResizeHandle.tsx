@@ -18,8 +18,11 @@ export default function PropertyResizeHandle({ module }: { module: Module }) {
   const pointer = useRef<{ id: number; kind: string } | null>(null);
   const [requested, setRequested] = useState(() => widths.get(module));
   const [preview, setPreview] = useState<number | null>(null);
-  const [limits, setLimits] = useState({ defaultWidth: 300, max: 720 });
-  const width = Math.max(240, Math.min(limits.max, preview ?? requested ?? limits.defaultWidth));
+  const [limits, setLimits] = useState({ defaultWidth: 300, min: 240, max: 720 });
+  const width = Math.max(
+    limits.min,
+    Math.min(limits.max, preview ?? requested ?? limits.defaultWidth),
+  );
   useLayoutEffect(() => {
     // 共享分隔线对“回到起点”的释放不提交；这里仍须清除中途预览。
     // 先于分隔线的手势监听执行，正常释放的最终宽度仍只由其 onCommit 确认。
@@ -54,13 +57,20 @@ export default function PropertyResizeHandle({ module }: { module: Module }) {
       const style = getComputedStyle(root);
       const defaultWidth = Number.parseFloat(style.getPropertyValue('--workspace-inspector-width'));
       // 文档的目录与预览均保留自己的空间，不能套用普通两栏的剩余宽度。
-      const centerMinimum = documentLayout
+      const responsive = style.getPropertyValue('--responsive-properties').trim() === '1';
+      const directoryWidth = directory?.getBoundingClientRect().width ?? 0;
+      const available = Math.max(0, container.clientWidth - directoryWidth);
+      const originalCenter = documentLayout
         ? Number.parseFloat(style.getPropertyValue('--document-center-min-width')) || 280
         : 280;
-      const directoryWidth = directory?.getBoundingClientRect().width ?? 0;
+      const centerMinimum = responsive ? Math.min(originalCenter, available / 2) : originalCenter;
+      const maximum = responsive
+        ? Math.max(0, Math.min(720, available - centerMinimum))
+        : Math.max(240, Math.min(720, available - centerMinimum));
       setLimits({
         defaultWidth: Number.isFinite(defaultWidth) ? defaultWidth : 300,
-        max: Math.max(240, Math.min(720, container.clientWidth - directoryWidth - centerMinimum)),
+        min: responsive ? Math.min(240, maximum) : 240,
+        max: maximum,
       });
     };
     measure();
@@ -95,7 +105,7 @@ export default function PropertyResizeHandle({ module }: { module: Module }) {
       <ResizeSeparator
         label={`调整${names[module]}属性栏宽度`}
         value={width}
-        min={240}
+        min={limits.min}
         max={limits.max}
         direction={-1}
         disabled={false}

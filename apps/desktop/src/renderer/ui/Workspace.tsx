@@ -1,3 +1,4 @@
+import { useResponsiveWorkspace } from './ResponsiveWorkspace';
 import { taskPriorityNames } from './task-priority';
 import { taskStatusNames } from './task-status';
 import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
@@ -65,10 +66,14 @@ export function WorkspaceShell({
   inspectorOpen?: boolean;
 }) {
   const { preferences } = useLocalPreferences();
+  const responsive = useResponsiveWorkspace();
   return (
     <main
       className={`workbench ${collapsed ? 'is-collapsed' : ''}`}
       data-inspector-open={inspectorOpen}
+      data-navigation-hidden={responsive.navigationHidden && !responsive.drawerOpen}
+      data-navigation-overlay={responsive.drawerOpen}
+      data-properties-layout={responsive.inlineProperties ? 'inline' : 'sidebar'}
       data-platform={/Mac/.test(navigator.userAgent) ? 'mac' : 'other'}
     >
       <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
@@ -97,7 +102,11 @@ export function WorkspaceShell({
           </>
         )}
       </header>
-      <aside className="primary-sidebar" aria-label="一级导航">
+      <aside
+        className="primary-sidebar"
+        aria-label="一级导航"
+        inert={responsive.navigationHidden && !responsive.drawerOpen}
+      >
         {topbar && (
           <div className="workspace-sidebar-heading">
             <div className="workspace-topbar-brand">

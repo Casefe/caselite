@@ -1,5 +1,9 @@
+import { createPortal } from 'react-dom';
+import BrandLogo from './BrandLogo';
+import { useResponsiveWorkspace } from './ResponsiveWorkspace';
 import InspectorCards, { type InspectorCard } from './InspectorCards';
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -27,9 +31,77 @@ export default function InspectorLayout({
   className?: string;
   expandedActions?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  const [customWidth, setCustomWidth] = useState<number | null>(null);
+  const { inlineProperties, slots, presentationEpoch } = useResponsiveWorkspace();
+  const layout = useRef<HTMLDivElement>(null);
+  const [propertiesSlot, setPropertiesSlot] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const scopeSelector = '.task-layout, .task-query-list, .project-catalog, .document-workspace';
+    const scope = layout.current?.closest(scopeSelector);
+    // 挂点只属于同一个业务布局的主辅助栏；隐藏或并存的其它 Inspector 不得抢走表单。
+    const target =
+      scope && scope.querySelector('.inspector-split') === layout.current
+        ? ([...slots.values()].find((slot) => slot.closest(scopeSelector) === scope) ?? null)
+        : null;
+    setPropertiesSlot(target);
+  }, [slots]);
+  const layoutEpoch = propertiesSlot ? presentationEpoch : 0;
+  const floating = inlineProperties && propertiesSlot !== null;
+  const [expansion, setExpansion] = useState<{
+    epoch: number;
+    floating: boolean;
+    maximized: boolean;
+    width: number | null;
+  } | null>(null);
+  const expanded = expansion?.epoch === layoutEpoch && expansion.floating === floating;
+  const maximized = expanded && expansion.maximized;
+  const customWidth = expanded ? expansion.width : null;
+  const setExpanded = useCallback(
+    (value: boolean) =>
+      setExpansion((old) =>
+        value
+          ? old?.epoch === layoutEpoch && old.floating === floating
+            ? old
+            : { epoch: layoutEpoch, floating, maximized: false, width: null }
+          : null,
+      ),
+    [layoutEpoch, floating],
+  );
+  const setMaximized = useCallback(
+    (value: boolean | ((old: boolean) => boolean)) =>
+      setExpansion((old) => {
+        if (!old || old.epoch !== layoutEpoch || old.floating !== floating) return old;
+        return { ...old, maximized: typeof value === 'function' ? value(old.maximized) : value };
+      }),
+    [layoutEpoch, floating],
+  );
+  const setCustomWidth = useCallback(
+    (width: number | null) =>
+      setExpansion((old) =>
+        old?.epoch === layoutEpoch && old.floating === floating ? { ...old, width } : old,
+      ),
+    [layoutEpoch, floating],
+  );
+  const [propertiesHost] = useState(() => document.createElement('div'));
+  const propertiesHome = useRef<HTMLDivElement>(null);
+  const launcher = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const destination = floating ? propertiesSlot : propertiesHome.current;
+    if (!destination) return;
+    const focused = propertiesHost.contains(document.activeElement)
+      ? (document.activeElement as HTMLElement)
+      : null;
+    // 支持状态保留移动的 Chromium 不先拆 DOM；旧环境保留同一 React 子树并恢复可见焦点。
+    if (
+      propertiesHost.isConnected &&
+      destination.isConnected &&
+      typeof destination.moveBefore === 'function'
+    )
+      destination.moveBefore(propertiesHost, null);
+    else destination.appendChild(propertiesHost);
+    if (focused?.isConnected && document.activeElement !== focused)
+      focused.focus({ preventScroll: true });
+  }, [floating, propertiesSlot, propertiesHost]);
+  useLayoutEffect(() => () => propertiesHost.remove(), [propertiesHost]);
   const [bounds, setBounds] = useState({
     width: 0,
     right: 0,
@@ -40,21 +112,29 @@ export default function InspectorLayout({
     workspaceWidth: 0,
     workspaceHeight: 0,
   });
-  const layout = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const region = useId();
-  const right = Math.min(window.innerWidth, Math.max(0, bounds.right));
+  const right = Math.min(
+    window.innerWidth,
+    Math.max(0, floating ? window.innerWidth - 16 : bounds.right),
+  );
   const maximumWidth = Math.max(0, right - 12);
-  const minimumWidth = Math.min(Math.max(280, bounds.width), maximumWidth);
+  const minimumWidth = Math.min(Math.max(280, floating ? 340 : bounds.width), maximumWidth);
   // 展开和调宽的下界实时跟随属性栏；窄窗仍受视口安全上限约束，不能挤出控件。
   const width = expanded
     ? Math.min(maximumWidth, Math.max(minimumWidth, customWidth ?? window.innerWidth / 4))
     : Math.min(bounds.width, right);
-  const bottom = Math.min(window.innerHeight, Math.max(0, bounds.bottom));
-  const availableHeight = Math.max(0, Math.min(bounds.height, bottom));
+  const bottom = Math.min(
+    window.innerHeight,
+    Math.max(0, floating ? window.innerHeight - 74 : bounds.bottom),
+  );
+  const availableHeight = Math.max(
+    0,
+    Math.min(floating ? Math.max(0, bottom - bounds.workspaceTop) : bounds.height, bottom),
+  );
   const maximumHeight = Math.max(0, availableHeight - Math.min(48, availableHeight * 0.15));
   const height = expanded
     ? Math.min(maximumHeight, Math.max(Math.min(164, maximumHeight), availableHeight * 0.85))
@@ -157,7 +237,8 @@ export default function InspectorLayout({
       setMaximized(false);
       setCustomWidth(null);
       drag.current = null;
-      toggle.current?.focus();
+      if (floating) window.requestAnimationFrame(() => launcher.current?.focus());
+      else toggle.current?.focus();
     };
     scroll.addEventListener('focusin', focus, true);
     panel.addEventListener('click', click, true);
@@ -169,25 +250,46 @@ export default function InspectorLayout({
       scroll.removeEventListener('submit', submit, true);
       document.removeEventListener('keydown', escape);
     };
-  }, [blocked, expanded]);
+  }, [blocked, expanded, floating, setExpanded, setMaximized, setCustomWidth]);
   return (
     <div
       ref={layout}
       className={`inspector-split ${className}`}
+      data-responsive-inspector={floating ? 'inline' : 'sidebar'}
       data-ai-expanded={expanded}
       data-ai-maximized={maximized}
       style={{ '--inspector-ai-height': `${height}px` } as CSSProperties}
     >
-      <div className="inspector-properties-scroll" tabIndex={0} aria-label="属性滚动区域">
-        {cards === undefined ? (
-          properties
-        ) : (
-          <InspectorCards properties={properties} cards={cards} />
-        )}
-      </div>
+      <div className="inspector-properties-home" ref={propertiesHome} />
+      {createPortal(
+        <div className="inspector-properties-scroll" tabIndex={0} aria-label="属性滚动区域">
+          {cards === undefined ? (
+            properties
+          ) : (
+            <InspectorCards properties={properties} cards={cards} />
+          )}
+        </div>,
+        propertiesHost,
+      )}
+      {floating && (
+        <button
+          ref={launcher}
+          className="workspace-ai-launcher"
+          type="button"
+          aria-label="打开 AI 对话"
+          aria-expanded={expanded}
+          aria-controls={region}
+          disabled={blocked && !expanded}
+          onClick={() => (expanded ? collapse() : setExpanded(true))}
+        >
+          <BrandLogo />
+        </button>
+      )}
       <section
         ref={section}
         aria-label="AI 对话"
+        hidden={floating && !expanded}
+        inert={floating && !expanded}
         className="project-inspector-section inspector-ai-region"
         style={{
           width: maximized ? bounds.workspaceWidth : width,
@@ -263,7 +365,12 @@ export default function InspectorLayout({
               aria-label={expanded ? '收起 AI 对话' : '展开 AI 对话'}
               title={expanded ? '最小化 AI 对话' : '展开 AI 对话'}
               disabled={blocked && !expanded}
-              onClick={() => (expanded ? collapse() : setExpanded(true))}
+              onClick={() => {
+                if (expanded) {
+                  collapse();
+                  if (floating) window.requestAnimationFrame(() => launcher.current?.focus());
+                } else setExpanded(true);
+              }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 {expanded ? <path d="M4 8h8" /> : <path d="M3 7V3h4M3 3l4 4m6 2v4H9m4 0L9 9" />}

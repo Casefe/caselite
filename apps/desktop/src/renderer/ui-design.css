@@ -24,3 +24,5 @@
 
 @import './styles/creation.css';
 @import './styles/workspace-tabs.css';
+
+@import './styles/responsive-workspace.css';
