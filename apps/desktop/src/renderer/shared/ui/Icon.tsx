@@ -58,6 +58,18 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
       </>
     ),
     back: <path d="m10 5-7 7 7 7M3 12h18" />,
+    'panel-right-close': (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16m-8-11 3 3-3 3" />
+      </>
+    ),
+    'panel-right-open': (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16m-5-11-3 3 3 3" />
+      </>
+    ),
     chevron: <path d="m9 5 7 7-7 7" />,
     settings: (
       <>

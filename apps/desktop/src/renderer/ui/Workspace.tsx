@@ -11,6 +11,7 @@ import { useLocalPreferences } from '../shared/data/LocalPreferences';
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
 export type WorkspaceView =
+  | 'new-tab'
   | 'home'
   | 'calendar'
   | 'reminders'
@@ -46,6 +47,8 @@ export function WorkspaceShell({
   favoritesPanel,
   agentDraft = false,
   children,
+  topbar,
+  inspectorOpen = true,
 }: {
   view: WorkspaceView;
   collapsed: boolean;
@@ -58,33 +61,52 @@ export function WorkspaceShell({
   agentDraft?: boolean;
   onOpen(id: string): void;
   children: ReactNode;
+  topbar?: ReactNode;
+  inspectorOpen?: boolean;
 }) {
   const { preferences } = useLocalPreferences();
   return (
-    <main className={`workbench ${collapsed ? 'is-collapsed' : ''}`}>
+    <main
+      className={`workbench ${collapsed ? 'is-collapsed' : ''}`}
+      data-inspector-open={inspectorOpen}
+      data-platform={/Mac/.test(navigator.userAgent) ? 'mac' : 'other'}
+    >
       <link rel="stylesheet" href={new URL('../ui-design.css', window.location.href).href} />
       <header className="workspace-topbar" aria-label="工作台顶部栏">
-        <div className="workspace-topbar-navigation">
-          {!collapsed && (
+        {topbar ?? (
+          <>
+            <div className="workspace-topbar-navigation">
+              {!collapsed && (
+                <div className="workspace-topbar-brand">
+                  <BrandLogo />
+                  <b>CaseLite</b>
+                </div>
+              )}
+              <button
+                className="workspace-navigation-toggle"
+                aria-label={collapsed ? '展开导航' : '收起导航'}
+                aria-expanded={!collapsed}
+                aria-controls="primary-navigation"
+                title={collapsed ? '展开导航' : '收起导航'}
+                onClick={onCollapse}
+              >
+                <Icon name="panel" size={18} />
+              </button>
+            </div>
+            <div className="workspace-project-back" ref={projectBackSlot} />
+          </>
+        )}
+      </header>
+      <aside className="primary-sidebar" aria-label="一级导航">
+        {topbar && (
+          <div className="workspace-sidebar-heading">
             <div className="workspace-topbar-brand">
               <BrandLogo />
               <b>CaseLite</b>
             </div>
-          )}
-          <button
-            className="workspace-navigation-toggle"
-            aria-label={collapsed ? '展开导航' : '收起导航'}
-            aria-expanded={!collapsed}
-            aria-controls="primary-navigation"
-            title={collapsed ? '展开导航' : '收起导航'}
-            onClick={onCollapse}
-          >
-            <Icon name="panel" size={18} />
-          </button>
-        </div>
-        <div className="workspace-project-back" ref={projectBackSlot} />
-      </header>
-      <aside className="primary-sidebar" aria-label="一级导航">
+            <div className="workspace-project-back" ref={projectBackSlot} />
+          </div>
+        )}
         <div className="sidebar-scroll">
           <nav className="primary-navigation" id="primary-navigation">
             {[
@@ -168,7 +190,9 @@ export function WorkspaceShell({
           </button>
         </div>
       </aside>
-      <div className="workspace-main">{children}</div>
+      <div className="workspace-main" id="workspace-page-content">
+        {children}
+      </div>
     </main>
   );
 }

@@ -153,6 +153,16 @@ async function createWindow(
     minWidth: 640,
     minHeight: 480,
     title: 'CaseLite',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 14, y: 15 } }
+      : {
+          titleBarOverlay: {
+            height: 44,
+            color: appearanceBackground(appearance?.theme ?? 'light'),
+            symbolColor: appearance?.theme === 'dark' ? '#eeeeef' : '#232326',
+          },
+        }),
     show: false,
     backgroundColor: appearanceBackground(appearance?.theme ?? 'light'),
     webPreferences: {

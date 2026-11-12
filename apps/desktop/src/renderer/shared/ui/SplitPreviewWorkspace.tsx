@@ -8,14 +8,22 @@ import {
 } from 'react-resizable-panels';
 
 export type PreviewPane = 'primary' | 'secondary';
+export type PreviewSelection = {
+  primary: string | null;
+  secondary: string | null;
+  active: PreviewPane;
+  split: boolean;
+};
 
-export function useSplitPreviewSelection() {
-  const [state, setState] = useState({
-    primary: null as string | null,
-    secondary: null as string | null,
-    active: 'primary' as PreviewPane,
-    split: false,
-  });
+export function useSplitPreviewSelection(initial?: PreviewSelection) {
+  const [state, setState] = useState(
+    initial ?? {
+      primary: null as string | null,
+      secondary: null as string | null,
+      active: 'primary' as PreviewPane,
+      split: false,
+    },
+  );
   return {
     ...state,
     selectedId: state[state.active],

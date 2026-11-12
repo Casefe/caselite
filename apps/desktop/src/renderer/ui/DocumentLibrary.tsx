@@ -1,10 +1,12 @@
 import { FavoriteButton } from '../features/favorites/Favorites';
+import { useChildPage, usePageNavigation } from '../shared/navigation/PageNavigation';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { CatalogDocument, Task } from '../../preload/caselite-api';
 import SplitPreviewWorkspace, {
   useSplitPreviewSelection,
   type PreviewPane,
+  type PreviewSelection,
 } from '../shared/ui/SplitPreviewWorkspace';
 import { Icon } from '../shared/ui/Icon';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
@@ -19,6 +21,14 @@ import { FixedDocumentVersion } from '../features/documents/DocumentVersions';
 import DocumentInspector from './DocumentInspector';
 import PropertyResizeHandle from './PropertyResizeHandle';
 import { useCatalog } from './useCatalog';
+type DocumentPageState = {
+  kind: 'documents' | 'knowledge';
+  selection: PreviewSelection;
+  reading: boolean;
+  wide: boolean;
+  versions: Record<PreviewPane, string | null>;
+  title: string;
+};
 
 export default function DocumentLibrary({
   library = false,
@@ -31,18 +41,24 @@ export default function DocumentLibrary({
   const client = useQueryClient(),
     read = useOrdinaryCatalog(),
     c = useCatalog(false, read);
-  const selection = useSplitPreviewSelection();
-  const [reading, setReading] = useState(false);
-  const [wide, setWide] = useState(false);
+  const navigation = usePageNavigation();
+  const kind = library ? 'knowledge' : 'documents';
+  const candidate = navigation?.initial as DocumentPageState | null;
+  const initial = candidate?.kind === kind ? candidate : null;
+  const selection = useSplitPreviewSelection(initial?.selection);
+  const [reading, setReading] = useState(initial?.reading ?? false);
+  const [wide, setWide] = useState(initial?.wide ?? false);
   const [reload, setReload] = useState(0);
   const [tagDraft, setTagDraft] = useState(false),
     [tagEditor, setTagEditor] = useState(0);
   const [acknowledged, setAcknowledged] = useState<{ id: string; version: number } | null>(null);
   const [dirtyEditors, setDirtyEditors] = useState<Record<string, boolean>>({});
-  const [versions, setVersions] = useState<Record<PreviewPane, string | null>>({
-    primary: null,
-    secondary: null,
-  });
+  const [versions, setVersions] = useState<Record<PreviewPane, string | null>>(
+    initial?.versions ?? {
+      primary: null,
+      secondary: null,
+    },
+  );
   const heading = useRef<HTMLHeadingElement>(null);
   const all = c.data?.documents ?? [];
   const available = all.filter((d) => (!library || d.in_library) && !d.archived_at);
@@ -60,6 +76,27 @@ export default function DocumentLibrary({
   const bodyDirty = Object.values(dirtyEditors).some(Boolean);
   const dirty = bodyDirty || tagDraft || c.pending || c.unknown || awaitingRead;
   const blocked = dirty || read.isFetching;
+  useChildPage(
+    () => ({
+      key: `${kind}:${reading && selection.selectedId ? selection.selectedId : 'list'}`,
+      title: reading ? (current?.title ?? initial?.title ?? '文档') : library ? '知识库' : '文档',
+      icon: library ? 'book' : 'file',
+      state: {
+        kind,
+        selection: {
+          primary: selection.primary,
+          secondary: selection.secondary,
+          active: selection.active,
+          split: selection.split,
+        },
+        reading,
+        wide,
+        versions,
+        title: current?.title ?? initial?.title ?? '文档',
+      } satisfies DocumentPageState,
+    }),
+    !read.isFetching,
+  );
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -73,6 +110,7 @@ export default function DocumentLibrary({
   }
   function choose(id: string | null) {
     if (blocked) return;
+    navigation?.beforeChange();
     selection.select(id);
     setReading(true);
     setVersions((old) => ({ ...old, [selection.active]: null }));
@@ -200,12 +238,18 @@ export default function DocumentLibrary({
         )}
       </div>
       <div className="document-center-workspace">
+        {reading && selection.selectedId && c.data && !current && !read.isFetching && (
+          <p role="status">该文档已归档或不在当前目录，请返回目录重新选择。</p>
+        )}
         <SplitPreviewWorkspace
           split={selection.split}
           activePane={selection.active}
           disabled={blocked}
           onActivate={(pane) => {
-            if (!blocked) selection.activate(pane);
+            if (!blocked && pane !== selection.active) {
+              navigation?.beforeChange();
+              selection.activate(pane);
+            }
           }}
           onToggle={() => selection.toggle(ids.primary)}
           title={path}
@@ -228,6 +272,7 @@ export default function DocumentLibrary({
                     onToggleSplit={() => selection.toggle(ids.primary)}
                     onToggleOrientation={onToggleOrientation}
                     onBack={() => {
+                      navigation?.beforeChange();
                       setReading(false);
                       requestAnimationFrame(() => heading.current?.focus());
                     }}
@@ -255,6 +300,7 @@ export default function DocumentLibrary({
               <button
                 className="document-directory-back"
                 onClick={() => {
+                  navigation?.beforeChange();
                   setReading(false);
                   requestAnimationFrame(() => heading.current?.focus());
                 }}
