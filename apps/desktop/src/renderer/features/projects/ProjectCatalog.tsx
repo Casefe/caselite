@@ -1,6 +1,10 @@
 import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
-import { useChildPage, usePageNavigation } from '../../shared/navigation/PageNavigation';
+import {
+  useChildPage,
+  usePageNavigation,
+  useWorkspaceInspector,
+} from '../../shared/navigation/PageNavigation';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ProjectMetrics from './ProjectMetrics';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
@@ -41,7 +45,9 @@ import ActivityList from './ActivityList';
 import ProjectDeliverables from './ProjectDeliverables';
 import ProjectDiscussion from './ProjectDiscussion';
 import ProjectPlanning from './ProjectPlanning';
-const ProjectRelationshipGraph = lazy(() => import('./ProjectRelationshipGraph'));
+import ProjectVisualizationInspector from './ProjectVisualizationInspector';
+import type { VisualizationInspection } from './project-visualization-model';
+const ProjectVisualization = lazy(() => import('./ProjectVisualization'));
 const names = { ...projectStatuses, archived: '已归档' };
 const projectStatus = (project: Matter) => (project.archived_at ? 'archived' : project.status);
 const projectTaskStatuses = ['in_progress', 'todo', 'done', 'canceled'] as const;
@@ -114,6 +120,9 @@ export default function ProjectCatalog({
     [assigning, setAssigning] = useState('');
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<Record<string, boolean>>({});
   const [listInspectorOpen, setListInspectorOpen] = useState(false);
+  const [visualizationCollapsed, setVisualizationCollapsed] = useWorkspaceInspector(false, true);
+  const [visualizationInspection, setVisualizationInspection] =
+    useState<VisualizationInspection | null>(null);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
@@ -460,6 +469,16 @@ export default function ProjectCatalog({
     <ProjectMetrics projects={projects} unavailable={!c.data || Boolean(c.error)} />,
     !editor,
   );
+  const toggleVisualizationSidebar = (collapsed = !visualizationCollapsed) => {
+    setVisualizationCollapsed(collapsed);
+    requestAnimationFrame(() =>
+      workspace.current
+        ?.querySelector<HTMLButtonElement>(
+          '.visualization-actions [aria-controls="project-visualization-auxiliary"]',
+        )
+        ?.focus({ preventScroll: true }),
+    );
+  };
   return (
     <section
       ref={workspace}
@@ -468,6 +487,9 @@ export default function ProjectCatalog({
       className="collection-workspace catalog-view project-catalog property-resizable"
       data-properties-resizable="true"
       data-project-view={editor ? section : 'list'}
+      data-visualization-collapsed={Boolean(
+        editor && section === 'visualization' && visualizationCollapsed,
+      )}
       data-layout="three-column"
       data-testid="project-catalog"
     >
@@ -1123,25 +1145,23 @@ export default function ProjectCatalog({
                 role="tabpanel"
                 id="project-panel-visualization"
                 aria-labelledby="project-tab-visualization"
-                className="project-record-panel"
+                className="project-record-panel project-visualization-panel"
               >
-                <h2>项目可视化</h2>
-                {section === 'visualization' &&
-                  (c.error ? (
-                    <p role="status">暂时无法读取项目关系。</p>
-                  ) : !documents ? (
-                    <p role="status">正在读取项目关系…</p>
-                  ) : (
-                    <Suspense fallback={<p role="status">正在加载关系图…</p>}>
-                      <ProjectRelationshipGraph
-                        key={editor.project.id}
-                        project={p ?? editor.project}
-                        tasks={tasks}
-                        documents={documents}
-                        onOpen={openTask}
-                      />
-                    </Suspense>
-                  ))}
+                {section === 'visualization' && (
+                  <Suspense fallback={<p role="status">正在加载可视化画布…</p>}>
+                    <ProjectVisualization
+                      key={editor.project.id}
+                      project={p ?? editor.project}
+                      tasks={tasks}
+                      documents={documents ?? null}
+                      readError={Boolean(c.error)}
+                      onOpen={openTask}
+                      onInspect={setVisualizationInspection}
+                      sidebarCollapsed={visualizationCollapsed}
+                      onToggleSidebar={() => toggleVisualizationSidebar()}
+                    />
+                  </Suspense>
+                )}
               </section>
               <section
                 hidden={section !== 'deliverables'}
@@ -1278,7 +1298,29 @@ export default function ProjectCatalog({
           )}
         </footer>
       </div>
-      <aside className="project-properties" aria-label="项目辅助栏">
+      <aside
+        id="project-visualization-auxiliary"
+        className="project-properties"
+        aria-label="项目辅助栏"
+        data-visualization-hidden={Boolean(
+          editor && section === 'visualization' && visualizationCollapsed,
+        )}
+        inert={Boolean(editor && section === 'visualization' && visualizationCollapsed)}
+        aria-hidden={Boolean(editor && section === 'visualization' && visualizationCollapsed)}
+      >
+        {editor && section === 'visualization' && (
+          <header className="visualization-sidebar-heading">
+            <strong>辅助栏</strong>
+            <button
+              type="button"
+              aria-label="收起可视化辅助栏"
+              title="收起辅助栏，扩大画布"
+              onClick={() => toggleVisualizationSidebar(true)}
+            >
+              <Icon name="chevron" size={18} />
+            </button>
+          </header>
+        )}
         {!sourceUnavailable ? (
           <InspectorLayout
             cards={cards}
@@ -1327,89 +1369,99 @@ export default function ProjectCatalog({
             }
             properties={
               <>
-                {!editor && (
-                  <div className="project-dashboard-important" inert={blocked}>
-                    {ImportantInfo ? (
-                      <ImportantInfo title="重要事项" onOpen={openTask} onCalendar={onCalendar} />
-                    ) : (
-                      <p>重要事项暂不可用。</p>
-                    )}
-                  </div>
+                {editor && section === 'visualization' && (
+                  <ProjectVisualizationInspector
+                    inspection={visualizationInspection}
+                    projectId={(p ?? editor.project).id}
+                    projectTitle={(p ?? editor.project).title}
+                    onOpen={openTask}
+                  />
                 )}
-                {p && (editor || listInspectorOpen) && (
-                  <div className="project-sidebar-properties">
-                    <ProjectPropertyEditor
-                      key={p.id}
-                      project={p}
-                      sidebar={!editor}
-                      pending={c.pending}
-                      disabled={
-                        navigationPending ||
-                        reading ||
-                        creating ||
-                        bodyCommand ||
-                        discussionDirty ||
-                        planningDirty ||
-                        (!propertyDirty && (c.pending || c.unknown))
-                      }
-                      unknown={c.unknown && !bodyCommand}
-                      bodyDirty={bodyDirty}
-                      onDirty={(value, lifecycle = false) => {
-                        setLifecycleDraft(value && lifecycle);
-                        if (value) setSelected(p.id);
-                        setPropertyDirty(value);
-                      }}
-                      onReload={c.load}
-                      onRetry={c.retry}
-                      onSave={(base, values, onCommitted) =>
-                        command(
-                          catalogMutation({
-                            operation: 'update_project' as const,
-                            id: base.id,
-                            expected_version: base.version,
-                            expected_body_revision: base.body_revision,
-                            ...values,
-                          }),
-                          (r) => onCommitted(acknowledge(r, base)),
-                        )
-                      }
-                      onArchive={(base, archived, onCommitted) =>
-                        command(
-                          catalogMutation({
-                            operation: 'archive_project' as const,
-                            id: base.id,
-                            expected_version: base.version,
-                            archived,
-                          }),
-                          (r) => {
-                            const confirmed = acknowledge(r, base);
-                            if (confirmed && !editor)
-                              setStatusFilter(archived ? 'archived' : 'all');
-                            onCommitted(confirmed);
-                          },
-                        )
-                      }
-                    />
-                    {editor && (
-                      <ProjectPlanning
+                <div hidden={Boolean(editor && section === 'visualization')}>
+                  {!editor && (
+                    <div className="project-dashboard-important" inert={blocked}>
+                      {ImportantInfo ? (
+                        <ImportantInfo title="重要事项" onOpen={openTask} onCalendar={onCalendar} />
+                      ) : (
+                        <p>重要事项暂不可用。</p>
+                      )}
+                    </div>
+                  )}
+                  {p && (editor || listInspectorOpen) && (
+                    <div className="project-sidebar-properties">
+                      <ProjectPropertyEditor
                         key={p.id}
                         project={p}
-                        tasks={members}
+                        sidebar={!editor}
+                        pending={c.pending}
                         disabled={
                           navigationPending ||
                           reading ||
                           creating ||
-                          bodyDirty ||
-                          propertyDirty ||
-                          discussionDirty
+                          bodyCommand ||
+                          discussionDirty ||
+                          planningDirty ||
+                          (!propertyDirty && (c.pending || c.unknown))
                         }
-                        pending={c.pending || c.unknown}
-                        onDirty={setPlanningDirty}
-                        execute={command}
+                        unknown={c.unknown && !bodyCommand}
+                        bodyDirty={bodyDirty}
+                        onDirty={(value, lifecycle = false) => {
+                          setLifecycleDraft(value && lifecycle);
+                          if (value) setSelected(p.id);
+                          setPropertyDirty(value);
+                        }}
+                        onReload={c.load}
+                        onRetry={c.retry}
+                        onSave={(base, values, onCommitted) =>
+                          command(
+                            catalogMutation({
+                              operation: 'update_project' as const,
+                              id: base.id,
+                              expected_version: base.version,
+                              expected_body_revision: base.body_revision,
+                              ...values,
+                            }),
+                            (r) => onCommitted(acknowledge(r, base)),
+                          )
+                        }
+                        onArchive={(base, archived, onCommitted) =>
+                          command(
+                            catalogMutation({
+                              operation: 'archive_project' as const,
+                              id: base.id,
+                              expected_version: base.version,
+                              archived,
+                            }),
+                            (r) => {
+                              const confirmed = acknowledge(r, base);
+                              if (confirmed && !editor)
+                                setStatusFilter(archived ? 'archived' : 'all');
+                              onCommitted(confirmed);
+                            },
+                          )
+                        }
                       />
-                    )}
-                  </div>
-                )}
+                      {editor && (
+                        <ProjectPlanning
+                          key={p.id}
+                          project={p}
+                          tasks={members}
+                          disabled={
+                            navigationPending ||
+                            reading ||
+                            creating ||
+                            bodyDirty ||
+                            propertyDirty ||
+                            discussionDirty
+                          }
+                          pending={c.pending || c.unknown}
+                          onDirty={setPlanningDirty}
+                          execute={command}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             }
           >
