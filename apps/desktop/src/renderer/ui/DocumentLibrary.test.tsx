@@ -78,6 +78,16 @@ function show(catalog: (request: CatalogRequest) => Promise<CatalogResponse>, li
   return onDirty;
 }
 
+function splitAction(library = false) {
+  if (library) return screen.getByRole<HTMLButtonElement>('button', { name: '双栏预览' });
+  if (!screen.queryByRole('menu', { name: '文档页面操作' }))
+    fireEvent.click(screen.getByRole('button', { name: '更多文档操作' }));
+  return within(screen.getByRole('menu', { name: '文档页面操作' })).getByRole<HTMLButtonElement>(
+    'menuitemcheckbox',
+    { name: '双栏预览' },
+  );
+}
+
 async function draft(text: string) {
   if (!screen.queryByRole('button', { name: '添加标签' }))
     fireEvent.click(await screen.findByRole('button', { name: entry.title, exact: true }));
@@ -105,7 +115,7 @@ it.each([false, true])('保留明确失败的标签输入，允许使用原文�
   await screen.findByText('保存失败');
   expect(input.value).toBe('合成标签');
   expect(onDirty).toHaveBeenLastCalledWith(true);
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: '双栏预览' }).disabled).toBe(true);
+  expect(splitAction(library).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '添加', exact: true }));
   await screen.findByRole('button', { name: '移除标签 合成标签' });
   expect(screen.queryByRole('textbox', { name: '新标签' })).toBeNull();
@@ -362,13 +372,17 @@ it.each([false, true])(
       </QueryClientProvider>,
     );
     fireEvent.click(await screen.findByRole('button', { name: '合成甲', exact: true }));
-    fireEvent.click(screen.getByRole('button', { name: '双栏预览' }));
+    fireEvent.click(splitAction(library));
     fireEvent.click(screen.getByRole('button', { name: '副预览' }));
     fireEvent.click(screen.getByRole('button', { name: '合成乙', exact: true }));
     const primary = screen.getByRole('region', { name: '主预览' }),
       secondary = screen.getByRole('region', { name: '副预览' });
-    expect(within(primary).getByText('合成甲')).toBeTruthy();
-    expect(within(secondary).getByText('合成乙')).toBeTruthy();
+    expect(
+      within(primary).getByText('合成甲', { selector: '.split-preview-pane-heading strong' }),
+    ).toBeTruthy();
+    expect(
+      within(secondary).getByText('合成乙', { selector: '.split-preview-pane-heading strong' }),
+    ).toBeTruthy();
     await waitFor(() =>
       expect(task).toHaveBeenCalledWith(expect.objectContaining({ task_id: b.task_id })),
     );
@@ -393,7 +407,9 @@ it.each([false, true])(
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '主预览' }).disabled).toBe(true);
     fireEvent.pointerDown(primary);
     expect(screen.getByLabelText('文档属性').textContent).toContain(b.id);
-    expect(within(secondary).getByText('合成乙')).toBeTruthy();
+    expect(
+      within(secondary).getByText('合成乙', { selector: '.split-preview-pane-heading strong' }),
+    ).toBeTruthy();
   },
 );
 
@@ -434,7 +450,7 @@ it.each([false, true])(
     expect(screen.getByLabelText('模拟正文输入')).toBe(input);
     expect(input.value).toBe('调宽时保留的正文草稿');
     expect(onDirty).toHaveBeenLastCalledWith(true);
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '双栏预览' }).disabled).toBe(true);
+    expect(splitAction(library).disabled).toBe(true);
     expect([catalog.mock.calls.length, task.mock.calls.length]).toEqual(reads);
     const workspace = input.closest('.document-workspace');
     expect(workspace?.querySelector(':scope > .collection-main')).toBeTruthy();
@@ -470,7 +486,7 @@ it('归档筛选后不会从另一预览栏继续展示已离开当前筛选的�
     </QueryClientProvider>,
   );
   fireEvent.click(await screen.findByRole('button', { name: a.title, exact: true }));
-  fireEvent.click(screen.getByRole('button', { name: '双栏预览' }));
+  fireEvent.click(splitAction());
   fireEvent.click(screen.getByRole('button', { name: '副预览' }));
   fireEvent.click(screen.getByRole('button', { name: a.title, exact: true }));
   expect(screen.queryByRole('button', { name: '已归档', exact: true })).toBeNull();
@@ -528,6 +544,65 @@ it('目录刷新期间锁正文，迟到读取不会重挂载用户刚输入的�
   const refreshed = await screen.findByLabelText<HTMLInputElement>('模拟正文输入');
   await waitFor(() => expect(refreshed.disabled).toBe(false));
   fireEvent.change(refreshed, { target: { value: '刷新完成后的新输入' } });
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: '双栏预览' }).disabled).toBe(true);
+  expect(splitAction().disabled).toBe(true);
   expect(refreshed.value).toBe('刷新完成后的新输入');
+});
+
+it('文档页用新顶栏和正文大标题，切换阅读宽度保留草稿/属性且不触发数据写入', async () => {
+  const catalog = vi.fn(async () => projection(entry));
+  const task = vi.fn(async () => ({
+    ok: true,
+    tasks: [
+      {
+        id: entry.task_id,
+        document_id: entry.id,
+        body_id: entry.body_id,
+        body_revision: entry.body_revision,
+        matter_id: null,
+      },
+    ],
+    state: null,
+  }));
+  vi.stubGlobal('caselite', { catalog, task });
+  render(
+    <QueryClientProvider client={createWorkbenchQueryClient()}>
+      <DocumentLibrary onOpen={vi.fn()} onDirty={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: entry.title, exact: true }));
+  const body = await screen.findByLabelText<HTMLInputElement>('模拟正文输入');
+  const properties = screen.getByLabelText('文档属性');
+  const originalProperties = properties.textContent;
+  expect(screen.getByRole('heading', { name: entry.title, level: 1 })).toBeTruthy();
+  expect(screen.getByLabelText('文档页面顶栏')).toBeTruthy();
+  expect(screen.queryByRole('menuitemcheckbox')).toBeNull();
+  expect(screen.queryByRole('button', { name: '双栏预览' })).toBeNull();
+  const workspace = body.closest('.document-workspace')!;
+  const reads = [catalog.mock.calls.length, task.mock.calls.length];
+  fireEvent.change(body, { target: { value: '改变阅读宽度时仍未保存的正文' } });
+  fireEvent.click(screen.getByRole('button', { name: '更多文档操作' }));
+  expect(
+    screen.getByRole<HTMLButtonElement>('menuitemcheckbox', { name: '双栏预览' }).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '全宽阅读' }));
+  expect(workspace.getAttribute('data-reading-width')).toBe('full');
+  expect(screen.getByLabelText('模拟正文输入')).toBe(body);
+  expect(body.value).toBe('改变阅读宽度时仍未保存的正文');
+  expect(screen.getByLabelText('文档属性')).toBe(properties);
+  expect(properties.textContent).toBe(originalProperties);
+  expect(properties.textContent).toContain(entry.id);
+  expect([catalog.mock.calls.length, task.mock.calls.length]).toEqual(reads);
+  fireEvent.click(screen.getByRole('button', { name: '更多文档操作' }));
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '全宽阅读' }));
+  expect(workspace.getAttribute('data-reading-width')).toBe('standard');
+  expect(screen.getByLabelText('模拟正文输入')).toBe(body);
+});
+
+it('知识库共享消费者仍用原默认工具条，不接入文档专属菜单和标题外壳', async () => {
+  show(async () => projection(entry), true);
+  fireEvent.click(await screen.findByRole('button', { name: entry.title, exact: true }));
+  expect(screen.getByRole('button', { name: '双栏预览' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '更多文档操作' })).toBeNull();
+  expect(document.querySelector('.document-page')).toBeNull();
+  expect(screen.getByLabelText('文档属性').textContent).toContain(entry.id);
 });
