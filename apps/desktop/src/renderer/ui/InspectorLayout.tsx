@@ -251,7 +251,7 @@ export default function InspectorLayout({
           />
         )}
         <header className="inspector-ai-heading">
-          <h3>{maximized ? 'AI Agent' : 'AI 对话'}</h3>
+          <h3>{expanded ? '新的 AI 对话' : 'AI 对话'}</h3>
           <div className="inspector-ai-controls">
             <button
               ref={toggle}

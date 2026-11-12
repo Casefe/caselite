@@ -352,10 +352,10 @@ it('maximizes the original dock as an Agent workspace and minimizes without repl
   fireEvent.click(screen.getByRole('button', { name: '最大化 AI 对话' }));
   expect(panel.style.width).toBe(`${window.innerWidth}px`);
   expect(panel.style.height).toBe(`${window.innerHeight}px`);
-  expect(screen.getByRole('heading', { name: 'AI Agent' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '新的 AI 对话' })).toBeTruthy();
   expect(screen.queryByRole('separator')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '还原 AI 对话' }));
-  expect(screen.getByRole('heading', { name: 'AI 对话' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '新的 AI 对话' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '最大化 AI 对话' }));
   fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
   expect(panel.closest('.inspector-split')?.getAttribute('data-ai-maximized')).toBe('false');
