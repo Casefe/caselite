@@ -32,14 +32,16 @@ export default function DocumentPageToolbar({
   onToggleWide(): void;
 }) {
   const scope = documentId ?? 'empty';
-  const [openFor, setOpenFor] = useState<string | null>(null);
-  const open = openFor === scope;
+  const [menuState, setMenuState] = useState({ scope, open: false });
+  // 身份变化时丢弃旧菜单状态，返回同一文档也不能复活菜单并抢走输入焦点。
+  if (menuState.scope !== scope) setMenuState({ scope, open: false });
+  const open = menuState.scope === scope && menuState.open;
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const sharingNote = useId();
   const menuId = useId();
   const close = (focus = false) => {
-    setOpenFor(null);
+    setMenuState((current) => ({ ...current, open: false }));
     if (focus) trigger.current?.focus();
   };
 
@@ -64,9 +66,9 @@ export default function DocumentPageToolbar({
         !menu.current?.contains(event.target) &&
         !trigger.current?.contains(event.target)
       )
-        setOpenFor(null);
+        setMenuState((current) => ({ ...current, open: false }));
     };
-    const dismiss = () => setOpenFor(null);
+    const dismiss = () => setMenuState((current) => ({ ...current, open: false }));
     document.addEventListener('pointerdown', outside, true);
     window.addEventListener('resize', dismiss);
     window.addEventListener('blur', dismiss);
@@ -125,11 +127,11 @@ export default function DocumentPageToolbar({
           aria-haspopup="menu"
           aria-controls={open ? menuId : undefined}
           aria-expanded={open}
-          onClick={() => setOpenFor(open ? null : scope)}
+          onClick={() => setMenuState({ scope, open: !open })}
           onKeyDown={(event) => {
             if (!event.nativeEvent.isComposing && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
               event.preventDefault();
-              setOpenFor(scope);
+              setMenuState({ scope, open: true });
             }
           }}
         >

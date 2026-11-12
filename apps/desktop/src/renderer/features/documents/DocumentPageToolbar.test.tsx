@@ -122,6 +122,10 @@ it('外部点击或切文会关闭旧菜单，侧边输入仍是同一节点且�
   open();
   rerender(view('document-b'));
   expect(screen.queryByRole('menu')).toBeNull();
+  input.focus();
+  rerender(view('document-a'));
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(input);
   expect(screen.getByRole('textbox', { name: '既有AI草稿' })).toBe(input);
   expect(input.value).toBe('尚未发送的问题');
   expect(actions.onToggleSplit).not.toHaveBeenCalled();
