@@ -203,6 +203,7 @@ export default function TaskContentEditor({
           type="button"
           className="primary"
           data-testid="save-task-content"
+          hidden={!dirty && !hasPending}
           aria-keyshortcuts="Meta+Enter Control+Enter"
           title="保存任务内容（⌘ / Ctrl + Enter）"
           disabled={disabled || busy || length > 4000 || !title.trim() || (!dirty && !hasPending)}

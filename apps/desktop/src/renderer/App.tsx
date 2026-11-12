@@ -794,6 +794,7 @@ function Workbench() {
   };
   const taskInspector = active ? (
     <TaskInspector
+      compactAi={view === 'tasks'}
       key={active.id}
       task={active}
       showCalendar={view === 'calendar'}
@@ -1314,7 +1315,9 @@ function Workbench() {
               className="task-detail"
               data-layout="three-column"
               data-active-task={active.id}
-              data-task-tab={detailTab === '内容' ? 'content' : undefined}
+              data-task-tab={
+                detailTab === '内容' ? 'content' : detailTab === '成果正文' ? 'result' : 'materials'
+              }
             >
               <div className="page-topline task-detail-topline">
                 <div>
@@ -1383,37 +1386,18 @@ function Workbench() {
               <div className="task-layout property-resizable" data-properties-resizable="true">
                 <PropertyResizeHandle module="tasks" />
                 <div className="task-work-area" aria-label="阅读与编辑工作区">
-                  <div className="task-reminder-entry">
+                  {detailTab !== '内容' && (
                     <button
+                      className="task-content-back"
                       type="button"
-                      disabled={busy}
-                      aria-pressed={Boolean(active.subscribed)}
-                      onClick={() => void setSubscription(uncertain)}
+                      onClick={() => {
+                        if (canLeave()) setDetailTab('内容');
+                      }}
                     >
-                      {uncertain ? '核对订阅提交' : active.subscribed ? '取消订阅' : '订阅任务'}
+                      <Icon name="back" size={15} />
+                      返回任务
                     </button>
-                  </div>
-                  <div className="project-tabs detail-tabs" role="tablist" aria-label="任务栏目">
-                    {['内容', '成果正文', '材料'].map((t) => (
-                      <button
-                        key={t}
-                        role="tab"
-                        aria-selected={detailTab === t}
-                        data-testid={t === '成果正文' ? 'task-result-tab' : undefined}
-                        onClick={() => {
-                          if (detailTab === t || !canLeave()) return;
-                          // 空正文可能已从材料侧栏初始化，首次打开须读取已确认的修订。
-                          if (t === '成果正文' && active.body_revision === 0) {
-                            void open(active.id, taskReturn?.source, true, documentEntry);
-                          } else setDetailTab(t);
-                        }}
-                      >
-                        {t === '材料' ? '材料阅读' : t}
-                        {t === '成果正文' && <small>1</small>}
-                      </button>
-                    ))}
-                  </div>
-
+                  )}
                   <div className="task-title" hidden={detailTab === '内容'}>
                     <div>
                       <h1>{active.title}</h1>
@@ -1461,6 +1445,34 @@ function Workbench() {
                         }}
                       />
                       <TaskAttachments
+                        bodyAction={
+                          <button
+                            type="button"
+                            className="task-body-resource"
+                            data-testid="task-result-tab"
+                            disabled={
+                              busy ||
+                              uncertain ||
+                              dirty ||
+                              commentDirty ||
+                              projectDirty ||
+                              propertiesBlocked ||
+                              reminderBlocked ||
+                              attachmentBlocked
+                            }
+                            onClick={() => {
+                              if (!canLeave()) return;
+                              if (active.body_revision === 0)
+                                void open(active.id, taskReturn?.source, true, documentEntry);
+                              else setDetailTab('成果正文');
+                            }}
+                          >
+                            <Icon name="file" size={17} />
+                            <strong>{active.title}</strong>
+                            <span>成果正文</span>
+                            <span>打开</span>
+                          </button>
+                        }
                         key={`attachments:${active.id}`}
                         taskId={active.id}
                         task={active}
@@ -1475,7 +1487,22 @@ function Workbench() {
                         onTaskChanged={acceptTaskProperties}
                       />
                       <section className="task-detail-section task-events">
-                        <h2>活动与评论</h2>
+                        <header className="task-activity-heading">
+                          <h2>活动与评论</h2>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-pressed={Boolean(active.subscribed)}
+                            onClick={() => void setSubscription(uncertain)}
+                          >
+                            <Icon name="bell" size={14} />
+                            {uncertain
+                              ? '核对订阅提交'
+                              : active.subscribed
+                                ? '取消订阅'
+                                : '订阅任务'}
+                          </button>
+                        </header>
                         <ActivityList
                           scope={{ type: 'task', id: active.id }}
                           refresh={

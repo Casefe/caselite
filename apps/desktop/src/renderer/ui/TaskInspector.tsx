@@ -25,9 +25,11 @@ export default function TaskInspector({
   showCalendar = false,
   editorAssistantDock,
   cards,
+  compactAi = false,
 }: {
   content?: ReactNode;
   cards?: readonly InspectorCard[];
+  compactAi?: boolean;
   reminder?: ReactNode;
   showCalendar?: boolean;
   editorAssistantDock?(element: HTMLDivElement | null): void;
@@ -70,6 +72,7 @@ export default function TaskInspector({
     },
     [onPropertiesBlocked],
   );
+  if (!task && compactAi) return <p className="empty-task-preview">选择任务后查看属性。</p>;
   if (!task)
     return (
       <aside className="task-inspector" aria-label="任务属性">
@@ -79,6 +82,7 @@ export default function TaskInspector({
   return (
     <aside className="task-inspector" aria-label="属性与 AI 侧边栏">
       <InspectorLayout
+        compact={compactAi}
         cards={cards}
         blocked={reminderEditing || editing || calendarEditing || localReminderEditing}
         properties={

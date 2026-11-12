@@ -203,13 +203,9 @@ export async function runTaskDemo(
     const insertText = async (text: string) =>
       evaluate(`document.execCommand('insertText',false,${JSON.stringify(text)})`);
     const taskGoalTab = async () =>
-      evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='内容').click()",
-      );
+      evaluate("document.querySelector('.task-content-back').click()");
     const bodyTab = async () =>
-      evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
-      );
+      evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
     if (phase !== 'write') {
       const vault = await createAgentCredentials(join(root, 'userData'));
       if (
@@ -409,13 +405,9 @@ export async function runTaskDemo(
         process.kill(process.pid, 'SIGKILL');
       }
       await wait("document.querySelector('[data-testid=revision]')?.textContent==='2'");
-      await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent==='内容').click()",
-      );
-      await wait("document.querySelector('.goal-panel')");
-      await evaluate(
-        "Array.from(document.querySelectorAll('[role=tab]')).find(e=>e.textContent.startsWith('成果正文')).click()",
-      );
+      await evaluate("document.querySelector('.task-content-back').click()");
+      await wait("document.querySelector('.task-content-panel [data-testid=task-content-editor]')");
+      await evaluate("document.querySelector('[data-testid=task-result-tab]').click()");
       await wait(
         `document.querySelector('[data-testid=body-editor]')?.textContent.includes(${JSON.stringify(expected.body)})`,
       );
@@ -524,7 +516,7 @@ export async function runTaskDemo(
       await assertColumns();
       const density = await evaluate(`(()=>{
       const editor = document.querySelector('[data-testid=body-editor]').getBoundingClientRect();
-      const tabs = document.querySelector('.detail-tabs').getBoundingClientRect();
+      const tabs = document.querySelector('.task-content-back').getBoundingClientRect();
       const topbar = document.querySelector('.workspace-topbar').getBoundingClientRect();
       return {width:innerWidth,height:innerHeight,scale:visualViewport.scale,tabs:tabs.height,editorTop:editor.top,topbarHeight:topbar.height};
     })()`);

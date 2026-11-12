@@ -17,9 +17,11 @@ export default function InspectorLayout({
   className = '',
   expandedActions,
   cards,
+  compact = false,
 }: {
   properties: ReactNode;
   cards?: readonly InspectorCard[];
+  compact?: boolean;
   children: ReactNode;
   blocked?: boolean;
   className?: string;
@@ -56,7 +58,7 @@ export default function InspectorLayout({
   const maximumHeight = Math.max(0, availableHeight - Math.min(48, availableHeight * 0.15));
   const height = expanded
     ? Math.min(maximumHeight, Math.max(Math.min(164, maximumHeight), availableHeight * 0.85))
-    : Math.min(availableHeight, 164);
+    : Math.min(availableHeight, compact ? 44 : 164);
   const collapse = () => {
     setExpanded(false);
     setMaximized(false);
@@ -292,7 +294,12 @@ export default function InspectorLayout({
           </div>
         </header>
         {expanded && expandedActions}
-        <div ref={content} id={region} className="inspector-ai-scroll">
+        <div
+          ref={content}
+          id={region}
+          className="inspector-ai-scroll"
+          hidden={compact && !expanded}
+        >
           {children}
         </div>
       </section>

@@ -404,16 +404,26 @@ export default function TaskProperties({
           )}
         </>
       ) : null}
-      <div className="inspector-property-row">
-        <span className="inspector-property-label">日期</span>
+      {groupTags ? (
         <TaskDatePicker
+          separate
           value={shown}
           disabled={locked}
           onEditing={setDateEditing}
           onChange={(dates) => enqueue(dates)}
         />
-      </div>
-      {reminder}
+      ) : (
+        <div className="inspector-property-row">
+          <span className="inspector-property-label">日期</span>
+          <TaskDatePicker
+            value={shown}
+            disabled={locked}
+            onEditing={setDateEditing}
+            onChange={(dates) => enqueue(dates)}
+          />
+        </div>
+      )}
+      {!groupTags && reminder}
       {!groupTags && tags}
       {pending && <p role="status">正在保存任务属性…</p>}
       {failure && (
@@ -452,14 +462,19 @@ export default function TaskProperties({
   return (
     <>
       <InspectorSection title="属性">{properties}</InspectorSection>
-      <section className="project-inspector-section task-label-section" aria-label="标签">
-        <h3>标签</h3>
-        {tags}
-      </section>
       <section className="project-inspector-section task-project-section" aria-label="项目">
         <h3>项目</h3>
         {project ?? <p>{task.matter_title ?? (task.matter_id ? '已归组' : '独立任务')}</p>}
       </section>
+      <section className="project-inspector-section task-label-section" aria-label="标签">
+        <h3>标签</h3>
+        {tags}
+      </section>
+      {reminder && (
+        <InspectorSection title="提醒" open={false}>
+          {reminder}
+        </InspectorSection>
+      )}
     </>
   );
 }
