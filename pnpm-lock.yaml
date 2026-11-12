@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  yjs@13.6.33: e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164
+
 importers:
 
   .:
@@ -97,7 +100,7 @@ importers:
         version: 3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)
       '@tiptap/extension-collaboration':
         specifier: 3.32.3
-        version: 3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)(@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33))(yjs@13.6.33)
+        version: 3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)(@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164))
       '@tiptap/extension-table':
         specifier: 3.32.3
         version: 3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)
@@ -151,7 +154,7 @@ importers:
         version: 3.4.0
       yjs:
         specifier: 13.6.33
-        version: 13.6.33
+        version: 13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)
     devDependencies:
       '@electron-forge/cli':
         specifier: 8.0.1
@@ -227,7 +230,7 @@ importers:
         version: 0.45.4(@opentelemetry/api@1.10.0)(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)
       yjs:
         specifier: 13.6.33
-        version: 13.6.33
+        version: 13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)
     devDependencies:
       '@types/better-sqlite3':
         specifier: 9.6.0
@@ -8641,12 +8644,12 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.32.3(@tiptap/pm@3.32.3)
 
-  '@tiptap/extension-collaboration@3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)(@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33))(yjs@13.6.33)':
+  '@tiptap/extension-collaboration@3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)(@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164))':
     dependencies:
       '@tiptap/core': 3.32.3(@tiptap/pm@3.32.3)
       '@tiptap/pm': 3.32.3
-      '@tiptap/y-tiptap': 3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
-      yjs: 13.6.33
+      '@tiptap/y-tiptap': 3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164))
+      yjs: 13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)
 
   '@tiptap/extension-document@3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))':
     dependencies:
@@ -8793,15 +8796,15 @@ snapshots:
       '@tiptap/extensions': 3.32.3(@tiptap/core@3.32.3(@tiptap/pm@3.32.3))(@tiptap/pm@3.32.3)
       '@tiptap/pm': 3.32.3
 
-  '@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)':
+  '@tiptap/y-tiptap@3.0.12(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.9)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)))(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164))':
     dependencies:
       lib0: 0.2.119
       prosemirror-model: 1.25.12
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.12.4
       prosemirror-view: 1.42.9
-      y-protocols: 1.0.7(yjs@13.6.33)
-      yjs: 13.6.33
+      y-protocols: 1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164))
+      yjs: 13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)
 
   '@types/aria-query@5.0.4': {}
 
@@ -12642,10 +12645,10 @@ snapshots:
 
   xmlchars@2.2.0: {}
 
-  y-protocols@1.0.7(yjs@13.6.33):
+  y-protocols@1.0.7(yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)):
     dependencies:
       lib0: 0.2.119
-      yjs: 13.6.33
+      yjs: 13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164)
 
   yallist@3.1.1: {}
 
@@ -12657,7 +12660,7 @@ snapshots:
     dependencies:
       pend: 1.2.0
 
-  yjs@13.6.33:
+  yjs@13.6.33(patch_hash=e3a81627ef09aff7526b431c5b1556507d460af37044ef9d073f4a5fcd322164):
     dependencies:
       lib0: 0.2.119
 
