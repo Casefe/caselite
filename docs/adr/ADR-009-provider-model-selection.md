@@ -19,3 +19,15 @@
 复用已安装的 Pi Chat Completions 接口。配置不触发请求，运行沿既有单派发、2048 输出上限、零重试和禁用工具规则。用合成 HTTP 检查固定路由、鉴权头、发送体和流式结果。真实鉴权及服务质量待使用对应有效 Key 验证。
 
 回退时保留新版工作区及原密文。旧包无法解析新增模型的运行记录。若已将新增模型设为默认或已生成新增模型记录，旧包仅用升级前的工作区副本，完整历史继续由新版读取。
+
+## 2026-11-14 DEV-1862｜统一最后 HTTP 派发边界
+
+在唯一 Pi Runtime 内为现有五家 Provider 注入同一个宿主 transport。安装版 Pi 的公开 `fetch` 选项由 Responses 与 Chat Completions 适配器传入 HTTP client；沿现有 `maxRetries: 0`，不新增 Runtime、依赖或备用服务。
+
+可信目录固定 Provider 的 HTTPS base URL 和完整 endpoint：OpenAI 仅 `/v1/responses`，其余服务仅各自既有 `/chat/completions`。Pi 选中模型的 ID、Provider 和 base URL 必须与本次输入一致；发送前再次核验完整 URL 和 POST，拒绝其他 host、port、path、query、fragment、用户信息。每个 Run 只有一次底层 HTTP 尝试，失败也不恢复次数；强制 `redirect: 'error'`，并拒绝 3xx、已跟随重定向或最终 URL 不符的响应。未获准目标在正文和 Key 进入底层 fetch 前被拒绝。
+
+transport 保留并合并原 Run、Request 和 SDK 请求的取消信号；已取消、已结束或迟到的请求/响应不能继续派发或返回成功。原 Application 输入范围、凭据端口、Run 身份、预算与未知费用状态保持。合成 transport 测试只证明本地拒绝和安装 SDK 接线；真实 Provider/Key/网络调用为 0，产品接合、完整门禁和独立复核须另留证，不能据本决定宣称上线。
+
+URL 等非 Request 输入只做一次字符串转换，校验与发送使用同一原生字符串；Request 输入先建立原生 Request 快照，校验快照 URL/方法并发送同一快照。SDK init 同步复制一次并固定取消信号与 redirect，防止可变 URL 的二次转换或覆写 Request.url getter 在校验后偷换目标；正文和鉴权保留在本次请求中，不为校验预先消费正文。
+
+回退只撤本次 runtime/transport 接线和新增测试；不迁移或删除原 Run、正文、原件及凭据。

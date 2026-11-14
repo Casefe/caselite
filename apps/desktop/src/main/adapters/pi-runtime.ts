@@ -5,26 +5,24 @@ import { agentModelAcceptsImages, agentProviderFor } from '@caselite/contracts';
 import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import type { AgentRuntimePort } from '@caselite/application';
+import { createProviderTransport, providerBaseUrl } from './provider-transport';
 
 const additionalProviders = [
   {
     id: 'glm',
     model: 'glm-4.7-flash',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     thinkingFormat: 'zai',
     contextWindow: 200_000,
   },
   {
     id: 'kimi',
     model: 'kimi-k2.6',
-    baseUrl: 'https://api.moonshot.cn/v1',
     thinkingFormat: 'deepseek',
     contextWindow: 262_144,
   },
   {
     id: 'siliconflow',
     model: 'deepseek-ai/DeepSeek-V4-Flash',
-    baseUrl: 'https://api.siliconflow.cn/v1',
     thinkingFormat: 'qwen',
     contextWindow: 262_144,
   },
@@ -34,7 +32,8 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
   const models = createModels();
   models.setProvider(openaiProvider());
   models.setProvider(deepseekProvider());
-  for (const { id, model, baseUrl, thinkingFormat, contextWindow } of additionalProviders) {
+  for (const { id, model, thinkingFormat, contextWindow } of additionalProviders) {
+    const baseUrl = providerBaseUrl(id);
     models.setProvider(
       createProvider({
         id,
@@ -68,14 +67,14 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
   }
   return {
     start(input) {
-      const model = models.getModel(agentProviderFor(input.model), input.model);
+      const provider = agentProviderFor(input.model);
+      const model = models.getModel(provider, input.model);
       if (!model) throw new Error('Required model unavailable');
       if (
         input.images?.length &&
         (!agentModelAcceptsImages(input.model) || !model.input.includes('image'))
       )
         throw new Error('Vision unavailable');
-      const fixedRoute = additionalProviders.some(({ model }) => model === input.model);
       let dispatches = 0;
       let settled = false;
       const agent = new Agent({
@@ -112,12 +111,17 @@ export function createPiRuntime(streamOverride?: StreamFn): AgentRuntimePort {
           // 最后发送边界检查；禁止重试、隐形续跑和第二次收费调用。
           if (settled || options?.signal?.aborted || dispatches++ > 0)
             throw new Error('Dispatch refused');
+          if (
+            selectedModel.id !== input.model ||
+            selectedModel.provider !== provider ||
+            selectedModel.baseUrl !== providerBaseUrl(provider)
+          )
+            throw new Error('Dispatch refused');
           return (streamOverride ?? models.streamSimple.bind(models))(selectedModel, context, {
             ...options,
             apiKey: input.key,
             env: {},
-            // 拒绝重定向，避免把选中的材料转发给另一个服务地址。
-            ...(fixedRoute && { fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }) }),
+            fetch: createProviderTransport(provider, () => !settled, options?.signal),
             cacheRetention: 'none',
             maxTokens: 2048,
             maxRetries: 0,
