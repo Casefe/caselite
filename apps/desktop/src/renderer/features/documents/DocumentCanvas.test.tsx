@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { BodySaveState } from './BodyEditor';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CatalogDocument, Task } from '../../../preload/caselite-api';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
@@ -15,6 +16,8 @@ vi.mock('./BodyEditor', () => ({
     onDirty,
     onReviewSaving,
     reviewSaving,
+    autosave,
+    onSaveState,
   }: {
     task: Task;
     disabled: boolean;
@@ -22,10 +25,24 @@ vi.mock('./BodyEditor', () => ({
     onDirty(v: boolean): void;
     onReviewSaving(v: boolean): void;
     reviewSaving: boolean;
+    autosave?: boolean;
+    onSaveState?(state: BodySaveState): void;
   }) {
+    const [revision] = useState(task.body_revision);
     useEffect(() => {
       mounted();
     }, []);
+    useEffect(() => {
+      if (autosave)
+        onSaveState?.({
+          bodyId: task.body_id,
+          revision,
+          phase: 'saved',
+          message: '已保存',
+          canRetry: false,
+          retry: () => {},
+        });
+    }, [autosave, onSaveState, task.body_id, revision]);
     return (
       <>
         <input aria-label="原位正文" disabled={disabled} onChange={() => onDirty(true)} />
@@ -75,11 +92,12 @@ function setup(overrides: Partial<Task> = {}) {
   const client = createWorkbenchQueryClient(),
     onSaved = vi.fn(),
     onDirty = vi.fn();
-  const view = (doc = document, mirror = false) => (
+  const view = (doc = document, mirror = false, autosave = false) => (
     <QueryClientProvider client={client}>
       <DocumentCanvas
         document={doc}
         mirror={mirror}
+        autosave={autosave}
         disabled={false}
         onSaved={onSaved}
         onDirty={onDirty}
@@ -87,7 +105,7 @@ function setup(overrides: Partial<Task> = {}) {
     </QueryClientProvider>
   );
   const result = render(view());
-  return { ...result, read, onSaved, onDirty, view };
+  return { ...result, read, onSaved, onDirty, view, client };
 }
 it('拒绝同任务返回的另一正文身份，不显示编辑器', async () => {
   setup({ body_id: 'other' });
@@ -122,6 +140,51 @@ it('同文档对照栏只展示只读投影，不创建第二个写入会话', a
   expect(screen.getByText('只读正文')).toBeTruthy();
   expect(s.read).toHaveBeenCalledTimes(1);
   expect(mounted).toHaveBeenCalledTimes(1);
+});
+
+it('较早ACK不覆盖较新read投影；高版本缓存不能误解锁尚在旧修订的编辑会话', async () => {
+  const s = setup();
+  s.rerender(s.view(document, false, true));
+  const input = await screen.findByLabelText<HTMLInputElement>('原位正文');
+  fireEvent.change(input, { target: { value: '原会话的后续草稿' } });
+  fireEvent.click(screen.getByText('确认保存'));
+  act(() =>
+    s.client.setQueryData(['document-edit', document.id, 0], {
+      task: { ...task, body_revision: 5 },
+      state: [5],
+    }),
+  );
+  s.rerender(s.view({ ...document, body_revision: 5 }, false, true));
+  await waitFor(() => expect(s.onSaved).toHaveBeenCalled());
+  expect(
+    s.client.getQueryData<{ task: Task }>(['document-edit', document.id, 0])?.task.body_revision,
+  ).toBe(5);
+  expect(input.disabled).toBe(true);
+  expect(input.value).toBe('原会话的后续草稿');
+  expect(screen.getByLabelText('原位正文')).toBe(input);
+  expect(mounted).toHaveBeenCalledTimes(1);
+});
+
+it('有缓存数据的后台读取失败保留dirty编辑器，重试只读取且不重挂草稿', async () => {
+  const s = setup();
+  s.rerender(s.view(document, false, true));
+  const input = await screen.findByLabelText<HTMLInputElement>('原位正文');
+  fireEvent.change(input, { target: { value: '后台失败仍保留的草稿' } });
+  s.read.mockImplementationOnce(async () => {
+    throw Error('合成读取失败');
+  });
+  await act(async () =>
+    s.client.invalidateQueries({ queryKey: ['document-edit', document.id, 0] }),
+  );
+  expect((await screen.findByRole('alert')).textContent).toContain('当前输入已保留');
+  expect(screen.getByLabelText('原位正文')).toBe(input);
+  expect(input.disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重试读取文档' }));
+  await waitFor(() => expect(input.disabled).toBe(false));
+  expect(input.value).toBe('后台失败仍保留的草稿');
+  expect(mounted).toHaveBeenCalledTimes(1);
+  expect(s.onSaved).not.toHaveBeenCalled();
+  expect(s.read).toHaveBeenCalledTimes(3);
 });
 it('干净正文导出和未知结果也锁定导航；正文与导出分别解除，卸载释放父锁', async () => {
   const s = setup();

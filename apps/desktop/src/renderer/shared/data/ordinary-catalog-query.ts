@@ -21,6 +21,10 @@ function catalogQuery(projectProperties: boolean) {
 const ordinaryCatalog = catalogQuery(false);
 const projectCatalog = catalogQuery(true);
 
+export function cancelCatalogReads(client: QueryClient) {
+  return client.cancelQueries({ queryKey: ['catalog'] });
+}
+
 export function invalidateOrdinaryCatalog(
   client: QueryClient,
   restartEmpty = true,

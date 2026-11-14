@@ -32,6 +32,7 @@ pnpm dev
 - [测试分层](docs/TESTING.md) · [安全](docs/SECURITY.md)
 - [执行与交接](docs/WORKFLOW.md) · [独立审查](docs/CODE_REVIEW.md)
 - [新会话预演](docs/REVIEW_HANDOFF_EXERCISE.md) · [ADR](docs/adr/README.md)
+- [工程化研究白皮书](docs/research/engineering-whitepaper.md) · [行动方案与跨工具交接](docs/plans/engineering-action-plan.md)（2026-11-14研究建议，执行仍以实时合同和最新授权为准）
 - [Linear 产品开发](https://linear.app/logixy-ai/initiative/caselite-产品开发-1ac38d27e4c0)
 
 工程可判定的验收与律师产品接收分别处理。R0 准备、R1 首个法律任务、后续持续工作／审查／双设备／团队及候选增强各有结束条件，编号不代替真实依赖。开发工具 Runner 与产品内 Pi Agent 是两套职责，不把工具候选作为全部产品开发前置。

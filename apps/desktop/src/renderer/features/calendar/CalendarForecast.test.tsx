@@ -142,11 +142,12 @@ it('renders forecast dates first and real attributes below titles, while retaini
   const row = await within(screen.getByRole('region', { name: '当日任务' })).findByRole('button', {
     name: /合成预测任务/,
   });
-  expect(row.textContent).toContain('合成项目');
-  expect(row.textContent).toContain('待核对');
-  expect(row.textContent).toContain(`计划 ${today}`);
-  expect(row.textContent).toContain(`截止 ${today}`);
-  expect(row.textContent).toContain('示例负责人');
+  const metadata = row.closest('[data-calendar-task]');
+  expect(metadata?.textContent).toContain('合成项目');
+  expect(metadata?.textContent).toContain('待核对');
+  expect(metadata?.textContent).toContain(`计划 ${today}`);
+  expect(metadata?.textContent).toContain(`截止 ${today}`);
+  expect(metadata?.textContent).toContain('示例负责人');
   expect(
     document.querySelector('.calendar-agenda')?.firstElementChild?.getAttribute('aria-label'),
   ).toBe('预测日期');

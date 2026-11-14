@@ -118,3 +118,46 @@
     max-height: none;
   }
 }
+
+.workbench[data-properties-layout='sidebar']
+  .collection-workspace.project-catalog.property-resizable[data-layout='three-column'][data-project-view='documents'],
+.collection-workspace.project-catalog.property-resizable[data-layout='three-column'][data-project-view='documents'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.project-catalog[data-project-view='documents'] > .collection-main > .collection-scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.project-document-panel:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+}
+.project-document-panel > .document-workspace {
+  height: 100%;
+}
+.document-workspace .local-folder-tree {
+  flex: 1.2;
+  min-height: 140px;
+  border-bottom: 1px solid var(--line);
+}
+.local-folder-tree > button,
+.local-folder-tree > p,
+.local-folder-tree > section {
+  margin-inline: 8px;
+}
+.local-folder-tree .setting-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+}
+.local-folder-tree .setting-row p,
+.local-folder-tree [aria-label='未完成的文件打开'] span {
+  overflow-wrap: anywhere;
+}
+.local-folder-tree [aria-label='未完成的文件打开'] button {
+  margin: 4px 6px 4px 0;
+}

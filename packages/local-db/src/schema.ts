@@ -347,6 +347,7 @@ export const matters = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    uniqueIndex('folder_project_workspace_id').on(table.workspaceId, table.id),
     check(
       'project_professional_type_valid',
       sql`${table.professionalType} IN ('civil_litigation','criminal_litigation','commercial_arbitration','non_litigation')`,
@@ -522,24 +523,146 @@ export const agentRuns = sqliteTable('agent_runs', {
 });
 
 // 文件字节仍在不可变原件目录；SQLite 只拥有身份、恢复阶段和派生结果。
-export const materialStages = sqliteTable('material_stages', {
-  token: text('token').primaryKey(),
-  workspaceId: text('workspace_id').notNull(),
-  payload: text('payload').notNull(),
-});
-export const materialSources = sqliteTable('material_sources', {
-  id: text('id').primaryKey(),
-  workspaceId: text('workspace_id').notNull(),
-  taskId: text('task_id')
-    .notNull()
-    .references(() => taskItems.id),
-  assetVersionId: text('asset_version_id').notNull(),
-  name: text('name').notNull(),
-  sha256: text('sha256').notNull(),
-  bytes: integer('bytes').notNull(),
-  pageCount: integer('page_count').notNull(),
-  derivationId: text('derivation_id'),
-});
+export const materialStages = sqliteTable(
+  'material_stages',
+  {
+    token: text('token').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    payload: text('payload').notNull(),
+  },
+  (t) => [
+    uniqueIndex('personal_capture_active_mapping')
+      .on(t.workspaceId, sql`json_extract(${t.payload},'$.target.mapping_id')`)
+      .where(
+        sql`json_valid(${t.payload}) AND json_extract(${t.payload},'$.kind') IN ('personal_capture_v1','personal_capture_v2') AND json_extract(${t.payload},'$.phase') IN ('reserved','snapshot_planned','staged','placed')`,
+      ),
+  ],
+);
+
+export const folderBindings = sqliteTable(
+  'folder_bindings',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    name: text('name').notNull(),
+    identityVersion: integer('identity_version').notNull(),
+    identityHint: text('identity_hint').notNull(),
+  },
+  (t) => [
+    uniqueIndex('folder_binding_workspace_id').on(t.workspaceId, t.id),
+    check('folder_binding_identity', sql`${t.identityVersion}=1`),
+  ],
+);
+
+export const folderWorkspaceDefaults = sqliteTable(
+  'folder_workspace_defaults',
+  {
+    workspaceId: text('workspace_id').primaryKey(),
+    bindingId: text('binding_id').notNull(),
+    revision: integer('revision').notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.workspaceId, t.bindingId],
+      foreignColumns: [folderBindings.workspaceId, folderBindings.id],
+    }),
+    check('folder_default_revision', sql`${t.revision}>0`),
+  ],
+);
+
+export const folderProjectBindings = sqliteTable(
+  'folder_project_bindings',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    projectId: text('project_id').notNull(),
+    rootBindingId: text('root_binding_id').notNull(),
+    relativeDirectory: text('relative_directory').notNull(),
+    directoryIdentity: text('directory_identity').notNull(),
+    revision: integer('revision').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.projectId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.projectId],
+      foreignColumns: [matters.workspaceId, matters.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.rootBindingId],
+      foreignColumns: [folderBindings.workspaceId, folderBindings.id],
+    }),
+    check(
+      'folder_project_values',
+      sql`length(${t.relativeDirectory})>0 AND json_valid(${t.directoryIdentity}) AND ${t.revision}>0`,
+    ),
+  ],
+);
+
+export const folderScopeReceipts = sqliteTable(
+  'folder_scope_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    requestKind: text('request_kind').notNull(),
+    requestKey: text('request_key').notNull(),
+    digest: text('digest').notNull(),
+    operation: text('operation').notNull(),
+    frozenScope: text('frozen_scope').notNull(),
+    result: text('result').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.requestKind, t.operation, t.requestKey] }),
+    check(
+      'folder_receipt_values',
+      sql`${t.requestKind}='configuration' AND ${t.operation} IN ('set_default','bind_project') AND json_valid(${t.frozenScope}) AND json_valid(${t.result})`,
+    ),
+  ],
+);
+
+export const folderRootLocators = sqliteTable(
+  'folder_root_locators',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    bindingId: text('binding_id').notNull(),
+    locatorVersion: integer('locator_version').notNull(),
+    revision: integer('revision').notNull(),
+    privatePath: text('private_path').notNull(),
+    rootIdentity: text('root_identity').notNull(),
+    ancestorChain: text('ancestor_chain').notNull(),
+    profileIdentity: text('profile_identity').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.bindingId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.bindingId],
+      foreignColumns: [folderBindings.workspaceId, folderBindings.id],
+    }),
+    check(
+      'folder_locator_values',
+      sql`${t.locatorVersion}=1 AND ${t.revision}>0 AND json_valid(${t.rootIdentity}) AND json_valid(${t.ancestorChain}) AND json_valid(${t.profileIdentity})`,
+    ),
+  ],
+);
+export const materialSources = sqliteTable(
+  'material_sources',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    ownerKind: text('owner_kind').notNull().default('task'),
+    taskId: text('task_id').references(() => taskItems.id),
+    assetVersionId: text('asset_version_id').notNull(),
+    name: text('name').notNull(),
+    sha256: text('sha256').notNull(),
+    bytes: integer('bytes').notNull(),
+    pageCount: integer('page_count').notNull(),
+    derivationId: text('derivation_id'),
+  },
+  (table) => [
+    uniqueIndex('folder_source_workspace_id').on(table.workspaceId, table.id),
+    check(
+      'material_source_owner',
+      sql`(${table.ownerKind}='task' AND ${table.taskId} IS NOT NULL) OR (${table.ownerKind}='personal' AND ${table.taskId} IS NULL)`,
+    ),
+  ],
+);
 export const materialDerivations = sqliteTable('material_derivations', {
   id: text('id').primaryKey(),
   sourceId: text('source_id')
@@ -737,5 +860,31 @@ export const taskDateConfirmations = sqliteTable(
       'task_date_confirmation_payload',
       sql`json_valid(${table.payload}) AND length(${table.payload})<=120000`,
     ),
+  ],
+);
+
+export const folderMappings = sqliteTable(
+  'folder_mappings',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    bindingId: text('binding_id').notNull(),
+    relativeName: text('relative_name').notNull(),
+    identityVersion: integer('identity_version').notNull(),
+    entryHint: text('entry_hint').notNull(),
+    revision: integer('revision').notNull().default(0),
+    currentSourceId: text('current_source_id'),
+  },
+  (t) => [
+    unique().on(t.bindingId, t.relativeName),
+    foreignKey({
+      columns: [t.workspaceId, t.bindingId],
+      foreignColumns: [folderBindings.workspaceId, folderBindings.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.currentSourceId],
+      foreignColumns: [materialSources.workspaceId, materialSources.id],
+    }),
+    check('folder_mapping_identity', sql`${t.identityVersion}=1`),
   ],
 );

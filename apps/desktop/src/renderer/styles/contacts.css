@@ -680,7 +680,7 @@
   display: inline-flex;
   align-items: center;
   text-align: left;
-  gap: 7px;
+  gap: var(--property-gap, 7px);
   border: 0;
   background: transparent;
   padding: 4px 0;
@@ -716,19 +716,19 @@
 }
 .customer-inline-editor {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--property-font-size, 12px);
 }
 .customer-inline-editor .caption {
   display: block;
   margin-top: 5px;
 }
 .customer-inline-conflict {
-  font-size: 11px;
+  font-size: var(--property-small-font-size, 11px);
   color: var(--muted);
   line-height: 1.8;
 }
 .customer-inline-status {
-  font-size: 11px;
+  font-size: var(--property-small-font-size, 11px);
   color: var(--theme-accent);
 }
 .customer-identity-types {

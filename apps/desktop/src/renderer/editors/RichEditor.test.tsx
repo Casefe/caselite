@@ -351,6 +351,28 @@ describe('rich input locking', () => {
     expect(change).not.toHaveBeenCalled();
     expect(input.innerHTML).toBe(content);
   });
+  it('changes display profile without replacing the draft or enabling table operations', async () => {
+    const change = vi.fn();
+    const props = {
+      value: { text: '保留草稿正文', state: null },
+      onChange: change,
+      label: '展示配置切换',
+    };
+    const view = render(<DraftEditor {...props} profile="document" />);
+    const input = await screen.findByRole('textbox', { name: props.label });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(input.textContent).toBe('保留草稿正文');
+    expect(screen.queryByRole('combobox', { name: '表格操作' })).toBeNull();
+    expect(change).not.toHaveBeenCalled();
+    view.rerender(<DraftEditor {...props} profile="description" />);
+    expect(screen.getByRole('textbox', { name: props.label })).toBe(input);
+    expect(input.textContent).toBe('保留草稿正文');
+    view.rerender(<DraftEditor {...props} profile="document" />);
+    expect(screen.getByRole('textbox', { name: props.label })).toBe(input);
+    expect(input.textContent).toBe('保留草稿正文');
+    expect(screen.queryByRole('combobox', { name: '表格操作' })).toBeNull();
+    expect(change).not.toHaveBeenCalled();
+  });
   it('does not let an open block menu or active drag modify a disabled submission', async () => {
     const change = vi.fn();
     const props = {

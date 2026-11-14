@@ -43,6 +43,61 @@ function binary(text: string) {
   return bytes;
 }
 describe('Task durable SQLite transactions', () => {
+  it('r2先落盘后拒绝迟到r1；原键回执与旧正文修订在后续保存/重开后不变', () => {
+    const { file, store } = setup();
+    const task = value(
+      store.execute({ ...identity(), operation: 'create', title: '串行合成稿', objective: '' }),
+    ).tasks[0];
+    const request = (state: number[]): Extract<TaskRequest, { operation: 'save' }> => ({
+      ...identity(),
+      operation: 'save',
+      task_id: task.id,
+      document_id: task.document_id,
+      body_id: task.body_id,
+      expected_revision: 0,
+      editor_schema: 1,
+      state,
+    });
+    const r1 = request(binary('较早输入'));
+    const r2 = request(binary('包含后续输入的较新正文'));
+    const confirmed = value(store.execute(r2));
+    expect(confirmed.receipt).toBe(r2.idempotency_key);
+    expect(confirmed.tasks[0].body_revision).toBe(1);
+    expect(store.execute(r1)).toMatchObject({ ok: false, code: 'CONFLICT' });
+    expect(value(store.execute({ ...r2, request_id: randomUUID() }))).toEqual(confirmed);
+    expect(
+      value(store.execute({ ...request(binary('下一修订')), expected_revision: 1 })).tasks[0]
+        .body_revision,
+    ).toBe(2);
+    store.close();
+    const reopened = openTaskStore(file, migrations);
+    expect(
+      value(reopened.execute({ operation: 'read', protocol_version: 1, task_id: task.id })).tasks[0]
+        .body_revision,
+    ).toBe(2);
+    expect(
+      value(
+        reopened.execute({
+          operation: 'status',
+          protocol_version: 1,
+          idempotency_key: r2.idempotency_key,
+        }),
+      ),
+    ).toEqual(confirmed);
+    const raw = openToolchainProbe(file, migrations);
+    const old = raw.sqlite
+      .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=1')
+      .get(task.body_id) as { state: Buffer };
+    expect(Array.from(old.state)).toEqual(r2.state);
+    expect(
+      raw.sqlite
+        .prepare('SELECT count(*) AS n FROM body_revisions WHERE body_id=?')
+        .get(task.body_id),
+    ).toEqual({ n: 2 });
+    raw.sqlite.close();
+    reopened.close();
+  });
+
   it('upgrades an existing probe database without losing prior records', () => {
     const root = mkdtempSync(join(tmpdir(), 'caselite-task-upgrade-'));
     roots.push(root);

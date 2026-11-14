@@ -2,7 +2,12 @@ import DocumentAnnotations from './DocumentAnnotations';
 import { assertBoundedHtml } from './bounded-html';
 import { TableCommands } from './TableCommands';
 import { useLocalDoc, type RichDraft } from './editor-state';
-import { localExtensions, editorProfiles, type EditorProfile } from './editor-config';
+import {
+  localExtensions,
+  editorProfiles,
+  editorCapabilities,
+  type EditorProfile,
+} from './editor-config';
 export { draftDoc, emptyDraft, useLocalDoc, type RichDraft } from './editor-state';
 export { localExtensions } from './editor-config';
 import {
@@ -758,7 +763,10 @@ export const DraftEditor = forwardRef<
   const editor = useEditor(
     {
       injectCSS: false,
-      extensions: localExtensions(doc, readTables && disabled, readTables && disabled),
+      extensions: localExtensions(
+        doc,
+        readTables && disabled ? editorCapabilities.document : editorCapabilities.basic,
+      ),
       editable: !disabled,
       editorProps: {
         attributes: {

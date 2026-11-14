@@ -1,3 +1,5 @@
+import { useTaskCompletion } from './features/tasks/useTaskCompletion';
+import { refreshTaskConsumers } from './ui/refresh-task-consumers';
 import {
   ResponsiveWorkspaceProvider,
   useResponsiveWorkspace,
@@ -12,7 +14,7 @@ import {
 import PropertyResizeHandle from './ui/PropertyResizeHandle';
 import WorkspaceTopbar from './ui/WorkspaceTopbar';
 import { useWorkspaceTabs } from './shared/navigation/useWorkspaceTabs';
-import type { WorkspacePage } from './shared/navigation/workspace-tabs';
+import { activeTab, type WorkspacePage } from './shared/navigation/workspace-tabs';
 import { PageNavigationProvider, type ChildPage } from './shared/navigation/PageNavigation';
 import CalendarView from './features/calendar/CalendarView';
 import InspectorLayout from './ui/InspectorLayout';
@@ -56,6 +58,7 @@ import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './features/projects/ProjectCatalog';
 import ImportantSchedules from './features/calendar/ImportantSchedules';
 import DocumentLibrary from './ui/DocumentLibrary';
+import { documentInspectorStartsCollapsed } from './features/documents/document-workspace-inspector';
 import TaskInspector from './ui/TaskInspector';
 
 import SettingsView, { type SettingsSection } from './ui/SettingsView';
@@ -152,6 +155,8 @@ function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
+  const [homeLeftSlot, setHomeLeftSlot] = useState<HTMLDivElement | null>(null);
+  const [homeRightSlot, setHomeRightSlot] = useState<HTMLDivElement | null>(null);
   const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
   const [pageEpoch, setPageEpoch] = useState(0);
@@ -228,6 +233,21 @@ function Workbench() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
+  const completion = useTaskCompletion({
+    disabled:
+      loading ||
+      dirty ||
+      commentDirty ||
+      projectDirty ||
+      propertiesBlocked ||
+      reminderBlocked ||
+      attachmentBlocked ||
+      busy ||
+      uncertain ||
+      reviewSaving ||
+      creating,
+    onChanged: acceptTaskCompletion,
+  });
   const readSequence = useRef(0);
   const createRequest = useRef<CreateTaskCommand | null>(null);
   const recoveredTaskId = creationAttachments.recovered
@@ -330,6 +350,7 @@ function Workbench() {
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (
+        completion.blocked ||
         dirty ||
         commentDirty ||
         projectDirty ||
@@ -349,6 +370,7 @@ function Workbench() {
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
   }, [
+    completion.blocked,
     dirty,
     commentDirty,
     projectDirty,
@@ -363,6 +385,7 @@ function Workbench() {
   ]);
   function canLeave() {
     if (
+      completion.blocked ||
       reviewSaving ||
       dirty ||
       commentDirty ||
@@ -408,6 +431,22 @@ function Workbench() {
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
+  }
+  function openProjectFromNavigation(id: string) {
+    if (!canLeave()) return;
+    setProjectView({
+      selected: id,
+      projectId: id,
+      section: 'overview',
+      query: '',
+      statusFilter: 'all',
+      order: 'updated',
+      columns: projectListDefaults,
+      scrollTop: 0,
+      workspaceScrollTop: 0,
+      returnTaskId: '',
+    });
+    navigate('projects');
   }
   function newTask(source: ProjectViewState | null = null, mode: 'task' | 'schedule' = 'task') {
     if (!canLeave()) return;
@@ -791,7 +830,16 @@ function Workbench() {
     setTaskNavigation(null);
     setError('');
   };
-  const acceptTaskProperties = (saved: Task, description: number[] | null) => {
+  async function acceptTaskCompletion(saved: Task, description: number[] | null) {
+    if (!(await acceptTaskProperties(saved, description))) return false;
+    try {
+      await refreshTaskConsumers(queryClient);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function acceptTaskProperties(saved: Task, description: number[] | null) {
     setTasks((rows) =>
       rows.map((row) => (row.id === saved.id && row.version <= saved.version ? saved : row)),
     );
@@ -802,8 +850,11 @@ function Workbench() {
       setPropertiesRead((epoch) => epoch + 1);
       void refreshTaskPosition(saved.id);
     }
-    void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
-  };
+    return refresh().catch(() => {
+      setError('任务属性已保存，列表刷新失败，请重试列表。');
+      return false;
+    });
+  }
   const taskInspector = active ? (
     <TaskInspector
       compactAi={view === 'tasks'}
@@ -815,6 +866,7 @@ function Workbench() {
           compact
           taskId={active.id}
           disabled={
+            completion.blocked ||
             loading ||
             dirty ||
             commentDirty ||
@@ -843,6 +895,7 @@ function Workbench() {
         ) : undefined
       }
       projectDisabled={
+        completion.blocked ||
         loading ||
         dirty ||
         commentDirty ||
@@ -853,6 +906,7 @@ function Workbench() {
         uncertain
       }
       propertiesDisabled={
+        completion.blocked ||
         loading ||
         dirty ||
         commentDirty ||
@@ -863,7 +917,13 @@ function Workbench() {
         uncertain
       }
       reminderEditing={
-        loading || reminderBlocked || attachmentBlocked || dirty || commentDirty || projectDirty
+        completion.blocked ||
+        loading ||
+        reminderBlocked ||
+        attachmentBlocked ||
+        dirty ||
+        commentDirty ||
+        projectDirty
       }
       onPropertiesBlocked={setPropertiesBlocked}
       onTaskChanged={acceptTaskProperties}
@@ -890,9 +950,18 @@ function Workbench() {
           : view));
   const pageTitle = taskPage ? taskPage.title : (visibleChild?.title ?? workspacePages[view].title);
   const inspectorOpen =
-    inspectorChoices[pageKey] ?? !(view === 'documents' && window.innerWidth <= 900);
+    inspectorChoices[pageKey] ??
+    !(
+      documentInspectorStartsCollapsed(pageKey) ||
+      (view === 'documents' && window.innerWidth <= 900)
+    );
   const initializeInspector = useCallback((key: string, open: boolean) => {
-    setInspectorChoices((choices) => (key in choices ? choices : { ...choices, [key]: open }));
+    // 只设置阅读页首次默认值，用户选择和页签恢复的已记录状态优先。
+    setInspectorChoices((choices) =>
+      key in choices
+        ? choices
+        : { ...choices, [key]: documentInspectorStartsCollapsed(key) ? false : open },
+    );
   }, []);
   const inspectorAvailable = [
     'home',
@@ -1102,6 +1171,9 @@ function Workbench() {
         topbar={
           <WorkspaceTopbar
             navigation={workspaceNavigation}
+            home={view === 'home'}
+            homeLeftSlot={setHomeLeftSlot}
+            homeRightSlot={setHomeRightSlot}
             collapsed={effectiveCollapsed}
             onCollapse={toggleNavigation}
             inspectorOpen={inspectorOpen}
@@ -1116,27 +1188,13 @@ function Workbench() {
           <FavoriteNavigation
             tasks={tasks}
             onTask={(id, document) => void open(id, null, document, document)}
-            onProject={(id) => {
-              if (!canLeave()) return;
-              setProjectView({
-                selected: id,
-                projectId: id,
-                section: 'overview',
-                query: '',
-                statusFilter: 'all',
-                order: 'updated',
-                columns: projectListDefaults,
-                scrollTop: 0,
-                workspaceScrollTop: 0,
-                returnTaskId: '',
-              });
-              navigate('projects');
-            }}
+            onProject={openProjectFromNavigation}
           />
         }
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
       >
+        {completion.feedback}
         {navigationNotice &&
           !creating &&
           (reviewSaving ||
@@ -1248,13 +1306,14 @@ function Workbench() {
             </div>
           ) : view === 'projects' ? (
             <ProjectCatalog
+              completion={completion}
               favoriteAction={(project, disabled) => (
                 <FavoriteButton kind="project" id={project.id} disabled={disabled} />
               )}
               tasks={tasks}
               initialView={projectView}
               backSlot={projectBackSlot}
-              navigationPending={loading}
+              navigationPending={loading || completion.blocked}
               onOpen={(id, source) => void open(id, source)}
               onNewTask={newTask}
               onCalendar={() => navigate('calendar')}
@@ -1276,11 +1335,13 @@ function Workbench() {
             />
           ) : view === 'calendar' ? (
             <CalendarView
+              completion={completion}
               onCreate={(mode) => newTask(null, mode)}
               date={calendarDate}
               selected={active}
               inspector={taskInspector}
               blocked={
+                completion.blocked ||
                 loading ||
                 dirty ||
                 propertiesBlocked ||
@@ -1317,6 +1378,9 @@ function Workbench() {
           ) : view === 'home' ? (
             <AgentHome
               prompt={agentPrompt}
+              leftSlot={homeLeftSlot}
+              rightSlot={homeRightSlot}
+              onOpenProject={openProjectFromNavigation}
               onPrompt={setAgentPrompt}
               onNavigate={navigate}
               tasks={tasks}
@@ -1615,6 +1679,7 @@ function Workbench() {
             />
           ) : view === 'tasks' ? (
             <RecordList
+              completion={completion}
               key={view}
               tasks={tasks}
               viewState={taskListState}
@@ -1679,6 +1744,18 @@ function Workbench() {
               }}
               onBlocked={setPropertiesBlocked}
               onBack={() => {
+                if (settingsReturn === 'documents') {
+                  const tab = activeTab(workspaceNavigation.session);
+                  const page = tab.entries
+                    .slice(0, tab.index)
+                    .reverse()
+                    .find((entry) => entry.state.view === 'documents');
+                  if (page) {
+                    // 复用当前标签已捕获的文档定位，不新建选中状态或重读无关任务。
+                    void workspaceNavigation.visit(page);
+                    return;
+                  }
+                }
                 if (settingsReturn === 'tasks' && active)
                   void open(
                     active.id,

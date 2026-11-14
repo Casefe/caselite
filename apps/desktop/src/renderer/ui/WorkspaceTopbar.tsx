@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type Ref } from 'react';
 import { Icon } from '../shared/ui/Icon';
 import { activeTab, currentPage } from '../shared/navigation/workspace-tabs';
 import type { useWorkspaceTabs } from '../shared/navigation/useWorkspaceTabs';
@@ -10,6 +10,9 @@ export default function WorkspaceTopbar<T>({
   inspectorOpen,
   inspectorAvailable,
   onToggleInspector,
+  homeLeftSlot,
+  homeRightSlot,
+  home = false,
 }: {
   navigation: ReturnType<typeof useWorkspaceTabs<T>>;
   collapsed: boolean;
@@ -17,6 +20,9 @@ export default function WorkspaceTopbar<T>({
   inspectorOpen: boolean;
   inspectorAvailable: boolean;
   onToggleInspector(): void;
+  home?: boolean;
+  homeLeftSlot?: Ref<HTMLDivElement>;
+  homeRightSlot?: Ref<HTMLDivElement>;
 }) {
   const { session } = navigation;
   const tab = activeTab(session);
@@ -81,17 +87,21 @@ export default function WorkspaceTopbar<T>({
     >
       <div className="workspace-window-controls-space" aria-hidden="true" />
       <div className="workspace-titlebar-controls">
-        <button
-          type="button"
-          className="workspace-navigation-toggle"
-          aria-label={collapsed ? '展开导航' : '收起导航'}
-          aria-expanded={!collapsed}
-          aria-controls="primary-navigation"
-          title={collapsed ? '展开导航' : '收起导航'}
-          onClick={onCollapse}
-        >
-          <Icon name="panel" size={16} />
-        </button>
+        {home ? (
+          <div className="home-topbar-left-slot" ref={homeLeftSlot} />
+        ) : (
+          <button
+            type="button"
+            className="workspace-navigation-toggle"
+            aria-label={collapsed ? '展开导航' : '收起导航'}
+            aria-expanded={!collapsed}
+            aria-controls="primary-navigation"
+            title={collapsed ? '展开导航' : '收起导航'}
+            onClick={onCollapse}
+          >
+            <Icon name="panel" size={16} />
+          </button>
+        )}
         <button
           type="button"
           className="workspace-titlebar-button"
@@ -253,20 +263,24 @@ export default function WorkspaceTopbar<T>({
         <Icon name="plus" size={16} />
       </button>
       <span className="workspace-titlebar-divider" aria-hidden="true" />
-      <button
-        type="button"
-        className="workspace-titlebar-button workspace-inspector-toggle"
-        disabled={!inspectorAvailable}
-        aria-label={inspectorOpen ? '收起右侧属性栏' : '展开右侧属性栏'}
-        title={inspectorOpen ? '收起右侧属性栏' : '展开右侧属性栏'}
-        aria-expanded={inspectorAvailable && inspectorOpen}
-        onClick={() => {
-          setMenu(null);
-          onToggleInspector();
-        }}
-      >
-        <Icon name={inspectorOpen ? 'panel-right-close' : 'panel-right-open'} size={16} />
-      </button>
+      {home ? (
+        <div className="home-topbar-right-slot" ref={homeRightSlot} />
+      ) : (
+        <button
+          type="button"
+          className="workspace-titlebar-button workspace-inspector-toggle"
+          disabled={!inspectorAvailable}
+          aria-label={inspectorOpen ? '收起右侧属性栏' : '展开右侧属性栏'}
+          title={inspectorOpen ? '收起右侧属性栏' : '展开右侧属性栏'}
+          aria-expanded={inspectorAvailable && inspectorOpen}
+          onClick={() => {
+            setMenu(null);
+            onToggleInspector();
+          }}
+        >
+          <Icon name={inspectorOpen ? 'panel-right-close' : 'panel-right-open'} size={16} />
+        </button>
+      )}
       {menu === 'history' && (
         <div
           className="workspace-navigation-menu workspace-recent-pages"

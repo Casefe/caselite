@@ -11,6 +11,8 @@ import { createAgentPageReader } from './agent-page-reader';
 import { createDeliverySnapshotStore } from './delivery-snapshot-store';
 import { createDeliveryExportStore } from './delivery-export-store';
 import { createReminderStore } from './reminder-store';
+import { createFolderConfigurationStore } from './folder-configuration-store';
+import { createPersonalMaterialStore } from './personal-material-store';
 import { createMaterialStore } from './material-store';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateBody, bodyPlainText } from './body-schema';
@@ -222,6 +224,8 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     },
     reviewState: review.reviewState,
     materials: createMaterialStore(db, workspace),
+    folders: createFolderConfigurationStore(db, workspace),
+    personalMaterials: createPersonalMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),
     finance: createFinanceStore(db, workspace),
     contacts: createContactsStore(db, workspace),

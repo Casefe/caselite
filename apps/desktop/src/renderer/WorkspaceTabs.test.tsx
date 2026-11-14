@@ -34,6 +34,7 @@ vi.mock('./ui/Workspace', () => ({
       <button onClick={() => onNavigate('home')}>首页入口</button>
       <button onClick={() => onNavigate('tasks')}>任务入口</button>
       <button onClick={() => onNavigate('projects')}>项目入口</button>
+      <button onClick={() => onNavigate('documents')}>文档入口</button>
       <button onClick={() => onNavigate('settings')}>设置入口</button>
       <button onClick={() => onOpen('A')}>打开任务A</button>
       <div id="workspace-page-content" className="workspace-main">
@@ -55,21 +56,104 @@ vi.mock('./ui/RecordList', () => ({
 vi.mock('./features/projects/ProjectCatalog', async () => {
   const { useChildPage } = await import('./shared/navigation/PageNavigation');
   return {
-    default: function MockProjectCatalog() {
+    default: function MockProjectCatalog({
+      initialView,
+    }: {
+      initialView?: { projectId?: string };
+    }) {
+      const [projectId, setProjectId] = useState(initialView?.projectId ?? null);
       useChildPage(() => ({
-        key: 'projects:list',
-        title: '项目',
+        key: projectId ? 'projects:' + projectId : 'projects:list',
+        title: projectId ? '项目P' : '项目',
         icon: 'folder',
-        state: null,
+        state: projectId ? { projectId } : null,
       }));
-      return <p>项目列表内容</p>;
+      return (
+        <>
+          <p>{projectId ? '项目P内容' : '项目列表内容'}</p>
+          <button onClick={() => setProjectId('P')}>打开项目P</button>
+        </>
+      );
+    },
+  };
+});
+vi.mock('./ui/DocumentLibrary', async () => {
+  const { useChildPage, usePageNavigation } = await import('./shared/navigation/PageNavigation');
+  type DocumentState = {
+    kind: 'documents';
+    selection: {
+      primary: string | null;
+      secondary: string | null;
+      active: 'primary';
+      split: boolean;
+    };
+    reading: boolean;
+    wide: boolean;
+    versions: { primary: string | null; secondary: string | null };
+    title: string;
+  };
+  return {
+    default: function MockDocumentLibrary() {
+      const navigation = usePageNavigation();
+      const initial = navigation?.initial as DocumentState | null;
+      const [page, setPage] = useState<DocumentState>(
+        initial?.kind === 'documents'
+          ? initial
+          : {
+              kind: 'documents',
+              selection: { primary: null, secondary: null, active: 'primary', split: false },
+              reading: false,
+              wide: false,
+              versions: { primary: null, secondary: null },
+              title: '文档',
+            },
+      );
+      useChildPage(() => ({
+        key: page.selection.primary ? 'documents:' + page.selection.primary : 'documents:list',
+        title: page.title,
+        icon: 'file',
+        state: page,
+      }));
+      return (
+        <>
+          <output aria-label="文档页状态">{JSON.stringify(page)}</output>
+          {['A', 'B'].map((id) => (
+            <button
+              key={id}
+              onClick={() =>
+                setPage((old) => ({
+                  ...old,
+                  selection: { ...old.selection, primary: 'doc' + id },
+                  reading: true,
+                  title: '文档' + id,
+                }))
+              }
+            >
+              选择文档{id}
+            </button>
+          ))}
+          <button
+            onClick={() =>
+              setPage((old) => ({
+                ...old,
+                selection: { ...old.selection, secondary: 'comparison', split: true },
+                wide: true,
+                versions: { primary: 'fixed-version', secondary: null },
+              }))
+            }
+          >
+            调整文档阅读状态
+          </button>
+        </>
+      );
     },
   };
 });
 vi.mock('./ui/SettingsView', () => ({
-  default: ({ onBack }: { onBack(): void }) => (
+  default: ({ onBack, onSection }: { onBack(): void; onSection(section: 'editor'): void }) => (
     <>
       <p>设置内容</p>
+      <button onClick={() => onSection('editor')}>切换编辑器设置</button>
       <button onClick={onBack}>关闭设置</button>
     </>
   ),
@@ -350,6 +434,54 @@ it('restores independent settings without reading an unrelated previously opened
   fireEvent.click(tab('设置'));
   await screen.findByText('设置内容');
   expect(selected()).toBe('设置');
+  expect(api).not.toHaveBeenCalled();
+});
+
+it.each(['A', 'B'])(
+  'returns to the selected document %s after settings without reading or writing a task body',
+  async (id) => {
+    const api = setup();
+    await screen.findByText('首页内容');
+    fireEvent.click(button('打开任务A'));
+    await screen.findByLabelText('正文草稿');
+    fireEvent.click(button('文档入口'));
+    fireEvent.click(await screen.findByRole('button', { name: '选择文档' + id }));
+    fireEvent.click(button('调整文档阅读状态'));
+    const before = screen.getByLabelText('文档页状态').textContent;
+    await waitFor(() => expect(selected()).toBe('文档' + id));
+    api.mockClear();
+    fireEvent.click(button('设置入口'));
+    await screen.findByText('设置内容');
+    fireEvent.click(button('切换编辑器设置'));
+    fireEvent.click(button('关闭设置'));
+    await waitFor(() => expect(screen.getByLabelText('文档页状态').textContent).toBe(before));
+    expect(selected()).toBe('文档' + id);
+    expect(api).not.toHaveBeenCalled();
+  },
+);
+
+it('keeps the existing task and project settings return paths', async () => {
+  const api = setup();
+  await screen.findByText('首页内容');
+  fireEvent.click(button('打开任务A'));
+  await screen.findByLabelText('正文草稿');
+  api.mockClear();
+  fireEvent.click(button('设置入口'));
+  await screen.findByText('设置内容');
+  fireEvent.click(button('关闭设置'));
+  await screen.findByLabelText('正文草稿');
+  expect(api.mock.calls.filter(([request]) => request.operation === 'read')).toEqual([
+    [expect.objectContaining({ operation: 'read', task_id: 'A' })],
+  ]);
+  expect(api.mock.calls.every(([request]) => request.operation === 'read')).toBe(true);
+  fireEvent.click(button('项目入口'));
+  fireEvent.click(await screen.findByRole('button', { name: '打开项目P' }));
+  await screen.findByText('项目P内容');
+  api.mockClear();
+  fireEvent.click(button('设置入口'));
+  await screen.findByText('设置内容');
+  fireEvent.click(button('关闭设置'));
+  await screen.findByText('项目P内容');
   expect(api).not.toHaveBeenCalled();
 });
 

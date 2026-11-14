@@ -375,11 +375,20 @@ export async function runProjectDemo(
     button.click();
   })()`);
   };
-  const projectTab = async (tab: 'tasks' | 'overview') => {
+  const projectTab = async (tab: 'tasks' | 'overview' | 'documents') => {
     const target = `document.querySelector('#project-tab-${tab}')`;
     await wait(`${target} && !${target}.disabled`);
     await evaluate(`${target}.click()`);
     await wait(`${target}?.getAttribute('aria-selected')==='true'`);
+    if (tab === 'documents') {
+      const folder = `document.querySelector('#project-panel-documents details[data-folder-id^="project:"] > summary')`;
+      await wait(`${folder} && ${folder}.getAttribute('aria-disabled')==='false'`);
+      if ((await evaluate(`${folder}.getAttribute('aria-expanded')`)) === 'false')
+        await evaluate(`${folder}.click()`);
+      await wait(
+        `${folder}.getAttribute('aria-expanded')==='true' && ${folder}.getAttribute('aria-disabled')==='false'`,
+      );
+    }
   };
   const select = async (label: string, value: string) =>
     evaluate(
@@ -1072,7 +1081,7 @@ export async function runProjectDemo(
 
       const globalCreate = async (title: string, group: boolean) => {
         await click('[data-nav=tasks]');
-        await click('[data-testid=new-task]');
+        await click('[data-collection=tasks] .workspace-page-create');
         await checkFields('todo', 0, '');
         await wait("document.querySelector('[aria-label=所属项目]:not(:disabled)')?.value===''");
         if (group) {
@@ -2363,7 +2372,7 @@ export async function runProjectDemo(
       };
       const list = async () => (await task({ operation: 'list' })).tasks;
       const panel = (name: string) => `#project-panel-${name}:not([hidden])`;
-      const link = (name: string, id: string) => `${panel(name)} [data-project-document="${id}"]`;
+      const link = (id: string) => `${panel('documents')} [data-document-id="${id}"]`;
       const identity = (item: typeof original) => [item.id, item.document_id, item.body_id];
       const read = (id: string) => task({ operation: 'read', task_id: id });
       const navigate = (name: string) => click(`[data-nav=${name}]`);
@@ -2445,9 +2454,9 @@ export async function runProjectDemo(
       await wait(
         `${JSON.stringify(second.id)}===document.querySelector('#project-panel-tasks [data-project-task]')?.dataset.projectTask && document.querySelectorAll('#project-panel-tasks [data-project-task]').length===1`,
       );
-      await click('#project-tab-deliverables');
+      await projectTab('documents');
       await wait(
-        "document.querySelector('#project-panel-deliverables').textContent.includes('还没有已保存的交付草稿')",
+        `document.querySelector(${JSON.stringify(link(second.document_id))}) && !document.querySelector(${JSON.stringify(link(original.document_id))})`,
       );
       if (routeMode === 'write') {
         await projectTab('tasks');
@@ -2481,64 +2490,60 @@ export async function runProjectDemo(
       const comment = await evaluate(
         "document.querySelector('[aria-label=已发布项目评论]').textContent",
       );
-      await click('#project-tab-files');
-      const fileLink = link('files', original.document_id);
+      await projectTab('documents');
+      const documentLink = link(original.document_id);
+      const editor = `${panel('documents')} [data-preview-pane="primary"] [data-testid="body-editor"]`;
       await wait(
-        `document.querySelector(${JSON.stringify(fileLink)}) && document.querySelectorAll('#project-panel-files [data-source-id]').length===2`,
+        `document.querySelector(${JSON.stringify(documentLink)}) && document.querySelectorAll('#project-panel-documents [data-source-id]').length===2`,
       );
-      await capture('routes-files.png');
-      await click(`${panel('files')} [data-source-id="${files[0].id}"] button`);
+      await capture('routes-documents.png');
+      await click(`${panel('documents')} [data-source-id="${files[0].id}"]`);
       await wait(
         "document.querySelector('.material-paper canvas')?.width>0 && document.querySelector('.material-paper .react-pdf__Page__textContent')?.textContent.length>0",
       );
       await capture('routes-pdf.png');
       await button('收起阅读');
-      const checkBody = (sample: string) =>
-        wait(
-          `document.querySelector('[data-active-task="${original.id}"] [data-testid=body-editor]')?.textContent.includes(${JSON.stringify(sample)})`,
+      const checkBody = async (sample: string) => {
+        await wait(
+          `document.querySelector(${JSON.stringify(editor)})?.textContent.includes(${JSON.stringify(sample)}) && document.querySelector(${JSON.stringify(documentLink)})?.getAttribute('aria-pressed')==='true' && document.querySelector('#project-panel-documents [aria-label="文档属性"]')?.textContent.includes(${JSON.stringify(original.document_id)})`,
         );
-      const returned = (name: string) =>
-        wait(
-          `document.activeElement === document.querySelector(${JSON.stringify(link(name, original.document_id))}) && document.activeElement?.dataset.projectDocument===${JSON.stringify(original.document_id)}`,
-        );
-      const append = async (sample: string) => {
+        const current = (await read(original.id)).tasks[0];
+        if (JSON.stringify(identity(current)) !== JSON.stringify(identity(original)))
+          throw new Error('Document workspace changed Task/Document/body identity');
+      };
+      const append = async (sample: string, revision: number) => {
         await evaluate(`(() => {
-          const editor = document.querySelector('[data-testid=body-editor]');
+          const editor = document.querySelector(${JSON.stringify(editor)});
           editor.focus();
           const selection = window.getSelection();
           selection.selectAllChildren(editor);
           selection.collapseToEnd();
           document.execCommand('insertText', false, ${JSON.stringify(sample)});
         })()`);
-        await wait("!document.querySelector('[data-testid=save-body]').disabled");
-        await click('[data-testid=save-body]');
         await wait(
-          "document.querySelector('[data-testid=save-body]').disabled && document.querySelector('[data-testid=save-status]').textContent.includes('已保存到此设备')",
+          `document.querySelector('#project-panel-documents [aria-label="文档保存状态"]')?.textContent.includes('已保存到此设备') && document.querySelector('#project-panel-documents [data-testid=revision]')?.textContent===${JSON.stringify(String(revision))}`,
         );
+        const saved = (await read(original.id)).tasks[0];
+        if (saved.body_revision !== revision)
+          throw new Error('In-place autosave did not persist the expected revision');
       };
-      const sample1 = '文件入口保存的合成内容。';
-      const sample2 = '交付草稿保存的合成内容。';
-      await click(fileLink);
+      const sample1 = '文档入口首次自动保存的合成内容。';
+      const sample2 = '同一工作稿再次自动保存的合成内容。';
+      await click(documentLink);
       await checkBody('原任务正文与引用保全样本。');
-      if (routeMode === 'write') await append(sample1);
+      if (routeMode === 'write') await append(sample1, original.body_revision + 1);
       await checkBody(sample1);
-      await click('[aria-label="返回来源项目"]');
-      await returned('files');
-      await click('#project-tab-deliverables');
-      const draftLink = link('deliverables', original.document_id);
-      await wait(`document.querySelector(${JSON.stringify(draftLink)})`);
-      await capture('routes-drafts.png');
-      await click(draftLink);
+      await projectTab('overview');
+      await projectTab('documents');
+      await click(documentLink);
       await checkBody(sample1);
-      if (routeMode === 'write') await append(sample2);
+      if (routeMode === 'write') await append(sample2, original.body_revision + 2);
       await checkBody(sample2);
       await capture('routes-editor.png');
-      await click('[aria-label="返回来源项目"]');
-      await returned('deliverables');
-      await click(draftLink);
+      await projectTab('overview');
+      await projectTab('documents');
+      await click(documentLink);
       await checkBody(sample2);
-      await click('[aria-label="返回来源项目"]');
-      await returned('deliverables');
       if (routeMode === 'write') {
         const archive = async (archived: boolean) => {
           const doc = (await catalog({ operation: 'list' })).documents.find(
@@ -2553,15 +2558,71 @@ export async function runProjectDemo(
             archived,
           });
         };
+        // 先卸载编辑器，再归档；复开必须重新核对权限，不能复用已挂载的正文。
+        await projectTab('overview');
         await archive(true);
         try {
-          await click(draftLink);
-          await wait(
-            "document.querySelector('.error[role=alert]')?.textContent.includes('文档已归档或已离开来源项目') && document.querySelector('#project-panel-deliverables:not([hidden])') && !document.querySelector('[data-active-task]')",
+          await projectTab('documents');
+          let rejectionError: unknown;
+          try {
+            await wait(
+              `document.querySelector('#project-panel-documents:not([hidden])') && !document.querySelector('#project-panel-documents [data-testid=body-editor][contenteditable=true]') && Array.from(document.querySelectorAll('#project-panel-documents [role=status], #project-panel-documents [role=alert]')).some(node => node.textContent.includes('该文档已归档') || node.textContent.includes('文档版本或归属已变化，请先刷新目录。'))`,
+            );
+          } catch (error) {
+            rejectionError = error;
+          }
+          const observed = await evaluate(`(() => {
+            const panel = document.querySelector('#project-panel-documents');
+            return {
+              alerts:Array.from(panel.querySelectorAll('[role=alert]'),node=>node.textContent),
+              statuses:Array.from(panel.querySelectorAll('[role=status]'),node=>node.textContent),
+              editors:Array.from(panel.querySelectorAll('[data-testid=body-editor]'),node=>({contenteditable:node.getAttribute('contenteditable'),body:node.textContent})),
+              selectedDocuments:Array.from(panel.querySelectorAll('[data-document-id][aria-pressed=true]'),node=>node.dataset.documentId),
+              directoryDocuments:Array.from(panel.querySelectorAll('[data-document-id]'),node=>node.dataset.documentId),
+            };
+          })()`);
+          const archivedDocument = (await catalog({ operation: 'list' })).documents.find(
+            (row) => row.id === original.document_id,
           );
+          const archivedTask = (await read(original.id)).tasks[0];
+          writeFileSync(
+            join(root, 'routes-archived-denied.json'),
+            JSON.stringify(
+              {
+                observed,
+                document: archivedDocument,
+                task: {
+                  identity: identity(archivedTask),
+                  body_revision: archivedTask.body_revision,
+                  document_archived_at: archivedTask.document_archived_at,
+                },
+                waitError: rejectionError ? String(rejectionError) : null,
+              },
+              null,
+              2,
+            ),
+          );
+          await capture('routes-archived-denied.png');
+          if (
+            !archivedDocument?.archived_at ||
+            !archivedTask.document_archived_at ||
+            archivedDocument.id !== original.document_id ||
+            archivedDocument.body_id !== original.body_id ||
+            JSON.stringify(identity(archivedTask)) !== JSON.stringify(identity(original)) ||
+            archivedTask.body_revision !== original.body_revision + 2 ||
+            archivedDocument.body_revision !== archivedTask.body_revision
+          )
+            throw new Error(
+              'Archive rejection changed identity/body revision or lacked a persisted archive',
+            );
+          if (rejectionError) throw rejectionError;
         } finally {
+          await projectTab('overview');
           await archive(false);
         }
+        await projectTab('documents');
+        await click(documentLink);
+        await checkBody(sample2);
       }
       await projectTab('overview');
       await wait(
@@ -2964,8 +3025,10 @@ export async function runProjectDemo(
       await wait("document.querySelector('.project-title-link')");
       await button('独立任务转项目验收');
       await wait("document.querySelector('[aria-label=编辑项目名称]')");
-      await button('文件');
-      await wait("document.querySelectorAll('[data-source-id]').length===2");
+      await projectTab('documents');
+      await wait(
+        "document.querySelectorAll('#project-panel-documents [data-source-id]').length===2",
+      );
       const files = await listFiles();
       const prior = JSON.parse(readFileSync(join(root, 'files-expected.json'), 'utf8'));
       if (
@@ -2981,76 +3044,1410 @@ export async function runProjectDemo(
         throw new Error('Restart changed fixed material identity');
       await capture('project-files-list.png');
       if (phase === 'project-files-read') {
-        window.setSize(1580, 900);
-        await button('查看布局示例');
-        await wait("document.querySelectorAll('.project-file-grid thead th').length===8");
+        const documentLink = `#project-panel-documents [data-document-id="${expected.task.document_id}"]`;
+        await wait(`document.querySelector(${JSON.stringify(documentLink)})`);
+        await evaluate(`document.querySelector(${JSON.stringify(documentLink)}).click()`);
+        await wait(
+          "document.querySelector('#project-panel-documents [data-preview-pane=primary] [data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。')",
+        );
+        const readPreservation = async () => {
+          const body: TaskResponse = await evaluate(
+            `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(expected.task.id)}})`,
+          );
+          const catalog: CatalogResponse = await evaluate(
+            "window.caselite.catalog({protocol_version:1,operation:'list'})",
+          );
+          const task = body.ok ? body.tasks[0] : undefined;
+          const document = catalog.ok
+            ? catalog.documents.find((row) => row.id === expected.task.document_id)
+            : undefined;
+          if (
+            !body.ok ||
+            !catalog.ok ||
+            !task ||
+            !document ||
+            task.id !== expected.task.id ||
+            task.document_id !== expected.task.document_id ||
+            task.body_id !== expected.task.body_id ||
+            task.matter_id !== projectId ||
+            task.body_revision !== expected.task.body_revision ||
+            document.task_id !== task.id ||
+            document.body_id !== task.body_id ||
+            document.matter_id !== projectId ||
+            document.body_revision !== task.body_revision ||
+            createHash('sha256').update(JSON.stringify(body.state)).digest('hex') !==
+              expected.bodySha256
+          )
+            throw new Error('Document shell probe lost original body identity or revision');
+          return {
+            taskId: task.id,
+            documentId: document.id,
+            bodyId: task.body_id,
+            taskVersion: task.version,
+            documentVersion: document.version,
+            bodyRevision: task.body_revision,
+            documentMetadataVersion: task.document_metadata_version,
+            bodySha256: createHash('sha256').update(JSON.stringify(body.state)).digest('hex'),
+            readReceipt: body.receipt,
+            catalogReadReceipt: catalog.receipt,
+          };
+        };
+        const beforePreservation = await readPreservation();
+        await evaluate(`(() => {
+          const body = document.querySelector('#project-panel-documents [data-preview-pane=primary] [data-testid=body-editor]');
+          if (!body) throw new Error('Missing original document editor');
+          window.__dev1877ProbeBody = body;
+          window.__dev1877ProbeBodyText = body.textContent;
+        })()`);
+        const layouts: unknown[] = [];
+        const measureLayout = async (
+          width: number,
+          inspectorOpen: boolean,
+          focus: boolean,
+          directoryView: 'list' | 'preview',
+          stage: string,
+        ) => {
+          await evaluate(
+            'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+          );
+          const layout = await evaluate(`(() => {
+            const workbench = document.querySelector('.workbench');
+            const parent = document.querySelector('.project-catalog');
+            const parentAside = parent?.querySelector(':scope > .project-properties');
+            const workspace = document.querySelector('#project-panel-documents .document-workspace');
+            const center = workspace?.querySelector('.document-center-workspace');
+            const directory = workspace?.querySelector(':scope > .collection-main');
+            const properties = workspace?.querySelector(':scope > .document-directory-sidebar');
+            const propertyContent = workspace?.querySelector('[aria-label="文档属性"]');
+            const body = workspace?.querySelector('[data-preview-pane=primary] [data-testid=body-editor]');
+            const toggle = workspace?.querySelector('.document-page-toolbar button[aria-label$="文档属性与 AI"]');
+            if (!workbench || !parent || !parentAside || !workspace || !center || !directory || !properties || !propertyContent || !body || !toggle)
+              throw new Error('Missing unified document layout elements');
+            const visible = element => {
+              if (!element || element.closest('[hidden],[inert]')) return false;
+              for (let node=element; node; node=node.parentElement) {
+                const style=getComputedStyle(node);
+                if (style.display==='none' || style.visibility==='hidden') return false;
+              }
+              const rect=element.getBoundingClientRect();
+              return rect.width>0 && rect.height>0 && rect.right>0 && rect.bottom>0 && rect.left<innerWidth && rect.top<innerHeight;
+            };
+            const aiEntries = [...workspace.querySelectorAll('[aria-label="展开 AI 对话"],[aria-label="收起 AI 对话"],[aria-label="打开 AI 对话"]')];
+            return {
+              width:innerWidth, screenWidth:screen.width,
+              propertiesLayout:workbench.dataset.propertiesLayout,
+              inspectorOpen:workbench.dataset.inspectorOpen,
+              focusDocument:workspace.dataset.focusDocument,
+              columns:getComputedStyle(workspace).gridTemplateColumns.split(/\\s+/),
+              parentColumns:getComputedStyle(parent).gridTemplateColumns.split(/\\s+/),
+              workspace:workspace.getBoundingClientRect().toJSON(),
+              center:center.getBoundingClientRect().toJSON(), centerDisplay:getComputedStyle(center).display,
+              directoryDisplay:getComputedStyle(directory).display, directoryVisible:visible(directory),
+              properties:properties.getBoundingClientRect().toJSON(), propertiesDisplay:getComputedStyle(properties).display,
+              propertyContentVisible:[...propertyContent.querySelectorAll('.document-property-values .inspector-property-row')].some(visible),
+              propertyIdentityVisible:[...propertyContent.querySelectorAll('.document-property-values .inspector-property-row')].some(row => row.querySelector('dt')?.textContent?.trim()==='文档 ID' && row.querySelector('dd')?.textContent?.trim()===${JSON.stringify(expected.task.document_id)} && visible(row)),
+              propertyContent:propertyContent.textContent,
+              aiEntryVisible:aiEntries.some(visible),
+              toggleVisible:visible(toggle), toggleLabel:toggle.getAttribute('aria-label'), toggleExpanded:toggle.getAttribute('aria-expanded'),
+              parentAside:parentAside.getBoundingClientRect().toJSON(),
+              parentAsideDisplay:getComputedStyle(parentAside).display, parentAsideHidden:parentAside.hidden,
+              directoryView:workspace.dataset.directoryView,
+              selectedDocument:workspace.querySelector('[data-document-id][aria-pressed=true]')?.dataset.documentId,
+              body:body.textContent, sameEditor:body===window.__dev1877ProbeBody,
+              sameBody:body.textContent===window.__dev1877ProbeBodyText,
+            };
+          })()`);
+          // 依据批准交互和既有四档比例计算预期，绝不从实测列数反推通过条件。
+          const screenWidth = layout.screenWidth > 0 ? layout.screenWidth : width;
+          const inline =
+            width * 3 < screenWidth || (width * 2 >= screenWidth && width * 3 < screenWidth * 2);
+          const sidebar = inspectorOpen && !inline;
+          const expectedColumns =
+            width > 900 ? (focus ? (sidebar ? 2 : 1) : sidebar ? 3 : 2) : sidebar ? 2 : 1;
+          const expectedDirectoryVisible = directoryView === 'list' || (width > 900 && !focus);
+          const expectedCenterVisible = directoryView === 'preview' || width > 900;
+          const measured = {
+            ...layout,
+            stage,
+            expectedColumns,
+            expectedDirectoryVisible,
+            expectedCenterVisible,
+          };
+          layouts.push(measured);
+          // 几何先落盘再断言，失败保留renderer原始测量，不能吞掉异常。
+          writeFileSync(
+            join(root, 'document-workspace-layout.json'),
+            JSON.stringify(layouts, null, 2),
+          );
+          if (
+            layout.width !== width ||
+            layout.propertiesLayout !== (inline ? 'inline' : 'sidebar') ||
+            layout.inspectorOpen !== String(inspectorOpen) ||
+            layout.focusDocument !== (focus ? 'true' : undefined) ||
+            layout.parentColumns.length !== 1 ||
+            layout.parentAsideDisplay !== 'none' ||
+            !layout.parentAsideHidden ||
+            layout.columns.length !== expectedColumns ||
+            layout.directoryView !== directoryView ||
+            layout.directoryVisible !== expectedDirectoryVisible ||
+            (layout.directoryDisplay !== 'none') !== expectedDirectoryVisible ||
+            (layout.centerDisplay !== 'none') !== expectedCenterVisible ||
+            (expectedCenterVisible && layout.center.width < (width > 900 ? 320 : 250)) ||
+            layout.propertyContentVisible !== inspectorOpen ||
+            layout.propertyIdentityVisible !== inspectorOpen ||
+            layout.aiEntryVisible !== inspectorOpen ||
+            (sidebar && (layout.propertiesDisplay === 'none' || layout.properties.width <= 0)) ||
+            (!inspectorOpen && layout.propertiesDisplay !== 'none') ||
+            !layout.propertyContent.includes(expected.task.document_id) ||
+            (expectedCenterVisible &&
+              (!layout.toggleVisible ||
+                layout.toggleExpanded !== String(inspectorOpen) ||
+                layout.toggleLabel !==
+                  (inspectorOpen ? '收起文档属性与 AI' : '展开文档属性与 AI'))) ||
+            layout.selectedDocument !== expected.task.document_id ||
+            !layout.sameEditor ||
+            !layout.sameBody ||
+            !layout.body?.includes('原任务正文与引用保全样本。')
+          )
+            throw new Error(
+              'Unified document workspace geometry failed: ' + JSON.stringify(measured),
+            );
+          await capture(`document-workspace-${stage}.png`);
+        };
+        const toggleInspector = async (open: boolean) => {
+          const label = open ? '展开文档属性与 AI' : '收起文档属性与 AI';
+          const toggle = `document.querySelector('#project-panel-documents .document-page-toolbar [aria-label="${label}"]')`;
+          await wait(`${toggle} && !${toggle}.disabled && ${toggle}.getClientRects().length>0`);
+          await evaluate(`${toggle}.click()`);
+          await wait(
+            `document.querySelector('.workbench')?.dataset.inspectorOpen===${JSON.stringify(String(open))}`,
+          );
+        };
+        for (const [index, width] of [1580, 640, 1580].entries()) {
+          window.setContentSize(width, 900);
+          await wait(`innerWidth===${width}`);
+          await measureLayout(width, false, true, 'preview', `${index}-${width}-default-collapsed`);
+          await toggleInspector(true);
+          await measureLayout(width, true, true, 'preview', `${index}-${width}-expanded`);
+          await toggleInspector(false);
+          await measureLayout(width, false, true, 'preview', `${index}-${width}-collapsed-again`);
+          await capture(`document-workspace-${width}.png`);
+          if (width <= 900) {
+            const back = `document.querySelector('#project-panel-documents [aria-label="返回文件夹"]')`;
+            await wait(`${back} && !${back}.disabled && ${back}.getClientRects().length>0`);
+            await evaluate(`${back}.click()`);
+            await wait(
+              "document.querySelector('#project-panel-documents .document-workspace')?.dataset.directoryView==='list' && getComputedStyle(document.querySelector('#project-panel-documents .document-workspace > .collection-main')).display!=='none'",
+            );
+            await measureLayout(width, false, false, 'list', `${index}-${width}-directory`);
+            await capture('document-workspace-narrow-directory.png');
+            await evaluate(`document.querySelector(${JSON.stringify(documentLink)}).click()`);
+            await wait(
+              `document.querySelector('#project-panel-documents [data-preview-pane=primary] [data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本。') && document.querySelector('#project-panel-documents [aria-label="文档属性"]')?.textContent.includes(${JSON.stringify(expected.task.document_id)})`,
+            );
+            await toggleInspector(true);
+            await measureLayout(
+              width,
+              true,
+              true,
+              'preview',
+              `${index}-${width}-reopened-properties`,
+            );
+            await toggleInspector(false);
+            await measureLayout(
+              width,
+              false,
+              true,
+              'preview',
+              `${index}-${width}-reopened-collapsed`,
+            );
+          }
+        }
+        const afterPreservation = await readPreservation();
+        writeFileSync(
+          join(root, 'document-workspace-preservation.json'),
+          JSON.stringify({ before: beforePreservation, after: afterPreservation }, null, 2),
+        );
+        if (JSON.stringify(beforePreservation) !== JSON.stringify(afterPreservation))
+          throw new Error('Document shell display changed saved versions, read receipts or body');
+        await evaluate('delete window.__dev1877ProbeBody; delete window.__dev1877ProbeBodyText');
         await evaluate(
-          `document.querySelector('.project-file-grid button[title="01 合同与附件"]').click()`,
+          `document.querySelector('#project-panel-documents [data-source-id="${files[0].id}"]').click()`,
         );
-        await wait(
-          "!document.querySelector('.project-file-grid').textContent.includes('设备采购合同.pdf')",
-        );
-        await evaluate(
-          `document.querySelector('.project-file-grid button[title="01 合同与附件"]').click()`,
-        );
-        await wait(
-          "document.querySelector('.project-file-grid').textContent.includes('设备采购合同.pdf')",
-        );
-        await wait(
-          "[...document.querySelectorAll('.project-file-grid tr[data-folder] td')].every(cell=>!cell.textContent.trim())",
-        );
-        await capture('dev-1323-complete-list.png');
-        await evaluate(
-          `document.querySelector('.project-file-grid button[title="设备采购合同.pdf"]').click()`,
-        );
-        await wait(
-          "document.querySelector('.project-file-preview')?.textContent.includes('剩余价款')",
-        );
-        await capture('dev-1323-right-preview.png');
-        await evaluate(
-          `document.querySelector('.project-file-grid button[title="设备交接单.pdf"]').click()`,
-        );
-        await wait(
-          "document.querySelector('.project-file-preview')?.textContent.includes('本单仅确认')",
-        );
-        await button('收起预览');
-        await wait("!document.querySelector('.project-file-preview')");
-        await button('返回项目文件');
-        await wait("document.querySelectorAll('[data-source-id]').length===2");
+        await wait("document.querySelector('.material-paper canvas')?.width>0");
+        await capture('document-workspace-original.png');
+        await button('收起阅读');
         await button('可视化');
-        await wait(`(() => {
-          const graph = document.querySelector('.project-relationship-graph');
-          const nodes = [...(graph?.querySelectorAll('.react-flow__node') ?? [])];
-          const bounds = graph?.getBoundingClientRect();
-          return bounds?.width >= 250 && nodes.length === 3
+        let graphEvaluation = 0;
+        // 只在合成图探针中保留 renderer 原始异常；任何失败仍须向 Main 传播。
+        const graphEvaluate = async (code: string) => {
+          const sequence = ++graphEvaluation;
+          const fail = (error: Error, origin: string, renderer?: unknown): never => {
+            try {
+              writeFileSync(
+                join(root, 'dev-1802-graph-evaluation-failure.json'),
+                JSON.stringify(
+                  {
+                    phase,
+                    sequence,
+                    origin,
+                    code,
+                    renderer,
+                    error: String(error),
+                    stack: error.stack,
+                  },
+                  null,
+                  2,
+                ),
+              );
+            } catch {
+              // 诊断落盘失败不能替换原测试异常；仍由原失败终止探针。
+            }
+            throw error;
+          };
+          let result;
+          try {
+            result = await window.webContents.executeJavaScript(`(async () => {
+              try { return { ok: true, value: await (${code}) }; }
+              catch (error) {
+                return { ok: false, error: {
+                  name: String(error?.name ?? 'Error'),
+                  message: String(error?.message ?? error),
+                  stack: String(error?.stack ?? ''),
+                } };
+              }
+            })()`);
+          } catch (error) {
+            return fail(
+              error instanceof Error ? error : new Error(String(error)),
+              'executeJavaScript',
+            );
+          }
+          if (!result.ok) {
+            const error = new Error(`Graph evaluation ${sequence}: ${result.error.message}`);
+            error.name = result.error.name;
+            return fail(error, 'renderer', result.error);
+          }
+          return result.value;
+        };
+        const graphWait = async (predicate: string) => {
+          for (let i = 0; i < 100; i++) {
+            if (await graphEvaluate(`Boolean(${predicate})`)) return;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          const error = new Error('Project probe timed out: ' + predicate);
+          try {
+            const actual = await graphEvaluate(`(() => {
+              const canvas = document.querySelector('#visualization-canvas');
+              const describe = (element) => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {id:element.getAttribute('data-id'),transform:element.style.transform,
+                  className:element.getAttribute('class'),visibility:style.visibility,
+                  rect:{left:rect.left,top:rect.top,width:rect.width,height:rect.height}};
+              };
+              return {
+                viewport:canvas?.querySelector('.react-flow__viewport')?.style.transform,
+                nodes:[...(canvas?.querySelectorAll('.react-flow__node') ?? [])].map(describe),
+                controls:[...(canvas?.querySelectorAll('button') ?? [])].map(button => ({
+                  label:button.getAttribute('aria-label'),title:button.title,disabled:button.disabled,
+                })),
+                inspector:document.querySelector('.visualization-properties h3')?.textContent,
+                activeElement:document.activeElement?.outerHTML,
+              };
+            })()`);
+            writeFileSync(
+              join(root, 'dev-1802-graph-wait-timeout.json'),
+              JSON.stringify({ predicate, actual }, null, 2),
+            );
+          } catch {
+            // 诊断失败仍保留原超时；不能因为证据落盘问题改变测试结果。
+          }
+          throw error;
+        };
+        const expectedNodes = [
+          `project:${projectId}`,
+          `task:${expected.task.id}`,
+          `document:${expected.task.document_id}`,
+        ].sort();
+        const expectedEdges = [
+          `project:${projectId}:task:${expected.task.id}`,
+          `task:${expected.task.id}:document:${expected.task.document_id}`,
+        ].sort();
+        const readBusiness = async () => {
+          const [catalog, taskResult, activity] = await Promise.all([
+            graphEvaluate("window.caselite.catalog({protocol_version:1,operation:'list'})"),
+            graphEvaluate(
+              `window.caselite.task({protocol_version:1,operation:'read',task_id:${JSON.stringify(expected.task.id)}})`,
+            ),
+            graphEvaluate(
+              `window.caselite.catalog({protocol_version:1,operation:'list_activity',scope:{type:'project',id:${JSON.stringify(projectId)}},offset:0})`,
+            ),
+          ]);
+          if (!catalog.ok || !taskResult.ok || !activity.ok)
+            throw new Error('Cannot read visualization business state');
+          const project = catalog.projects.find((row: { id: string }) => row.id === projectId);
+          const document = catalog.documents.find(
+            (row: { id: string }) => row.id === expected.task.document_id,
+          );
+          const task = taskResult.tasks.find((row: { id: string }) => row.id === expected.task.id);
+          if (
+            !project ||
+            !document ||
+            !task ||
+            task.matter_id !== projectId ||
+            task.document_id !== document.id ||
+            document.task_id !== task.id ||
+            document.matter_id !== projectId
+          )
+            throw new Error('Original project/task/document association changed');
+          return {
+            titles: {
+              project: project.title,
+              task: task.title,
+              document: document.title,
+            },
+            identity: {
+              project: {
+                id: project.id,
+                version: project.version,
+                body_id: project.body_id,
+                body_revision: project.body_revision,
+              },
+              task: {
+                id: task.id,
+                version: task.version,
+                matter_id: task.matter_id,
+                document_id: task.document_id,
+                body_id: task.body_id,
+                body_revision: task.body_revision,
+              },
+              document: {
+                id: document.id,
+                version: document.version,
+                task_id: document.task_id,
+                matter_id: document.matter_id,
+                body_id: document.body_id,
+                body_revision: document.body_revision,
+              },
+            },
+            bodySha256: createHash('sha256').update(JSON.stringify(taskResult.state)).digest('hex'),
+            activities: (activity.activity ?? []).map(
+              (event: { id: string; target_type: string; operation: string }) => ({
+                id: event.id,
+                target_type: event.target_type,
+                operation: event.operation,
+              }),
+            ),
+          };
+        };
+        const before = await readBusiness();
+        if (
+          before.identity.task.id !== expected.task.id ||
+          before.identity.task.body_revision !== expected.task.body_revision
+        )
+          throw new Error('Frozen fixture no longer matches the controlled read');
+        // 模式切换的标签先于 React Flow 重测量完成；等待原集合可见后再严格核对状态。
+        const waitForMeasuredGraph = () =>
+          graphWait(`(() => {
+          const canvas = document.querySelector('#visualization-canvas.visualization-canvas');
+          const nodes = [...(canvas?.querySelectorAll('.react-flow__node') ?? [])];
+          const edges = [...(canvas?.querySelectorAll('.react-flow__edge') ?? [])];
+          const ids = nodes.map(node => node.getAttribute('data-id')).sort();
+          const edgeIds = edges.map(edge => edge.getAttribute('data-id')).sort();
+          return JSON.stringify(ids) === ${JSON.stringify(JSON.stringify(expectedNodes))}
+            && JSON.stringify(edgeIds) === ${JSON.stringify(JSON.stringify(expectedEdges))}
             && nodes.every(node => {
               const rect = node.getBoundingClientRect();
-              return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility === 'visible'
-                && rect.left >= bounds.left && rect.right <= bounds.right
-                && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
-            })
-            && graph.querySelectorAll('.react-flow__edge').length === 2
-            && !graph.querySelector('.react-flow__node.draggable');
+              return getComputedStyle(node).visibility === 'visible' && rect.width > 0 && rect.height > 0;
+            });
         })()`);
+        await waitForMeasuredGraph();
+        const readGraph = () =>
+          graphEvaluate(`(() => {
+            const canvas = document.querySelector('#visualization-canvas.visualization-canvas');
+            const bounds = canvas?.getBoundingClientRect();
+            const nodes = [...(canvas?.querySelectorAll('.react-flow__node') ?? [])].map(node => {
+              const rect = node.getBoundingClientRect();
+              const style = getComputedStyle(node);
+              const handle = node.querySelector('.drag-handle');
+              return {
+                id: node.getAttribute('data-id'),
+                transform: node.style.transform,
+                rect: {left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},
+                visible: style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0,
+                inCanvas: Boolean(bounds && rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1
+                  && rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1),
+                selected: Boolean(node.querySelector('.visualization-card.is-selected')),
+                dragHandle: Boolean(handle),
+              };
+            });
+            const edges = [...(canvas?.querySelectorAll('.react-flow__edge') ?? [])].map(edge => ({
+              id: edge.getAttribute('data-id'),
+              label: edge.getAttribute('aria-label'),
+              path: edge.querySelector('.react-flow__edge-path')?.getAttribute('d') ?? '',
+            }));
+            return {
+              canvas: bounds ? {left:bounds.left,top:bounds.top,right:bounds.right,bottom:bounds.bottom,width:bounds.width,height:bounds.height} : null,
+              nodes,
+              edges,
+              viewport: canvas?.querySelector('.react-flow__viewport')?.style.transform ?? '',
+              tabs: [...document.querySelectorAll('.visualization-tabs [role=tab]')].map(tab => tab.textContent.trim()),
+              inspector: document.querySelector('.visualization-properties h3')?.textContent?.trim() ?? '',
+              hasOpenRecord: Boolean(document.querySelector('.visualization-properties button')),
+              dialogOpen: Boolean(document.querySelector('.visualization-layout-preview[open]')),
+              mode: document.querySelector('.project-visualization')?.dataset.mode,
+              sample: document.querySelector('.project-visualization')?.dataset.sample,
+              taskOpen: Boolean(document.querySelector('.task-detail')),
+              reconnectHandles: canvas?.querySelectorAll('.react-flow__edgeupdater').length ?? -1,
+            };
+          })()`);
+        const assertGraph = (graph: Awaited<ReturnType<typeof readGraph>>, stage: string) => {
+          if (!graph.canvas || graph.canvas.width < 250)
+            throw new Error(`Visualization canvas is too narrow at ${stage}`);
+          const ids = graph.nodes.map((node: { id: string | null }) => node.id).sort();
+          const edgeIds = graph.edges.map((edge: { id: string | null }) => edge.id).sort();
+          if (
+            JSON.stringify(ids) !== JSON.stringify(expectedNodes) ||
+            new Set(ids).size !== expectedNodes.length ||
+            JSON.stringify(edgeIds) !== JSON.stringify(expectedEdges) ||
+            new Set(edgeIds).size !== expectedEdges.length
+          )
+            throw new Error(`Visualization identity or relation set changed at ${stage}`);
+          const expectedEdgeLabels = [
+            `Edge from project:${projectId} to task:${expected.task.id}`,
+            `Edge from task:${expected.task.id} to document:${expected.task.document_id}`,
+          ].sort();
+          if (
+            JSON.stringify(
+              graph.edges.map((edge: { label: string | null }) => edge.label).sort(),
+            ) !== JSON.stringify(expectedEdgeLabels)
+          )
+            throw new Error(`Visualization edge endpoints changed at ${stage}`);
+          if (
+            graph.nodes.some(
+              (node: {
+                rect: { width: number; height: number };
+                visible: boolean;
+                inCanvas: boolean;
+                dragHandle: boolean;
+              }) =>
+                node.rect.width <= 0 ||
+                node.rect.height <= 0 ||
+                !node.visible ||
+                !node.inCanvas ||
+                !node.dragHandle,
+            )
+          )
+            throw new Error(`Visualization node is not visible in the canvas at ${stage}`);
+          if (
+            JSON.stringify(graph.tabs) !==
+            JSON.stringify(['关系', '证据', '时间轴', '庭审对抗', '大事记', '统计'])
+          )
+            throw new Error('Visualization six-mode directory changed');
+          if (graph.reconnectHandles !== 0)
+            throw new Error('Business relationship reconnection is enabled');
+        };
+        const initial = await readGraph();
+        assertGraph(initial, 'initial');
         await captureRenderer('dev-1802-project-graph.png');
-        await evaluate("document.querySelector('.project-graph-document').click()");
-        await wait(
-          "document.querySelector('.task-detail[data-task-tab=result] [data-testid=body-editor]')",
+        type DisabledHandleTarget = {
+          kind: 'disabled-handle';
+          selector: string;
+          nodeId: string;
+          handleType: 'source' | 'target';
+          handleId: 'right' | 'left';
+        };
+        type EdgeInteractionTarget = {
+          kind: 'edge-interaction';
+          selector: string;
+          edgeId: string;
+        };
+        type GraphPointerTarget = string | DisabledHandleTarget | EdgeInteractionTarget;
+        const describeHit = `
+          (hit) => ({
+            tagName: hit.tagName,
+            id: hit.id,
+            className: hit.getAttribute('class') ?? '',
+            nodeId: hit.closest('.react-flow__node')?.getAttribute('data-id') ?? null,
+            edgeId: hit.closest('.react-flow__edge')?.getAttribute('data-id') ?? null,
+          })
+        `;
+        const pointFor = async (selector: string) => {
+          // React Flow 重测量时仍有 DOM 尺寸但暂时隐藏；就绪后才执行原严格命中断言。
+          await graphWait(`(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            if (!element)
+              throw new Error('Visualization pointer target unavailable: ' + ${JSON.stringify(selector)});
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return element.getClientRects().length > 0 && style.display !== 'none'
+              && style.visibility === 'visible' && rect.width > 0 && rect.height > 0;
+          })()`);
+          return graphEvaluate(`(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            if (!element || element.getClientRects().length === 0)
+              throw new Error('Visualization pointer target unavailable: ' + ${JSON.stringify(selector)});
+            const canvas = element.closest('#visualization-canvas');
+            if (canvas) {
+              // 变换画布的DOM滚动会使旧取点失效；可见目标只读取，不借滚动制造点击位置。
+              const target = element.getBoundingClientRect();
+              const clip = canvas.getBoundingClientRect();
+              if (target.left < Math.max(0,clip.left) || target.top < Math.max(0,clip.top)
+                || target.right > Math.min(innerWidth,clip.right) || target.bottom > Math.min(innerHeight,clip.bottom))
+                throw new Error('Visualization pointer target is outside the visible canvas: ' + ${JSON.stringify(selector)});
+            } else {
+              element.scrollIntoView({block:'center',inline:'center'});
+            }
+            const rect = element.getBoundingClientRect();
+            const x = Math.round(rect.left + rect.width / 2);
+            const y = Math.round(rect.top + rect.height / 2);
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !element.contains(hit)) {
+              let details;
+              try {
+                // 仅在原命中断言失败后读几何，不移动节点、不放宽目标包含关系。
+                const inspect = (node) => {
+                  const bounds = node.getBoundingClientRect();
+                  const style = getComputedStyle(node);
+                  return {
+                    ...(${describeHit})(node),
+                    rect: {left:bounds.left,top:bounds.top,right:bounds.right,bottom:bounds.bottom,width:bounds.width,height:bounds.height},
+                    scroll: {left:node.scrollLeft,top:node.scrollTop,width:node.scrollWidth,height:node.scrollHeight,clientWidth:node.clientWidth,clientHeight:node.clientHeight},
+                    style: {display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,overflowX:style.overflowX,overflowY:style.overflowY,position:style.position,zIndex:style.zIndex,transform:style.transform},
+                  };
+                };
+                const ancestors = (node) => {
+                  const result = [];
+                  for (let parent = node.parentElement; parent; parent = parent.parentElement)
+                    result.push(inspect(parent));
+                  return result;
+                };
+                const canvas = element.closest('#visualization-canvas');
+                details = {
+                  x, y,
+                  rect: {left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},
+                  viewport: {innerWidth:window.innerWidth,innerHeight:window.innerHeight,devicePixelRatio:window.devicePixelRatio,scrollX:window.scrollX,scrollY:window.scrollY},
+                  element: inspect(element),
+                  ancestors: ancestors(element),
+                  actualHit: hit ? inspect(hit) : null,
+                  hitAncestors: hit ? ancestors(hit) : [],
+                  canvas: canvas ? inspect(canvas) : null,
+                };
+              } catch (error) {
+                details = {diagnosticError:String(error),x,y};
+              }
+              throw new Error('Visualization pointer target is obscured: ' + ${JSON.stringify(selector)} + ' hit-test=' + JSON.stringify(details));
+            }
+            return {
+              x,
+              y,
+              geometry: {left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},
+              hit: (${describeHit})(hit),
+            };
+          })()`);
+        };
+        const disabledHandlePointFor = async (target: DisabledHandleTarget) =>
+          graphEvaluate(`(() => {
+            const target = ${JSON.stringify(target)};
+            const canvases = document.querySelectorAll('#visualization-canvas.visualization-canvas');
+            if (canvases.length !== 1)
+              throw new Error('Expected exactly one active visualization canvas: ' + target.selector);
+            const canvas = canvases[0];
+            const nodes = [...canvas.querySelectorAll('.react-flow__node')].filter(
+              (node) => node.getAttribute('data-id') === target.nodeId,
+            );
+            if (nodes.length !== 1)
+              throw new Error('Expected exactly one bound visualization node: ' + target.nodeId);
+            const node = nodes[0];
+            const handles = [...node.querySelectorAll('.react-flow__handle.' + target.handleType)].filter(
+              (handle) => handle.getAttribute('data-handleid') === target.handleId,
+            );
+            if (handles.length !== 1)
+              throw new Error('Expected exactly one bound ' + target.handleType + ' handle ' + target.handleId + ': ' + target.nodeId);
+            const handle = handles[0];
+            if (document.querySelector(target.selector) !== handle)
+              throw new Error('Visualization handle selector does not identify the bound handle: ' + target.selector);
+            if (handle.closest('.react-flow__node') !== node || !node.contains(handle))
+              throw new Error('Visualization handle does not belong to the bound node: ' + target.nodeId);
+            if (!handle.classList.contains(target.handleType))
+              throw new Error('Visualization handle type changed: ' + target.handleType);
+            if (
+              handle.getAttribute('data-nodeid') !== target.nodeId ||
+              handle.getAttribute('data-handleid') !== target.handleId
+            )
+              throw new Error('Visualization handle DOM identity changed: ' + target.nodeId + '/' + target.handleId);
+            if (handle.classList.contains('connectable') || handle.classList.contains('connectionindicator'))
+              throw new Error('Visualization handle unexpectedly enables connection: ' + target.selector);
+            handle.scrollIntoView({block:'center',inline:'center'});
+            if (handle.getClientRects().length === 0)
+              throw new Error('Visualization handle target is unavailable: ' + target.selector);
+            const style = getComputedStyle(handle);
+            const handleRect = handle.getBoundingClientRect();
+            if (
+              handleRect.width <= 0 ||
+              handleRect.height <= 0 ||
+              style.display === 'none' ||
+              style.visibility === 'hidden' ||
+              style.visibility === 'collapse' ||
+              Number(style.opacity) <= 0
+            )
+              throw new Error('Visualization handle is not visible: ' + target.selector);
+            if (style.pointerEvents !== 'none')
+              throw new Error('Visualization handle is no longer disabled for pointer events: ' + target.selector);
+            const canvasRect = canvas.getBoundingClientRect();
+            const centerX = handleRect.left + handleRect.width / 2;
+            const centerY = handleRect.top + handleRect.height / 2;
+            if (![centerX, centerY, canvasRect.left, canvasRect.top, canvasRect.right, canvasRect.bottom].every(Number.isFinite))
+              throw new Error('Visualization handle geometry is not finite: ' + target.selector);
+            if (
+              centerX < 0 ||
+              centerY < 0 ||
+              centerX > window.innerWidth ||
+              centerY > window.innerHeight ||
+              centerX < canvasRect.left ||
+              centerX > canvasRect.right ||
+              centerY < canvasRect.top ||
+              centerY > canvasRect.bottom
+            )
+              throw new Error('Visualization handle center is outside the viewport or canvas: ' + target.selector);
+            const x = Math.round(centerX);
+            const y = Math.round(centerY);
+            const hit = document.elementFromPoint(x, y);
+            if (!hit)
+              throw new Error('Visualization handle center has no hit target: ' + target.selector);
+            const hitNode = hit.closest('.react-flow__node');
+            const hitEdge = hit.closest('.react-flow__edge');
+            const pane = canvas.querySelector('.react-flow__pane');
+            const hitExpectedEdge = Boolean(
+              hitEdge &&
+              ${JSON.stringify(expectedEdges)}.includes(hitEdge.getAttribute('data-id')) &&
+              canvas.contains(hitEdge)
+            );
+            const hitExpectedNode = node.contains(hit);
+            const hitExactPane = hit === pane;
+            if (hitNode && hitNode !== node)
+              throw new Error('Visualization handle center is covered by another node: ' + target.selector);
+            if (!hitExpectedNode && !hitExpectedEdge && !hitExactPane)
+              throw new Error('Visualization handle center is obscured by an unexpected target: ' + target.selector);
+            return {
+              x,
+              y,
+              handle: {
+                rect: {left:handleRect.left,top:handleRect.top,right:handleRect.right,bottom:handleRect.bottom,width:handleRect.width,height:handleRect.height},
+                pointerEvents: style.pointerEvents,
+                connectable: false,
+                display: style.display,
+                visibility: style.visibility,
+                opacity: style.opacity,
+              },
+              node: {id:target.nodeId, handleId:target.handleId, rect: (() => {
+                const rect = node.getBoundingClientRect();
+                return {left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height};
+              })()},
+              canvas: {rect: {left:canvasRect.left,top:canvasRect.top,right:canvasRect.right,bottom:canvasRect.bottom,width:canvasRect.width,height:canvasRect.height}},
+              hit: (${describeHit})(hit),
+              hitKind: hitExpectedNode ? 'bound-node' : hitExpectedEdge ? 'expected-edge' : 'canvas-pane',
+            };
+          })()`);
+        const edgeInteractionPointFor = async (target: EdgeInteractionTarget) =>
+          graphEvaluate(`(() => {
+            const target = ${JSON.stringify(target)};
+            const canvases = document.querySelectorAll('#visualization-canvas.visualization-canvas');
+            if (canvases.length !== 1)
+              throw new Error('Expected exactly one active visualization canvas: ' + target.selector);
+            const canvas = canvases[0];
+            const edges = [...canvas.querySelectorAll('.react-flow__edge')].filter(
+              (edge) => edge.getAttribute('data-id') === target.edgeId,
+            );
+            if (edges.length !== 1)
+              throw new Error('Expected exactly one bound visualization edge: ' + target.edgeId);
+            const edge = edges[0];
+            const interaction = edge.querySelector('.react-flow__edge-interaction');
+            if (!interaction || document.querySelector(target.selector) !== interaction)
+              throw new Error('Visualization edge interaction path is unavailable: ' + target.selector);
+            edge.scrollIntoView({block:'center',inline:'center'});
+            const length = interaction.getTotalLength();
+            const matrix = interaction.getScreenCTM();
+            if (!Number.isFinite(length) || length <= 0 || !matrix)
+              throw new Error('Visualization edge interaction geometry is unavailable: ' + target.edgeId);
+            if (![matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f].every(Number.isFinite))
+              throw new Error('Visualization edge screen matrix is not finite: ' + target.edgeId);
+            const point = interaction.getPointAtLength(length / 2).matrixTransform(matrix);
+            if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
+              throw new Error('Visualization edge midpoint is not finite: ' + target.edgeId);
+            const canvasRect = canvas.getBoundingClientRect();
+            if (
+              point.x < 0 ||
+              point.y < 0 ||
+              point.x > window.innerWidth ||
+              point.y > window.innerHeight ||
+              point.x < canvasRect.left ||
+              point.x > canvasRect.right ||
+              point.y < canvasRect.top ||
+              point.y > canvasRect.bottom
+            )
+              throw new Error('Visualization edge midpoint is outside the viewport or canvas: ' + target.edgeId);
+            const x = Math.round(point.x);
+            const y = Math.round(point.y);
+            const hit = document.elementFromPoint(x, y);
+            const hitEdge = hit?.closest?.('.react-flow__edge');
+            if (!hit || !hitEdge || hitEdge !== edge || hitEdge.getAttribute('data-id') !== target.edgeId)
+              throw new Error('Visualization edge midpoint is obscured or belongs to another edge: ' + target.edgeId);
+            return {
+              x,
+              y,
+              edge: {
+                id: target.edgeId,
+                length,
+                screenCTM: {a:matrix.a,b:matrix.b,c:matrix.c,d:matrix.d,e:matrix.e,f:matrix.f},
+              },
+              canvas: {rect: {left:canvasRect.left,top:canvasRect.top,right:canvasRect.right,bottom:canvasRect.bottom,width:canvasRect.width,height:canvasRect.height}},
+              hit: (${describeHit})(hit),
+              hitKind: 'expected-edge',
+            };
+          })()`);
+        const graphPointFor = async (target: GraphPointerTarget) => {
+          if (typeof target === 'string')
+            return {
+              target: { kind: 'strict-hit' as const, selector: target },
+              point: await pointFor(target),
+            };
+          if (target.kind === 'disabled-handle')
+            return { target, point: await disabledHandlePointFor(target) };
+          return { target, point: await edgeInteractionPointFor(target) };
+        };
+        const nativeClick = async (selector: string, clickCount = 1) => {
+          let point: { x: number; y: number } = await pointFor(selector);
+          const observationId = randomUUID();
+          const beforeClick = await readGraph();
+          await graphEvaluate(`(() => {
+            if (window.__caseliteGraphClickProbe) throw new Error('A graph click observer is already active');
+            const events = [];
+            const types = ['pointerdown','pointerup','mousedown','mouseup','click','dblclick'];
+            const observe = (event) => {
+              const target = event.target instanceof Element ? event.target : null;
+              const button = target?.closest('button');
+              events.push({type:event.type,button:event.button,buttons:event.buttons,isTrusted:event.isTrusted,
+                target:target ? (${describeHit})(target) : null,
+                control:button?.getAttribute('aria-label') ?? null,
+                targetMatches:Boolean(target && document.querySelector(${JSON.stringify(selector)})?.contains(target))});
+            };
+            for (const type of types) window.addEventListener(type,observe,{capture:true,passive:true});
+            window.__caseliteGraphClickProbe = {events,cleanup:() => {
+              for (const type of types) window.removeEventListener(type,observe,true);
+              delete window.__caseliteGraphClickProbe;
+            }};
+          })()`);
+          const inputs: Array<Record<string, unknown>> = [];
+          let inputFailed = false;
+          const finishObservation = async () => {
+            try {
+              const domEvents = await graphEvaluate(`(() => {
+                const probe = window.__caseliteGraphClickProbe;
+                if (!probe) throw new Error('Graph click observer disappeared');
+                try { return probe.events; } finally { probe.cleanup(); }
+              })()`);
+              writeFileSync(
+                join(root, 'dev-1802-native-click-' + observationId + '.json'),
+                JSON.stringify(
+                  {
+                    selector,
+                    clickCount,
+                    point,
+                    inputs,
+                    domEvents,
+                    beforeClick,
+                    afterClick: await readGraph(),
+                    inputFailed,
+                  },
+                  null,
+                  2,
+                ),
+              );
+              const down = domEvents.find((event: { type: string }) => event.type === 'mousedown');
+              const up = domEvents.find((event: { type: string }) => event.type === 'mouseup');
+              if (
+                !down?.targetMatches ||
+                !up?.targetMatches ||
+                down.buttons !== 1 ||
+                up.buttons !== 0
+              )
+                throw new Error('Native graph click missed its exact target: ' + observationId);
+            } catch (error) {
+              if (!inputFailed) throw error;
+            }
+          };
+          try {
+            const hover = { type: 'mouseMove', x: point.x, y: point.y } as const;
+            window.webContents.sendInputEvent(hover);
+            inputs.push(hover);
+            await graphEvaluate(
+              'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+            );
+            point = await pointFor(selector);
+            const down = {
+              type: 'mouseDown',
+              button: 'left',
+              modifiers: ['leftbuttondown'] as Array<'leftbuttondown'>,
+              clickCount,
+              x: point.x,
+              y: point.y,
+            } as const;
+            window.webContents.sendInputEvent(down);
+            inputs.push(down);
+            const up = {
+              type: 'mouseUp',
+              button: 'left',
+              clickCount,
+              x: point.x,
+              y: point.y,
+            } as const;
+            window.webContents.sendInputEvent(up);
+            inputs.push(up);
+            await graphEvaluate(
+              'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+            );
+          } catch (error) {
+            inputFailed = true;
+            throw error;
+          } finally {
+            await finishObservation();
+          }
+        };
+        const nativeDrag = async (
+          startTarget: GraphPointerTarget,
+          destination: { target: GraphPointerTarget } | { deltaX: number; deltaY: number },
+        ) => {
+          const start = await graphPointFor(startTarget);
+          const end =
+            'target' in destination
+              ? await graphPointFor(destination.target)
+              : {
+                  target: {
+                    kind: 'delta' as const,
+                    deltaX: destination.deltaX,
+                    deltaY: destination.deltaY,
+                  },
+                  point: {
+                    x: start.point.x + destination.deltaX,
+                    y: start.point.y + destination.deltaY,
+                  },
+                };
+          const observationId = randomUUID();
+          await graphEvaluate(`(() => {
+            if (window.__caseliteGraphDragProbe)
+              throw new Error('A graph drag observer is already active');
+            const events = [];
+            const types = ['pointerdown','pointermove','pointerup','pointercancel','mousedown','mousemove','mouseup'];
+            const observe = (event) => {
+              const target = event.target instanceof Element ? event.target : null;
+              events.push({
+                type:event.type,button:event.button,buttons:event.buttons,
+                clientX:event.clientX,clientY:event.clientY,isTrusted:event.isTrusted,
+                target:target ? (${describeHit})(target) : null,
+              });
+            };
+            for (const type of types) window.addEventListener(type,observe,{capture:true,passive:true});
+            window.__caseliteGraphDragProbe = {events,cleanup:() => {
+              for (const type of types) window.removeEventListener(type,observe,true);
+              delete window.__caseliteGraphDragProbe;
+            }};
+          })()`);
+          let domEvents: Array<Record<string, unknown>> = [];
+          let inputFailed = false;
+          const inputs: Array<Record<string, unknown>> = [];
+          const frames: Array<Record<string, unknown>> = [];
+          const frameSnapshot = async () => ({
+            graph: await readGraph(),
+            surface: await graphEvaluate(`(() => {
+              const inspect = (element) => {
+                if (!element) return null;
+                const rect = element.getBoundingClientRect();
+                return {
+                  scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,
+                  rect:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},
+                };
+              };
+              return {
+                flow:inspect(document.querySelector('#visualization-canvas .react-flow')),
+                pane:inspect(document.querySelector('#visualization-canvas .react-flow__pane')),
+              };
+            })()`),
+          });
+          const recordFrame = async (stage: string) => {
+            // 给真实输入处理和 React 提交绘制机会，再保留只读状态，不能靠最终位置猜中间过程。
+            await graphEvaluate(
+              'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+            );
+            frames.push({ stage, inputCount: inputs.length, ...(await frameSnapshot()) });
+          };
+          const finishObservation = async () => {
+            try {
+              domEvents = await graphEvaluate(`(() => {
+                const probe = window.__caseliteGraphDragProbe;
+                if (!probe) throw new Error('Graph drag observer disappeared');
+                try { return probe.events; } finally { probe.cleanup(); }
+              })()`);
+              writeFileSync(
+                join(root, 'dev-1802-native-drag-' + observationId + '.json'),
+                JSON.stringify(
+                  { observationId, start, end, inputs, domEvents, frames, inputFailed },
+                  null,
+                  2,
+                ),
+              );
+            } catch (error) {
+              if (!inputFailed) throw error;
+            }
+          };
+          try {
+            frames.push({ stage: 'before-input', inputCount: 0, ...(await frameSnapshot()) });
+            const moveStart = {
+              type: 'mouseMove',
+              x: start.point.x,
+              y: start.point.y,
+            } as const;
+            window.webContents.sendInputEvent(moveStart);
+            inputs.push(moveStart);
+            await recordFrame('after-hover');
+            const mouseDown = {
+              type: 'mouseDown',
+              button: 'left',
+              modifiers: ['leftbuttondown'] as Array<'leftbuttondown'>,
+              clickCount: 1,
+              x: start.point.x,
+              y: start.point.y,
+            } as const;
+            window.webContents.sendInputEvent(mouseDown);
+            inputs.push(mouseDown);
+            await recordFrame('after-down');
+            for (let step = 1; step <= 4; step++) {
+              const move = {
+                type: 'mouseMove',
+                button: 'left',
+                modifiers: ['leftbuttondown'] as Array<'leftbuttondown'>,
+                x: Math.round(start.point.x + ((end.point.x - start.point.x) * step) / 4),
+                y: Math.round(start.point.y + ((end.point.y - start.point.y) * step) / 4),
+              } as const;
+              window.webContents.sendInputEvent(move);
+              inputs.push(move);
+              await recordFrame('after-held-move-' + step);
+            }
+            const mouseUp = {
+              type: 'mouseUp',
+              button: 'left',
+              clickCount: 1,
+              x: end.point.x,
+              y: end.point.y,
+            } as const;
+            window.webContents.sendInputEvent(mouseUp);
+            inputs.push(mouseUp);
+            await recordFrame('after-up');
+          } catch (error) {
+            inputFailed = true;
+            throw error;
+          } finally {
+            await finishObservation();
+          }
+          const down = domEvents.findIndex(
+            (event) => event.type === 'mousedown' && event.button === 0,
+          );
+          const up = domEvents.findIndex(
+            (event, index) => index > down && event.type === 'mouseup',
+          );
+          const heldMoves = domEvents
+            .slice(down + 1, up)
+            .filter((event) => event.type === 'mousemove' || event.type === 'pointermove');
+          if (
+            down < 0 ||
+            up < 0 ||
+            domEvents[down].buttons !== 1 ||
+            domEvents[up].buttons !== 0 ||
+            !heldMoves.length ||
+            heldMoves.some((event) => event.buttons !== 1)
+          )
+            throw new Error(
+              'Native graph drag did not deliver left-held DOM movement: ' + observationId,
+            );
+          return { start, end, inputs, domEvents, frames, observationId };
+        };
+        const documentNode = `#visualization-canvas .react-flow__node[data-id="document:${expected.task.document_id}"]`;
+        const documentLabel = `文档 · ${before.titles.document}`;
+        const taskNode = `#visualization-canvas .react-flow__node[data-id="task:${expected.task.id}"]`;
+        await nativeClick(`${documentNode} .visualization-card`);
+        await graphWait(
+          `(document.querySelector(${JSON.stringify(`${documentNode} .visualization-card.is-selected`)}) && document.querySelector('.visualization-properties h3')?.textContent.trim()===${JSON.stringify(documentLabel)} && document.querySelector('#visualization-canvas') && !document.querySelector('.task-detail'))`,
         );
-        await wait("document.querySelector('[data-testid=back-to-tasks]:enabled')");
-        await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
-        await wait("document.querySelector('#project-tab-visualization[aria-selected=true]')");
-        await button('交付物');
-        await wait(`(() => {
-          const table = document.querySelector('.project-deliverables-table');
-          const cells = [...(table?.querySelectorAll('tbody tr:first-child td') ?? [])];
-          return cells.length === 8 && cells[1].textContent === '任务成果草稿'
-            && cells[3].textContent === '正文修订 1'
-            && cells.slice(4).every(cell => !cell.textContent.trim());
-        })()`);
-        await captureRenderer('dev-1804-project-deliverables.png');
-        await button('文件');
-        await wait("document.querySelectorAll('[data-source-id]').length===2");
+        const selectedAfterSingleClick = await readGraph();
+        if (
+          !selectedAfterSingleClick.nodes.some(
+            (node: { id: string | null; selected: boolean }) =>
+              node.id === `document:${expected.task.document_id}` && node.selected,
+          ) ||
+          selectedAfterSingleClick.taskOpen
+        )
+          throw new Error('Single click did not keep selection inside the graph');
+        await nativeClick(`${documentNode} .visualization-card`);
+        await nativeClick(`${documentNode} .visualization-card`, 2);
+        await graphWait(
+          `document.querySelector('.task-detail[data-active-task="${expected.task.id}"][data-task-tab=result] [data-testid=body-editor]')`,
+        );
+        await graphWait(
+          `document.querySelector('[data-testid=revision]')?.textContent===${JSON.stringify(String(expected.task.body_revision))}`,
+        );
+        const openedDocument = await graphEvaluate(`(() => ({
+          taskId: document.querySelector('.task-detail')?.dataset.activeTask,
+          taskTab: document.querySelector('.task-detail')?.dataset.taskTab,
+          revision: document.querySelector('[data-testid=revision]')?.textContent,
+          body: document.querySelector('[data-testid=body-editor]')?.textContent,
+          projectTitle: document.querySelector('[data-testid=task-project-context]')?.textContent,
+          backLabel: document.querySelector('[data-testid=back-to-tasks]')?.getAttribute('aria-label'),
+        }))()`);
+        if (
+          openedDocument.taskId !== expected.task.id ||
+          openedDocument.taskTab !== 'result' ||
+          openedDocument.revision !== String(expected.task.body_revision) ||
+          !openedDocument.body?.includes('原任务正文与引用保全样本') ||
+          openedDocument.projectTitle !== before.titles.project ||
+          openedDocument.backLabel !== '返回来源项目'
+        )
+          throw new Error('Double click opened the wrong task or document');
+        await nativeClick('[data-testid=back-to-tasks]');
+        await graphWait(
+          "document.querySelector('#project-tab-visualization[aria-selected=true]') && document.querySelector('#visualization-canvas.visualization-canvas')",
+        );
+        const returnedVisualization = await readGraph();
+        const beforeDrag = returnedVisualization;
+        assertGraph(beforeDrag, 'before drag');
+        const drag = {
+          name: 'drag-document-node',
+          ...(await nativeDrag(`${documentNode} .drag-handle`, {
+            deltaX: 72,
+            deltaY: 34,
+          })),
+        };
+        await graphWait(
+          `document.querySelector(${JSON.stringify(documentNode)})?.style.transform!==${JSON.stringify(
+            beforeDrag.nodes.find(
+              (node: { id: string | null }) => node.id === `document:${expected.task.document_id}`,
+            )?.transform ?? '',
+          )}`,
+        );
+        const afterDrag = await readGraph();
+        assertGraph(afterDrag, 'after drag');
+        const beforePosition = beforeDrag.nodes.find(
+          (node: { id: string | null }) => node.id === `document:${expected.task.document_id}`,
+        )?.transform;
+        const afterPosition = afterDrag.nodes.find(
+          (node: { id: string | null }) => node.id === `document:${expected.task.document_id}`,
+        )?.transform;
+        if (!beforePosition || !afterPosition || beforePosition === afterPosition)
+          throw new Error('Native drag did not change the node local position');
+        if (beforeDrag.viewport !== afterDrag.viewport)
+          throw new Error('Node drag moved the canvas viewport instead of the node');
+        await captureRenderer('dev-1802-project-graph-dragged.png');
+
+        const sourceHandle: DisabledHandleTarget = {
+          kind: 'disabled-handle',
+          selector: `${taskNode} .react-flow__handle.source[data-handleid="right"]`,
+          nodeId: `task:${expected.task.id}`,
+          handleType: 'source',
+          handleId: 'right',
+        };
+        const targetHandle: DisabledHandleTarget = {
+          kind: 'disabled-handle',
+          selector: `${documentNode} .react-flow__handle.target[data-handleid="left"]`,
+          nodeId: `document:${expected.task.document_id}`,
+          handleType: 'target',
+          handleId: 'left',
+        };
+        const connectAttempt = {
+          name: 'read-only-connect-attempt',
+          ...(await nativeDrag(sourceHandle, { target: targetHandle })),
+        };
+        const edgeInteraction: EdgeInteractionTarget = {
+          kind: 'edge-interaction',
+          selector: `#visualization-canvas .react-flow__edge[data-id="${expectedEdges[0]}"] .react-flow__edge-interaction`,
+          edgeId: expectedEdges[0],
+        };
+        const reconnectAttempt = {
+          name: 'read-only-reconnect-attempt',
+          ...(await nativeDrag(edgeInteraction, {
+            target: `${taskNode} .visualization-card`,
+          })),
+        };
+        await nativeClick(`${documentNode} .visualization-card`);
+        if (
+          await graphEvaluate(
+            "Boolean(document.querySelector('.react-flow__node .react-flow__handle.connectable'))",
+          )
+        )
+          throw new Error('Visualization exposed connectable business handles');
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Delete' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Delete' });
+        await graphEvaluate(
+          'new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',
+        );
+        const afterEditAttempts = await readGraph();
+        assertGraph(afterEditAttempts, 'after connect/reconnect/delete attempts');
+
+        await button('重新排布');
+        await graphWait("document.querySelector('.visualization-layout-preview[open]')");
+        const previewOpen = await readGraph();
+        if (previewOpen.dialogOpen !== true) throw new Error('Layout preview did not open');
+        if (
+          JSON.stringify(previewOpen.nodes) !== JSON.stringify(afterEditAttempts.nodes) ||
+          previewOpen.viewport !== afterEditAttempts.viewport
+        )
+          throw new Error('Layout preview changed the main canvas before confirmation');
+        await captureRenderer('dev-1802-project-graph-preview.png');
+        await button('取消');
+        await graphWait(
+          "!document.querySelector('.visualization-layout-preview[open]') && document.activeElement?.textContent.trim()==='重新排布'",
+        );
+        const afterCancel = await readGraph();
+        if (JSON.stringify(afterCancel.nodes) !== JSON.stringify(afterEditAttempts.nodes))
+          throw new Error('Cancelling layout preview changed node positions');
+        await button('重新排布');
+        await graphWait("document.querySelector('.visualization-layout-preview[open]')");
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+        await graphWait(
+          "!document.querySelector('.visualization-layout-preview[open]') && document.activeElement?.textContent.trim()==='重新排布'",
+        );
+        const afterEscape = await readGraph();
+        if (JSON.stringify(afterEscape.nodes) !== JSON.stringify(afterEditAttempts.nodes))
+          throw new Error('Escape changed node positions');
+        await button('重新排布');
+        await graphWait("document.querySelector('.visualization-layout-preview[open]')");
+        await button('应用版面');
+        await graphWait("!document.querySelector('.visualization-layout-preview[open]')");
+        const afterApply = await readGraph();
+        const appliedPosition = afterApply.nodes.find(
+          (node: { id: string | null }) => node.id === `document:${expected.task.document_id}`,
+        )?.transform;
+        if (!appliedPosition || appliedPosition !== beforePosition)
+          throw new Error('Applying layout preview did not restore the current default position');
+        await nativeClick('#visualization-canvas button[aria-label="撤销版面"]');
+        await graphWait(
+          `document.querySelector(${JSON.stringify(documentNode)})?.style.transform===${JSON.stringify(afterPosition)}`,
+        );
+        await nativeClick('#visualization-canvas button[aria-label="重做版面"]');
+        await graphWait(
+          `document.querySelector(${JSON.stringify(documentNode)})?.style.transform===${JSON.stringify(appliedPosition)}`,
+        );
+        await nativeClick(`${documentNode} .visualization-card`);
+        const dragAgain = {
+          name: 'drag-document-node-after-layout-history',
+          ...(await nativeDrag(`${documentNode} .drag-handle`, {
+            deltaX: 28,
+            deltaY: 18,
+          })),
+        };
+        const retainedPosition = `#visualization-canvas .react-flow__node[data-id="document:${expected.task.document_id}"]`;
+        await graphWait(
+          `document.querySelector(${JSON.stringify(retainedPosition)})?.style.transform!==${JSON.stringify(appliedPosition)}`,
+        );
+        const zoomBefore = (await readGraph()).viewport;
+        await nativeClick('#visualization-canvas button[aria-label="放大画布"]');
+        await nativeClick('#visualization-canvas button[aria-label="放大画布"]');
+        await graphWait(
+          `document.querySelector('#visualization-canvas .react-flow__viewport')?.style.transform!==${JSON.stringify(zoomBefore)}`,
+        );
+        // 放大入口已真实验收；用非默认且全可见的相机建立跨视图保全基线。
+        for (let step = 0; step < 3; step++)
+          await nativeClick('#visualization-canvas button[aria-label="缩小画布"]');
+        const beforeViews = await readGraph();
+        assertGraph(beforeViews, 'before cross-mode switch');
+        if (beforeViews.viewport === zoomBefore)
+          throw new Error('Cross-view baseline did not retain a non-default camera');
+        for (const [id, mode] of [
+          ['evidence', '证据'],
+          ['timeline', '时间轴'],
+          ['confrontation', '庭审对抗'],
+          ['chronicle', '大事记'],
+          ['statistics', '统计'],
+        ] as const) {
+          await button(mode);
+          await graphWait(
+            `document.querySelector('.project-visualization')?.dataset.mode===${JSON.stringify(id)} && document.querySelector('#visualization-tab-${id}[aria-selected=true]')`,
+          );
+          if (
+            (await graphEvaluate(
+              "document.querySelector('.project-visualization')?.dataset.sample==='false'",
+            )) &&
+            (await graphEvaluate(
+              "Boolean(document.querySelector('#visualization-canvas .react-flow__node'))",
+            ))
+          )
+            throw new Error(`Empty real visualization mode ${id} invented graph nodes`);
+        }
+        await button('关系');
+        await graphWait(
+          "document.querySelector('.project-visualization')?.dataset.mode==='relations' && document.querySelector('#visualization-tab-relations[aria-selected=true]')",
+        );
+        await waitForMeasuredGraph();
+        const afterViews = await readGraph();
+        type ViewNodeState = { id: string | null; transform: string; selected: boolean };
+        const viewNodeState = (graph: Awaited<ReturnType<typeof readGraph>>): ViewNodeState[] =>
+          graph.nodes
+            .map((node: ViewNodeState) => ({
+              id: node.id,
+              transform: node.transform,
+              selected: node.selected,
+            }))
+            .sort((left: ViewNodeState, right: ViewNodeState) =>
+              (left.id ?? '').localeCompare(right.id ?? ''),
+            );
+        const recordViewState = (
+          name: string,
+          beforeView: Awaited<ReturnType<typeof readGraph>>,
+          afterView: Awaited<ReturnType<typeof readGraph>>,
+        ) => {
+          const beforeViewNodes = viewNodeState(beforeView);
+          const afterViewNodes = viewNodeState(afterView);
+          const fullNodesEqual =
+            JSON.stringify(afterView.nodes) === JSON.stringify(beforeView.nodes);
+          const viewportEqual = afterView.viewport === beforeView.viewport;
+          const inspectorEqual = afterView.inspector === documentLabel;
+          const viewNodesEqual = JSON.stringify(afterViewNodes) === JSON.stringify(beforeViewNodes);
+          const withoutRects = (nodes: Array<Record<string, unknown>>) =>
+            nodes.map((node) =>
+              Object.fromEntries(Object.entries(node).filter(([field]) => field !== 'rect')),
+            );
+          const rectOnlyChanged =
+            !fullNodesEqual &&
+            JSON.stringify(withoutRects(afterView.nodes)) ===
+              JSON.stringify(withoutRects(beforeView.nodes));
+          // 布局比较使用世界坐标与选择；clientRect仍由各阶段assertGraph独立严格验收。
+          writeFileSync(
+            join(root, name),
+            JSON.stringify(
+              {
+                beforeView,
+                afterView,
+                beforeViewNodes,
+                afterViewNodes,
+                comparison: {
+                  fullNodesEqual,
+                  viewportEqual,
+                  inspectorEqual,
+                  viewNodesEqual,
+                  rectOnlyChanged,
+                  oldFullPredicatePassed: fullNodesEqual && viewportEqual && inspectorEqual,
+                  semanticPredicatePassed: viewNodesEqual && viewportEqual && inspectorEqual,
+                },
+              },
+              null,
+              2,
+            ),
+          );
+          return viewNodesEqual;
+        };
+        const viewNodesEqual = recordViewState(
+          'dev-1802-cross-view-state.json',
+          beforeViews,
+          afterViews,
+        );
+        assertGraph(afterViews, 'after cross-mode return');
+        if (
+          afterViews.viewport !== beforeViews.viewport ||
+          !viewNodesEqual ||
+          afterViews.inspector !== documentLabel
+        )
+          throw new Error('Cross-view layout, selection or viewport was not preserved');
+        await button('查看虚构示例');
+        await graphWait(
+          "document.querySelector('.project-visualization')?.dataset.sample==='true' && document.querySelector('#visualization-canvas .react-flow__node[data-id=\"sample:contract\"]')",
+        );
+        const sampleNode = '#visualization-canvas .react-flow__node[data-id="sample:contract"]';
+        await nativeClick(`${sampleNode} .visualization-card`);
+        await graphWait(
+          "document.querySelector('.visualization-properties h3')?.textContent.trim()==='设备买卖合同' && !document.querySelector('.visualization-properties button')",
+        );
+        await nativeClick(`${sampleNode} .visualization-card`, 2);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        if (await graphEvaluate("Boolean(document.querySelector('.task-detail'))"))
+          throw new Error('Sample visualization opened a real Task');
+        await captureRenderer('dev-1802-project-graph-sample.png');
+        await button('返回项目数据');
+        await graphWait(
+          `document.querySelector('.project-visualization')?.dataset.sample==='false' && document.querySelector('#visualization-canvas .react-flow__node[data-id="document:${expected.task.document_id}"]')`,
+        );
+        await waitForMeasuredGraph();
+        const afterSample = await readGraph();
+        const sampleViewNodesEqual = recordViewState(
+          'dev-1802-sample-view-state.json',
+          beforeViews,
+          afterSample,
+        );
+        assertGraph(afterSample, 'after sample isolation return');
+        if (
+          afterSample.inspector !== documentLabel ||
+          afterSample.viewport !== beforeViews.viewport ||
+          !sampleViewNodesEqual
+        )
+          throw new Error('Sample state leaked into project layout, selection or viewport');
+        const after = await readBusiness();
+        if (
+          JSON.stringify(after.identity) !== JSON.stringify(before.identity) ||
+          after.bodySha256 !== before.bodySha256 ||
+          JSON.stringify(after.activities) !== JSON.stringify(before.activities)
+        )
+          throw new Error('Visualization interaction changed business identity, body or activity');
+        assertNoRuns();
+        writeFileSync(
+          join(root, 'dev-1802-project-graph.json'),
+          JSON.stringify(
+            {
+              status: 'PASS_REAL',
+              surface: 'Electron renderer with native mouse and keyboard input',
+              expected: {
+                projectId,
+                taskId: expected.task.id,
+                documentId: expected.task.document_id,
+                nodes: expectedNodes,
+                edges: expectedEdges,
+              },
+              businessBefore: before,
+              businessAfter: after,
+              selection: { afterSingleClick: selectedAfterSingleClick, openedDocument },
+              graph: {
+                initial,
+                returnedVisualization,
+                afterDrag,
+                afterEditAttempts,
+                previewOpen,
+                afterCancel,
+                afterEscape,
+                afterApply,
+                beforeViews,
+                afterViews,
+                afterSample,
+              },
+              interactions: { drag, connectAttempt, reconnectAttempt, dragAgain },
+              screenshots: [
+                'dev-1802-project-graph.png',
+                'dev-1802-project-graph-dragged.png',
+                'dev-1802-project-graph-preview.png',
+                'dev-1802-project-graph-sample.png',
+              ],
+            },
+            null,
+            2,
+          ),
+        );
+        await projectTab('documents');
+        await wait(`document.querySelector(${JSON.stringify(documentLink)})`);
+        await evaluate(`document.querySelector(${JSON.stringify(documentLink)}).click()`);
+        await wait(
+          `document.querySelector('#project-panel-documents [data-testid=revision]')?.textContent==='1' && document.querySelector('#project-panel-documents [aria-label="文档属性"]')?.textContent.includes(${JSON.stringify(expected.task.document_id)}) && document.querySelector('#project-panel-documents [aria-label="文档版本"]')?.textContent.includes('当前工作稿')`,
+        );
+        await captureRenderer('document-workspace-version.png');
+        await wait(
+          "document.querySelectorAll('#project-panel-documents [data-source-id]').length===2",
+        );
       }
 
       const file = files[1];
@@ -3063,17 +4460,23 @@ export async function runProjectDemo(
         );
         renameSync(path, path + '.probe-hold');
         try {
-          await evaluate(`document.querySelector('[data-source-id="${file.id}"] button').click()`);
-          await wait("document.querySelector('.project-files [role=alert]')");
+          await evaluate(
+            `document.querySelector('#project-panel-documents [data-source-id="${file.id}"]').click()`,
+          );
+          await wait("document.querySelector('#project-panel-documents [role=alert]')");
           await capture('project-files-missing.png');
           if ((await listFiles()).length !== 2)
             throw new Error('Read failure erased persisted source');
         } finally {
           renameSync(path + '.probe-hold', path);
         }
-        await button('重试读取');
+        await evaluate(
+          `document.querySelector('#project-panel-documents [data-source-id="${file.id}"]').click()`,
+        );
       } else
-        await evaluate(`document.querySelector('[data-source-id="${file.id}"] button').click()`);
+        await evaluate(
+          `document.querySelector('#project-panel-documents [data-source-id="${file.id}"]').click()`,
+        );
       await wait("document.querySelector('.material-paper canvas')?.width>0");
       await wait(
         "document.querySelector('.material-paper .react-pdf__Page__textContent')?.textContent.length>0",
@@ -3156,7 +4559,7 @@ export async function runProjectDemo(
       let contactId: string;
       if (phase === 'project-files') {
         const before = new Set((await listContacts()).map((row) => row.id));
-        await clickVisible('.contacts-workbench .collection-heading button');
+        await clickVisible('.contacts-workbench .workspace-page-create');
         await wait("document.querySelector('.contact-create-dialog [aria-label=联系人姓名]')");
         await input('联系人姓名', syntheticContact);
         await clickVisible('.contact-create-projects summary');
@@ -3217,19 +4620,52 @@ export async function runProjectDemo(
         await wait(
           "document.querySelector('.task-table-structured [role=columnheader][data-column=due-date]')?.textContent === '截止日期'",
         );
-        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
-        await wait(
-          "document.querySelector('.task-important-information .task-list-summary')?.textContent.includes('今日到期')",
-        );
+        const taskPreviewToggle = '[data-collection="tasks"] button[aria-label="任务预览"]';
+        const taskPreview = `document.querySelector(${JSON.stringify(taskPreviewToggle)})`;
+        await wait(`document.querySelectorAll(${JSON.stringify(taskPreviewToggle)}).length === 1 &&
+          ${taskPreview}.getClientRects().length > 0 && ${taskPreview}.getAttribute('aria-expanded') === 'false'`);
+        const taskRowSelector = `[data-collection="tasks"] [data-row-task="${expected.task.id}"]`;
+        await wait(`(() => {
+          const rows = document.querySelectorAll(${JSON.stringify(taskRowSelector)});
+          if (rows.length !== 1) return false;
+          const row = rows[0];
+          const due = row.querySelector('[data-column="due-date"]');
+          const expectedDue = ${JSON.stringify(expected.task.due_date ?? null)};
+          return row.querySelector('.task-row-title')?.textContent === ${JSON.stringify(expected.task.title)} &&
+            (expectedDue === null
+              ? !due?.querySelector('time') && due?.textContent.trim() === '—'
+              : due?.querySelector('time')?.getAttribute('datetime') === expectedDue);
+        })()`);
+        const searchToggle = '[data-collection="tasks"] button[aria-label="打开任务搜索"]';
+        const filterToggle = '[data-collection="tasks"] button[aria-label="筛选任务"]';
+        const searchInput = '[data-collection="tasks"] input[aria-label="搜索任务"]';
+        const filterFields = '[data-collection="tasks"] .task-filter-fields';
+        for (const [toggle, field] of [
+          [searchToggle, searchInput],
+          [filterToggle, filterFields],
+        ]) {
+          const button = `document.querySelector(${JSON.stringify(toggle)})`;
+          const control = `document.querySelector(${JSON.stringify(field)})`;
+          await wait(`document.querySelectorAll(${JSON.stringify(toggle)}).length === 1 &&
+            ${button}.getAttribute('aria-expanded') === 'false' && ${control}.getClientRects().length === 0`);
+          await clickVisible(toggle);
+          await wait(
+            `${button}.getAttribute('aria-expanded') === 'true' && ${control}.getClientRects().length > 0`,
+          );
+          await clickVisible(toggle);
+          await wait(
+            `${button}.getAttribute('aria-expanded') === 'false' && ${control}.getClientRects().length === 0`,
+          );
+        }
         await captureRenderer('linear-task-list.png');
-        await clickVisible('.task-list-preview-toggle');
-        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=true]')");
+        await clickVisible(taskPreviewToggle);
+        await wait(`${taskPreview}.getAttribute('aria-expanded') === 'true'`);
         await clickVisible(`[data-row-task="${expected.task.id}"]`);
         await wait(`document.querySelector('[data-row-task="${expected.task.id}"]')?.getAttribute('aria-current')==='true' &&
           document.querySelector('.task-summary-sidebar .task-properties-editor [aria-label=任务状态]')`);
         await captureRenderer('dev-1803-task-list.png');
-        await clickVisible('.task-list-preview-toggle');
-        await wait("document.querySelector('.task-list-preview-toggle[aria-expanded=false]')");
+        await clickVisible(taskPreviewToggle);
+        await wait(`${taskPreview}.getAttribute('aria-expanded') === 'false'`);
         await clickVisible(`[data-row-task="${expected.task.id}"]`);
         await wait(`document.querySelector('[data-active-task="${expected.task.id}"]')`);
         await showTaskResult();
@@ -3237,6 +4673,18 @@ export async function runProjectDemo(
           "document.querySelector('[data-testid=body-editor]')?.textContent.includes('原任务正文与引用保全样本')",
         );
         await clickVisible('[data-nav=documents]');
+        await wait("document.querySelector('[data-collection=documents]')");
+        // 一级文档会恢复阅读状态；先走真实返回入口，再从可见目录重选，不能点击隐藏行。
+        if (
+          await evaluate(
+            "document.querySelector('[data-collection=documents]')?.dataset.directoryView==='preview'",
+          )
+        ) {
+          await clickVisible('[data-collection=documents] [aria-label="返回文件夹"]');
+          await wait(
+            "document.querySelector('[data-collection=documents]')?.dataset.directoryView==='list' && getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none'",
+          );
+        }
         const folder = `[data-folder-id="project:${projectId}"] > summary`;
         await wait(`document.querySelector(${JSON.stringify(folder)})`);
         if (
@@ -3306,7 +4754,7 @@ export async function runProjectDemo(
         await clickVisible('.document-directory-back');
         await wait(`document.querySelector('[data-collection=documents]')?.dataset.directoryView==='list' &&
           getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none' &&
-          document.activeElement.matches('.collection-heading h1')`);
+          document.activeElement.matches('[data-collection=documents] > .collection-main > h2.sr-only[tabindex="-1"]')`);
         await clickVisible(file);
         await assertInlineBody();
         await captureRenderer('project-files-inline-reentered.png');
@@ -3333,8 +4781,10 @@ export async function runProjectDemo(
     } else if (phase === 'project-promote' || phase === 'project-promote-read') {
       if (phase === 'project-promote') {
         await evaluate("document.querySelector('[data-nav=tasks]').click()");
-        await wait("document.querySelector('[data-testid=new-task]')");
-        await evaluate("document.querySelector('[data-testid=new-task]').click()");
+        await wait("document.querySelector('[data-collection=tasks] .workspace-page-create')");
+        await evaluate(
+          "document.querySelector('[data-collection=tasks] .workspace-page-create').click()",
+        );
         await wait("document.querySelector('[data-testid=task-title]')");
         await evaluate(`(()=>{
           const input=document.querySelector('[data-testid=task-title]');
@@ -3435,8 +4885,7 @@ export async function runProjectDemo(
         await capture('project-overview-summary.png');
         for (const [label, id] of [
           ['任务', 'tasks'],
-          ['文件', 'files'],
-          ['交付物', 'deliverables'],
+          ['文档', 'documents'],
           ['活动', 'activity'],
         ]) {
           await button(label);

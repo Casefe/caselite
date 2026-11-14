@@ -1,4 +1,5 @@
-import { isDocx } from './useMaterials';
+import { AssistantComposerInput } from '../shared/ui/AssistantComposerInput';
+import { isDocx, useMaterials } from './useMaterials';
 import { agentMessages, isConversationRun } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
 import AgentQuickActions from '../shared/ui/AgentQuickActions';
@@ -11,7 +12,6 @@ import {
   createContext,
   forwardRef,
   useContext,
-  useId,
   useState,
   useEffect,
   useLayoutEffect,
@@ -39,8 +39,13 @@ import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
+const CopyOutput = createContext<(run: Pick<AgentRun, 'id' | 'scope'>) => Promise<boolean>>(
+  async () => false,
+);
 const RunContent = createContext<(id: string) => ReactNode>(() => undefined);
+const RunStateUnverified = createContext(false);
 function Message() {
+  const stateUnverified = useContext(RunStateUnverified);
   const attachments = useAuiState(
     (state) => state.message.metadata.custom?.attachments,
   ) as AgentRun['attachments'];
@@ -50,6 +55,7 @@ function Message() {
     | undefined;
   const [copyState, setCopyState] = useState('复制');
   const read = useContext(AttachmentReader);
+  const copyOutput = useContext(CopyOutput);
   const renderRun = useContext(RunContent);
   const custom = role === 'assistant' && run ? renderRun(run.id) : undefined;
   return (
@@ -58,7 +64,9 @@ function Message() {
         <strong>{role === 'user' ? '你' : 'CaseLite'}</strong>
         {role === 'assistant' && <span>{run ? agentModelLabel(run.model) : 'AI 辅助'}</span>}
         {role === 'assistant' && run?.status === 'running' && (
-          <span className="assistant-generating">正在生成</span>
+          <span className={stateUnverified ? 'assistant-verifying' : 'assistant-generating'}>
+            {stateUnverified ? '运行状态待核对' : '正在生成'}
+          </span>
         )}
       </header>
       {attachments?.length ? (
@@ -93,13 +101,7 @@ function Message() {
             disabled={!run.copyable}
             onClick={async () => {
               try {
-                const result = await window.caselite.agent({
-                  protocol_version: 1,
-                  operation: 'copy_output',
-                  scope: run.scope,
-                  run_id: run.id,
-                });
-                if (!result.ok) throw new Error('Copy failed');
+                if (!(await copyOutput(run))) throw new Error('Copy failed');
                 setCopyState('已复制');
               } catch {
                 setCopyState('复制失败，请选择文字复制');
@@ -125,8 +127,6 @@ const ComposerInput = forwardRef<
 >(function ComposerInput({ draft, onDraft, disabled, home }, ref) {
   const aui = useAui();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const limitId = useId();
-  const overLimit = draft.text.length > 4000;
   useImperativeHandle(
     ref,
     () => ({
@@ -142,28 +142,20 @@ const ComposerInput = forwardRef<
     if (aui.composer.getState().text !== draft.text) aui.composer.setText(draft.text);
   }, [aui, draft.text]);
   return (
-    <>
-      <ComposerPrimitive.Input
-        ref={inputRef}
-        aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
-        aria-invalid={overLimit || undefined}
-        aria-describedby={overLimit ? limitId : undefined}
-        data-testid={home ? 'agent-input' : 'assistant-input'}
-        className="assistant-input"
-        placeholder="询问 Caselite AI"
-        rows={1}
-        minRows={1}
-        maxRows={6}
-        disabled={disabled}
-        addAttachmentOnPaste={false}
-        onChange={(event) => onDraft({ text: event.target.value, state: null })}
-      />
-      {overLimit && (
-        <p id={limitId} className="assistant-input-limit" role="alert">
-          输入最多 4000 字符，当前 {draft.text.length} 字符。请精简后发送，全部输入已保留。
-        </p>
-      )}
-    </>
+    <AssistantComposerInput
+      textLength={draft.text.length}
+      ref={inputRef}
+      aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
+      data-testid={home ? 'agent-input' : 'assistant-input'}
+      className="assistant-input"
+      placeholder="询问 Caselite AI"
+      rows={1}
+      minRows={1}
+      maxRows={6}
+      disabled={disabled}
+      addAttachmentOnPaste={false}
+      onChange={(event) => onDraft({ text: event.target.value, state: null })}
+    />
   );
 });
 
@@ -221,6 +213,80 @@ export function UnavailableAgentPanel({ reason }: { reason: string }) {
   );
 }
 
+// 只把已有 Run 投影成消息；复制和附件仍按原范围通过受控 Application 读取。
+export function AgentRunReadOnly({ run }: { run: AgentRun }) {
+  // 记录只读固定附件，不订阅首页草稿列表，也不把历史材料变成本轮选择。
+  const materials = useMaterials('home', false, false);
+  const [readAttempted, setReadAttempted] = useState(false);
+  const runtime = useExternalStoreRuntime<ThreadMessageLike>({
+    messages: agentMessages([run]),
+    convertMessage: (message) => message,
+    onNew: async () => {},
+  });
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <AttachmentReader.Provider
+        value={(id, task, name) => {
+          setReadAttempted(true);
+          void materials.readReference(id, task, name);
+        }}
+      >
+        <CopyOutput.Provider
+          value={async (item) => {
+            const result = await window.caselite.agent({
+              protocol_version: 1,
+              operation: 'copy_output',
+              scope: item.scope,
+              run_id: item.id,
+            });
+            return result.ok;
+          }}
+        >
+          <section
+            className="assistant-panel assistant-panel--conversation home-readonly-run"
+            aria-label="只读运行记录"
+          >
+            <ThreadPrimitive.Root className="assistant-thread">
+              <ThreadPrimitive.Viewport className="assistant-viewport">
+                <ThreadPrimitive.Messages components={{ Message }} />
+              </ThreadPrimitive.Viewport>
+            </ThreadPrimitive.Root>
+            <p
+              className={`assistant-run-status ${run.status}`}
+              role="status"
+              data-run-id={run.id}
+              data-run-scope={run.scope}
+            >
+              {run.message ||
+                (run.status === 'running'
+                  ? '正在生成，可在运行栏停止。'
+                  : '运行已结束，请核对记录。')}
+            </p>
+            {materials.reading && (
+              <PdfAttachments
+                controller={{
+                  ...materials,
+                  clearReading() {
+                    // 关闭已打开的原范围附件不是读取失败，不再显示该次读取的错误。
+                    setReadAttempted(false);
+                    materials.clearReading();
+                  },
+                }}
+                disabled
+              >
+                {null}
+              </PdfAttachments>
+            )}
+            {readAttempted && !materials.readPending && !materials.reading && (
+              <p role="alert">{materials.error || '未能打开附件，请核对来源后重试。'}</p>
+            )}
+          </section>
+        </CopyOutput.Provider>
+      </AttachmentReader.Provider>
+    </AssistantRuntimeProvider>
+  );
+}
+
 export default function AgentPanel({
   scope,
   freshHomeSession = false,
@@ -232,6 +298,11 @@ export default function AgentPanel({
   project,
   page,
   renderRun,
+  hideMessages = false,
+  otherRunActive = false,
+  otherRunStatusUnknown = false,
+  homeRunStateUnverified = false,
+  onHomeViewState,
 }: {
   scope: string;
   freshHomeSession?: boolean;
@@ -244,6 +315,11 @@ export default function AgentPanel({
   project?: { version: number; archived: boolean };
   page?: { version: string; archived: boolean };
   renderRun?(run: AgentRun, selectForEdit?: () => void): ReactNode;
+  hideMessages?: boolean;
+  otherRunActive?: boolean;
+  otherRunStatusUnknown?: boolean;
+  homeRunStateUnverified?: boolean;
+  onHomeViewState?(state: { runs: AgentRun[] }): void;
 }) {
   const {
     contactReference,
@@ -277,6 +353,7 @@ export default function AgentPanel({
     openProjectPreview,
     send,
     command,
+    copyOutput,
     cancelPreparation,
     preparing,
   } = useAgentController({
@@ -331,24 +408,32 @@ export default function AgentPanel({
   const openSettings = useContext(ModelSettingsNavigation);
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
   const readOnlyPreview = new URLSearchParams(window.location.search).has('audit-agent');
-  const messages = agentMessages(runs);
+  useEffect(() => {
+    onHomeViewState?.({ runs });
+  }, [runs, onHomeViewState]);
+  const messages = agentMessages(hideMessages ? [] : runs);
   const sendDraft = async () => {
     // 字符限制与界面原稿一致；未知回执仍核对原提交，不把下一轮草稿作为新请求发送。
-    if (readOnlyPreview || (!unknown && draft.text.length > 4000)) return;
+    if (
+      readOnlyPreview ||
+      ((otherRunActive || otherRunStatusUnknown || homeRunStateUnverified) && !unknown) ||
+      (!unknown && draft.text.length > 4000)
+    )
+      return;
     await send();
   };
   const runtime = useExternalStoreRuntime({
     messages,
-    isRunning: Boolean(active),
+    isRunning: Boolean(active) && !homeRunStateUnverified,
     convertMessage: (message) => message,
     onNew: sendDraft,
     onCancel: async () => {
-      if (active)
+      if (active && !homeRunStateUnverified)
         await command({ protocol_version: 1, operation: 'cancel', scope, run_id: active.id });
     },
   });
   // 专用日期历史不投影成聊天；active仍来自全部Run，不能因隐藏JSON而放开重复发送。
-  const latest = runs.filter(isConversationRun).at(-1);
+  const latest = hideMessages ? undefined : runs.filter(isConversationRun).at(-1);
   const homeComposer = scope === 'home' || variant === 'compact';
   const actions = (
     <>
@@ -357,7 +442,14 @@ export default function AgentPanel({
           className="home-model-select"
           aria-label="选择大模型"
           value={active?.model ?? model}
-          disabled={Boolean(active) || pending || unknown || credentialReading}
+          disabled={
+            Boolean(active) ||
+            otherRunActive ||
+            otherRunStatusUnknown ||
+            pending ||
+            unknown ||
+            credentialReading
+          }
           onChange={(event) =>
             void command({
               protocol_version: 1,
@@ -388,6 +480,7 @@ export default function AgentPanel({
           className="primary assistant-stop"
           aria-label="停止生成"
           title="停止生成"
+          disabled={homeRunStateUnverified}
           onClick={() => void runtime.thread.cancelRun()}
         >
           停止生成
@@ -401,6 +494,7 @@ export default function AgentPanel({
           title="发送"
           disabled={
             pending ||
+            ((otherRunActive || otherRunStatusUnknown || homeRunStateUnverified) && !unknown) ||
             (!unknown &&
               (credentialReading ||
                 (page
@@ -493,7 +587,11 @@ export default function AgentPanel({
                       : undefined;
                   }}
                 >
-                  <ThreadPrimitive.Messages components={{ Message }} />
+                  <CopyOutput.Provider value={copyOutput}>
+                    <RunStateUnverified.Provider value={homeRunStateUnverified}>
+                      <ThreadPrimitive.Messages components={{ Message }} />
+                    </RunStateUnverified.Provider>
+                  </CopyOutput.Provider>
                 </RunContent.Provider>
                 <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
                   回到最新回答 ↓
@@ -502,15 +600,22 @@ export default function AgentPanel({
             </ThreadPrimitive.Root>
           )}
           {latest && (
-            <p className={`assistant-run-status ${latest.status}`} role="status">
+            <p
+              className={`assistant-run-status ${latest.status === 'running' && homeRunStateUnverified ? 'unverified' : latest.status}`}
+              role="status"
+            >
               {agentModelLabel(latest.model)} ·{' '}
-              {latest.status === 'running' ? '正在生成，可随时停止。' : latest.message}
+              {latest.status === 'running'
+                ? homeRunStateUnverified
+                  ? '运行状态待核对，已保留接收的内容。'
+                  : '正在生成，可随时停止。'
+                : latest.message}
               {latest.usage
                 ? ` 输入 ${latest.usage.input} / 输出 ${latest.usage.output} tokens；费用未知。`
                 : ''}
             </p>
           )}
-          {active?.purpose === 'important_dates' && (
+          {active?.purpose === 'important_dates' && !homeRunStateUnverified && (
             <p className="assistant-run-status" role="status">
               重要日期识别正在运行，请在重要日期面板查看候选与来源。
             </p>
@@ -518,6 +623,16 @@ export default function AgentPanel({
           {credentialReading && (
             <p className="assistant-run-status" role="status">
               正在读取系统安全凭据，尚未发起模型请求；人工任务与正文可继续使用。
+            </p>
+          )}
+          {otherRunActive && !active && (
+            <p className="assistant-run-status" role="status">
+              另一个智能体正在运行，请等待或停止后再发送。
+            </p>
+          )}
+          {(otherRunStatusUnknown || homeRunStateUnverified) && (
+            <p className="assistant-run-status" role="status">
+              运行状态暂不可核对；已保留原运行、草稿和材料，不发送新请求。
             </p>
           )}
           {!credentialReading && credentialUnavailable && (

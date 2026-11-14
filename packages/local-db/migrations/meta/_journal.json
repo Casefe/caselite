@@ -232,6 +232,13 @@
       "when": 1794271000000,
       "tag": "0029_contact_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1794551192839,
+      "tag": "0033_local_folder_workspace",
+      "breakpoints": true
     }
   ]
 }

@@ -12,17 +12,17 @@
 
 ## 当前索引
 
-| ADR | 状态 | 主题 | 后续验证 |
-| --- | --- | --- | --- |
-| [ADR-001](./ADR-001-electron-process-and-ipc-boundary.md) | 已决定（IPC 用例待验证） | Electron main / preload / renderer 边界 | DEV-1561、DEV-1578 |
-| [ADR-002](./ADR-002-local-sqlite-drizzle-and-transaction-boundary.md) | 提议 | SQLite、Drizzle、Repository 与事务 | DEV-1567、DEV-1566 |
-| [ADR-003](./ADR-003-structured-delta-and-yjs-document-state.md) | 架构方向已确认 | 结构化 Delta 与 Yjs 文档状态 | DEV-1570、P3 Issues |
-| [ADR-004](./ADR-004-pdf-worker-and-immutable-file-boundary.md) | 提议 | PDF Worker、附件与不可变版本 | DEV-1560、DEV-1568、DEV-1579 |
-| [ADR-005](./ADR-005-third-party-code-license-and-clean-room.md) | 已决定 | 第三方代码、许可证与 Clean-room | DEV-1559、DEV-1569 |
-| [ADR-006](./ADR-006-task-body-local-snapshots.md) | 首片实现候选 | 独立Task与本地成果正文 | 以实际测试/回执为准 |
-| [ADR-007](./ADR-007-editor-modes-and-task-description.md) | 提议 | 两种编辑器交互与任务说明富文本 | DEV-1732及当前消费者 |
-| [ADR-008](./ADR-008-assistant-ui-pi-agent.md) | 已实现增量 | assistant-ui 与 Pi Agent | DEV-1652，合成流演示 |
-| [ADR-009](./ADR-009-provider-model-selection.md) | 已决定（真实 API 待验证） | OpenAI/DeepSeek 独立凭据与显式默认模型 | DEV-1648，合成 HTTP 与打包设置回归 |
+| ADR                                                                   | 状态                      | 主题                                    | 后续验证                           |
+| --------------------------------------------------------------------- | ------------------------- | --------------------------------------- | ---------------------------------- |
+| [ADR-001](./ADR-001-electron-process-and-ipc-boundary.md)             | 已决定（IPC 用例待验证）  | Electron main / preload / renderer 边界 | DEV-1561、DEV-1578                 |
+| [ADR-002](./ADR-002-local-sqlite-drizzle-and-transaction-boundary.md) | 提议                      | SQLite、Drizzle、Repository 与事务      | DEV-1567、DEV-1566                 |
+| [ADR-003](./ADR-003-structured-delta-and-yjs-document-state.md)       | 架构方向已确认            | 结构化 Delta 与 Yjs 文档状态            | DEV-1570、P3 Issues                |
+| [ADR-004](./ADR-004-pdf-worker-and-immutable-file-boundary.md)        | 提议                      | PDF Worker、附件与不可变版本            | DEV-1560、DEV-1568、DEV-1579       |
+| [ADR-005](./ADR-005-third-party-code-license-and-clean-room.md)       | 已决定                    | 第三方代码、许可证与 Clean-room         | DEV-1559、DEV-1569                 |
+| [ADR-006](./ADR-006-task-body-local-snapshots.md)                     | 首片实现候选              | 独立Task与本地成果正文                  | 以实际测试/回执为准                |
+| [ADR-007](./ADR-007-editor-modes-and-task-description.md)             | 提议                      | 两种编辑器交互与任务说明富文本          | DEV-1732及当前消费者               |
+| [ADR-008](./ADR-008-assistant-ui-pi-agent.md)                         | 已实现增量                | assistant-ui 与 Pi Agent                | DEV-1652，合成流演示               |
+| [ADR-009](./ADR-009-provider-model-selection.md)                      | 已决定（真实 API 待验证） | OpenAI/DeepSeek 独立凭据与显式默认模型  | DEV-1648，合成 HTTP 与打包设置回归 |
 
 | [ADR-010](./ADR-010-local-catalog-persistence.md) | 已实现增量 | 五页本地目录与Document/Matter持久化 | 空旧库迁移、原生CRUD与重启 |
 | [ADR-011](./ADR-011-local-agent-run-history.md) | 已实现增量（真实API另验） | Run本地登记、历史及中断恢复 | 原子登记、窗口/进程重开、零恢复派发 |
@@ -66,3 +66,5 @@
 - [ADR-035](./ADR-035-creation-attachments.md) 创建共用交互、附件草稿与原 Task/文件 Owner，DEV-1883。
 
 - [ADR-036](./ADR-036-yjs-split-undo-backport.md) Yjs 13.6.33 固定 PR836 撤销兼容回补，DEV-1624；主目录落地前核对编号。
+
+- [ADR-038](./ADR-038-local-folder-workspace.md) 默认目录、个人材料固定来源与唯一目录能力Owner，DEV-1855；实现/验收按本轮生产证据。

@@ -28,7 +28,7 @@ export default function TaskBulkActions({
   const action = useRef<{ priority: number } | { status: 'done' }>({ status: 'done' });
   const running = useRef(false);
   async function run(next?: { priority: number } | { status: 'done' }) {
-    if (running.current || (disabled && !error)) return;
+    if (running.current || disabled) return;
     if (next) {
       queue.current = selected.slice();
       action.current = next;
@@ -164,7 +164,7 @@ export default function TaskBulkActions({
       {error && (
         <div role="alert">
           {error}
-          <button type="button" disabled={busy} onClick={() => void run()}>
+          <button type="button" disabled={busy || disabled} onClick={() => void run()}>
             核对并继续原操作
           </button>
           {canEnd && (

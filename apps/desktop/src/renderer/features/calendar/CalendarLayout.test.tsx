@@ -36,7 +36,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   width = 1200;
 });
-function setup(fault = '') {
+function setup(fault = '', onCreate?: (kind: 'task' | 'schedule') => void) {
   let saved: LocalPreferences = { ...initialLocalPreferences };
   let original: Extract<LocalPreferencesRequest, { operation: 'set' }> | null = null;
   let ack: { preferences: LocalPreferences; key: string } | null = null;
@@ -101,6 +101,7 @@ function setup(fault = '') {
             inspector={null}
             blocked={false}
             onDate={vi.fn()}
+            onCreate={onCreate}
             onOpen={vi.fn()}
             onClose={vi.fn()}
             onReminders={vi.fn()}
@@ -135,6 +136,23 @@ async function ready() {
   await waitFor(() => expect(separator.getAttribute('aria-disabled')).toBe('false'));
   return separator;
 }
+it('updates the floating calendar boundary from the actual toolbar bottom when it reflows', () => {
+  let bottom = 136;
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return {
+      width,
+      bottom: this.classList.contains('workspace-page-chrome') ? bottom : 0,
+    } as DOMRect;
+  });
+  setup();
+  const root = screen.getByRole('region', { name: '日历工作台' });
+  expect(root.style.getPropertyValue('--calendar-chrome-bottom')).toBe('136px');
+  bottom = 184;
+  fireEvent(window, new Event('resize'));
+  expect(root.style.getPropertyValue('--calendar-chrome-bottom')).toBe('184px');
+});
 it('uses 230×7/6 by default, removes the three left entries, and commits keyboard width without submitting personal drafts', async () => {
   const s = setup();
   const separator = await ready();
@@ -315,3 +333,41 @@ it('offers read-only recovery after a confirmed layout save with failed refresh 
     screen.getByRole('separator', { name: '调整日期区宽度' }).getAttribute('aria-valuenow'),
   ).toBe('276');
 });
+
+it.each([
+  ['summary', { isComposing: true }],
+  ['summary', { keyCode: 229 }],
+  ['summary', { isComposing: true, keyCode: 229 }],
+  ['task', { isComposing: true }],
+  ['task', { keyCode: 229 }],
+  ['task', { isComposing: true, keyCode: 229 }],
+] as const)(
+  'closes the calendar more menu from %s only after composition ends: %j',
+  async (target, composition) => {
+    const onCreate = vi.fn();
+    setup('', onCreate);
+    await ready();
+    const summary = screen.getByText('更多');
+    fireEvent.click(summary);
+    const menu = summary.closest('details')!;
+    const task = screen.getByRole('button', { name: '新建任务' });
+    expect(task.hasAttribute('disabled')).toBe(false);
+    const focused = target === 'summary' ? summary : task;
+    focused.focus();
+    expect(menu.open).toBe(true);
+    const composingEscape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+      ...composition,
+    });
+    fireEvent(focused, composingEscape);
+    expect(composingEscape.defaultPrevented).toBe(false);
+    expect(menu.open).toBe(true);
+    expect(document.activeElement).toBe(focused);
+    fireEvent.keyDown(focused, { key: 'Escape' });
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    expect(onCreate).not.toHaveBeenCalled();
+  },
+);

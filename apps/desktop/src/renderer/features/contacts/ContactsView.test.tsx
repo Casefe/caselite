@@ -124,6 +124,7 @@ it('opens details on double click, preserves list state and AI layout identity, 
     </QueryClientProvider>,
   );
   await screen.findByRole('table', { name: '联系人列表' });
+  fireEvent.click(screen.getByRole('button', { name: '联系人搜索' }));
   fireEvent.change(screen.getByRole('textbox', { name: '搜索联系人' }), {
     target: { value: '合成' },
   });
@@ -204,6 +205,7 @@ it('preserves list and AI instances while creating, confirms discarded drafts, a
     </QueryClientProvider>,
   );
   await screen.findByRole('table', { name: '联系人列表' });
+  fireEvent.click(screen.getByRole('button', { name: '联系人搜索' }));
   fireEvent.change(screen.getByRole('textbox', { name: '搜索联系人' }), {
     target: { value: '合成' },
   });

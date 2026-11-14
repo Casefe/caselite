@@ -10,9 +10,9 @@ export function DocxOriginalReader({
   children,
 }: {
   name: string;
-  material?: Material;
+  material?: Material | Pick<Material, 'pages' | 'sha256' | 'status'>;
   onClose(): void;
-  onSaveOriginal(): void;
+  onSaveOriginal?(): void;
   selection?: { pages: number[]; disabled: boolean; toggle(page: number): void };
   children?: ReactNode;
 }) {
@@ -21,9 +21,11 @@ export function DocxOriginalReader({
     <section aria-label="Word 固定原件" className="material-docx-reader">
       <header className="material-reader-tools">
         <strong>{name}</strong>
-        <button type="button" onClick={onSaveOriginal}>
-          保存原件副本
-        </button>
+        {onSaveOriginal && (
+          <button type="button" onClick={onSaveOriginal}>
+            保存原件副本
+          </button>
+        )}
         <button type="button" onClick={onClose}>
           收起阅读
         </button>

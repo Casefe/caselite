@@ -48,7 +48,7 @@ export async function runTaskViewsDemo(
     );
   const input = (selector: string, value: string) =>
     evaluate(
-      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));}})()`,
+      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(e.isContentEditable){e.focus();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('insertText',false,${JSON.stringify(value)});}else{const setter=Object.getOwnPropertyDescriptor(e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;setter.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));}})()`,
     );
   const identity = () => ({
     protocol_version: 1,
@@ -169,7 +169,7 @@ export async function runTaskViewsDemo(
     await click('[data-nav=tasks]');
     await wait("document.querySelectorAll('[data-row-task]').length===7");
     await wait(
-      "(()=>{const list=document.querySelector('.compact-task-list');const e=list?.querySelector('.table-head');const r=e?.getBoundingClientRect();return list?.getAttribute('data-layout')==='list'&&r&&r.width<=1&&r.height<=1&&!list.querySelector('[data-statistics-module]')&&document.querySelector('#task-list-filters').hidden&&getComputedStyle(document.querySelector('#task-list-filters')).display==='none';})()",
+      "(()=>{const list=document.querySelector('.compact-task-list');const e=list?.querySelector('.table-head');const r=e?.getBoundingClientRect();const filtersId=document.querySelector('[aria-label=筛选任务]')?.getAttribute('aria-controls');const filters=filtersId?document.getElementById(filtersId):null;return list?.getAttribute('data-layout')==='list'&&r&&r.width<=1&&r.height<=1&&!list.querySelector('[data-statistics-module]')&&filters?.hidden===true&&getComputedStyle(filters).display==='none';})()",
     );
     await capture('01-task-summary.png');
     await click('[data-nav=settings]');
@@ -179,9 +179,9 @@ export async function runTaskViewsDemo(
     );
     await wait("document.documentElement.dataset.theme==='dark'");
     await click('[data-nav=tasks]');
-    await wait("document.querySelector('[data-testid=new-task]')");
+    await wait("document.querySelector('[data-collection=tasks] .workspace-page-create')");
     stage = 'create-dialog';
-    await click('[data-testid=new-task]');
+    await click('[data-collection=tasks] .workspace-page-create');
     await wait("document.querySelector('.task-create-dialog[open]')");
     await capture('02-task-create.png');
     await input('[data-testid=task-title]', '示例 · 三页真实验收');

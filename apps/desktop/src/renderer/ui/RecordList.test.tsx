@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
 import RecordList, { initialTaskListState, type TaskListState } from './RecordList';
+import { useTaskCompletion, type TaskCompletionActions } from '../features/tasks/useTaskCompletion';
 vi.mock('./AgentPanel', () => ({ default: () => null, UnavailableAgentPanel: () => null }));
 afterEach(() => {
   cleanup();
@@ -46,6 +47,7 @@ function show(
   api: (r: TaskRequest) => Promise<TaskResponse>,
   initial = initialTaskListState,
   sharedInspector = false,
+  completion?: TaskCompletionActions,
 ) {
   window.caselite = {
     // 新增类型查询不属于本组任务页IPC计数；该通道在Calendar专项中单独验收。
@@ -70,7 +72,10 @@ function show(
       vi.fn(async () => ({ ok: true, preferences: initialLocalPreferences, receipt: null })),
   };
   const client = createWorkbenchQueryClient();
+  let force = () => {};
   function Host() {
+    const [revision, setRevision] = useState(0);
+    force = () => setRevision(revision + 1);
     const [state, setState] = useState<TaskListState>(initial),
       [blocked, setBlocked] = useState(false),
       [opened, setOpened] = useState(''),
@@ -80,6 +85,7 @@ function show(
       <button onClick={() => setOpened('')}>返回列表</button>
     ) : (
       <RecordList
+        completion={completion}
         tasks={source}
         viewState={state}
         onViewState={(v) => {
@@ -125,6 +131,7 @@ function show(
     ),
     changed,
     client,
+    force: () => force(),
   };
 }
 it('invalidates query A before B and never displays its late rows or count under B filters', async () => {
@@ -162,12 +169,15 @@ it('hides the completed A count while query B is pending rather than assigning i
         }),
   );
   await screen.findByRole('row', { name: '选择任务：甲' });
-  expect(document.querySelector('.collection-total')?.textContent).toBe('2');
+  expect(document.querySelector('.collection-footer')?.textContent).toContain('2 个任务');
+  fireEvent.click(screen.getByRole('button', { name: '打开任务搜索' }));
   fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '乙' } });
-  expect(document.querySelector('.collection-total')?.textContent).toBe('…');
   expect(document.querySelector('.collection-footer')?.textContent).toContain('正在读取任务');
+  expect(document.querySelector('.collection-footer')?.textContent).not.toContain('2 个任务');
   await act(async () => finish(result([b])));
-  await waitFor(() => expect(document.querySelector('.collection-total')?.textContent).toBe('1'));
+  await waitFor(() =>
+    expect(document.querySelector('.collection-footer')?.textContent).toContain('1 个任务'),
+  );
 });
 it('waits for Chinese composition end before querying and retains task property draft guards', async () => {
   const t = task('中文任务');
@@ -496,4 +506,226 @@ it('shares the titlebar inspector choice without remounting a hidden property dr
         ),
     ),
   ).toBe(true);
+});
+
+it('offers row completion independently from task opening and page selection', async () => {
+  const row = task('列表完成入口');
+  const complete = vi.fn();
+  show(async () => result([row]), initialTaskListState, false, {
+    complete,
+    busyIds: [],
+    blocked: false,
+  });
+  fireEvent.click(await screen.findByRole('button', { name: '完成任务：列表完成入口' }));
+  expect(complete).toHaveBeenCalledExactlyOnceWith(row);
+  expect(screen.queryByRole('button', { name: '返回列表' })).toBeNull();
+});
+
+it('INDEPENDENT blocks every bulk write while shared completion is pending', async () => {
+  const t = task('并发保护任务');
+  const api = vi.fn(async () => result([t]));
+  const completion = { complete: vi.fn(), busyIds: [] as string[], blocked: false };
+  const view = show(api, initialTaskListState, false, completion);
+  await screen.findByRole('button', { name: '完成任务：并发保护任务' });
+  fireEvent.click(screen.getByLabelText('选择多个任务'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '勾选任务：并发保护任务' }));
+  expect((screen.getByRole('button', { name: '✓ 标记完成' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+  completion.blocked = true;
+  completion.busyIds = [t.id];
+  act(() => view.force());
+  expect(
+    (screen.getByRole('button', { name: '完成任务：并发保护任务' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect((screen.getByRole('button', { name: '✓ 标记完成' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((screen.getByLabelText('批量设置优先级') as HTMLSelectElement).disabled).toBe(true);
+});
+
+it('keeps its own bulk unknown recovery available while excluding the bulk-owned blocked feedback', async () => {
+  const current = task('批量自身恢复');
+  const saved = { ...current, status: 'done' as const, version: 2 };
+  let key = '';
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'change_status') {
+      key = request.idempotency_key;
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '原批量未知' };
+    }
+    if (request.operation === 'status')
+      return { ...result([saved]), receipt: request.idempotency_key };
+    return result([key ? saved : current]);
+  });
+  show(api);
+  await screen.findByRole('button', { name: '批量自身恢复' });
+  fireEvent.click(screen.getByLabelText('选择多个任务'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '勾选任务：批量自身恢复' }));
+  fireEvent.click(screen.getByRole('button', { name: '✓ 标记完成' }));
+  await screen.findByText('原批量未知');
+  const recover = screen.getByRole('button', { name: '核对并继续原操作' });
+  expect((recover as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(recover);
+  await waitFor(() => expect(screen.queryByText('原批量未知')).toBeNull());
+  expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+  expect(api.mock.calls.find(([r]) => r.operation === 'status')?.[0]).toMatchObject({
+    idempotency_key: key,
+  });
+});
+
+it('PREVIEW locks real task property writes during shared completion', async () => {
+  const t = task('预览互斥任务');
+  const api = vi.fn(async () => result([t]));
+  const completion = { complete: vi.fn(), busyIds: [] as string[], blocked: false };
+  const view = show(api, initialTaskListState, false, completion);
+  await screen.findByRole('button', { name: '完成任务：预览互斥任务' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+  const status = screen.getByLabelText('任务状态') as HTMLSelectElement;
+  expect(status.disabled).toBe(false);
+  completion.blocked = true;
+  completion.busyIds = [t.id];
+  act(() => view.force());
+  expect(
+    (screen.getByRole('button', { name: '完成任务：预览互斥任务' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  const before = api.mock.calls.length;
+  fireEvent.change(status, { target: { value: 'done' } });
+  await act(async () => {});
+  expect(
+    api.mock.calls.slice(before).filter(([r]) => r.operation === 'change_status'),
+  ).toHaveLength(0);
+  expect(status.disabled).toBe(true);
+});
+
+it.each(['pending', 'unknown', 'confirmed-read'] as const)(
+  'locks real preview controls while shared completion is %s',
+  async (phase) => {
+    const current = task('三态预览锁');
+    const saved = { ...current, version: 2, status: 'done' as const };
+    let release: ((value: TaskResponse) => void) | undefined;
+    const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+      if (request.operation === 'change_status') {
+        if (phase === 'pending')
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        if (phase === 'unknown')
+          return { ok: false, code: 'RESULT_UNKNOWN', message: '预览原结果未知' };
+        return { ...result([saved]), receipt: request.idempotency_key };
+      }
+      if (request.operation === 'read') return result([saved]);
+      return result(request.operation === 'calendar_query' ? [] : [current]);
+    });
+    window.caselite = {
+      task: api,
+      catalog: vi.fn(async () => ({
+        ok: true,
+        projects: [],
+        documents: [],
+        state: null,
+        target_id: null,
+        receipt: null,
+      })),
+      reminder: vi.fn(async () => ({ ok: true, reminders: [], receipt: null })),
+      preferences: vi.fn(async () => ({
+        ok: true,
+        preferences: initialLocalPreferences,
+        receipt: null,
+      })),
+    } as unknown as Window['caselite'];
+    function Host() {
+      const [state, setState] = useState(initialTaskListState);
+      const [blocked, setBlocked] = useState(false);
+      const [projectDirty, setProjectDirty] = useState(false);
+      const completion = useTaskCompletion({
+        disabled: blocked || projectDirty,
+        onChanged: async () => false,
+      });
+      return (
+        <>
+          {completion.feedback}
+          <RecordList
+            tasks={[current]}
+            viewState={state}
+            onViewState={setState}
+            onOpen={vi.fn()}
+            onNew={vi.fn()}
+            propertiesBlocked={blocked}
+            onPropertiesBlocked={setBlocked}
+            projectDirty={projectDirty}
+            onProjectDirty={setProjectDirty}
+            onTaskChanged={vi.fn()}
+            completion={completion}
+          />
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={createWorkbenchQueryClient()}>
+        <LocalPreferencesProvider>
+          <Host />
+        </LocalPreferencesProvider>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('button', { name: '完成任务：三态预览锁' });
+    fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+    const status = screen.getByLabelText('任务状态') as HTMLSelectElement;
+    const project = screen.getByLabelText('所属项目') as HTMLSelectElement;
+    const reminder = screen.getByRole('button', { name: '设置任务提醒' }) as HTMLButtonElement;
+    await waitFor(() => {
+      expect(project.disabled).toBe(false);
+      expect(reminder.disabled).toBe(false);
+    });
+    expect(status.disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '完成任务：三态预览锁' }));
+    if (phase === 'pending') await screen.findByText('正在确认任务完成…');
+    else await screen.findByRole('alert');
+    expect(status.disabled).toBe(true);
+    expect((screen.getByLabelText('任务优先级') as HTMLSelectElement).disabled).toBe(true);
+    expect(project.disabled).toBe(true);
+    expect(reminder.disabled).toBe(true);
+    const before = api.mock.calls.length;
+    fireEvent.change(status, { target: { value: 'in_progress' } });
+    fireEvent.click(reminder);
+    await act(async () => {});
+    expect(
+      api.mock.calls.slice(before).filter(([r]) => r.operation === 'change_status'),
+    ).toHaveLength(0);
+    expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+    if (release)
+      await act(async () =>
+        release!({ ok: false, code: 'RESULT_UNKNOWN', message: '预览原结果未知' }),
+      );
+  },
+);
+
+it('keeps preview property unknown recovery available when the preview owns its own block', async () => {
+  const current = task('预览自身恢复');
+  const saved = { ...current, status: 'done' as const, version: 2 };
+  let key = '';
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation === 'change_status') {
+      key = request.idempotency_key;
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '预览属性原结果未知' };
+    }
+    if (request.operation === 'status')
+      return { ...result([saved]), receipt: request.idempotency_key };
+    return result([key ? saved : current]);
+  });
+  show(api, initialTaskListState, false, { complete: vi.fn(), busyIds: [], blocked: false });
+  await screen.findByRole('button', { name: '完成任务：预览自身恢复' });
+  fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+  fireEvent.change(screen.getByLabelText('任务状态'), { target: { value: 'done' } });
+  await screen.findByText('预览属性原结果未知');
+  const recover = screen.getByRole('button', { name: '核对并重试原提交' });
+  expect((recover as HTMLButtonElement).disabled).toBe(false);
+  expect(
+    (screen.getByRole('button', { name: '完成任务：预览自身恢复' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(recover);
+  await waitFor(() => expect(screen.queryByText('预览属性原结果未知')).toBeNull());
+  expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+  expect(api.mock.calls.find(([r]) => r.operation === 'status')?.[0]).toMatchObject({
+    idempotency_key: key,
+  });
 });

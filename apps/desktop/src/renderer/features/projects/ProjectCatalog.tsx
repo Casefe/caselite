@@ -1,3 +1,8 @@
+import SharedTaskTable from '../../ui/SharedTaskTable';
+import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
+import WorkspacePageChrome, {
+  closeWorkspaceDisplayOnEscape,
+} from '../../shared/ui/WorkspacePageChrome';
 import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import {
@@ -25,6 +30,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useId,
   useEffect,
   useLayoutEffect,
   useState,
@@ -40,9 +46,8 @@ import InspectorLayout from '../../ui/InspectorLayout';
 import { useCatalog } from '../../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
-import ProjectFiles from './ProjectFiles';
+import ProjectDocuments from './ProjectDocuments';
 import ActivityList from './ActivityList';
-import ProjectDeliverables from './ProjectDeliverables';
 import ProjectDiscussion from './ProjectDiscussion';
 import ProjectPlanning from './ProjectPlanning';
 import ProjectVisualizationInspector from './ProjectVisualizationInspector';
@@ -56,14 +61,13 @@ const sections = {
   overview: '概述',
   activity: '活动',
   tasks: '任务',
-  files: '文件',
+  documents: '文档',
   visualization: '可视化',
-  deliverables: '交付物',
 };
 export type ProjectViewState = {
   selected: string | null;
   projectId: string | null;
-  section: keyof typeof sections;
+  section: keyof typeof sections | 'files' | 'deliverables';
   query: string;
   statusFilter: keyof typeof names | 'all';
   order: string;
@@ -91,8 +95,10 @@ export default function ProjectCatalog({
   backSlot,
   navigationPending = false,
   favoriteAction,
+  completion,
 }: {
   tasks: Task[];
+  completion?: TaskCompletionActions;
   onOpen(id: string, source: ProjectViewState): void;
   onFinance?(projectId: string): void;
   onCalendar?(): void;
@@ -105,6 +111,7 @@ export default function ProjectCatalog({
   onDirty(v: boolean): void;
   onChanged(): void | Promise<boolean>;
 }) {
+  const chromeFiltersId = useId();
   const readCatalog = useProjectCatalog();
   const c = useCatalog(true, readCatalog),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
@@ -120,13 +127,19 @@ export default function ProjectCatalog({
     [assigning, setAssigning] = useState('');
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<Record<string, boolean>>({});
   const [listInspectorOpen, setListInspectorOpen] = useState(false);
+  const [chromeFilterOpen, setChromeFilterOpen] = useState(false);
+  const [chromeSearchOpen, setChromeSearchOpen] = useState(false);
   const [visualizationCollapsed, setVisualizationCollapsed] = useWorkspaceInspector(false, true);
   const [visualizationInspection, setVisualizationInspection] =
     useState<VisualizationInspection | null>(null);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
-  const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
+  const [section, setSection] = useState<keyof typeof sections>(
+    initialView?.section === 'files' || initialView?.section === 'deliverables'
+      ? 'documents'
+      : (initialView?.section ?? 'overview'),
+  );
   const [query, setQuery] = useState(initialView?.query ?? '');
   const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
@@ -185,7 +198,12 @@ export default function ProjectCatalog({
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const [discussionDirty, setDiscussionDirty] = useState(false);
   const [planningDirty, setPlanningDirty] = useState(false);
-  const dirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
+  const [initialDocumentPending, setInitialDocumentPending] = useState(
+    Boolean(initialView?.documentId),
+  );
+  const [documentDirty, setDocumentDirty] = useState(false);
+  const otherDirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
+  const dirty = otherDirty || documentDirty;
   const discussionDisabled =
     navigationPending ||
     reading ||
@@ -252,6 +270,7 @@ export default function ProjectCatalog({
     return () => onDirty(false);
   }, [dirty, creating, reading, c.pending, c.unknown, onDirty]);
   const read = useCallback(async (id: string, restore = false) => {
+    if (!restore) setInitialDocumentPending(false);
     const sequence = ++readId.current;
     setReading(true);
     setReadError('');
@@ -315,9 +334,13 @@ export default function ProjectCatalog({
     if (!source || reading || navigationPending || (source.projectId ? !editor : !c.data)) return;
     // 文档入口要等目录查询完成，才能恢复到原来的按钮或栏目。
     if (source.documentId && !c.data && !c.error) return;
+    const restoredSection =
+      source.section === 'files' || source.section === 'deliverables'
+        ? 'documents'
+        : source.section;
     const target = Array.from(
       workspace.current?.querySelectorAll<HTMLButtonElement>(
-        `#project-panel-${source.section} [data-project-task]`,
+        `#project-panel-${restoredSection} [data-project-task]`,
       ) ?? [],
     ).find(
       (button) =>
@@ -328,7 +351,7 @@ export default function ProjectCatalog({
     (
       target ??
       (source.projectId
-        ? workspace.current?.querySelector<HTMLButtonElement>(`#project-tab-${source.section}`)
+        ? workspace.current?.querySelector<HTMLButtonElement>(`#project-tab-${restoredSection}`)
         : (Array.from(
             workspace.current?.querySelectorAll<HTMLButtonElement>(
               '[data-project-id] .project-title-link',
@@ -388,6 +411,7 @@ export default function ProjectCatalog({
     };
   }, !reading && !navigationPending);
   function changeSection(next: keyof typeof sections) {
+    if (section === 'documents' && next !== 'documents') setInitialDocumentPending(false);
     pageNavigation?.beforeChange();
     setSection(next);
   }
@@ -400,33 +424,19 @@ export default function ProjectCatalog({
       await read(project.id);
     }
   };
-  const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
+  const blocked =
+    navigationPending ||
+    reading ||
+    dirty ||
+    creating ||
+    c.pending ||
+    c.unknown ||
+    Boolean(completion?.blocked);
   const openActivityProject = (id: string) => {
     if (!blocked) {
       pageNavigation?.beforeChange();
       void read(id);
     }
-  };
-  const documentLinks = () => {
-    if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
-    if (!documents) return <p role="status">正在读取项目文档…</p>;
-    if (!documents.length) return <p>还没有可编辑文档。</p>;
-    return (
-      <ul className="project-document-list">
-        {documents.map((doc) => (
-          <li key={doc.id}>
-            <button
-              disabled={blocked}
-              data-project-task={doc.task_id}
-              data-project-document={doc.id}
-              onClick={() => openTask(doc.task_id, doc.id)}
-            >
-              {doc.title}
-            </button>
-          </li>
-        ))}
-      </ul>
-    );
   };
   const command = (input: CatalogRequest, done?: (r: CatalogSuccess) => void | Promise<void>) =>
     c.execute(input, async (r) => {
@@ -456,6 +466,7 @@ export default function ProjectCatalog({
       title="返回项目列表"
       onClick={() => {
         returnProjectId.current = editor.project.id;
+        setInitialDocumentPending(false);
         pageNavigation?.beforeChange();
         setEditor(null);
       }}
@@ -479,12 +490,72 @@ export default function ProjectCatalog({
         ?.focus({ preventScroll: true }),
     );
   };
+  const chromeDisplay = (
+    <details
+      className="project-display-menu"
+      onToggle={(event) => {
+        const menu = event.currentTarget;
+        const panel = menu.querySelector<HTMLElement>('div');
+        const trigger = menu.querySelector('summary');
+        const center = workspace.current?.querySelector('.collection-main');
+        if (!menu.open || !panel || !trigger || !center) return;
+        // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
+        panel.style.position = 'fixed';
+        panel.style.right = 'auto';
+        panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
+        const anchor = trigger.getBoundingClientRect();
+        const bounds = center.getBoundingClientRect();
+        const rect = panel.getBoundingClientRect();
+        panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
+        panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
+      }}
+      onKeyDown={closeWorkspaceDisplayOnEscape}
+    >
+      <summary>
+        <Icon name="settings" size={16} /> 显示设置
+      </summary>
+      <div>
+        <button
+          type="button"
+          aria-label="项目预览"
+          aria-expanded={listInspectorOpen}
+          disabled={blocked}
+          onClick={() => {
+            if (!listInspectorOpen) pageNavigation?.inspector.setOpen(true);
+            setListInspectorOpen((open) => !open);
+          }}
+        >
+          项目预览
+        </button>
+        <label>
+          <input
+            type="checkbox"
+            checked={groupByStatus}
+            disabled={blocked}
+            onChange={(event) => setGroupByStatus(event.target.checked)}
+          />
+          按状态分组
+        </label>
+        <p>显示属性 · 本次会话</p>
+        {Object.entries(projectListProperties).map(([id, label]) => (
+          <label key={id}>
+            <input
+              type="checkbox"
+              checked={columns[id as keyof typeof columns]}
+              onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </details>
+  );
   return (
     <section
       ref={workspace}
       inert={navigationPending}
       aria-busy={navigationPending}
-      className="collection-workspace catalog-view project-catalog property-resizable"
+      className={`collection-workspace catalog-view project-catalog property-resizable${editor ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-project-view={editor ? section : 'list'}
       data-visualization-collapsed={Boolean(
@@ -493,102 +564,88 @@ export default function ProjectCatalog({
       data-layout="three-column"
       data-testid="project-catalog"
     >
-      <PropertyResizeHandle module="projects" />
-      <div className="collection-main">
-        {backSlot && createPortal(backButton, backSlot)}
-        <div className="collection-heading project-catalog-heading">
-          {!backSlot && backButton}
-          {editor ? (
-            <>
-              <Icon name="folder" size={16} />
-              <h1>{(p ?? editor.project).title}</h1>
-              {favoriteAction?.(
-                p ?? editor.project,
-                blocked || !!(p ?? editor.project).archived_at,
-              )}
-            </>
-          ) : (
-            <div className="project-dashboard-title">
-              <h1>项目管理</h1>
-              <p>集中管理案件与项目，跟踪进展、重要日期与团队协作。</p>
-            </div>
-          )}
-          <button className="work-list-create" disabled={blocked} onClick={() => setCreating(true)}>
-            <Icon name="plus" size={15} /> 创建项目
-          </button>
-        </div>
-        <InlinePropertiesSlot />
-        {!editor && (
-          <div className="project-list-stages" aria-label="项目阶段">
+      {section !== 'documents' && <PropertyResizeHandle module="projects" />}
+      {!editor && (
+        <WorkspacePageChrome
+          title="项目"
+          createLabel="新建项目"
+          create={{ onClick: () => setCreating(true), disabled: blocked }}
+          navigation={(
+            [
+              ['all', '全部项目'],
+              ['active', '进行中'],
+              ['planned', '待启动'],
+              ['done', '已结项'],
+            ] as const
+          ).map(([value, label]) => (
             <button
+              key={value}
               type="button"
-              aria-pressed={statusFilter === 'all'}
               disabled={blocked}
+              aria-pressed={statusFilter === value}
               onClick={() => {
                 setSelected(null);
-                setStatusFilter('all');
+                setStatusFilter(value === statusFilter ? 'all' : value);
               }}
             >
-              全部项目 <span>{projects.filter((item) => !item.archived_at).length}</span>
+              {label}
             </button>
-            {(
-              [
-                ['active', '进行中'],
-                ['planned', '待启动'],
-                ['done', '已结项'],
-              ] as const
-            ).map(([status, label]) => (
-              <button
-                type="button"
-                key={status}
-                aria-pressed={statusFilter === status}
-                disabled={blocked}
-                onClick={() => {
-                  setSelected(null);
-                  setStatusFilter(statusFilter === status ? 'all' : status);
-                }}
-              >
-                {label}{' '}
-                <span>{projects.filter((item) => projectStatus(item) === status).length}</span>
-              </button>
-            ))}
-            {(query || statusFilter !== 'all' || ownerFilter || typeFilter) && (
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => {
-                  setQuery('');
-                  setStatusFilter('all');
-                  setOwnerFilter('');
-                  setTypeFilter('');
-                  setSelected(null);
-                }}
-              >
-                清除筛选
-              </button>
-            )}
+          ))}
+          search={{
+            expanded: chromeSearchOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeFilterOpen(false);
+              setChromeSearchOpen((open) => !open);
+            },
+          }}
+          filter={{
+            expanded: chromeFilterOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeSearchOpen(false);
+              setChromeFilterOpen((open) => !open);
+            },
+          }}
+          display={chromeDisplay}
+          inspector={
+            pageNavigation
+              ? {
+                  expanded: pageNavigation.inspector.open,
+                  disabled: blocked,
+                  onClick: () => pageNavigation.inspector.setOpen((open) => !open),
+                }
+              : undefined
+          }
+        />
+      )}
+      <div className="collection-main">
+        {backSlot && createPortal(backButton, backSlot)}
+        {editor && (
+          <div className="collection-heading project-catalog-heading">
+            {!backSlot && backButton}
+            <Icon name="folder" size={16} />
+            <h1>{(p ?? editor.project).title}</h1>
+            {favoriteAction?.(p ?? editor.project, blocked || !!(p ?? editor.project).archived_at)}
             <button
-              className="project-list-inspector-toggle"
-              type="button"
-              aria-label="项目预览"
-              aria-expanded={listInspectorOpen}
+              className="work-list-create"
               disabled={blocked}
-              onClick={() => {
-                if (!listInspectorOpen) pageNavigation?.inspector.setOpen(true);
-                setListInspectorOpen((open) => !open);
-              }}
+              onClick={() => setCreating(true)}
             >
-              <Icon name="panel" size={16} />
+              <Icon name="plus" size={15} /> 创建项目
             </button>
           </div>
         )}
-
+        <InlinePropertiesSlot />
         {!editor && <h2 className="project-dashboard-list-title">项目列表</h2>}
         {!editor && (
           <div
             className="project-list-controls"
-            id="project-list-filters"
+            id={chromeFiltersId}
             aria-label="项目列表选项"
+            hidden={!chromeSearchOpen && !chromeFilterOpen}
           >
             <label className="project-list-search">
               <Icon name="search" size={15} />
@@ -656,57 +713,19 @@ export default function ProjectCatalog({
               <option value="title">名称</option>
               <option value="status">状态</option>
             </select>
-            <details
-              className="project-display-menu"
-              onToggle={(event) => {
-                const menu = event.currentTarget;
-                const panel = menu.querySelector<HTMLElement>('div');
-                const trigger = menu.querySelector('summary');
-                const center = workspace.current?.querySelector('.collection-main');
-                if (!menu.open || !panel || !trigger || !center) return;
-                // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
-                panel.style.position = 'fixed';
-                panel.style.right = 'auto';
-                panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
-                const anchor = trigger.getBoundingClientRect();
-                const bounds = center.getBoundingClientRect();
-                const rect = panel.getBoundingClientRect();
-                panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
-                panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.currentTarget.open = false;
-                  event.currentTarget.querySelector('summary')?.focus();
-                }
+            <button
+              type="button"
+              disabled={blocked || !(query || statusFilter !== 'all' || ownerFilter || typeFilter)}
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('all');
+                setOwnerFilter('');
+                setTypeFilter('');
+                setSelected(null);
               }}
             >
-              <summary>
-                <Icon name="list" size={15} /> 显示
-              </summary>
-              <div>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={groupByStatus}
-                    disabled={blocked}
-                    onChange={(event) => setGroupByStatus(event.target.checked)}
-                  />
-                  按状态分组
-                </label>
-                <p>显示属性 · 本次会话</p>
-                {Object.entries(projectListProperties).map(([id, label]) => (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={columns[id as keyof typeof columns]}
-                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </details>
+              清除筛选
+            </button>
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}
@@ -799,6 +818,7 @@ export default function ProjectCatalog({
                       propertyDirty ||
                       discussionDirty ||
                       planningDirty ||
+                      documentDirty ||
                       c.pending ||
                       c.unknown
                     }
@@ -965,102 +985,60 @@ export default function ProjectCatalog({
                 </div>
                 {!!members.length && (
                   <div className="project-task-table-scroll">
-                    <table className="catalog-table project-task-table" aria-label="项目任务列表">
-                      <thead>
-                        <tr>
-                          {['优先级', '状态', '任务名称', '负责人', '截止日期', '操作'].map(
-                            (label) => (
-                              <th key={label} scope="col">
-                                {label}
-                              </th>
-                            ),
-                          )}
-                        </tr>
-                      </thead>
-                      {projectTaskStatuses.map((status) => {
-                        const group = members.filter((task) => (task.status ?? 'todo') === status);
-                        if (!group.length) return null;
-                        const key = `${editor.project.id}:${status}`;
-                        const expanded = !collapsedTaskGroups[key];
-                        return (
-                          <tbody key={status} aria-label={taskStatusNames[status]}>
-                            <tr className="project-task-group">
-                              <th scope="rowgroup" colSpan={6}>
+                    {projectTaskStatuses.map((status) => {
+                      const group = members.filter((task) => (task.status ?? 'todo') === status);
+                      if (!group.length) return null;
+                      const key = `${editor.project.id}:${status}`;
+                      const expanded = !collapsedTaskGroups[key];
+                      return (
+                        <section key={status} aria-label={taskStatusNames[status]}>
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            disabled={blocked}
+                            onClick={() =>
+                              setCollapsedTaskGroups((previous) => ({
+                                ...previous,
+                                [key]: expanded,
+                              }))
+                            }
+                          >
+                            <Icon name="chevron" size={12} />
+                            <StatusGlyph status={status} />
+                            {taskStatusNames[status]} <small>{group.length}</small>
+                          </button>
+                          {expanded && (
+                            <SharedTaskTable
+                              tasks={group}
+                              titleData={(task) => ({ 'data-project-task': task.id })}
+                              onOpen={openTask}
+                              disabled={blocked}
+                              busyIds={completion?.busyIds}
+                              onComplete={p?.archived_at ? undefined : completion?.complete}
+                              hiddenColumns={['project']}
+                              rowActions={(task) => (
                                 <button
                                   type="button"
-                                  aria-expanded={expanded}
+                                  disabled={blocked || !!p?.archived_at}
                                   onClick={() =>
-                                    setCollapsedTaskGroups((previous) => ({
-                                      ...previous,
-                                      [key]: expanded,
-                                    }))
+                                    void command(
+                                      catalogMutation({
+                                        operation: 'assign_task' as const,
+                                        task_id: task.id,
+                                        expected_version: task.version,
+                                        matter_id: null,
+                                      }),
+                                    )
                                   }
                                 >
-                                  <Icon name="chevron" size={12} />
-                                  <span aria-hidden="true">
-                                    <StatusGlyph status={status} />
-                                  </span>
-                                  {taskStatusNames[status]} <small>{group.length}</small>
+                                  移出项目
                                 </button>
-                              </th>
-                            </tr>
-                            {expanded &&
-                              group.map((task) => (
-                                <tr key={task.id} onClick={() => openTask(task.id)}>
-                                  <td>
-                                    <PriorityGlyph priority={task.priority ?? 0} />
-                                  </td>
-                                  <td>
-                                    <StatusGlyph status={task.status ?? 'todo'} />
-                                  </td>
-                                  <td>
-                                    <button
-                                      className="project-title-link"
-                                      disabled={blocked}
-                                      data-project-task={task.id}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        openTask(task.id);
-                                      }}
-                                    >
-                                      {task.title}
-                                    </button>
-                                  </td>
-                                  <td>
-                                    {task.assignee === undefined
-                                      ? '本人'
-                                      : (task.assignee ?? '未分配')}
-                                  </td>
-                                  <td>
-                                    {task.due_date && (
-                                      <time dateTime={task.due_date}>{task.due_date}</time>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <button
-                                      type="button"
-                                      disabled={blocked || !!p?.archived_at}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        void command(
-                                          catalogMutation({
-                                            operation: 'assign_task' as const,
-                                            task_id: task.id,
-                                            expected_version: task.version,
-                                            matter_id: null,
-                                          }),
-                                        );
-                                      }}
-                                    >
-                                      移出项目
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        );
-                      })}
-                    </table>
+                              )}
+                            />
+                          )}
+                        </section>
+                      );
+                    })}
                   </div>
                 )}
                 {!p?.archived_at && (
@@ -1113,31 +1091,31 @@ export default function ProjectCatalog({
                 )}
               </section>
               <section
-                hidden={section !== 'files'}
+                hidden={section !== 'documents'}
                 role="tabpanel"
-                id="project-panel-files"
-                aria-labelledby="project-tab-files"
-                className="project-record-panel"
+                id="project-panel-documents"
+                aria-labelledby="project-tab-documents"
+                className="project-document-panel"
               >
-                <h2>项目文件</h2>
-                {section === 'files' && (
-                  <>
-                    <section
-                      className="project-managed-files"
-                      aria-labelledby="project-pdf-heading"
-                    >
-                      <h3 id="project-pdf-heading">受管 PDF / Word 原件</h3>
-                      <ProjectFiles
-                        key={editor.project.id}
-                        projectId={editor.project.id}
-                        disabled={blocked}
-                      />
-                    </section>
-                    <section aria-labelledby="project-documents-heading">
-                      <h3 id="project-documents-heading">可编辑文档</h3>
-                      {documentLinks()}
-                    </section>
-                  </>
+                {section === 'documents' && (
+                  <ProjectDocuments
+                    key={editor.project.id}
+                    projectId={editor.project.id}
+                    initialDocumentId={
+                      initialDocumentPending && initialView?.projectId === editor.project.id
+                        ? initialView.documentId
+                        : undefined
+                    }
+                    externalBlocked={
+                      navigationPending ||
+                      reading ||
+                      creating ||
+                      otherDirty ||
+                      c.pending ||
+                      c.unknown
+                    }
+                    onDirty={setDocumentDirty}
+                  />
                 )}
               </section>
               <section
@@ -1161,24 +1139,6 @@ export default function ProjectCatalog({
                       onToggleSidebar={() => toggleVisualizationSidebar()}
                     />
                   </Suspense>
-                )}
-              </section>
-              <section
-                hidden={section !== 'deliverables'}
-                role="tabpanel"
-                id="project-panel-deliverables"
-                aria-labelledby="project-tab-deliverables"
-                className="project-record-panel"
-              >
-                <h2>交付物</h2>
-                {section === 'deliverables' && (
-                  <ProjectDeliverables
-                    documents={documents}
-                    tasks={members}
-                    readError={c.error}
-                    disabled={blocked}
-                    onOpen={openTask}
-                  />
                 )}
               </section>
               <section
@@ -1299,6 +1259,7 @@ export default function ProjectCatalog({
         </footer>
       </div>
       <aside
+        hidden={Boolean(editor && section === 'documents')}
         id="project-visualization-auxiliary"
         className="project-properties"
         aria-label="项目辅助栏"

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import StatisticsCard, { statisticsProgress } from './StatisticsCard';
+import { buildStatisticsRows } from './statistics-config';
 import { statisticsPreferences, useStatisticsCards } from './statistics-preferences';
 import {
   LocalPreferencesProvider,
@@ -33,7 +34,7 @@ it('uses integer ratios without changing the displayed amount and leaves a missi
       title="合成统计"
       totalLabel="总收入"
       total="10.00"
-      rows={[{ label: '已开票', value: '12.00', progress: 100, tone: 'blue' }]}
+      rows={[{ id: 'invoiced', label: '已开票', value: '12.00', progress: 100, tone: 'blue' }]}
     />,
   );
   expect(screen.getByText('12.00')).toBeTruthy();
@@ -174,4 +175,32 @@ it('saves module toggles and positions through the existing controller and keeps
   expect(
     within(screen.getByRole('group', { name: '右侧统计卡片' })).getByText('联系人（暂不启用）'),
   ).toBeTruthy();
+});
+
+it('rejects conflicting, missing, invalid and unknown statistic references', () => {
+  const field = { id: 'one', label: '一', tone: 'blue' as const };
+  const value = { value: '1', progress: 10 };
+  expect(() => buildStatisticsRows([field, field], { one: value })).toThrow();
+  expect(() => buildStatisticsRows([{ ...field, id: '' }], { '': value })).toThrow();
+  expect(() => buildStatisticsRows([field], {} as Record<string, typeof value>)).toThrow();
+  expect(() => buildStatisticsRows([field], { one: value, extra: value })).toThrow();
+});
+
+it('preserves a row DOM node when its label changes for the same id', () => {
+  const row = { id: 'one', label: '原标签', value: '1', progress: 10, tone: 'blue' as const };
+  const card = (label: string) => (
+    <StatisticsCard
+      module="tasks"
+      title="任务统计"
+      totalLabel="总任务"
+      total="1"
+      rows={[{ ...row, label }]}
+    />
+  );
+  const { rerender } = render(card('原标签'));
+  const original = document.querySelector('[data-statistic-row="原标签"]');
+  expect(original).not.toBeNull();
+  rerender(card('新标签'));
+  expect(document.querySelector('[data-statistic-row="新标签"]')).toBe(original);
+  expect(original?.getAttribute('data-statistic-id')).toBe('one');
 });

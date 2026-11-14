@@ -1,3 +1,9 @@
+import { createFolderRootFiles } from './adapters/folder-root-files';
+import { registerFolderIpc, chooseFolder } from './ipc/register-folder-ipc';
+import {
+  createFolderConfigurationApplication,
+  createPersonalMaterialApplication,
+} from '@caselite/application';
 import { runWindowCapabilityProbe } from './window-capability-probe';
 import { registerDesktopWindowCapabilities, isTrustedProbeSender } from './ipc/window-capabilities';
 import { runTaskViewsDemo } from './task-views-demo';
@@ -55,6 +61,7 @@ import {
 import { runDocumentReviewDemo, seedDocumentReview } from './document-review-demo';
 import { runEditorInteractionDemo } from './editor-interaction-demo';
 import { runEditorSchemeDemo } from './editor-scheme-demo';
+import { createEditorRecoveryFixture } from './editor-recovery-fixture';
 import { documentReviewStore } from './document-review-store';
 import { createCatalogApplication, createFinanceApplication } from '@caselite/application';
 import { createAppearanceApplication } from '@caselite/application';
@@ -705,6 +712,12 @@ if (taskDemoPhase) {
       'editor-scheme-write',
       'editor-scheme-read',
       'editor-scheme-preview',
+      'editor-scheme-recovery-save',
+      'editor-scheme-recovery-unknown',
+      'editor-scheme-recovery-late',
+      'editor-scheme-recovery-copy',
+      'editor-scheme-recovery-agent',
+      'editor-scheme-recovery-read',
       'credential-preflight',
       'credential-preflight-ui',
       'task-views-write',
@@ -961,7 +974,14 @@ app
     )
       throw new Error('Original zero-dispatch database is not empty');
     const performanceDemo = taskDemoPhase?.startsWith('performance-');
-    const baseTasks = createTaskApplication(taskStore);
+    // 只在白名单阶段且临时根守卫已通过后装配故障端口，普通启动沿原接线。
+    const editorRecovery = Boolean(
+      taskDemoRoot && taskDemoPhase?.startsWith('editor-scheme-recovery-'),
+    );
+    const recoveryFixture = editorRecovery ? createEditorRecoveryFixture() : undefined;
+    const baseTasks = createTaskApplication(
+      recoveryFixture ? recoveryFixture.wrapTaskPort(taskStore) : taskStore,
+    );
     const tasks = performanceDemo ? performanceApplication('task', baseTasks) : baseTasks;
     registerLocalPreferencesIpc(
       createLocalPreferencesApplication(taskStore.localPreferences, {
@@ -976,63 +996,64 @@ app
         ? createTaskQueryProbe(tasks)
         : undefined;
     const exportConfiguration = createExportConfigurationResolver();
-    registerTaskIpc(
-      createDeliveryExportApplication({
-        task: taskQueryProbe?.application ?? tasks,
-        store: taskStore.deliveryExports,
-        files: createDeliveryExportFiles(
-          join(taskRoot, 'delivery-exports'),
-          (path) => shell.openPath(path),
-          async (row, signal) => {
-            signal?.throwIfAborted();
-            // 绑定发起时的原生窗口，避免无父级保存面板被工作台遮挡后留下等待中的调用。
-            const owner = BrowserWindow.getFocusedWindow();
-            if (!owner) throw new Error('No active export window');
-            const result = await dialog.showSaveDialog(owner, {
-              title: '另存交付副本',
-              buttonLabel: '保存副本',
-              defaultPath: join(app.getPath('documents'), `CaseLite-草稿-${row.id}.${row.format}`),
-              filters: [{ name: row.format === 'pdf' ? 'PDF' : 'Word', extensions: [row.format] }],
-              properties: ['createDirectory'],
-            });
-            signal?.throwIfAborted();
-            return result.canceled ? null : (result.filePath ?? null);
-          },
-        ),
-        configuration: exportConfiguration,
-        render: async (snapshot, state, format, signal, converter, configuration) => {
-          const fontData =
-            configuration && format === 'pdf'
-              ? await exportConfiguration.readFont(configuration)
-              : undefined;
-          if (configuration && format === 'docx') await exportConfiguration.verify(configuration);
-          try {
-            return await (format === 'pdf'
-              ? generateSnapshotPdf(snapshot, state, signal, converter, configuration, fontData)
-              : generateSnapshotWord(snapshot, state, signal, configuration));
-          } catch (error) {
-            // 仅校验过的临时合成探针留诊断；正式数据、凭据和正文不进入日志。
-            if (taskDemoRoot && taskDemoPhase?.startsWith('export-style-'))
-              writeFileSync(
-                join(taskDemoRoot, 'export-render-error.json'),
-                JSON.stringify(
-                  {
-                    format,
-                    message: error instanceof Error ? error.message : 'UNKNOWN',
-                    cause:
-                      error instanceof Error && error.cause instanceof Error
-                        ? error.cause.message
-                        : undefined,
-                  },
-                  null,
-                  2,
-                ),
-              );
-            throw error;
-          }
+    const taskApplication = createDeliveryExportApplication({
+      task: taskQueryProbe?.application ?? tasks,
+      store: taskStore.deliveryExports,
+      files: createDeliveryExportFiles(
+        join(taskRoot, 'delivery-exports'),
+        (path) => shell.openPath(path),
+        async (row, signal) => {
+          signal?.throwIfAborted();
+          // 绑定发起时的原生窗口，避免无父级保存面板被工作台遮挡后留下等待中的调用。
+          const owner = BrowserWindow.getFocusedWindow();
+          if (!owner) throw new Error('No active export window');
+          const result = await dialog.showSaveDialog(owner, {
+            title: '另存交付副本',
+            buttonLabel: '保存副本',
+            defaultPath: join(app.getPath('documents'), `CaseLite-草稿-${row.id}.${row.format}`),
+            filters: [{ name: row.format === 'pdf' ? 'PDF' : 'Word', extensions: [row.format] }],
+            properties: ['createDirectory'],
+          });
+          signal?.throwIfAborted();
+          return result.canceled ? null : (result.filePath ?? null);
         },
-        hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
-      }),
+      ),
+      configuration: exportConfiguration,
+      render: async (snapshot, state, format, signal, converter, configuration) => {
+        const fontData =
+          configuration && format === 'pdf'
+            ? await exportConfiguration.readFont(configuration)
+            : undefined;
+        if (configuration && format === 'docx') await exportConfiguration.verify(configuration);
+        try {
+          return await (format === 'pdf'
+            ? generateSnapshotPdf(snapshot, state, signal, converter, configuration, fontData)
+            : generateSnapshotWord(snapshot, state, signal, configuration));
+        } catch (error) {
+          // 仅校验过的临时合成探针留诊断；正式数据、凭据和正文不进入日志。
+          if (taskDemoRoot && taskDemoPhase?.startsWith('export-style-'))
+            writeFileSync(
+              join(taskDemoRoot, 'export-render-error.json'),
+              JSON.stringify(
+                {
+                  format,
+                  message: error instanceof Error ? error.message : 'UNKNOWN',
+                  cause:
+                    error instanceof Error && error.cause instanceof Error
+                      ? error.cause.message
+                      : undefined,
+                },
+                null,
+                2,
+              ),
+            );
+          throw error;
+        }
+      },
+      hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
+    });
+    registerTaskIpc(
+      recoveryFixture ? recoveryFixture.wrapTaskApplication(taskApplication) : taskApplication,
     );
     const reminders = createReminderApplication(taskStore.reminders);
     const reminderScheduler = startReminderScheduler(
@@ -1057,9 +1078,33 @@ app
       ? performanceApplication('contacts', baseContacts)
       : baseContacts;
     registerFinanceIpc(finance);
+    const materialFiles = createMaterialFiles(join(taskRoot, 'materials'));
+    const folderRoots = createFolderRootFiles({
+      profilePath: taskRoot,
+      choose: chooseFolder,
+      getView: (caller, scope) => folderConfiguration.scopeView(caller, scope),
+    });
+    const folderConfiguration = createFolderConfigurationApplication({
+      store: taskStore.folders,
+      roots: folderRoots,
+      hash: (text) => createHash('sha256').update(text).digest('hex'),
+    });
+    const personalMaterials = createPersonalMaterialApplication({
+      store: taskStore.personalMaterials,
+      hash: (text) => createHash('sha256').update(text).digest('hex'),
+      files: materialFiles,
+      roots: folderRoots,
+      configuration: folderConfiguration,
+      processors: {
+        pdf: createPdfProcessor(),
+        docx: createDocxProcessor(),
+        image: createImageProcessor(),
+      },
+    });
+    registerFolderIpc(personalMaterials, taskStore.folders.workspace);
     const materials = createMaterialApplication({
       store: taskStore.materials,
-      files: createMaterialFiles(join(taskRoot, 'materials')),
+      files: materialFiles,
       processor: createPdfProcessor(),
       docxProcessor: createDocxProcessor(),
       imageProcessor: createImageProcessor(),
@@ -1256,12 +1301,14 @@ app
         }
       },
     );
-    const agent = createAgentApplication({
+    const baseAgent = createAgentApplication({
       appearance: appearanceApplication,
       contact: { exists: (id) => contacts.exists(id) },
       dates: importantDates,
       credentials: agentCredentials,
-      copyOutput: (text) => clipboard.writeText(text),
+      copyOutput: recoveryFixture
+        ? recoveryFixture.wrapCopyOutput((text) => clipboard.writeText(text))
+        : (text) => clipboard.writeText(text),
       resolveContext: materials.resolveContext,
       project: taskStore.catalog.agentProject,
       page: taskStore.agentPage,
@@ -1327,7 +1374,12 @@ app
                   : performanceDemo || taskViewsDemo
                     ? syntheticAgentStream
                     : documentReviewDemo
-                      ? syntheticReviewStream
+                      ? recoveryFixture
+                        ? (model, context, options) => {
+                            recoveryFixture.noteStreamStart();
+                            return syntheticReviewStream(model, context, options);
+                          }
+                        : syntheticReviewStream
                       : financeDemo ||
                           taskDemoPhase === 'typography' ||
                           credentialUi ||
@@ -1369,6 +1421,7 @@ app
             ),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
+    const agent = recoveryFixture ? recoveryFixture.wrapAgentApplication(baseAgent) : baseAgent;
     registerAgentIpc(agent);
     registerContactsIpc(contacts, async (source, owner) => {
       if (source.kind === 'run') {
@@ -1470,9 +1523,37 @@ app
         taskDemoPhase !== 'editor-interaction-read' &&
         taskDemoPhase !== 'editor-scheme-read' &&
         taskDemoPhase !== 'export-style-read' &&
-        taskDemoPhase !== 'export-style-preview'
+        taskDemoPhase !== 'export-style-preview' &&
+        (!editorRecovery || taskDemoPhase === 'editor-scheme-recovery-save')
       )
         seedDocumentReview(tasks);
+      if (editorRecovery && recoveryFixture) {
+        try {
+          await runEditorSchemeDemo(
+            () => createWindow(false),
+            taskDemoRoot,
+            taskDemoPhase!,
+            tasks,
+            taskStore.agentHistory.load,
+            recoveryFixture,
+          );
+          // 恢复用例只在原界面确认已保存后请求正常退出，不绕过关闭保护。
+          app.quit();
+        } catch (error) {
+          writeFileSync(
+            join(taskDemoRoot, `${taskDemoPhase}-failure.json`),
+            JSON.stringify({
+              status: 'FAIL_PRESERVED_FOR_ROOT',
+              message: error instanceof Error ? error.message : 'Recovery fixture failed',
+              fixture: recoveryFixture.snapshot(),
+            }),
+          );
+          // 失败现场交回持有 GUI 槽的主控，不 app.exit/销毁窗口或丢弃未确认正文。
+        } finally {
+          recoveryFixture.dispose();
+        }
+        return;
+      }
       if (taskDemoPhase?.startsWith('export-style-')) {
         await runExportStyleDemo(() => createWindow(), taskDemoRoot, taskDemoPhase, tasks);
         if (taskDemoPhase !== 'export-style-preview') app.exit(0);

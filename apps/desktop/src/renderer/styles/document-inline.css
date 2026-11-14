@@ -324,7 +324,7 @@
   line-height: 1;
 }
 .document-page-toolbar .document-directory-back {
-  display: none;
+  display: inline-flex;
 }
 .document-page-menu {
   position: fixed;
@@ -386,13 +386,21 @@
 .document-workspace[data-reading-width='full'] .document-page {
   max-width: none;
 }
+/* 页签或项目内短标题已给出身份，保留语义标题供辅助技术读取。 */
 .document-page-heading {
-  margin: 0 0 26px;
-  color: var(--ink);
-  font-size: 28px;
-  line-height: 1.4;
-  font-weight: 650;
-  overflow-wrap: anywhere;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.document-page-format {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 .document-page > :is(.document-inline-editor, .rich-editor) {
   min-width: 600px;
@@ -411,5 +419,24 @@
   }
   .document-page {
     padding-top: 14px;
+  }
+}
+
+/* 只在单文稿阅读时让出目录宽度；对照栏及原件阅读继续保留目录。 */
+@media (min-width: 901px) {
+  .workbench .collection-workspace.document-workspace[data-focus-document='true'] {
+    grid-template-columns: minmax(0, 1fr) var(
+        --property-panel-width,
+        var(--workspace-inspector-width)
+      );
+  }
+  .workbench[data-inspector-open='false']
+    .collection-workspace.document-workspace[data-focus-document='true'],
+  .workbench[data-properties-layout='inline']
+    .collection-workspace.document-workspace[data-focus-document='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workbench .document-workspace[data-focus-document='true'] > .collection-main {
+    display: none;
   }
 }
