@@ -1,0 +1,3 @@
+# DEV-1926：主控默认使用 Sol；具体实施与失败升级由 AGENTS.md 按 Issue 风险指定。
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
