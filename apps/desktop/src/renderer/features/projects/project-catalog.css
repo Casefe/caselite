@@ -2,6 +2,7 @@
 @import './styles/project-list.css';
 @import './styles/project-properties.css';
 @import './styles/project-create.css';
+@import './styles/project-visualization.css';
 
 .catalog-table .project-title-link {
   padding: 5px 0;
