@@ -10,6 +10,7 @@ import { Icon } from '../shared/ui/Icon';
 import { useOrdinaryCatalog } from '../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../shared/data/catalogMutation';
 import DocumentCanvas from '../features/documents/DocumentCanvas';
+import DocumentPageToolbar from '../features/documents/DocumentPageToolbar';
 import DocumentFolderTree, {
   documentFolderGroups,
   documentFolderPath,
@@ -32,6 +33,7 @@ export default function DocumentLibrary({
     c = useCatalog(false, read);
   const selection = useSplitPreviewSelection();
   const [reading, setReading] = useState(false);
+  const [wide, setWide] = useState(false);
   const [reload, setReload] = useState(0);
   const [tagDraft, setTagDraft] = useState(false),
     [tagEditor, setTagEditor] = useState(0);
@@ -128,25 +130,33 @@ export default function DocumentLibrary({
     const selectedVersion = versions[slot],
       key = slot + ':' + doc.id;
     const otherDirty = Object.entries(dirtyEditors).some(([id, value]) => id !== key && value);
+    const content = selectedVersion ? (
+      <FixedDocumentVersion key={selectedVersion} document={doc} id={selectedVersion} />
+    ) : (
+      <DocumentCanvas
+        key={doc.id + ':' + reload}
+        generation={reload}
+        document={doc}
+        mirror={slot === 'secondary' && primary?.id === doc.id && !versions.primary}
+        disabled={
+          read.isFetching || tagDraft || c.pending || c.unknown || awaitingRead || otherDirty
+        }
+        onDirty={(value) => editorDirty(key, value)}
+        onSaved={saved}
+        onReload={() => {
+          if (!dirty) void refresh();
+        }}
+      />
+    );
     return {
       title: doc.title,
-      content: selectedVersion ? (
-        <FixedDocumentVersion key={selectedVersion} document={doc} id={selectedVersion} />
+      content: library ? (
+        content
       ) : (
-        <DocumentCanvas
-          key={doc.id + ':' + reload}
-          generation={reload}
-          document={doc}
-          mirror={slot === 'secondary' && primary?.id === doc.id && !versions.primary}
-          disabled={
-            read.isFetching || tagDraft || c.pending || c.unknown || awaitingRead || otherDirty
-          }
-          onDirty={(value) => editorDirty(key, value)}
-          onSaved={saved}
-          onReload={() => {
-            if (!dirty) void refresh();
-          }}
-        />
+        <div className="document-page">
+          <h1 className="document-page-heading">{doc.title}</h1>
+          {content}
+        </div>
       ),
     };
   }
@@ -156,6 +166,8 @@ export default function DocumentLibrary({
       data-layout="three-column"
       data-properties-resizable="true"
       data-collection={library ? 'knowledge' : 'documents'}
+      data-page-ui={library ? undefined : 'document'}
+      data-reading-width={library ? undefined : wide ? 'full' : 'standard'}
       data-directory-view={reading ? 'preview' : 'list'}
     >
       <div className="collection-main">
@@ -199,6 +211,38 @@ export default function DocumentLibrary({
           title={path}
           primary={pane('primary', primary)}
           secondary={pane('secondary', secondary)}
+          renderToolbar={
+            library
+              ? undefined
+              : ({ orientation, onToggleOrientation }) => (
+                  <DocumentPageToolbar
+                    documentId={current?.id}
+                    title={current?.title ?? '选择文档'}
+                    path={path}
+                    disabled={blocked}
+                    backDisabled={dirty}
+                    split={selection.split}
+                    orientation={orientation}
+                    wide={wide}
+                    onToggleWide={() => setWide((value) => !value)}
+                    onToggleSplit={() => selection.toggle(ids.primary)}
+                    onToggleOrientation={onToggleOrientation}
+                    onBack={() => {
+                      setReading(false);
+                      requestAnimationFrame(() => heading.current?.focus());
+                    }}
+                    favorite={
+                      current && (
+                        <FavoriteButton
+                          kind="document"
+                          id={current.id}
+                          disabled={blocked || !!versions[selection.active]}
+                        />
+                      )
+                    }
+                  />
+                )
+          }
           actions={
             <>
               {current && (

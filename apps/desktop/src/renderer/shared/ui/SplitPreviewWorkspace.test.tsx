@@ -52,10 +52,12 @@ function Example({
   name,
   onMount,
   disabled = false,
+  customToolbar = false,
 }: {
   name: string;
   onMount(): void;
   disabled?: boolean;
+  customToolbar?: boolean;
 }) {
   const selection = useSplitPreviewSelection();
   return (
@@ -70,6 +72,16 @@ function Example({
         disabled={disabled}
         onActivate={selection.activate}
         onToggle={() => selection.toggle('甲')}
+        renderToolbar={
+          customToolbar
+            ? ({ orientation, onToggleOrientation }) => (
+                <header>
+                  <button onClick={() => selection.toggle('甲')}>自定义分栏</button>
+                  <button onClick={onToggleOrientation}>方向 {orientation}</button>
+                </header>
+              )
+            : undefined
+        }
         primary={{ title: selection.primary ?? '甲', content: <Reader onMount={onMount} /> }}
         secondary={
           selection.secondary ? { title: selection.secondary, content: <p>副栏内容</p> } : null
@@ -181,3 +193,29 @@ it.each(['pointercancel', 'lostpointercapture', 'blur'])(
     pointer(document, 'pointerup', 600);
   },
 );
+
+it('可选工具条复用同一方向状态，换回默认工具条不重建正文或丢失滚动', async () => {
+  const mounted = vi.fn();
+  const { rerender } = render(<Example name="文档" onMount={mounted} customToolbar />);
+  const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '保留阅读状态' });
+  input.value = '自定义工具条期间的草稿';
+  const scroll = input.closest('.split-preview-scroll')!;
+  scroll.scrollTop = 70;
+  expect(screen.queryByRole('button', { name: '双栏预览' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: '自定义分栏' }));
+  expect(screen.getByRole('region', { name: '预览工作区' }).getAttribute('data-split')).toBe(
+    'true',
+  );
+  await userEvent.click(screen.getByRole('button', { name: '方向 horizontal' }));
+  expect(screen.getByRole('region', { name: '预览工作区' }).getAttribute('data-split')).toBe(
+    'true',
+  );
+  expect(screen.getByRole('button', { name: '方向 vertical' })).toBeTruthy();
+  rerender(<Example name="文档" onMount={mounted} />);
+  expect(screen.getByRole('button', { name: '收起双栏' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '左右分栏' })).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: '保留阅读状态' })).toBe(input);
+  expect(input.value).toBe('自定义工具条期间的草稿');
+  expect(scroll.scrollTop).toBe(70);
+  expect(mounted).toHaveBeenCalledTimes(1);
+});

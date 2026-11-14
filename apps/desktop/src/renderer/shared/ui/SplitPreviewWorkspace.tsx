@@ -58,6 +58,7 @@ export default function SplitPreviewWorkspace({
   onToggle,
   actions,
   title,
+  renderToolbar,
 }: {
   primary: PreviewContent | null;
   secondary: PreviewContent | null;
@@ -68,6 +69,10 @@ export default function SplitPreviewWorkspace({
   onToggle(): void;
   actions?: ReactNode;
   title?: string;
+  renderToolbar?(controls: {
+    orientation: 'horizontal' | 'vertical';
+    onToggleOrientation(): void;
+  }): ReactNode;
 }) {
   const id = useId();
   const primaryId = `${id}-primary`;
@@ -114,26 +119,34 @@ export default function SplitPreviewWorkspace({
 
   return (
     <section className="split-preview-workspace" aria-label="预览工作区" data-split={split}>
-      <header className="split-preview-toolbar">
-        <span className="split-preview-title" title={title}>
-          {title ?? '预览'}
-        </span>
-        <div>
-          {actions}
-          <button type="button" aria-pressed={split} disabled={disabled} onClick={onToggle}>
-            {split ? '收起双栏' : '双栏预览'}
-          </button>
-          <button
-            type="button"
-            disabled={disabled || !split}
-            onClick={() =>
-              setOrientation((value) => (value === 'horizontal' ? 'vertical' : 'horizontal'))
-            }
-          >
-            {orientation === 'horizontal' ? '上下分栏' : '左右分栏'}
-          </button>
-        </div>
-      </header>
+      {renderToolbar ? (
+        renderToolbar({
+          orientation,
+          onToggleOrientation: () =>
+            setOrientation((value) => (value === 'horizontal' ? 'vertical' : 'horizontal')),
+        })
+      ) : (
+        <header className="split-preview-toolbar">
+          <span className="split-preview-title" title={title}>
+            {title ?? '预览'}
+          </span>
+          <div>
+            {actions}
+            <button type="button" aria-pressed={split} disabled={disabled} onClick={onToggle}>
+              {split ? '收起双栏' : '双栏预览'}
+            </button>
+            <button
+              type="button"
+              disabled={disabled || !split}
+              onClick={() =>
+                setOrientation((value) => (value === 'horizontal' ? 'vertical' : 'horizontal'))
+              }
+            >
+              {orientation === 'horizontal' ? '上下分栏' : '左右分栏'}
+            </button>
+          </div>
+        </header>
+      )}
       <Group
         id={`${id}-previews`}
         className="split-preview-group"
