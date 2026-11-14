@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 15
     env:
       QUALITY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      DEBUG: pw:browser
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,8 +37,6 @@ jobs:
           google-chrome --version || printf 'chrome-version UNKNOWN exit=%s\n' "$?"
           df -h /dev/shm || printf 'dev-shm UNKNOWN exit=%s\n' "$?"
       - run: pnpm run ci
-        env:
-          DEBUG: pw:browser
       - name: Upload quality evidence
         if: always()
         uses: actions/upload-artifact@v7
