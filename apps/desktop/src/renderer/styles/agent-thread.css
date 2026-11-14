@@ -278,6 +278,55 @@
   opacity: 0.5;
   cursor: default;
 }
+.agent-quick-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: auto;
+  padding: 16px 0 14px;
+}
+.assistant-input-limit {
+  margin: 4px 4px 8px;
+  color: var(--theme-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.agent-quick-actions button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-quick-actions svg {
+  flex-shrink: 0;
+  color: var(--theme-secondary);
+}
+.agent-quick-actions button:enabled:hover {
+  background: var(--theme-subtle);
+}
+.agent-quick-actions button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.agent-quick-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.inspector-ai-scroll .agent-quick-actions + .assistant-compose,
+.inspector-ai-scroll .agent-quick-actions + form {
+  margin-top: 0;
+}
 .home-conversation .assistant-run-status {
   flex-shrink: 0;
   margin: 0 0 8px;

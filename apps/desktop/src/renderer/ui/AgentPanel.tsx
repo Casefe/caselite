@@ -1,6 +1,7 @@
 import { isDocx } from './useMaterials';
 import { agentMessages, isConversationRun } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
+import AgentQuickActions from '../shared/ui/AgentQuickActions';
 import { Icon } from '../shared/ui/Icon';
 import PdfAttachments from './PdfAttachments';
 import { AssistantMarkdown } from '../features/agent/AssistantMarkdown';
@@ -10,6 +11,7 @@ import {
   createContext,
   forwardRef,
   useContext,
+  useId,
   useState,
   useEffect,
   useLayoutEffect,
@@ -123,6 +125,8 @@ const ComposerInput = forwardRef<
 >(function ComposerInput({ draft, onDraft, disabled, home }, ref) {
   const aui = useAui();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const limitId = useId();
+  const overLimit = draft.text.length > 4000;
   useImperativeHandle(
     ref,
     () => ({
@@ -138,19 +142,28 @@ const ComposerInput = forwardRef<
     if (aui.composer.getState().text !== draft.text) aui.composer.setText(draft.text);
   }, [aui, draft.text]);
   return (
-    <ComposerPrimitive.Input
-      ref={inputRef}
-      aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
-      data-testid={home ? 'agent-input' : 'assistant-input'}
-      className="assistant-input"
-      placeholder="描述你的工作目标或问题…"
-      rows={1}
-      minRows={1}
-      maxRows={6}
-      disabled={disabled}
-      addAttachmentOnPaste={false}
-      onChange={(event) => onDraft({ text: event.target.value, state: null })}
-    />
+    <>
+      <ComposerPrimitive.Input
+        ref={inputRef}
+        aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
+        aria-invalid={overLimit || undefined}
+        aria-describedby={overLimit ? limitId : undefined}
+        data-testid={home ? 'agent-input' : 'assistant-input'}
+        className="assistant-input"
+        placeholder="询问 Caselite AI"
+        rows={1}
+        minRows={1}
+        maxRows={6}
+        disabled={disabled}
+        addAttachmentOnPaste={false}
+        onChange={(event) => onDraft({ text: event.target.value, state: null })}
+      />
+      {overLimit && (
+        <p id={limitId} className="assistant-input-limit" role="alert">
+          输入最多 4000 字符，当前 {draft.text.length} 字符。请精简后发送，全部输入已保留。
+        </p>
+      )}
+    </>
   );
 });
 
@@ -319,13 +332,16 @@ export default function AgentPanel({
   const mockPreview = new URLSearchParams(window.location.search).has('mock-agent');
   const readOnlyPreview = new URLSearchParams(window.location.search).has('audit-agent');
   const messages = agentMessages(runs);
+  const sendDraft = async () => {
+    // 字符限制与界面原稿一致；未知回执仍核对原提交，不把下一轮草稿作为新请求发送。
+    if (readOnlyPreview || (!unknown && draft.text.length > 4000)) return;
+    await send();
+  };
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning: Boolean(active),
     convertMessage: (message) => message,
-    onNew: async () => {
-      if (!readOnlyPreview) await send();
-    },
+    onNew: sendDraft,
     onCancel: async () => {
       if (active)
         await command({ protocol_version: 1, operation: 'cancel', scope, run_id: active.id });
@@ -578,12 +594,35 @@ export default function AgentPanel({
               {null}
             </PdfAttachments>
           )}
+          {!readOnlyPreview && variant === 'compact' && page && (
+            <AgentQuickActions
+              kind={
+                scope.startsWith('document:')
+                  ? 'document'
+                  : project
+                    ? 'project'
+                    : scope.startsWith('contact:')
+                      ? 'contact'
+                      : 'task'
+              }
+              disabled={
+                archived || page.archived || pending || unknown || Boolean(active) || restoring
+              }
+              onSelect={(prompt) => {
+                setDraft({
+                  text: draft.text.length ? `${draft.text}\n${prompt}` : prompt,
+                  state: null,
+                });
+                panel.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+              }}
+            />
+          )}
           {!readOnlyPreview && (
             <ComposerFrame
               compact={homeComposer}
               onSubmit={(event) => {
                 event.preventDefault();
-                void send();
+                void sendDraft();
               }}
               onCompositionStart={() => {
                 composingRef.current = true;
