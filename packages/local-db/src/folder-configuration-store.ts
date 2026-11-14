@@ -25,17 +25,17 @@ export function createFolderConfigurationStore(
   db: Database.Database,
   workspace: string,
 ): FolderConfigurationStorePort {
+  // 仅复用当前连接的 SQL 编译结果；每次仍读取最新配置，不缓存根授权或修订。
+  let currentDefaultStatement: Database.Statement | undefined;
   const currentDefault = (): FolderDefault | undefined => {
-    const row = db
-      .prepare(
-        `SELECT d.binding_id,d.revision,b.name AS display_name,l.locator_version,
+    const row = (currentDefaultStatement ??= db.prepare(
+      `SELECT d.binding_id,d.revision,b.name AS display_name,l.locator_version,
        l.private_path,l.root_identity,l.ancestor_chain,l.profile_identity
        FROM folder_workspace_defaults d
        JOIN folder_bindings b ON b.id=d.binding_id AND b.workspace_id=d.workspace_id
        JOIN folder_root_locators l ON l.workspace_id=d.workspace_id AND l.binding_id=d.binding_id
        AND l.revision=d.revision WHERE d.workspace_id=?`,
-      )
-      .get(workspace) as LocatorRow | undefined;
+    )).get(workspace) as LocatorRow | undefined;
     if (!row) return;
     const { binding_id, revision, display_name, ...locator } = row;
     return { binding_id, revision, display_name, locator };
