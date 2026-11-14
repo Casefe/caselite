@@ -1,3 +1,4 @@
+import { InlinePropertiesSlot } from './ResponsiveWorkspace';
 import { createPortal } from 'react-dom';
 import { useWorkspaceInspector } from '../shared/navigation/PageNavigation';
 import PropertyResizeHandle from './PropertyResizeHandle';
@@ -289,6 +290,7 @@ export default function RecordList({
             </button>
           </div>
         )}
+        <InlinePropertiesSlot />
         {toolbarHost ? (
           createPortal(controls, toolbarHost)
         ) : (

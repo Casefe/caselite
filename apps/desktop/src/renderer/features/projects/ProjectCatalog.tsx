@@ -1,3 +1,4 @@
+import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useChildPage, usePageNavigation } from '../../shared/navigation/PageNavigation';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
@@ -494,6 +495,7 @@ export default function ProjectCatalog({
             <Icon name="plus" size={15} /> 创建项目
           </button>
         </div>
+        <InlinePropertiesSlot />
         {!editor && (
           <div className="project-list-stages" aria-label="项目阶段">
             <button

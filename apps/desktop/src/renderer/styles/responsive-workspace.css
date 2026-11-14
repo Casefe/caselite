@@ -1,0 +1,278 @@
+/* 四档由浏览器逻辑屏幕比例决定；这里只改变布局，不改变对象、草稿和会话。 */
+.inspector-properties-home,
+.inspector-properties-home > div {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.inline-properties-slot:empty {
+  display: none;
+}
+.workbench:is([data-navigation-hidden='true'], [data-navigation-overlay='true']) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workbench[data-navigation-hidden='true'] > .primary-sidebar {
+  display: none;
+}
+.workbench[data-navigation-overlay='true'] > .primary-sidebar {
+  position: fixed;
+  inset: 44px auto 0 0;
+  z-index: 45;
+  background: var(--nav);
+  box-shadow: 8px 0 32px rgb(0 0 0 / 18%);
+}
+.workbench :is(.task-layout, .task-query-list, .project-catalog, .document-workspace) {
+  --responsive-properties: 1;
+}
+.workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+  :is(
+    .task-layout.property-resizable[data-properties-resizable='true'],
+    .task-query-list.property-resizable[data-layout='three-column'],
+    .project-catalog.property-resizable[data-layout='three-column']
+  ) {
+  grid-template-columns: minmax(0, 1fr) var(
+      --property-panel-width,
+      var(--workspace-inspector-width)
+    );
+  min-width: 0;
+}
+.workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+  .task-layout.property-resizable
+  > .property-resize-handle {
+  display: block;
+}
+.workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+  .task-layout
+  > .task-inspector {
+  height: 100%;
+  max-height: none;
+  border-left: 1px solid var(--line);
+}
+.workbench[data-properties-layout='inline']
+  :is(.task-layout, .task-query-list, .project-catalog):has(.inline-properties-slot) {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.workbench[data-properties-layout='inline']
+  :is(.task-layout, .collection-workspace):has(.inline-properties-slot)
+  > .property-resize-handle {
+  display: none;
+}
+.workbench[data-properties-layout='inline']
+  :is(
+    .task-inspector,
+    .project-properties,
+    .document-directory-sidebar,
+    .task-list-sidebar,
+    .task-summary-sidebar
+  ):has(.inspector-split[data-responsive-inspector='inline']),
+.inspector-split[data-responsive-inspector='inline'] {
+  display: contents;
+}
+.inspector-split[data-responsive-inspector='inline']::after,
+.inspector-split[data-responsive-inspector='inline'] > .inspector-properties-home {
+  display: none;
+}
+.inspector-split > .inspector-ai-region[hidden] {
+  display: none;
+}
+.workspace-ai-launcher {
+  position: fixed;
+  inset: auto 18px 18px auto;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--theme-panel);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 16%);
+}
+.workspace-ai-launcher .brand-logo {
+  width: 32px;
+  height: 32px;
+}
+.inspector-split[data-responsive-inspector='inline'] > .inspector-ai-region {
+  border-radius: 14px;
+}
+.inline-properties-slot:not(:empty) {
+  padding-block: 6px 18px;
+  min-width: 0;
+}
+.inline-properties-slot .inspector-properties-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+}
+.inline-properties-slot
+  :is(
+    .inspector-content,
+    .inspector-disclosure,
+    .task-properties-editor,
+    .task-label-section,
+    .task-project-section,
+    .project-sidebar-properties,
+    .project-sidebar-properties > form,
+    .inspector-property-list
+  ) {
+  display: contents;
+}
+.inline-properties-slot .inspector-disclosure::details-content {
+  display: contents;
+  content-visibility: visible;
+}
+.inline-properties-slot
+  :is(
+    .inspector-disclosure > summary,
+    .task-label-section > h3,
+    .task-project-section > h3,
+    .inspector-property-label
+  ) {
+  display: none;
+}
+.inline-properties-slot .inspector-property-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--theme-subtle);
+}
+.inline-properties-slot :is(input, select, button) {
+  max-width: 100%;
+}
+.inline-properties-slot .inspector-property-row :is(input, select, button) {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+}
+.project-catalog > .collection-main > .inline-properties-slot,
+.task-query-list > .collection-main > .inline-properties-slot {
+  padding-inline: 20px;
+}
+.document-center-workspace > .inline-properties-slot:not(:empty) {
+  padding: 10px 20px;
+}
+.document-center-workspace:has(> .inline-properties-slot:not(:empty)) {
+  display: flex;
+  flex-direction: column;
+}
+.document-center-workspace > .split-preview-workspace {
+  flex: 1;
+  min-height: 0;
+}
+.workbench[data-properties-layout='inline'] .document-workspace {
+  grid-template-columns: var(--document-directory-width) minmax(0, 1fr);
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+    .document-workspace {
+    grid-template-columns: minmax(0, 1fr) var(
+        --property-panel-width,
+        var(--workspace-inspector-width)
+      );
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+    .document-workspace
+    > .document-directory-sidebar {
+    display: block;
+  }
+  .workbench:not([data-inspector-open='false'])[data-properties-layout='sidebar']
+    .document-workspace
+    > .property-resize-handle {
+    display: block;
+  }
+  .workbench[data-properties-layout='inline'] .document-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .workbench .document-workspace[data-directory-view='preview'] > .collection-main {
+    display: none;
+  }
+  .workbench .document-workspace[data-directory-view='preview'] > .document-center-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench .task-detail .task-title {
+    flex-wrap: wrap;
+  }
+  .task-title > .inline-properties-slot {
+    flex: 0 0 100%;
+  }
+}
+@media (max-width: 480px) {
+  .workbench .task-detail-topline {
+    padding-inline: 12px;
+  }
+  .workbench .task-detail-topline > div {
+    min-width: 0;
+  }
+  .workbench .task-content-overview {
+    padding-inline: 16px;
+  }
+  .workbench .workspace-titlebar-controls {
+    gap: 0;
+    margin-right: 2px;
+  }
+  .workbench .workspace-titlebar {
+    padding-right: 4px;
+    gap: 0;
+  }
+}
+
+/* 手动收起仍由原页面选择负责，移到标题下的同一表单也必须同步隐藏。 */
+.workbench[data-inspector-open='false'] .inline-properties-slot {
+  display: none;
+}
+@media (max-width: 900px) {
+  .workbench[data-inspector-open='true'][data-properties-layout='sidebar']
+    .document-workspace[data-directory-view='preview']
+    > .document-directory-sidebar {
+    position: static;
+    inset: auto;
+    width: auto;
+    z-index: auto;
+  }
+}
+
+/* 挂点留在同Task容器；说明编辑器按版本重读不能拆走正在输入的属性表单。 */
+.workbench[data-properties-layout='inline'] .task-content-overview {
+  position: relative;
+  reading-flow: grid-order;
+}
+.workbench[data-properties-layout='inline'] .task-content-overview > .task-content-panel {
+  display: contents;
+}
+.workbench[data-properties-layout='inline'] .task-content-overview > .inline-properties-slot {
+  order: 1;
+}
+.workbench[data-properties-layout='inline'] .task-content-panel > .task-title-editor {
+  order: 0;
+}
+.workbench[data-properties-layout='inline'] .task-content-panel > .rich-editor {
+  order: 2;
+}
+.workbench[data-properties-layout='inline'] .task-content-panel > footer {
+  order: 3;
+}
+.workbench[data-properties-layout='inline']
+  .task-content-overview
+  > :not(.task-content-panel):not(.inline-properties-slot) {
+  order: 4;
+}

@@ -1,4 +1,9 @@
 import {
+  ResponsiveWorkspaceProvider,
+  useResponsiveWorkspace,
+  InlinePropertiesSlot,
+} from './ui/ResponsiveWorkspace';
+import {
   FavoriteButton,
   FavoritesProvider,
   FavoritesSidebar,
@@ -166,6 +171,10 @@ function Workbench() {
     setChildLocation((old) => (old?.key === page.key && old.title === page.title ? old : page));
   }, []);
   const [collapsed, setCollapsed] = useState(false);
+  const responsive = useResponsiveWorkspace();
+  const effectiveCollapsed = responsive.navigationHidden ? !responsive.drawerOpen : collapsed;
+  const toggleNavigation = () =>
+    responsive.navigationHidden ? responsive.toggleDrawer() : setCollapsed(!collapsed);
   const [agentPrompt, setAgentPrompt] = useState<RichDraft>(emptyDraft);
   const [projectView, setProjectView] = useState<ProjectViewState | null>(null);
   const [taskReturn, setTaskReturn] = useState<{ taskId: string; source: ProjectViewState } | null>(
@@ -375,6 +384,7 @@ function Workbench() {
     return true;
   }
   function navigate(next: WorkspaceView) {
+    responsive.closeDrawer();
     if (!canLeave()) return;
     captureNavigation.current();
     if (view === 'projects' && next === 'settings') {
@@ -448,6 +458,7 @@ function Workbench() {
     restoring = false,
   ) {
     if (!canLeave()) return false;
+    responsive.closeDrawer();
     if (dirty) {
       setError('请先保存当前正文，再切换任务。');
       return false;
@@ -950,6 +961,7 @@ function Workbench() {
     };
   }
   async function restorePage(page: WorkspacePage<WorkbenchPageState>) {
+    responsive.closeDrawer();
     const target = page.state;
     if (
       target.taskId &&
@@ -1083,15 +1095,15 @@ function Workbench() {
     >
       <WorkspaceShell
         view={view === 'tasks' && documentEntry ? 'documents' : view}
-        collapsed={collapsed}
-        onCollapse={() => setCollapsed(!collapsed)}
+        collapsed={effectiveCollapsed}
+        onCollapse={toggleNavigation}
         onNavigate={navigate}
         inspectorOpen={inspectorOpen}
         topbar={
           <WorkspaceTopbar
             navigation={workspaceNavigation}
-            collapsed={collapsed}
-            onCollapse={() => setCollapsed(!collapsed)}
+            collapsed={effectiveCollapsed}
+            onCollapse={toggleNavigation}
             inspectorOpen={inspectorOpen}
             inspectorAvailable={inspectorAvailable}
             onToggleInspector={() => setInspectorOpen(!inspectorOpen)}
@@ -1408,6 +1420,7 @@ function Workbench() {
                     <div>
                       <h1>{active.title}</h1>
                     </div>
+                    {detailTab !== '内容' && <InlinePropertiesSlot />}
                   </div>
                   {detailTab === '成果正文' ? (
                     <BodyEditor
@@ -1450,6 +1463,7 @@ function Workbench() {
                           void refresh().catch(() => setError('任务内容已保存，列表刷新失败。'));
                         }}
                       />
+                      <InlinePropertiesSlot />
                       <TaskAttachments
                         bodyAction={
                           <button
@@ -1697,7 +1711,9 @@ export default function App() {
           </Suspense>
         ) : (
           <FavoritesProvider>
-            <Workbench />
+            <ResponsiveWorkspaceProvider>
+              <Workbench />
+            </ResponsiveWorkspaceProvider>
           </FavoritesProvider>
         )}
       </QueryClientProvider>

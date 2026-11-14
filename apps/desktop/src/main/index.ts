@@ -150,7 +150,7 @@ async function createWindow(
     width: Math.min(1920, available.width),
     height: Math.min(1080, Math.max(480, available.height - 32)),
     useContentSize: true,
-    minWidth: 640,
+    minWidth: 360,
     minHeight: 480,
     title: 'CaseLite',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',

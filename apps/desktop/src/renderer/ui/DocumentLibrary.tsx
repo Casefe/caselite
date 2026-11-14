@@ -1,3 +1,4 @@
+import { InlinePropertiesSlot } from './ResponsiveWorkspace';
 import { FavoriteButton } from '../features/favorites/Favorites';
 import { useChildPage, usePageNavigation } from '../shared/navigation/PageNavigation';
 import { useEffect, useRef, useState } from 'react';
@@ -189,10 +190,14 @@ export default function DocumentLibrary({
     return {
       title: doc.title,
       content: library ? (
-        content
+        <>
+          {slot === selection.active && <InlinePropertiesSlot />}
+          {content}
+        </>
       ) : (
         <div className="document-page">
           <h1 className="document-page-heading">{doc.title}</h1>
+          {slot === selection.active && <InlinePropertiesSlot />}
           {content}
         </div>
       ),
