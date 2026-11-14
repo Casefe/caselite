@@ -38,6 +38,7 @@ export default {
       localPath('../../packages/local-db/migrations'),
       localPath('./assets/THIRD-PARTY-AI-NOTICES.txt'),
       localPath('./assets/THIRD-PARTY-GRAPH-NOTICES.txt'),
+      localPath('./assets/THIRD-PARTY-YJS-PATCH-NOTICES.txt'),
       localPath('../../artifacts/native/caselite-vision'),
     ],
   },

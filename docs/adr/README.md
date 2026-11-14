@@ -64,3 +64,5 @@
 - [ADR-034](./ADR-034-document-annotation-format.md) 文档高亮/批注正文格式2、恢复与旧版本兼容，DEV-1851。
 
 - [ADR-035](./ADR-035-creation-attachments.md) 创建共用交互、附件草稿与原 Task/文件 Owner，DEV-1883。
+
+- [ADR-036](./ADR-036-yjs-split-undo-backport.md) Yjs 13.6.33 固定 PR836 撤销兼容回补，DEV-1624；主目录落地前核对编号。
