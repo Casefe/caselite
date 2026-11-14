@@ -165,4 +165,9 @@ export const integrationMigrations = [
     when: 1794271000000,
     hash: 'dedda88af4718f7af62b2e2f372a9531ac3a03f65100bf7e72e6a00296ddd69f',
   },
+  {
+    tag: '0033_local_folder_workspace',
+    when: 1794551192839,
+    hash: '55701991c6e432bf37d4a395a7747a05c3f28a7cdae0594dcf976f2f8195961d',
+  },
 ] as const;

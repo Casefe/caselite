@@ -18,7 +18,12 @@ import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../../pre
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
-import ProjectCatalog from './ProjectCatalog';
+import ProjectCatalog, { type ProjectViewState } from './ProjectCatalog';
+vi.mock('../documents/BodyEditor', () => ({
+  default: ({ task }: { task: Task }) => (
+    <div aria-label="恢复的正文" data-document={task.document_id} />
+  ),
+}));
 vi.mock('../../editors/RichEditor', () => ({
   emptyDraft: () => ({ text: '', state: null }),
   DraftEditor: ({
@@ -245,19 +250,20 @@ describe('durable project UI receipts and target identity', () => {
     );
     const sidebar = screen.getByRole('complementary', { name: '项目辅助栏' });
     expect(within(sidebar).queryByLabelText('真实业务活动')).toBeNull();
-    for (const label of ['文件', '交付物']) {
-      fireEvent.click(screen.getByRole('tab', { name: label, exact: true }));
-      const panel = screen.getByRole('tabpanel', { name: label, exact: true });
-      if (label === '文件') expect(within(panel).getByLabelText('搜索项目文件')).toBeTruthy();
-      else expect(panel.textContent).toContain('尚未接入');
-    }
+    fireEvent.click(screen.getByRole('tab', { name: '文档', exact: true }));
+    expect(
+      screen
+        .getByRole('tabpanel', { name: '文档', exact: true })
+        .querySelector('.document-workspace'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: '项目辅助栏' })).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
     expect(document.querySelector('.catalog-actions')?.getAttribute('data-project-id')).toBe(p.id);
     fireEvent.change(screen.getByLabelText('编辑项目名称'), { target: { value: '未保存更正' } });
     expect(
-      (screen.getByRole('tab', { name: '文件', exact: true }) as HTMLButtonElement).disabled,
+      (screen.getByRole('tab', { name: '文档', exact: true }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole('tab', { name: '文件', exact: true }));
+    fireEvent.click(screen.getByRole('tab', { name: '文档', exact: true }));
     expect(screen.getByRole('tabpanel', { name: '概述', exact: true })).toBeTruthy();
     await screen.findByText('暂无项目评论。');
     const requests = catalog.mock.calls.map(([request]) => request);
@@ -265,7 +271,7 @@ describe('durable project UI receipts and target identity', () => {
       requests
         .filter((r) => r.operation !== 'list_discussion' && r.operation !== 'read_project_plan')
         .map((r) => r.operation),
-    ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list_activity']);
+    ).toEqual(['list', 'read_project', 'list_activity', 'list_activity', 'list', 'list_activity']);
     expect(requests.filter((r) => r.operation === 'read_project_plan')).toEqual([
       { operation: 'read_project_plan', protocol_version: 1, project_id: p.id },
     ]);
@@ -672,7 +678,7 @@ it('keeps one property draft across tabs and omits untouched saved Yjs from a de
   show();
   fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
   await screen.findByLabelText('编辑项目名称');
-  for (const tab of ['任务', '文件', '活动']) {
+  for (const tab of ['任务', '活动']) {
     fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
     expect((screen.getByLabelText('项目负责人') as HTMLInputElement).disabled).toBe(false);
   }
@@ -1225,4 +1231,119 @@ it('unlocks the same description after a known save failure and can save the edi
   expect(editor.disabled).toBe(false);
   expect(writes).toHaveLength(2);
   expect(writes[1]).toMatchObject({ expected_version: 1, expected_body_revision: 0 });
+});
+
+it('consumes an old document target once but honors a new host navigation', async () => {
+  const p = project(crypto.randomUUID(), '选择恢复项目');
+  const makeDoc = (title: string) => ({
+    id: crypto.randomUUID(),
+    title,
+    task_id: crypto.randomUUID(),
+    matter_id: p.id,
+    body_id: crypto.randomUUID(),
+    body_revision: 1,
+    version: 1,
+    archived_at: null,
+    collection: '工作文档',
+    tags: [],
+    favorite: false,
+    in_library: false,
+    updated_at: '2026-11-13',
+  });
+  const a = makeDoc('旧目标 A');
+  const b = makeDoc('用户选择 B');
+  const docs = [a, b];
+  window.caselite = {
+    catalog: vi.fn(async (r: CatalogRequest) =>
+      r.operation === 'list_activity'
+        ? { ...response([p], p.id), documents: docs, activity: [], activity_has_more: false }
+        : { ...response([p], p.id), documents: docs },
+    ),
+    material: vi.fn(async () => ({ ok: true, materials: [] })),
+    task: vi.fn(async (r: { task_id?: string }) => {
+      const d = docs.find((item) => item.task_id === r.task_id);
+      return {
+        ok: true,
+        tasks: d
+          ? [
+              {
+                id: d.task_id,
+                document_id: d.id,
+                title: d.title,
+                matter_id: d.matter_id,
+                body_id: d.body_id,
+                body_revision: 1,
+                editor_schema: 1,
+              },
+            ]
+          : [],
+        state: null,
+      };
+    }),
+    preferences: vi.fn(async () => ({
+      ok: true,
+      preferences: initialLocalPreferences,
+      receipt: null,
+    })),
+  } as unknown as Window['caselite'];
+  const source: ProjectViewState = {
+    selected: p.id,
+    projectId: p.id,
+    section: 'files',
+    documentId: a.id,
+    query: '',
+    statusFilter: 'all',
+    order: 'updated',
+    columns: { status: true, tasks: true, updated: true } as ProjectViewState['columns'],
+    scrollTop: 0,
+    workspaceScrollTop: 0,
+    returnTaskId: '',
+  };
+  const client = createWorkbenchQueryClient();
+  const page = (key: number) => (
+    <QueryClientProvider client={client}>
+      <LocalPreferencesProvider>
+        <ProjectCatalog
+          key={key}
+          initialView={source}
+          tasks={[]}
+          onOpen={vi.fn()}
+          onDirty={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </LocalPreferencesProvider>
+    </QueryClientProvider>
+  );
+  const view = render(page(1));
+  await waitFor(() =>
+    expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(a.id),
+  );
+  const folder = document.querySelector<HTMLElement>(
+    `[data-folder-id="project:${p.id}"] > summary`,
+  )!;
+  await waitFor(() => expect(folder.getAttribute('aria-disabled')).toBe('false'));
+  if (folder.getAttribute('aria-expanded') !== 'true') fireEvent.click(folder);
+  const choice = await screen.findByRole('button', { name: b.title });
+  await waitFor(() => expect((choice as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(choice);
+  await waitFor(() =>
+    expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(b.id),
+  );
+  fireEvent.click(screen.getByRole('tab', { name: '概述', exact: true }));
+  fireEvent.click(screen.getByRole('tab', { name: '文档', exact: true }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(b.id),
+  );
+  const back = screen.getByRole<HTMLButtonElement>('button', { name: '返回项目列表' });
+  await waitFor(() => expect(back.disabled).toBe(false));
+  fireEvent.click(back);
+  fireEvent.click(await screen.findByRole('button', { name: p.title, exact: true }));
+  fireEvent.click(await screen.findByRole('tab', { name: '文档', exact: true }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(b.id),
+  );
+  view.rerender(page(2));
+  await waitFor(() =>
+    expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(a.id),
+  );
 });

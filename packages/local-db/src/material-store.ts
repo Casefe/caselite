@@ -23,6 +23,10 @@ export type StagedMaterial = {
   creation_draft_id?: string;
 };
 export function createMaterialStore(db: Database.Database, workspace: string) {
+  const hasOwners = (
+    db.prepare('PRAGMA table_info(material_sources)').all() as Array<{ name: string }>
+  ).some((c) => c.name === 'owner_kind');
+  const taskOwner = (alias = '') => (hasOwners ? ` AND ${alias}owner_kind='task'` : '');
   const stage = (token: string): StagedMaterial | undefined => {
     const row = db
       .prepare(
@@ -32,9 +36,12 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     return row ? (JSON.parse(row.payload) as StagedMaterial) : undefined;
   };
   const putStage = (value: StagedMaterial) => {
-    db.prepare(
-      'INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id',
-    ).run(value.token, workspace, JSON.stringify(value));
+    const saved = db
+      .prepare(
+        "INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id AND json_valid(payload) AND json_extract(payload,'$.kind') IS NULL",
+      )
+      .run(value.token, workspace, JSON.stringify(value));
+    if (saved.changes !== 1) throw new Error('Stage kind conflict');
   };
   const task = (scope: MaterialScope): string | undefined =>
     scope === 'home'
@@ -46,7 +53,7 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
   const get = (id: string): Material | undefined => {
     const row = db
       .prepare(
-        `SELECT s.id,s.task_id,s.asset_version_id,s.name,s.sha256,s.bytes,s.page_count,s.derivation_id,d.status,d.pages FROM material_sources s LEFT JOIN material_derivations d ON d.id=s.derivation_id WHERE s.id=? AND s.workspace_id=?`,
+        `SELECT s.id,s.task_id,s.asset_version_id,s.name,s.sha256,s.bytes,s.page_count,s.derivation_id,d.status,d.pages FROM material_sources s LEFT JOIN material_derivations d ON d.id=s.derivation_id WHERE s.id=? AND s.workspace_id=? ${taskOwner('s.')}`,
       )
       .get(id, workspace) as (Omit<Material, 'pages'> & { pages: string | null }) | undefined;
     return row
@@ -114,9 +121,12 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     },
     putBatch(value: MaterialBatch) {
       const batch = materialBatchSchema.parse(value);
-      db.prepare(
-        'INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id',
-      ).run(batch.id, workspace, JSON.stringify({ kind: 'batch', scope: batch.scope, batch }));
+      const saved = db
+        .prepare(
+          "INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id AND json_valid(payload) AND json_extract(payload,'$.kind')='batch'",
+        )
+        .run(batch.id, workspace, JSON.stringify({ kind: 'batch', scope: batch.scope, batch }));
+      if (saved.changes !== 1) throw new Error('Batch kind conflict');
     },
     stage,
     putStage,
@@ -237,14 +247,14 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
       return (
         db
           .prepare(
-            'SELECT configuration FROM material_derivations WHERE id=? AND source_id IN (SELECT id FROM material_sources WHERE workspace_id=?)',
+            `SELECT configuration FROM material_derivations WHERE id=? AND source_id IN (SELECT id FROM material_sources WHERE workspace_id=? ${taskOwner()})`,
           )
           .get(id, workspace) as { configuration: string } | undefined
       )?.configuration;
     },
     recover() {
       db.prepare(
-        "UPDATE material_derivations SET status='interrupted' WHERE status='processing' AND source_id IN (SELECT id FROM material_sources WHERE workspace_id=?)",
+        `UPDATE material_derivations SET status='interrupted' WHERE status='processing' AND source_id IN (SELECT id FROM material_sources WHERE workspace_id=? ${taskOwner()})`,
       ).run(workspace);
     },
     putPreview(scope: MaterialScope, preview: MaterialPreview) {

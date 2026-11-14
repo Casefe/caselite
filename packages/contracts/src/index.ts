@@ -24,3 +24,5 @@ export * from './contacts';
 export * from './local-preferences';
 export * from './important-date';
 export * from './legal-consent';
+export * from './material-personal';
+export * from './folder';

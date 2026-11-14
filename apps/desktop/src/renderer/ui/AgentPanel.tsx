@@ -1,3 +1,4 @@
+import { AssistantComposerInput } from '../shared/ui/AssistantComposerInput';
 import { isDocx } from './useMaterials';
 import { agentMessages, isConversationRun } from '../features/agent/agent-messages';
 import { useAgentController } from '../features/agent/useAgentController';
@@ -11,7 +12,6 @@ import {
   createContext,
   forwardRef,
   useContext,
-  useId,
   useState,
   useEffect,
   useLayoutEffect,
@@ -39,6 +39,9 @@ import type { AgentModel, AgentRun } from '../../preload/caselite-api';
 import { emptyDraft, type DraftEditorHandle, type RichDraft } from '../editors/RichEditor';
 
 const AttachmentReader = createContext<(id: string, task: string, name: string) => void>(() => {});
+const CopyOutput = createContext<(run: Pick<AgentRun, 'id' | 'scope'>) => Promise<boolean>>(
+  async () => false,
+);
 const RunContent = createContext<(id: string) => ReactNode>(() => undefined);
 function Message() {
   const attachments = useAuiState(
@@ -50,6 +53,7 @@ function Message() {
     | undefined;
   const [copyState, setCopyState] = useState('复制');
   const read = useContext(AttachmentReader);
+  const copyOutput = useContext(CopyOutput);
   const renderRun = useContext(RunContent);
   const custom = role === 'assistant' && run ? renderRun(run.id) : undefined;
   return (
@@ -93,13 +97,7 @@ function Message() {
             disabled={!run.copyable}
             onClick={async () => {
               try {
-                const result = await window.caselite.agent({
-                  protocol_version: 1,
-                  operation: 'copy_output',
-                  scope: run.scope,
-                  run_id: run.id,
-                });
-                if (!result.ok) throw new Error('Copy failed');
+                if (!(await copyOutput(run))) throw new Error('Copy failed');
                 setCopyState('已复制');
               } catch {
                 setCopyState('复制失败，请选择文字复制');
@@ -125,8 +123,6 @@ const ComposerInput = forwardRef<
 >(function ComposerInput({ draft, onDraft, disabled, home }, ref) {
   const aui = useAui();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const limitId = useId();
-  const overLimit = draft.text.length > 4000;
   useImperativeHandle(
     ref,
     () => ({
@@ -142,28 +138,20 @@ const ComposerInput = forwardRef<
     if (aui.composer.getState().text !== draft.text) aui.composer.setText(draft.text);
   }, [aui, draft.text]);
   return (
-    <>
-      <ComposerPrimitive.Input
-        ref={inputRef}
-        aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
-        aria-invalid={overLimit || undefined}
-        aria-describedby={overLimit ? limitId : undefined}
-        data-testid={home ? 'agent-input' : 'assistant-input'}
-        className="assistant-input"
-        placeholder="询问 Caselite AI"
-        rows={1}
-        minRows={1}
-        maxRows={6}
-        disabled={disabled}
-        addAttachmentOnPaste={false}
-        onChange={(event) => onDraft({ text: event.target.value, state: null })}
-      />
-      {overLimit && (
-        <p id={limitId} className="assistant-input-limit" role="alert">
-          输入最多 4000 字符，当前 {draft.text.length} 字符。请精简后发送，全部输入已保留。
-        </p>
-      )}
-    </>
+    <AssistantComposerInput
+      textLength={draft.text.length}
+      ref={inputRef}
+      aria-label={home ? 'Agent 工作目标' : 'AI 工作要求'}
+      data-testid={home ? 'agent-input' : 'assistant-input'}
+      className="assistant-input"
+      placeholder="询问 Caselite AI"
+      rows={1}
+      minRows={1}
+      maxRows={6}
+      disabled={disabled}
+      addAttachmentOnPaste={false}
+      onChange={(event) => onDraft({ text: event.target.value, state: null })}
+    />
   );
 });
 
@@ -277,6 +265,7 @@ export default function AgentPanel({
     openProjectPreview,
     send,
     command,
+    copyOutput,
     cancelPreparation,
     preparing,
   } = useAgentController({
@@ -493,7 +482,9 @@ export default function AgentPanel({
                       : undefined;
                   }}
                 >
-                  <ThreadPrimitive.Messages components={{ Message }} />
+                  <CopyOutput.Provider value={copyOutput}>
+                    <ThreadPrimitive.Messages components={{ Message }} />
+                  </CopyOutput.Provider>
                 </RunContent.Provider>
                 <ThreadPrimitive.ScrollToBottom className="assistant-scroll-bottom">
                   回到最新回答 ↓

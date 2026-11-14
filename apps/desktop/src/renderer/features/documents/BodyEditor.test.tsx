@@ -70,6 +70,10 @@ const task = {
   editor_schema: 1,
 } as Task;
 const success = { ok: true, tasks: [{ ...task, body_revision: 4 }], state: null };
+function saved(request: TaskRequest) {
+  if (!('idempotency_key' in request)) throw Error('测试只接受保存或原键核对');
+  return { ...success, receipt: request.idempotency_key };
+}
 function setup(api: (r: TaskRequest) => Promise<unknown>) {
   vi.stubGlobal('caselite', { task: api });
   const onSaved = vi.fn(),
@@ -99,7 +103,7 @@ it('未知后先查原键，回执确认后不重复提交；核对期间的新�
   const api = vi.fn(async (r: TaskRequest) => {
     if (r.operation === 'save') return { ok: false, code: 'RESULT_UNKNOWN', message: '未知' };
     if (fail) throw Error('回执暂不可读取');
-    return success;
+    return saved(r);
   });
   const s = setup(api);
   fireEvent.click(screen.getByTestId('save-body'));
@@ -121,7 +125,7 @@ it('明确查不到回执才重试冻结的原请求，网络失败时保留输�
   const api = vi.fn(async (r: TaskRequest) => {
     if (r.operation === 'status') return { ok: false, code: 'NOT_FOUND', message: '无回执' };
     if (api.mock.calls.length === 1) throw Error('网络中断');
-    return success;
+    return saved(r);
   });
   const s = setup(api);
   fireEvent.click(screen.getByTestId('save-body'));
@@ -154,7 +158,7 @@ it('批注命令同步修改正文后关闭输入框，不能清除未保存导�
   expect(screen.getByTestId<HTMLButtonElement>('save-body').disabled).toBe(false);
 });
 it('内联文档可打开固定交付，传递当前修订和未保存状态，返回后保留输入', async () => {
-  const api = vi.fn(async () => success);
+  const api = vi.fn(async (request: TaskRequest) => saved(request));
   setup(api);
   fireEvent.click(screen.getByRole('button', { name: '交付版本' }));
   expect(screen.getByRole('region', { name: '测试交付版本' }).textContent).toContain('doc:3:true');

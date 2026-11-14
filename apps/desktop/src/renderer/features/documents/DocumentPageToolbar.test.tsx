@@ -32,23 +32,26 @@ function open() {
   return screen.getByRole('menu', { name: '文档页面操作' });
 }
 
+// 保留既有测试身份与权限断言；标题布局改为页签后，同时覆盖项目上下文短标题。
 it('常驻标题/私人边界与原收藏入口，共享明确未接入，不出现未接线的管理动作', () => {
   const actions = props();
-  render(<DocumentPageToolbar {...actions} />);
+  const { rerender } = render(<DocumentPageToolbar {...actions} />);
   const header = screen.getByRole('banner', { name: '文档页面顶栏' });
-  expect(within(header).getByText('合成文档').title).toBe(actions.path);
+  expect(within(header).queryByText('合成文档')).toBeNull();
   expect(within(header).getByText('私人').title).toContain('尚未启用共享');
-  const share = within(header).getByRole<HTMLButtonElement>('button', { name: '共享' });
+  expect(within(header).getByRole('button', { name: '已有收藏入口' })).toBeTruthy();
+  expect(screen.queryByRole('menu')).toBeNull();
+  const menu = open();
+  const share = within(menu).getByRole<HTMLButtonElement>('menuitem', { name: '共享' });
   expect(share.disabled).toBe(true);
   expect(document.getElementById(share.getAttribute('aria-describedby')!)?.textContent).toContain(
     '共享功能尚未接入',
   );
-  expect(within(header).getByRole('button', { name: '已有收藏入口' })).toBeTruthy();
-  expect(screen.queryByRole('menu')).toBeNull();
-  const menu = open();
   expect(within(menu).getByRole('menuitemcheckbox', { name: '双栏预览' })).toBeTruthy();
   expect(within(menu).queryByText(/导出|删除|复制链接|修改属性/)).toBeNull();
   expect(actions.onToggleSplit).not.toHaveBeenCalled();
+  rerender(<DocumentPageToolbar {...actions} showContextTitle />);
+  expect(within(header).getByText('合成文档').title).toBe(actions.path);
 });
 
 it('页面动作调用原回调，选择后关闭并返回触发按钮', () => {
@@ -167,4 +170,19 @@ it('短窄视口菜单保持在窗口内，窗口变化后关闭，空态不启�
   ).toBe(true);
   fireEvent(window, new Event('resize'));
   expect(screen.queryByRole('menu')).toBeNull();
+});
+
+it('既有AI审阅入口仅在当前文稿可用时调用一次，锁定后不能离开', () => {
+  const onOpenReview = vi.fn();
+  const actions = props();
+  const { rerender } = render(<DocumentPageToolbar {...actions} onOpenReview={onOpenReview} />);
+  fireEvent.click(within(open()).getByRole('menuitem', { name: 'AI 审阅' }));
+  expect(onOpenReview).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('menu')).toBeNull();
+  const menu = open();
+  const action = within(menu).getByRole<HTMLButtonElement>('menuitem', { name: 'AI 审阅' });
+  rerender(<DocumentPageToolbar {...actions} disabled onOpenReview={onOpenReview} />);
+  expect(action.disabled).toBe(true);
+  fireEvent.click(action);
+  expect(onOpenReview).toHaveBeenCalledTimes(1);
 });

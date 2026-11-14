@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { CatalogDocument, Matter } from '../../../preload/caselite-api';
 import { Icon } from '../../shared/ui/Icon';
 
@@ -8,7 +8,19 @@ export type DocumentFolder = {
   documents: CatalogDocument[];
   children?: DocumentFolder[];
 };
-export function documentFolderGroups(documents: CatalogDocument[], projects: Matter[]) {
+export function documentFolderGroups(
+  documents: CatalogDocument[],
+  projects: Matter[],
+  projectId?: string,
+) {
+  if (projectId)
+    return [
+      {
+        id: 'project:' + projectId,
+        label: projects.find((project) => project.id === projectId)?.title ?? '项目文档',
+        documents: documents.filter((document) => document.matter_id === projectId),
+      },
+    ] satisfies DocumentFolder[];
   const templates = documents.filter((d) => d.collection.includes('模板'));
   const ordinary = documents.filter((d) => !d.collection.includes('模板'));
   const personal = ordinary.filter((d) => !d.matter_id);
@@ -77,21 +89,49 @@ export function documentFolderPath(groups: DocumentFolder[], id: string): string
   }
   return [];
 }
+const expandedByScope = new Map<string, string[]>();
 export default function DocumentFolderTree({
   documents,
   projects,
   selected,
   disabled,
   onSelect,
+  projectContents,
+  scopeKey = 'default',
+  projectId,
+  onProjectOpen,
 }: {
   documents: CatalogDocument[];
   projects: Matter[];
   selected: string | null;
   disabled: boolean;
   onSelect(document: CatalogDocument): void;
+  scopeKey?: string;
+  projectId?: string;
+  projectContents?(id: string): ReactNode;
+  onProjectOpen?(id: string): void;
 }) {
-  const [expanded, setExpanded] = useState(['personal', 'collection:工作文档', 'projects']);
-  const groups = documentFolderGroups(documents, projects);
+  const [expanded, setExpandedState] = useState(
+    () => expandedByScope.get(scopeKey) ?? ['personal', 'collection:工作文档', 'projects'],
+  );
+  const setExpanded: typeof setExpandedState = (action) =>
+    setExpandedState((old) => {
+      const next = typeof action === 'function' ? action(old) : action;
+      expandedByScope.set(scopeKey, next);
+      return next;
+    });
+  const groups = documentFolderGroups(documents, projects, projectId);
+  const openRef = useRef(onProjectOpen);
+  useEffect(() => {
+    openRef.current = onProjectOpen;
+  }, [onProjectOpen]);
+  const [lastRestoredProject] = useState(() =>
+    [...expanded].reverse().find((id) => id.startsWith('project:')),
+  );
+  useEffect(() => {
+    // 只恢复最后展开的项目，避免同时扫描全部项目原件。
+    if (lastRestoredProject) openRef.current?.(lastRestoredProject.slice(8));
+  }, [lastRestoredProject]);
   function navigate(event: KeyboardEvent<HTMLElement>) {
     if (
       event.altKey ||
@@ -104,14 +144,16 @@ export default function DocumentFolderTree({
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
       return;
     const row = (event.target as HTMLElement).closest<HTMLElement>(
-      'summary, button[data-document-id]',
+      'summary, button[data-document-id], button[data-source-id]',
     );
     if (!row || !event.currentTarget.contains(row)) return;
     event.preventDefault();
     if (disabled) return;
     // 折叠内容不会挂载；只在当前可见目录里移动焦点，不触发选文或绕过未保存保护。
     const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>('summary, button[data-document-id]'),
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        'summary, button[data-document-id], button[data-source-id]',
+      ),
     );
     const index = rows.indexOf(row);
     if (event.key === 'Home') rows[0]?.focus();
@@ -120,8 +162,13 @@ export default function DocumentFolderTree({
     else if (event.key === 'ArrowUp') rows[Math.max(index - 1, 0)]?.focus();
     else if (event.key === 'ArrowRight' && row.tagName === 'SUMMARY') {
       const id = row.parentElement?.dataset.folderId;
-      if (id && !expanded.includes(id)) setExpanded((old) => [...old, id]);
-      else
+      if (id && !expanded.includes(id)) {
+        if (id.startsWith('project:')) onProjectOpen?.(id.slice(8));
+        setExpanded((old) => [
+          ...(id.startsWith('project:') ? old.filter((item) => !item.startsWith('project:')) : old),
+          id,
+        ]);
+      } else
         row.parentElement
           ?.querySelector<HTMLElement>(
             ':scope > .document-folder-children > details > summary, :scope > .document-folder-children > button',
@@ -148,9 +195,18 @@ export default function DocumentFolderTree({
           aria-disabled={disabled}
           onClick={(event) => {
             event.preventDefault();
+            if (!disabled && !open && node.id.startsWith('project:'))
+              onProjectOpen?.(node.id.slice(8));
             if (!disabled)
               setExpanded((old) =>
-                old.includes(node.id) ? old.filter((id) => id !== node.id) : [...old, node.id],
+                old.includes(node.id)
+                  ? old.filter((id) => id !== node.id)
+                  : [
+                      ...(node.id.startsWith('project:')
+                        ? old.filter((id) => !id.startsWith('project:'))
+                        : old),
+                      node.id,
+                    ],
               );
           }}
         >
@@ -192,9 +248,11 @@ export default function DocumentFolderTree({
                     </button>
                   );
                 })}
-            {!(node.children ? node.children.length : node.documents.length) && (
-              <p className="document-folder-empty">此文件夹为空</p>
-            )}
+            {node.id.startsWith('project:') && projectContents?.(node.id.slice(8))}
+            {!(node.children ? node.children.length : node.documents.length) &&
+              !node.id.startsWith('project:') && (
+                <p className="document-folder-empty">此文件夹为空</p>
+              )}
           </div>
         )}
       </details>

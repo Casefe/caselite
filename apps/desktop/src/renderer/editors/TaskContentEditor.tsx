@@ -1,4 +1,4 @@
-import { editorProfiles } from './editor-config';
+import { editorCapabilities, editorProfiles } from './editor-config';
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
@@ -37,7 +37,7 @@ export default function TaskContentEditor({
     {
       injectCSS: false,
       editable: !disabled,
-      extensions: localExtensions(doc),
+      extensions: localExtensions(doc, editorCapabilities.basic),
       editorProps: {
         attributes: {
           'aria-label': '任务内容',

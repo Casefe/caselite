@@ -1,3 +1,4 @@
+import { AssistantComposerInput } from '../../../shared/ui/AssistantComposerInput';
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -7,7 +8,7 @@ import {
   useAuiState,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAui } from '@assistant-ui/react';
 import AgentQuickActions from '../../../shared/ui/AgentQuickActions';
 
@@ -22,31 +23,21 @@ function Input({
 }) {
   const aui = useAui();
   const composerText = useAuiState((state) => state.composer.text);
-  const limitId = useId();
-  const overLimit = value.length > 4000;
   useEffect(() => {
     if (aui.composer.getState().text !== value) aui.composer.setText(value);
   }, [aui, value, composerText]);
   return (
-    <>
-      <ComposerPrimitive.Input
-        aria-label="本轮问题"
-        aria-invalid={overLimit || undefined}
-        aria-describedby={overLimit ? limitId : undefined}
-        placeholder="询问 Caselite AI"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        maxLength={4000}
-        rows={1}
-        addAttachmentOnPaste={false}
-      />
-      {overLimit && (
-        <p id={limitId} className="assistant-input-limit" role="alert">
-          输入最多 4000 字符，当前 {value.length} 字符。请精简后发送，全部输入已保留。
-        </p>
-      )}
-    </>
+    <AssistantComposerInput
+      textLength={value.length}
+      aria-label="本轮问题"
+      placeholder="询问 Caselite AI"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      maxLength={4000}
+      rows={1}
+      addAttachmentOnPaste={false}
+    />
   );
 }
 function Message() {

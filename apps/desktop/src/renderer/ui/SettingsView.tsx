@@ -1,3 +1,4 @@
+import DefaultFolderSettings from '../features/documents/DefaultFolderSettings';
 import CalendarSettings from '../features/calendar/CalendarSettings';
 const ignoreBlocked = () => {};
 import { Icon } from '../shared/ui/Icon';
@@ -75,6 +76,7 @@ export default function SettingsView({
           {section === 'general' && <PersonalSettings preferencesOnly />}
           {section === 'general' && (
             <div className="settings-locations">
+              <DefaultFolderSettings onBlocked={onBlocked} />
               <SettingRow
                 title="数据库位置"
                 description="当前使用的数据库文件；这里只读显示，不迁移数据。"

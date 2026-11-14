@@ -3,7 +3,12 @@ import { constants } from 'node:fs';
 import { open, mkdir, rename, unlink, lstat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { MATERIAL_MAX_BYTES, materialKind, type MaterialKind } from '@caselite/contracts';
-import type { MaterialFilesPort, MaterialFileIdentity } from '@caselite/application';
+import type {
+  MaterialFilesPort,
+  MaterialFileIdentity,
+  PersonalMaterialFilesPort,
+  FolderGuard,
+} from '@caselite/application';
 const validId = (value: string) => {
   if (!/^[a-f0-9-]{36}$/.test(value)) throw new Error('Invalid identity');
   return value;
@@ -21,7 +26,7 @@ export function materialSignature(data: Uint8Array): MaterialKind | undefined {
   if (bytes.subarray(0, 1024).includes(pdf)) return 'pdf';
 }
 
-export function createMaterialFiles(root: string): MaterialFilesPort {
+export function createMaterialFiles(root: string): MaterialFilesPort & PersonalMaterialFilesPort {
   const staged = join(root, 'staging'),
     assets = join(root, 'originals');
   const path = (dir: string, id: string, kind: MaterialKind = 'pdf') =>
@@ -88,7 +93,115 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
       throw e;
     }
   }
+  const checked = async <T>(guard: FolderGuard, effect: () => Promise<T>) => {
+    guard();
+    try {
+      const value = await effect();
+      guard();
+      return value;
+    } catch (error) {
+      guard();
+      throw error;
+    }
+  };
+  async function durableExisting(file: string, sha: string, guard: FolderGuard) {
+    guard();
+    const fd = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      guard();
+      const stat = await checked(guard, () => fd.stat());
+      if (!stat.isFile() || stat.size < 8 || stat.size > MATERIAL_MAX_BYTES)
+        throw new Error('FILE_LIMIT');
+      const bytes = Buffer.alloc(stat.size);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const result = await checked(guard, () =>
+          fd.read(bytes, offset, bytes.length - offset, offset),
+        );
+        if (!result.bytesRead) throw new Error('SOURCE_UNAVAILABLE');
+        offset += result.bytesRead;
+      }
+      const after = await checked(guard, () => fd.stat());
+      if (
+        after.size !== stat.size ||
+        after.mtimeMs !== stat.mtimeMs ||
+        createHash('sha256').update(bytes).digest('hex') !== sha ||
+        !materialSignature(bytes)
+      )
+        throw new Error('SOURCE_UNAVAILABLE');
+      // 上次可能在写完/改名前的fsync边界中断；重用前再次确保持久化。
+      await checked(guard, () => fd.sync());
+      return bytes;
+    } finally {
+      await fd.close();
+    }
+  }
+  async function durableSetup(guard: FolderGuard) {
+    for (const dir of [root, staged, assets]) {
+      await checked(guard, () => mkdir(dir, { recursive: true, mode: 0o700 }));
+      const stat = await checked(guard, () => lstat(dir));
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('SOURCE_UNAVAILABLE');
+    }
+  }
+  async function durableLocate(dir: string, id: string, guard: FolderGuard) {
+    const legacy = path(dir, id),
+      attachment = path(dir, id, 'docx');
+    const hasAttachment = await checked(guard, () => exists(attachment));
+    const hasLegacy = await checked(guard, () => exists(legacy));
+    if (hasAttachment && hasLegacy) throw new Error('SOURCE_UNAVAILABLE');
+    return hasAttachment ? attachment : legacy;
+  }
+  async function durableRead(id: string, sha: string, guard: FolderGuard) {
+    const placed = await durableLocate(assets, id, guard);
+    const file = (await checked(guard, () => exists(placed)))
+      ? placed
+      : await durableLocate(staged, id, guard);
+    const bytes = await durableExisting(file, sha, guard);
+    await checked(guard, () => syncDirectory(file === placed ? assets : staged));
+    return bytes;
+  }
   return {
+    async stageFrozen(data, name, token, sha, guard) {
+      guard();
+      validId(token);
+      const kind = materialKind(name),
+        bytes = Buffer.from(data);
+      if (
+        !kind ||
+        bytes.length < 8 ||
+        bytes.length > MATERIAL_MAX_BYTES ||
+        materialSignature(bytes) !== kind ||
+        createHash('sha256').update(bytes).digest('hex') !== sha
+      )
+        throw new Error('UNSUPPORTED_FORMAT');
+      await durableSetup(guard);
+      const existing = await durableLocate(assets, token, guard);
+      const pending = await durableLocate(staged, token, guard);
+      if (await checked(guard, () => exists(existing))) {
+        await durableExisting(existing, sha, guard);
+        await checked(guard, () => syncDirectory(assets));
+        return;
+      }
+      if (await checked(guard, () => exists(pending))) {
+        await durableExisting(pending, sha, guard);
+        await checked(guard, () => syncDirectory(staged));
+        return;
+      }
+      guard();
+      const finalPending = path(staged, token, kind);
+      // 未写完的临时文件不占用正式token；中断后仅校验/复用完整已命名副本。
+      const writing = join(staged, `.partial-${validId(token)}-${randomUUID()}`);
+      const fd = await open(writing, 'wx', 0o600);
+      try {
+        guard();
+        await checked(guard, () => fd.writeFile(bytes));
+        await checked(guard, () => fd.sync());
+      } finally {
+        await fd.close();
+      }
+      await checked(guard, () => rename(writing, finalPending));
+      await checked(guard, () => syncDirectory(staged));
+    },
     async stagePhoto(data, scope, token) {
       await setup();
       if (data.length < 8 || data.length > 8 * 1024 * 1024 || materialSignature(data) !== 'image')
@@ -164,11 +277,30 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
         state: 'staged',
       };
     },
-    async placedOrStaged(id, sha) {
+    async placedOrStaged(id, sha, guard?: FolderGuard) {
+      if (guard) return durableRead(id, sha, guard);
       const placed = await locate(assets, id);
       return read((await exists(placed)) ? placed : await locate(staged, id), sha);
     },
-    async place(id, sha) {
+    async place(id, sha, guard?: FolderGuard) {
+      if (guard) {
+        await durableSetup(guard);
+        const placed = await durableLocate(assets, id, guard);
+        if (await checked(guard, () => exists(placed))) {
+          await durableExisting(placed, sha, guard);
+          await checked(guard, () => syncDirectory(assets));
+          await checked(guard, () => syncDirectory(staged));
+          return;
+        }
+        const pending = await durableLocate(staged, id, guard);
+        const kind = materialSignature(await durableExisting(pending, sha, guard))!;
+        const target = path(assets, id, kind);
+        await checked(guard, () => rename(pending, target));
+        await checked(guard, () => syncDirectory(assets));
+        await checked(guard, () => syncDirectory(staged));
+        await durableExisting(target, sha, guard);
+        return;
+      }
       await setup();
       const placed = await locate(assets, id);
       if (await exists(placed)) {
@@ -183,7 +315,11 @@ export function createMaterialFiles(root: string): MaterialFilesPort {
       await syncDirectory(staged);
       await read(target, sha);
     },
-    async read(id, sha) {
+    async read(id, sha, guard?: FolderGuard) {
+      if (guard) {
+        const file = await durableLocate(assets, id, guard);
+        return durableExisting(file, sha, guard);
+      }
       return read(await locate(assets, id), sha);
     },
     async discard(id) {

@@ -1,4 +1,21 @@
 import {
+  FOLDER_CHANNEL,
+  folderRequestSchema,
+  folderResponseSchema,
+  type FolderRequest,
+  type FolderResponse,
+} from '@caselite/contracts';
+export type {
+  FolderRequest,
+  FolderResponse,
+  FolderScope,
+  FolderEntry,
+  FolderRoot,
+  FolderConfiguration,
+  PersonalMaterial,
+  CapturePhase,
+} from '@caselite/contracts';
+import {
   defaultExportStyle,
   type ExportStyle,
   MATERIAL_FILE_EXTENSIONS,
@@ -129,6 +146,7 @@ async function invokeBusinessCommand(
     | FinanceRequest
     | FinanceManagementRequest
     | ContactsRequest
+    | FolderRequest
     | LocalPreferencesRequest,
   timeoutMs = IPC_COMMAND_TIMEOUT_MS,
 ): Promise<unknown> {
@@ -148,6 +166,7 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  folder?(request: FolderRequest): Promise<FolderResponse>;
   readonly creationPolicy?: {
     file_extensions: readonly string[];
     max_file_bytes: number;
@@ -190,6 +209,24 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    async folder(request) {
+      const parsed = folderRequestSchema.safeParse(request);
+      if (!parsed.success) return { ok: false, code: 'INVALID_REQUEST', message: '请求格式无效。' };
+      try {
+        const result = folderResponseSchema.safeParse(
+          await invokeBusinessCommand(invoke, FOLDER_CHANNEL, parsed.data),
+        );
+        if (result.success) return result.data;
+      } catch {
+        /* 未确认时查询原请求，不自动重发。 */
+      }
+      return {
+        ok: false,
+        code: 'RESULT_UNKNOWN',
+        message: '无法确认文件操作结果，请核对原请求。',
+        request_id: 'request_id' in parsed.data ? parsed.data.request_id : undefined,
+      };
+    },
     exportStyleDefaults: structuredClone(defaultExportStyle),
     creationPolicy: Object.freeze({
       file_extensions: Object.freeze([...MATERIAL_FILE_EXTENSIONS]),

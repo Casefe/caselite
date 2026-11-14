@@ -1,7 +1,11 @@
 import DocumentAnnotations from '../../editors/DocumentAnnotations';
 import { hasDocumentAnnotations } from '../../editors/document-annotation-marks';
-import { editorProfiles, reviewUpdateOrigin } from '../../editors/editor-config';
-import { useEffect, useRef, useState } from 'react';
+import {
+  editorCapabilities,
+  editorProfiles,
+  reviewUpdateOrigin,
+} from '../../editors/editor-config';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
@@ -12,6 +16,16 @@ import { EditorSurface, localExtensions } from '../../editors/RichEditor';
 import DocumentReview, { WritingSkillMenu, type WritingSkillHandle } from './review/DocumentReview';
 import DeliverySnapshots from './delivery/DeliverySnapshots';
 import { useLocalPreferences } from '../../shared/data/LocalPreferences';
+
+export type BodySaveState = {
+  bodyId: string;
+  revision: number;
+  phase: 'editing' | 'saving' | 'saved' | 'failed' | 'unknown';
+  message: string;
+  canRetry: boolean;
+  retry(): void;
+};
+type SaveRequest = Extract<TaskRequest, { operation: 'save' }>;
 
 export default function BodyEditor({
   task,
@@ -24,10 +38,12 @@ export default function BodyEditor({
   onReviewSaving,
   reviewVariant = 'review',
   embedded = false,
+  autosave = false,
+  onSaveState,
 }: {
   task: Task;
   initial: number[] | null;
-  onSaved(task: Task, state: number[]): void;
+  onSaved(task: Task, state: number[]): void | string | Promise<void | string>;
   onDirty(dirty: boolean): void;
   disabled?: boolean;
   reviewDock: HTMLElement | null;
@@ -35,6 +51,8 @@ export default function BodyEditor({
   onReviewSaving(value: boolean): void;
   reviewVariant?: 'review' | 'assistant';
   embedded?: boolean;
+  autosave?: boolean;
+  onSaveState?(state: BodySaveState | null): void;
 }) {
   const { preferences } = useLocalPreferences();
   const [doc] = useState(() => {
@@ -46,6 +64,7 @@ export default function BodyEditor({
   const [annotationDraft, setAnnotationDraft] = useState(false);
   const [revision, setRevision] = useState(task.body_revision);
   const [status, setStatus] = useState('已保存到此设备');
+  const [phase, setPhase] = useState<BodySaveState['phase']>('saved');
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [hasPending, setHasPending] = useState(false);
@@ -56,15 +75,43 @@ export default function BodyEditor({
   const bodyDirty = useRef(false);
   const reviewHydrating = useRef(false);
   const editorReady = useRef(false);
-  const pending = useRef<{ request: TaskRequest; sequence: number } | null>(null);
+  const pending = useRef<{ request: SaveRequest; sequence: number } | null>(null);
   const alive = useRef(true);
+  const inFlight = useRef(false);
+  const composing = useRef(false);
+  const failed = useRef(false);
+  const confirmedRevision = useRef(revision);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedule = useRef(() => {});
+  const saveLatest = useRef<() => Promise<void>>(async () => {});
+  const stateCallback = useRef(onSaveState);
+  useLayoutEffect(() => {
+    stateCallback.current = onSaveState;
+  }, [onSaveState]);
+  const stopTimer = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
   const editor = useEditor(
     {
       injectCSS: false,
       editable: !task.document_archived_at && !disabled,
-      extensions: localExtensions(doc, true, true),
+      extensions: localExtensions(doc, editorCapabilities.document),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
+        handleDOMEvents: {
+          compositionstart: () => {
+            composing.current = true;
+            stopTimer();
+            return false;
+          },
+          compositionend: () => {
+            composing.current = false;
+            // 先让 ProseMirror 结束组合态并接纳最终文字，再重新计时。
+            queueMicrotask(() => schedule.current());
+            return false;
+          },
+        },
       },
       onCreate: () => {
         editorReady.current = true;
@@ -75,7 +122,11 @@ export default function BodyEditor({
         bodyDirty.current = true;
         setDirty(true);
         onDirty(true);
-        setStatus('有未保存修改');
+        if (!failed.current) {
+          setStatus('有未保存修改');
+          setPhase('editing');
+        }
+        schedule.current();
       },
     },
     [doc],
@@ -91,67 +142,215 @@ export default function BodyEditor({
     alive.current = true;
     return () => {
       alive.current = false;
+      stopTimer();
       queueMicrotask(() => {
         if (!alive.current) doc.destroy();
       });
     };
-  }, [doc]);
+  }, [doc, stopTimer]);
   async function save() {
-    if (!editor || busy || disabled || reviewSaving || annotationDraft) return;
+    if (
+      !alive.current ||
+      !editor ||
+      editor.isDestroyed ||
+      inFlight.current ||
+      disabled ||
+      task.document_archived_at ||
+      reviewSaving ||
+      annotationDraft ||
+      composing.current ||
+      editor.view?.composing ||
+      (autosave && !bodyDirty.current && !pending.current)
+    )
+      return;
+    inFlight.current = true;
+    stopTimer();
     setBusy(true);
     setStatus('正在保存…');
+    setPhase('saving');
     const sequence = pending.current?.sequence ?? changes.current;
-    const request: TaskRequest = pending.current?.request ?? {
-      ...mutation(),
-      operation: 'save',
-      task_id: task.id,
-      document_id: task.document_id,
-      body_id: task.body_id,
-      expected_revision: revision,
-      editor_schema: editorSchema === 2 || hasDocumentAnnotations(editor) ? 2 : 1,
-      state: Array.from(Y.encodeStateAsUpdate(doc)),
-    };
-    const reconciling = !!pending.current;
-    pending.current = { request, sequence };
-    setHasPending(true);
+    let failurePhase: BodySaveState['phase'] = 'failed';
     try {
+      const request: SaveRequest = pending.current?.request ?? {
+        ...mutation(),
+        operation: 'save',
+        task_id: task.id,
+        document_id: task.document_id,
+        body_id: task.body_id,
+        expected_revision: confirmedRevision.current,
+        editor_schema: editorSchema === 2 || hasDocumentAnnotations(editor) ? 2 : 1,
+        state: Array.from(Y.encodeStateAsUpdate(doc)),
+      };
+      const reconciling = !!pending.current;
+      pending.current = { request, sequence };
+      setHasPending(true);
+      failurePhase = 'unknown';
       // 已有待确认提交先核对原键；只有明确不存在回执时才重试同一请求。
-      let result = reconciling
-        ? await window.caselite.task({
-            protocol_version: 1,
-            operation: 'status',
-            idempotency_key: 'idempotency_key' in request ? request.idempotency_key : '',
-          })
-        : await window.caselite.task(request);
-      if (reconciling && !result.ok && result.code === 'NOT_FOUND')
-        result = await window.caselite.task(request);
-      if (!result.ok && result.code === 'RESULT_UNKNOWN') {
+      let result: Awaited<ReturnType<typeof window.caselite.task>>;
+      let resultSource: 'save' | 'status';
+      if (reconciling) {
+        resultSource = 'status';
         result = await window.caselite.task({
           protocol_version: 1,
           operation: 'status',
-          idempotency_key: 'idempotency_key' in request ? request.idempotency_key : '',
+          idempotency_key: request.idempotency_key,
+        });
+      } else {
+        resultSource = 'save';
+        result = await window.caselite.task(request);
+      }
+      if (reconciling && !result.ok && result.code === 'NOT_FOUND') {
+        resultSource = 'save';
+        result = await window.caselite.task(request);
+      }
+      if (!result.ok && result.code === 'RESULT_UNKNOWN') {
+        resultSource = 'status';
+        result = await window.caselite.task({
+          protocol_version: 1,
+          operation: 'status',
+          idempotency_key: request.idempotency_key,
         });
         if (!result.ok) throw new Error('保存结果尚未确认，请保留输入并点击核对保存结果。');
       }
-      const saved = check(result).tasks[0];
+      if (!result.ok && result.code === 'INVALID_REQUEST' && resultSource === 'save') {
+        // 只有实际 save 的结构化拒绝能证明该冻结请求未写入；status 错误仍须保留原键核对。
+        pending.current = null;
+        setHasPending(false);
+      }
+      if (!result.ok && result.code !== 'RESULT_UNKNOWN' && result.code !== 'READ_FAILED')
+        failurePhase = 'failed';
+      const response = check(result);
+      const saved = response.tasks[0];
+      // 回执必须属于冻结的原提交，不能用另一个对象或修订清除当前草稿。
+      if (
+        response.receipt !== request.idempotency_key ||
+        saved?.id !== request.task_id ||
+        saved.document_id !== request.document_id ||
+        saved.body_id !== request.body_id ||
+        saved.body_revision !== request.expected_revision + 1 ||
+        saved.editor_schema !== request.editor_schema
+      ) {
+        failurePhase = 'unknown';
+        throw new Error('保存回执与原提交不一致，请保留输入并核对保存结果。');
+      }
       if (!alive.current) return;
       pending.current = null;
+      failed.current = false;
       setHasPending(false);
+      confirmedRevision.current = saved.body_revision;
       setEditorSchema(saved.editor_schema);
       setRevision(saved.body_revision);
-      onSaved(saved, request.operation === 'save' ? request.state : []);
+      let projectionFailed = false;
+      let notice: void | string = undefined;
+      try {
+        notice = await onSaved(saved, request.state);
+      } catch {
+        // 正文已经落盘，目录投影失败不能重新提交这个正文。
+        projectionFailed = true;
+      }
+      if (!alive.current) return;
       const unchanged = sequence === changes.current;
       bodyDirty.current = !unchanged;
       setDirty(!unchanged);
       onDirty(!unchanged);
-      setStatus(unchanged ? '已保存到此设备' : '较早修订已保存，仍有未保存修改');
+      setPhase(unchanged ? 'saved' : 'editing');
+      setStatus(
+        unchanged
+          ? projectionFailed
+            ? '正文已保存，目录刷新失败，请重新读取目录。'
+            : notice || '已保存到此设备'
+          : '较早修订已保存，仍有未保存修改',
+      );
     } catch (error) {
-      if (alive.current)
+      failed.current = true;
+      if (alive.current) {
+        setPhase(failurePhase);
         setStatus(error instanceof Error ? error.message : '保存失败，输入已保留。');
+      }
     } finally {
-      if (alive.current) setBusy(false);
+      inFlight.current = false;
+      if (alive.current) {
+        setBusy(false);
+        schedule.current();
+      }
     }
   }
+  useLayoutEffect(() => {
+    // 只在已提交的渲染后更新回调，稳定事件入口不捕获旧 revision/锁状态。
+    saveLatest.current = save;
+    schedule.current = () => {
+      stopTimer();
+      if (
+        !autosave ||
+        !alive.current ||
+        !editor ||
+        inFlight.current ||
+        failed.current ||
+        !bodyDirty.current ||
+        disabled ||
+        task.document_archived_at ||
+        reviewSaving ||
+        annotationDraft ||
+        composing.current ||
+        editor.view?.composing
+      )
+        return;
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        void saveLatest.current();
+      }, 800);
+    };
+  });
+  useEffect(() => {
+    schedule.current();
+  }, [autosave, editor, disabled, task.document_archived_at, reviewSaving, annotationDraft]);
+  useEffect(() => {
+    if (!autosave) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      // ref 同步挡住输入与 React 父级 dirty 回报之间的关闭窗口。
+      if (bodyDirty.current || pending.current || inFlight.current) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [autosave]);
+  const retry = useCallback(() => void saveLatest.current(), []);
+  const saveState = useMemo<BodySaveState>(
+    () => ({
+      bodyId: task.body_id,
+      revision,
+      phase,
+      message: task.document_archived_at ? '文档已归档 · 只读' : status,
+      canRetry:
+        (hasPending || (phase === 'failed' && dirty)) &&
+        !busy &&
+        !disabled &&
+        !reviewSaving &&
+        !annotationDraft &&
+        !task.document_archived_at,
+      retry,
+    }),
+    [
+      task.body_id,
+      task.document_archived_at,
+      revision,
+      phase,
+      status,
+      hasPending,
+      dirty,
+      busy,
+      disabled,
+      reviewSaving,
+      annotationDraft,
+      retry,
+    ],
+  );
+  useEffect(() => {
+    if (autosave) stateCallback.current?.(saveState);
+  }, [autosave, saveState]);
+  useEffect(() => () => stateCallback.current?.(null), []);
   const saveControls = (
     <footer>
       <span role="status" data-testid="save-status">
@@ -186,7 +385,7 @@ export default function BodyEditor({
             修订 <b data-testid="revision">{revision}</b>
           </span>
         </div>
-        {embedded && saveControls}
+        {embedded && !autosave && saveControls}
         {editor && (
           <DocumentAnnotations
             editor={editor}
@@ -230,7 +429,7 @@ export default function BodyEditor({
             )
           }
         />
-        {!embedded && saveControls}
+        {!embedded && !autosave && saveControls}
         {!embedded && (
           <p className="caption">仅已确认保存的内容可在退出后恢复。当前成果尚未进行法律核验。</p>
         )}
@@ -288,6 +487,8 @@ export default function BodyEditor({
                   reviewHydrating.current = false;
                 }
                 setRevision(saved.body_revision);
+                confirmedRevision.current = saved.body_revision;
+                setPhase('saved');
                 setStatus('已保存到此设备');
                 onSaved(saved, state);
               }}

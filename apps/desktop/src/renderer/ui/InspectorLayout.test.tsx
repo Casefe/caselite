@@ -657,3 +657,46 @@ it('hides the covered work page while keeping the same Agent dock and navigation
     style.remove();
   }
 });
+
+it('releases layout measurement and document keyboard listeners on unmount', () => {
+  const previousObserver = globalThis.ResizeObserver;
+  const disconnect = vi.fn();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect = disconnect;
+    },
+  );
+  const geometry = vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect');
+  const add = vi.spyOn(document, 'addEventListener');
+  const remove = vi.spyOn(document, 'removeEventListener');
+  let unmount = () => {};
+  try {
+    const view = render(
+      <InspectorLayout properties={null}>
+        <textarea aria-label="卸载前会话" />
+      </InspectorLayout>,
+    );
+    unmount = view.unmount;
+    const keyboardListener = add.mock.calls.find(([type]) => type === 'keydown')?.[1];
+    expect(keyboardListener).toBeDefined();
+    geometry.mockClear();
+    fireEvent(window, new Event('resize'));
+    fireEvent(window, new Event('scroll'));
+    expect(geometry).toHaveBeenCalled();
+    unmount();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('keydown', keyboardListener);
+    geometry.mockClear();
+    fireEvent(window, new Event('resize'));
+    fireEvent(window, new Event('scroll'));
+    expect(geometry).not.toHaveBeenCalled();
+  } finally {
+    unmount();
+    geometry.mockRestore();
+    add.mockRestore();
+    remove.mockRestore();
+    vi.stubGlobal('ResizeObserver', previousObserver);
+  }
+});

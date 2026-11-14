@@ -12,7 +12,7 @@ import {
 import PropertyResizeHandle from './ui/PropertyResizeHandle';
 import WorkspaceTopbar from './ui/WorkspaceTopbar';
 import { useWorkspaceTabs } from './shared/navigation/useWorkspaceTabs';
-import type { WorkspacePage } from './shared/navigation/workspace-tabs';
+import { activeTab, type WorkspacePage } from './shared/navigation/workspace-tabs';
 import { PageNavigationProvider, type ChildPage } from './shared/navigation/PageNavigation';
 import CalendarView from './features/calendar/CalendarView';
 import InspectorLayout from './ui/InspectorLayout';
@@ -56,6 +56,7 @@ import { WorkspaceShell, type WorkspaceView } from './ui/Workspace';
 import ProjectCatalog, { type ProjectViewState } from './features/projects/ProjectCatalog';
 import ImportantSchedules from './features/calendar/ImportantSchedules';
 import DocumentLibrary from './ui/DocumentLibrary';
+import { documentInspectorStartsCollapsed } from './features/documents/document-workspace-inspector';
 import TaskInspector from './ui/TaskInspector';
 
 import SettingsView, { type SettingsSection } from './ui/SettingsView';
@@ -890,9 +891,18 @@ function Workbench() {
           : view));
   const pageTitle = taskPage ? taskPage.title : (visibleChild?.title ?? workspacePages[view].title);
   const inspectorOpen =
-    inspectorChoices[pageKey] ?? !(view === 'documents' && window.innerWidth <= 900);
+    inspectorChoices[pageKey] ??
+    !(
+      documentInspectorStartsCollapsed(pageKey) ||
+      (view === 'documents' && window.innerWidth <= 900)
+    );
   const initializeInspector = useCallback((key: string, open: boolean) => {
-    setInspectorChoices((choices) => (key in choices ? choices : { ...choices, [key]: open }));
+    // 只设置阅读页首次默认值，用户选择和页签恢复的已记录状态优先。
+    setInspectorChoices((choices) =>
+      key in choices
+        ? choices
+        : { ...choices, [key]: documentInspectorStartsCollapsed(key) ? false : open },
+    );
   }, []);
   const inspectorAvailable = [
     'home',
@@ -1679,6 +1689,18 @@ function Workbench() {
               }}
               onBlocked={setPropertiesBlocked}
               onBack={() => {
+                if (settingsReturn === 'documents') {
+                  const tab = activeTab(workspaceNavigation.session);
+                  const page = tab.entries
+                    .slice(0, tab.index)
+                    .reverse()
+                    .find((entry) => entry.state.view === 'documents');
+                  if (page) {
+                    // 复用当前标签已捕获的文档定位，不新建选中状态或重读无关任务。
+                    void workspaceNavigation.visit(page);
+                    return;
+                  }
+                }
                 if (settingsReturn === 'tasks' && active)
                   void open(
                     active.id,

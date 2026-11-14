@@ -40,9 +40,8 @@ import InspectorLayout from '../../ui/InspectorLayout';
 import { useCatalog } from '../../ui/useCatalog';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectSummary from './ProjectSummary';
-import ProjectFiles from './ProjectFiles';
+import ProjectDocuments from './ProjectDocuments';
 import ActivityList from './ActivityList';
-import ProjectDeliverables from './ProjectDeliverables';
 import ProjectDiscussion from './ProjectDiscussion';
 import ProjectPlanning from './ProjectPlanning';
 import ProjectVisualizationInspector from './ProjectVisualizationInspector';
@@ -56,14 +55,13 @@ const sections = {
   overview: '概述',
   activity: '活动',
   tasks: '任务',
-  files: '文件',
+  documents: '文档',
   visualization: '可视化',
-  deliverables: '交付物',
 };
 export type ProjectViewState = {
   selected: string | null;
   projectId: string | null;
-  section: keyof typeof sections;
+  section: keyof typeof sections | 'files' | 'deliverables';
   query: string;
   statusFilter: keyof typeof names | 'all';
   order: string;
@@ -126,7 +124,11 @@ export default function ProjectCatalog({
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
-  const [section, setSection] = useState<keyof typeof sections>(initialView?.section ?? 'overview');
+  const [section, setSection] = useState<keyof typeof sections>(
+    initialView?.section === 'files' || initialView?.section === 'deliverables'
+      ? 'documents'
+      : (initialView?.section ?? 'overview'),
+  );
   const [query, setQuery] = useState(initialView?.query ?? '');
   const [statusFilter, setStatusFilter] = useState<keyof typeof names | 'all'>(
     initialView?.statusFilter ?? 'all',
@@ -185,7 +187,12 @@ export default function ProjectCatalog({
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const [discussionDirty, setDiscussionDirty] = useState(false);
   const [planningDirty, setPlanningDirty] = useState(false);
-  const dirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
+  const [initialDocumentPending, setInitialDocumentPending] = useState(
+    Boolean(initialView?.documentId),
+  );
+  const [documentDirty, setDocumentDirty] = useState(false);
+  const otherDirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
+  const dirty = otherDirty || documentDirty;
   const discussionDisabled =
     navigationPending ||
     reading ||
@@ -252,6 +259,7 @@ export default function ProjectCatalog({
     return () => onDirty(false);
   }, [dirty, creating, reading, c.pending, c.unknown, onDirty]);
   const read = useCallback(async (id: string, restore = false) => {
+    if (!restore) setInitialDocumentPending(false);
     const sequence = ++readId.current;
     setReading(true);
     setReadError('');
@@ -315,9 +323,13 @@ export default function ProjectCatalog({
     if (!source || reading || navigationPending || (source.projectId ? !editor : !c.data)) return;
     // 文档入口要等目录查询完成，才能恢复到原来的按钮或栏目。
     if (source.documentId && !c.data && !c.error) return;
+    const restoredSection =
+      source.section === 'files' || source.section === 'deliverables'
+        ? 'documents'
+        : source.section;
     const target = Array.from(
       workspace.current?.querySelectorAll<HTMLButtonElement>(
-        `#project-panel-${source.section} [data-project-task]`,
+        `#project-panel-${restoredSection} [data-project-task]`,
       ) ?? [],
     ).find(
       (button) =>
@@ -328,7 +340,7 @@ export default function ProjectCatalog({
     (
       target ??
       (source.projectId
-        ? workspace.current?.querySelector<HTMLButtonElement>(`#project-tab-${source.section}`)
+        ? workspace.current?.querySelector<HTMLButtonElement>(`#project-tab-${restoredSection}`)
         : (Array.from(
             workspace.current?.querySelectorAll<HTMLButtonElement>(
               '[data-project-id] .project-title-link',
@@ -388,6 +400,7 @@ export default function ProjectCatalog({
     };
   }, !reading && !navigationPending);
   function changeSection(next: keyof typeof sections) {
+    if (section === 'documents' && next !== 'documents') setInitialDocumentPending(false);
     pageNavigation?.beforeChange();
     setSection(next);
   }
@@ -406,27 +419,6 @@ export default function ProjectCatalog({
       pageNavigation?.beforeChange();
       void read(id);
     }
-  };
-  const documentLinks = () => {
-    if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
-    if (!documents) return <p role="status">正在读取项目文档…</p>;
-    if (!documents.length) return <p>还没有可编辑文档。</p>;
-    return (
-      <ul className="project-document-list">
-        {documents.map((doc) => (
-          <li key={doc.id}>
-            <button
-              disabled={blocked}
-              data-project-task={doc.task_id}
-              data-project-document={doc.id}
-              onClick={() => openTask(doc.task_id, doc.id)}
-            >
-              {doc.title}
-            </button>
-          </li>
-        ))}
-      </ul>
-    );
   };
   const command = (input: CatalogRequest, done?: (r: CatalogSuccess) => void | Promise<void>) =>
     c.execute(input, async (r) => {
@@ -456,6 +448,7 @@ export default function ProjectCatalog({
       title="返回项目列表"
       onClick={() => {
         returnProjectId.current = editor.project.id;
+        setInitialDocumentPending(false);
         pageNavigation?.beforeChange();
         setEditor(null);
       }}
@@ -493,7 +486,7 @@ export default function ProjectCatalog({
       data-layout="three-column"
       data-testid="project-catalog"
     >
-      <PropertyResizeHandle module="projects" />
+      {section !== 'documents' && <PropertyResizeHandle module="projects" />}
       <div className="collection-main">
         {backSlot && createPortal(backButton, backSlot)}
         <div className="collection-heading project-catalog-heading">
@@ -799,6 +792,7 @@ export default function ProjectCatalog({
                       propertyDirty ||
                       discussionDirty ||
                       planningDirty ||
+                      documentDirty ||
                       c.pending ||
                       c.unknown
                     }
@@ -1113,31 +1107,31 @@ export default function ProjectCatalog({
                 )}
               </section>
               <section
-                hidden={section !== 'files'}
+                hidden={section !== 'documents'}
                 role="tabpanel"
-                id="project-panel-files"
-                aria-labelledby="project-tab-files"
-                className="project-record-panel"
+                id="project-panel-documents"
+                aria-labelledby="project-tab-documents"
+                className="project-document-panel"
               >
-                <h2>项目文件</h2>
-                {section === 'files' && (
-                  <>
-                    <section
-                      className="project-managed-files"
-                      aria-labelledby="project-pdf-heading"
-                    >
-                      <h3 id="project-pdf-heading">受管 PDF / Word 原件</h3>
-                      <ProjectFiles
-                        key={editor.project.id}
-                        projectId={editor.project.id}
-                        disabled={blocked}
-                      />
-                    </section>
-                    <section aria-labelledby="project-documents-heading">
-                      <h3 id="project-documents-heading">可编辑文档</h3>
-                      {documentLinks()}
-                    </section>
-                  </>
+                {section === 'documents' && (
+                  <ProjectDocuments
+                    key={editor.project.id}
+                    projectId={editor.project.id}
+                    initialDocumentId={
+                      initialDocumentPending && initialView?.projectId === editor.project.id
+                        ? initialView.documentId
+                        : undefined
+                    }
+                    externalBlocked={
+                      navigationPending ||
+                      reading ||
+                      creating ||
+                      otherDirty ||
+                      c.pending ||
+                      c.unknown
+                    }
+                    onDirty={setDocumentDirty}
+                  />
                 )}
               </section>
               <section
@@ -1161,24 +1155,6 @@ export default function ProjectCatalog({
                       onToggleSidebar={() => toggleVisualizationSidebar()}
                     />
                   </Suspense>
-                )}
-              </section>
-              <section
-                hidden={section !== 'deliverables'}
-                role="tabpanel"
-                id="project-panel-deliverables"
-                aria-labelledby="project-tab-deliverables"
-                className="project-record-panel"
-              >
-                <h2>交付物</h2>
-                {section === 'deliverables' && (
-                  <ProjectDeliverables
-                    documents={documents}
-                    tasks={members}
-                    readError={c.error}
-                    disabled={blocked}
-                    onOpen={openTask}
-                  />
                 )}
               </section>
               <section
@@ -1299,6 +1275,7 @@ export default function ProjectCatalog({
         </footer>
       </div>
       <aside
+        hidden={Boolean(editor && section === 'documents')}
         id="project-visualization-auxiliary"
         className="project-properties"
         aria-label="项目辅助栏"

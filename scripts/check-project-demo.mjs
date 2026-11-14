@@ -131,11 +131,21 @@ for (const name of properties
         'project-files-recovered.png',
         'project-files-reopened.png',
         'files-expected.json',
+        'document-workspace-layout.json',
+        'document-workspace-1580.png',
+        'document-workspace-640.png',
+        'document-workspace-original.png',
+        'document-workspace-version.png',
         'project-activity-save-failed.png',
         'project-activity-saved.png',
         'project-activity-reopened.png',
         'project-activity-original-task.png',
         'activity-expected.json',
+        'dev-1802-project-graph.json',
+        'dev-1802-project-graph.png',
+        'dev-1802-project-graph-dragged.png',
+        'dev-1802-project-graph-preview.png',
+        'dev-1802-project-graph-sample.png',
       ]
     : files
       ? [
@@ -146,8 +156,16 @@ for (const name of properties
           'files-expected.json',
           'project-files.json',
           'project-files-read.json',
-          'dev-1323-complete-list.png',
-          'dev-1323-right-preview.png',
+          'document-workspace-layout.json',
+          'document-workspace-1580.png',
+          'document-workspace-640.png',
+          'document-workspace-original.png',
+          'document-workspace-version.png',
+          'dev-1802-project-graph.json',
+          'dev-1802-project-graph.png',
+          'dev-1802-project-graph-dragged.png',
+          'dev-1802-project-graph-preview.png',
+          'dev-1802-project-graph-sample.png',
         ]
       : promotion
         ? [

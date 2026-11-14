@@ -122,6 +122,7 @@ describe('typed preload to main IPC Spike', () => {
       'dropPdf',
       'exportStyleDefaults',
       'finance',
+      'folder',
       'material',
       'materialBatch',
       'offlineProbe',

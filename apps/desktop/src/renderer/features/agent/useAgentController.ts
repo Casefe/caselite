@@ -384,6 +384,15 @@ export function useAgentController({
       if (alive.current) setPending(false);
     }
   }
+  const copyOutput = async (run: Pick<AgentRun, 'id' | 'scope'>) => {
+    const result = await window.caselite.agent({
+      protocol_version: 1,
+      operation: 'copy_output',
+      scope: run.scope,
+      run_id: run.id,
+    });
+    return result.ok;
+  };
   const command = async (request: AgentRequest) => {
     const result = await window.caselite.agent(request);
     if (!alive.current) return;
@@ -484,6 +493,7 @@ export function useAgentController({
     openProjectPreview,
     send,
     command,
+    copyOutput,
     cancelPreparation,
     preparing: pending && !submissions.has(scope),
   };

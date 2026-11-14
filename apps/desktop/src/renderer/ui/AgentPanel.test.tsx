@@ -220,6 +220,37 @@ describe('AI submission UI lifecycle', () => {
     expect(screen.getByRole('heading', { name: '核对事项' })).toBeTruthy();
     expect(agent.mock.calls).toHaveLength(3);
   });
+  it('keeps the answer and unsent draft when copy rejects', async () => {
+    const run = {
+      id: '12121212-1212-4212-8212-121212121212',
+      scope: 'home',
+      prompt: '原问题',
+      output: '原回答',
+      model: 'gpt-4.1-mini' as const,
+      provider: 'openai' as const,
+      status: 'succeeded' as const,
+      sequence: 1,
+      message: '',
+      usage: null,
+    };
+    const agent = vi.fn(async (request: AgentRequest): Promise<AgentResponse> => {
+      if (request.operation === 'copy_output') throw new Error('clipboard unavailable');
+      return { ...profile, runs: [run] };
+    });
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(<AgentPanel scope="home" />);
+    await screen.findByText('原回答');
+    const input = screen.getByTestId('agent-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '未发送草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '复制' }));
+    await screen.findByRole('button', { name: '复制失败，请选择文字复制' });
+    expect(screen.getByText('原回答')).toBeTruthy();
+    expect(input.value).toBe('未发送草稿');
+    expect(agent.mock.calls.filter(([request]) => request.operation === 'copy_output')).toEqual([
+      [{ protocol_version: 1, operation: 'copy_output', scope: run.scope, run_id: run.id }],
+    ]);
+    expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+  });
   it('refills an interrupted prompt only on request, retaining partial output without automatically retrying', async () => {
     const agent = vi.fn(async () => ({
       ...profile,

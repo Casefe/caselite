@@ -16,6 +16,11 @@ export default function DocumentPageToolbar({
   onToggleSplit,
   onToggleOrientation,
   onToggleWide,
+  showContextTitle = false,
+  inspectorOpen,
+  onToggleInspector,
+  onOpenReview,
+  reviewDisabled = false,
 }: {
   documentId?: string;
   title: string;
@@ -30,6 +35,11 @@ export default function DocumentPageToolbar({
   onToggleSplit(): void;
   onToggleOrientation(): void;
   onToggleWide(): void;
+  showContextTitle?: boolean;
+  inspectorOpen?: boolean;
+  onToggleInspector?(): void;
+  onOpenReview?(): void;
+  reviewDisabled?: boolean;
 }) {
   const scope = documentId ?? 'empty';
   const [menuState, setMenuState] = useState({ scope, open: false });
@@ -96,9 +106,12 @@ export default function DocumentPageToolbar({
         >
           <Icon name="back" size={16} />
         </button>
-        <span className="document-page-short-title" title={path}>
-          {title}
-        </span>
+        {showContextTitle && (
+          <span className="document-page-short-title" title={path}>
+            {title}
+          </span>
+        )}
+        {documentId && <span className="document-page-format">文稿</span>}
         {documentId && (
           <span className="document-page-visibility" title="此设备工作区，尚未启用共享">
             <span aria-hidden="true">🔒</span> 私人
@@ -106,14 +119,17 @@ export default function DocumentPageToolbar({
         )}
       </div>
       <div className="document-page-actions">
-        <span title="共享功能尚未接入">
-          <button type="button" disabled aria-describedby={sharingNote}>
-            共享
+        {onToggleInspector && (
+          <button
+            type="button"
+            aria-label={inspectorOpen ? '收起文档属性与 AI' : '展开文档属性与 AI'}
+            aria-expanded={inspectorOpen}
+            title={inspectorOpen ? '收起文档属性与 AI' : '展开文档属性与 AI'}
+            onClick={onToggleInspector}
+          >
+            <Icon name={inspectorOpen ? 'panel-right-close' : 'panel-right-open'} size={16} />
           </button>
-        </span>
-        <span id={sharingNote} className="document-page-sr-only">
-          共享功能尚未接入，不改变当前文档的访问范围。
-        </span>
+        )}
         {favorite ?? (
           <button type="button" disabled aria-label="收藏文档">
             <Icon name="star" size={16} />
@@ -170,7 +186,23 @@ export default function DocumentPageToolbar({
               }
             }}
           >
+            {onOpenReview && (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={disabled || reviewDisabled || !documentId}
+                onClick={() => act(onOpenReview)}
+              >
+                AI 审阅
+              </button>
+            )}
             <span className="document-page-menu-label">页面显示</span>
+            <button type="button" role="menuitem" disabled aria-describedby={sharingNote}>
+              共享
+            </button>
+            <span id={sharingNote} className="document-page-sr-only">
+              共享功能尚未接入，不改变当前文档的访问范围。
+            </span>
             <button
               type="button"
               role="menuitemcheckbox"

@@ -15,3 +15,6 @@ export * from './contacts-application';
 export * from './local-preferences-application';
 export * from './important-date-application';
 export * from './legal-consent-application';
+export * from './folder-configuration-application';
+export type * from './folder-ports';
+export { createPersonalMaterialApplication } from './personal-material-application';

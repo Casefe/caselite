@@ -31,7 +31,11 @@ import {
 
 type GraphDocument = { id: string; title: string; task_id: string; matter_id: string | null };
 
-const VisualCard = memo(function VisualCard({ data, selected }: NodeProps<VisualizationNode>) {
+const VisualCard = memo(function VisualCard({
+  data,
+  selected,
+  isConnectable,
+}: NodeProps<VisualizationNode>) {
   const content = data.kind === 'matrix' || data.kind === 'chronicle';
   const icon =
     data.kind === 'entity'
@@ -47,10 +51,39 @@ const VisualCard = memo(function VisualCard({ data, selected }: NodeProps<Visual
     >
       {!content && data.kind !== 'statistics' && (
         <>
-          <Handle id="left" type="target" position={Position.Left} />
-          <Handle id="right" type="source" position={Position.Right} />
-          <Handle id="top" type="target" position={Position.Top} />
-          <Handle id="bottom" type="source" position={Position.Bottom} />
+          {/* 同一只读值必须同时控制普通、开始和结束，否则库仍会启动连接。 */}
+          <Handle
+            id="left"
+            type="target"
+            position={Position.Left}
+            isConnectable={isConnectable}
+            isConnectableStart={isConnectable}
+            isConnectableEnd={isConnectable}
+          />
+          <Handle
+            id="right"
+            type="source"
+            position={Position.Right}
+            isConnectable={isConnectable}
+            isConnectableStart={isConnectable}
+            isConnectableEnd={isConnectable}
+          />
+          <Handle
+            id="top"
+            type="target"
+            position={Position.Top}
+            isConnectable={isConnectable}
+            isConnectableStart={isConnectable}
+            isConnectableEnd={isConnectable}
+          />
+          <Handle
+            id="bottom"
+            type="source"
+            position={Position.Bottom}
+            isConnectable={isConnectable}
+            isConnectableStart={isConnectable}
+            isConnectableEnd={isConnectable}
+          />
         </>
       )}
       <div className="visualization-card-heading drag-handle">
