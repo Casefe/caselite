@@ -1,3 +1,5 @@
+import WorkspacePageChrome from '../../shared/ui/WorkspacePageChrome';
+import { usePageNavigation } from '../../shared/navigation/PageNavigation';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
 import { financeStatistics, buildStatisticsRows } from '../../shared/statistics/statistics-config';
@@ -9,7 +11,7 @@ import {
   useOrdinaryCatalog,
 } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
-import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { useState, useRef, useEffect, useId, type FormEvent } from 'react';
 import FinanceSettings from './FinanceSettings';
 import ProjectFinancePanel from './ProjectFinancePanel';
 import {
@@ -472,6 +474,10 @@ export default function FinanceView({
   const [selected, setSelected] = useState(initialProject);
   const [opened, setOpened] = useState(Boolean(initialProject));
   const [search, setSearch] = useState('');
+  const chromeFiltersId = useId();
+  const [chromeFilterOpen, setChromeFilterOpen] = useState(false);
+  const [chromeSearchOpen, setChromeSearchOpen] = useState(false);
+  const pageNavigation = usePageNavigation();
   const [ledgerFilter, setLedgerFilter] = useState('all');
   const [blocked, setBlocked] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -554,14 +560,69 @@ export default function FinanceView({
   };
   return (
     <section
-      className="collection-workspace catalog-view finance-workspace property-resizable"
+      className={`collection-workspace catalog-view finance-workspace property-resizable${opened ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-layout="three-column"
       aria-label="财务工作区"
     >
       <PropertyResizeHandle module="finance" />
+      {!opened && (
+        <WorkspacePageChrome
+          title="财务"
+          createLabel="新建记账"
+          create={{
+            onClick: project ? () => openProject(project.id) : undefined,
+            disabled: isBlocked,
+            unavailableReason: project ? undefined : '请先选择财务项目',
+          }}
+          navigation={(
+            [
+              ['all', '全部项目'],
+              ['registered', '已建账'],
+              ['unregistered', '未建账'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              disabled={isBlocked}
+              aria-pressed={ledgerFilter === value}
+              onClick={() => setLedgerFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+          search={{
+            expanded: chromeSearchOpen,
+            controls: chromeFiltersId,
+            disabled: isBlocked,
+            onClick: () => {
+              setChromeFilterOpen(false);
+              setChromeSearchOpen((open) => !open);
+            },
+          }}
+          filter={{
+            expanded: chromeFilterOpen,
+            controls: chromeFiltersId,
+            disabled: isBlocked,
+            onClick: () => {
+              setChromeSearchOpen(false);
+              setChromeFilterOpen((open) => !open);
+            },
+          }}
+          inspector={
+            pageNavigation
+              ? {
+                  expanded: pageNavigation.inspector.open,
+                  disabled: isBlocked,
+                  onClick: () => pageNavigation.inspector.setOpen((open) => !open),
+                }
+              : undefined
+          }
+        />
+      )}
       <div className="collection-main finance-main">
-        <header className="collection-heading finance-workbench-heading">
+        <header className="collection-heading finance-workbench-heading" hidden={!opened}>
           {opened && (
             <button disabled={isBlocked} onClick={() => setOpened(false)}>
               ← 财务一览
@@ -616,7 +677,22 @@ export default function FinanceView({
           {!projects && !read.error && <p>正在读取项目…</p>}
           {projects?.length === 0 && <p>请先在「项目」创建项目，再登记合同或款项。</p>}
           <div hidden={opened}>
-            <div className="finance-filters">
+            <div className="finance-chrome-secondary">
+              <button disabled={isBlocked} onClick={() => setSettings((value) => !value)}>
+                {settings ? '关闭财务设置' : '财务设置'}
+              </button>
+              <button
+                disabled={isBlocked || read.isFetching}
+                onClick={() => void read.load().catch(() => {})}
+              >
+                刷新项目
+              </button>
+            </div>
+            <div
+              id={chromeFiltersId}
+              className="finance-filters workspace-filter-panel"
+              hidden={!chromeSearchOpen && !chromeFilterOpen}
+            >
               <label>
                 搜索财务项目
                 <input

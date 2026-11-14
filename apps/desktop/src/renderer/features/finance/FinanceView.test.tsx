@@ -207,6 +207,7 @@ it('keeps all six finance columns, full project names, filtering and selection i
   const open = within(table).getByRole('button', { name: `${longTitle} →` });
   expect(open.title).toBe(longTitle);
   expect(open.closest('tr')?.getAttribute('aria-selected')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '财务搜索' }));
   fireEvent.change(screen.getByLabelText('搜索财务项目'), { target: { value: '无匹配值' } });
   expect(within(table).queryByRole('button')).toBe(null);
   fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
@@ -332,6 +333,7 @@ it('filters known balances without changing the open ledger or treating missing 
   const list = await screen.findByRole('table', { name: '财务项目列表' });
   const totals = await screen.findByRole('region', { name: '财务统计' });
   expect(within(totals).getByText('1.01')).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: '财务筛选' }));
   fireEvent.change(screen.getByLabelText('建账状态'), { target: { value: 'unregistered' } });
   expect(within(list).getByRole('button', { name: '合成未建账项目 →' })).toBeDefined();
   expect(
@@ -684,6 +686,7 @@ it('places contract income, net invoices and valid client receipts in the inspec
   expect(card.closest('.collection-main')).toBeNull();
   expect(screen.getByRole('columnheader', { name: '我的待结算' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: '我的已到账' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '财务搜索' }));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索财务项目' }), {
     target: { value: first.title },
   });

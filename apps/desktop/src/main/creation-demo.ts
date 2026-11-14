@@ -75,7 +75,7 @@ export async function runCreationDemo(
     await viewport(1600);
     await wait("document.querySelector('[data-nav=calendar]')");
     await click('[data-nav=calendar]');
-    await wait("document.querySelector('.calendar-creation-toolbar')");
+    await wait("document.querySelector('.calendar-workbench .workspace-page-create')");
     if (phase.endsWith('-read') || phase.endsWith('-preview')) {
       const expected = JSON.parse(readFileSync(expectedFile, 'utf8')) as {
         id: string;
@@ -95,10 +95,10 @@ export async function runCreationDemo(
       }
       const last = expected[1];
       await wait(
-        `[...document.querySelectorAll('.calendar-task-row')].some(e=>e.textContent.includes(${JSON.stringify(last.title)}))`,
+        `[...document.querySelectorAll('.calendar-shared-task')].some(e=>e.textContent.includes(${JSON.stringify(last.title)}))`,
       );
       await evaluate(
-        `[...document.querySelectorAll('.calendar-task-row')].find(e=>e.textContent.includes(${JSON.stringify(last.title)})).click()`,
+        `[...document.querySelectorAll('.calendar-shared-task')].find(e=>e.textContent.includes(${JSON.stringify(last.title)})).querySelector('.task-row-title').click()`,
       );
       await wait(
         `document.querySelector('.calendar-task-inspector')?.textContent.includes(${JSON.stringify(last.title)})`,
@@ -115,9 +115,19 @@ export async function runCreationDemo(
       );
       return;
     }
+    const createInCalendar = async (kind: 'task' | 'schedule') => {
+      if (kind === 'schedule') {
+        await click('.calendar-workbench .workspace-page-create');
+      } else {
+        await evaluate(
+          "(()=>{const menu=document.querySelector('.calendar-workbench .workspace-page-more');if(!menu.open)menu.querySelector('summary').click();})()",
+        );
+        await click('.calendar-workbench .workspace-page-more button');
+      }
+    };
     const expected: { id: string; title: string; attachments: number; schedule: boolean }[] = [];
     for (const kind of ['task', 'schedule'] as const) {
-      await click(`[aria-label="${kind === 'task' ? '新建任务' : '新建日程'}"]`);
+      await createInCalendar(kind);
       await wait(
         "document.querySelector('.task-create-dialog[open]') && !document.querySelector('.file-upload-button').disabled",
       );
@@ -171,7 +181,7 @@ export async function runCreationDemo(
     }
     // 空选择和移除末份分别走真实创建事务，覆盖空附件草稿的保存路径。
     for (const removeLast of [false, true]) {
-      await click('[aria-label=新建任务]');
+      await createInCalendar('task');
       await wait(
         "document.querySelector('.task-create-dialog[open]') && !document.querySelector('.file-upload-button').disabled",
       );
@@ -196,7 +206,7 @@ export async function runCreationDemo(
       expected.push({ id: saved.id, title, attachments: 0, schedule: false });
     }
     const beforeCancel = (await task({ protocol_version: 1, operation: 'list' })).tasks.length;
-    await click('[aria-label=新建任务]');
+    await createInCalendar('task');
     await wait(
       "document.querySelector('.task-create-dialog[open]') && !document.querySelector('.file-upload-button').disabled",
     );

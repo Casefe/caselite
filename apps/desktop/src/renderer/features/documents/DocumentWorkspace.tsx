@@ -1,3 +1,6 @@
+import WorkspacePageChrome, {
+  closeWorkspaceDisplayOnEscape,
+} from '../../shared/ui/WorkspacePageChrome';
 import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import { useChildPage, usePageNavigation } from '../../shared/navigation/PageNavigation';
 import {
@@ -408,7 +411,7 @@ export default function DocumentWorkspace({
   return (
     <section
       ref={root}
-      className={`collection-workspace catalog-view document-workspace property-resizable ${library ? 'knowledge-view' : ''}`}
+      className={`collection-workspace catalog-view document-workspace property-resizable ${library ? 'knowledge-view' : ''}${!library && !projectId ? ' workspace-has-page-chrome' : ''}`}
       data-layout="three-column"
       data-properties-resizable="true"
       data-collection={library ? 'knowledge' : 'documents'}
@@ -429,13 +432,58 @@ export default function DocumentWorkspace({
       }
     >
       {!projectId && <DocumentNavigation read={page} ready={!read.isFetching} />}
+      {!library && !projectId && (
+        <WorkspacePageChrome
+          title="文档"
+          createLabel="新建文档"
+          create={{ unavailableReason: '文档创建入口尚未接入' }}
+          search={{ unavailableReason: '文档目录全范围搜索尚未接入' }}
+          filter={{ unavailableReason: '文档目录筛选尚未接入' }}
+          display={
+            <details
+              className="workspace-document-display"
+              onKeyDown={closeWorkspaceDisplayOnEscape}
+            >
+              <summary aria-label="文档显示设置">
+                <Icon name="settings" size={16} />
+                显示设置
+              </summary>
+              <div>
+                <button
+                  type="button"
+                  disabled={blocked || !current}
+                  title={!current ? '请先选择文档' : undefined}
+                  onClick={() => setWide((value) => !value)}
+                >
+                  {wide ? '标准宽度' : '宽屏显示'}
+                </button>
+              </div>
+            </details>
+          }
+          inspector={
+            navigation
+              ? {
+                  expanded: navigation.inspector.open,
+                  disabled: blocked,
+                  onClick: () => navigation.inspector.setOpen((open) => !open),
+                }
+              : undefined
+          }
+        />
+      )}
       <div className="collection-main">
-        <header className="collection-heading">
-          <Icon name={library ? 'book' : 'folder'} size={18} />
-          <h1 tabIndex={-1} ref={heading}>
-            {library ? '知识库' : '文件夹'}
-          </h1>
-        </header>
+        {library || projectId ? (
+          <header className="collection-heading">
+            <Icon name={library ? 'book' : 'folder'} size={18} />
+            <h1 tabIndex={-1} ref={heading}>
+              {library ? '知识库' : '文件夹'}
+            </h1>
+          </header>
+        ) : (
+          <h2 className="sr-only" tabIndex={-1} ref={heading}>
+            文件夹
+          </h2>
+        )}
         {!library && (
           <LocalFolderTree
             folder={localFolder}

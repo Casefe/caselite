@@ -1,6 +1,8 @@
+import WorkspacePageChrome from '../../shared/ui/WorkspacePageChrome';
+import { usePageNavigation } from '../../shared/navigation/PageNavigation';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Contact } from '../../../preload/caselite-api';
 import { useOrdinaryCatalog } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
@@ -36,6 +38,10 @@ export default function ContactsView({
       return result.contacts;
     },
   });
+  const pageNavigation = usePageNavigation();
+  const chromeFiltersId = useId();
+  const [chromeFilterOpen, setChromeFilterOpen] = useState(false);
+  const [chromeSearchOpen, setChromeSearchOpen] = useState(false);
   const [text, setText] = useState(''),
     [kind, setKind] = useState<keyof typeof names | ''>('');
   const [projectFilter, setProjectFilter] = useState(''),
@@ -123,105 +129,152 @@ export default function ContactsView({
   }
   return (
     <section
-      className="collection-workspace catalog-view contacts-workbench property-resizable"
+      className={`collection-workspace catalog-view contacts-workbench property-resizable${detailId ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-layout="three-column"
     >
       <PropertyResizeHandle module="contacts" />
+      {!detailId && (
+        <WorkspacePageChrome
+          title="联系人"
+          createLabel="新建联系人"
+          create={{
+            onClick: () => setCreating(true),
+            disabled: blocked || Boolean(read.error) || !read.data,
+          }}
+          navigation={(['', 'person', 'organization'] as const).map((value) => (
+            <button
+              key={value || 'all'}
+              type="button"
+              disabled={blocked}
+              aria-pressed={kind === value}
+              onClick={() => filter(() => setKind(value))}
+            >
+              {value ? names[value] : '全部'}
+            </button>
+          ))}
+          search={{
+            expanded: chromeSearchOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeFilterOpen(false);
+              setChromeSearchOpen((open) => !open);
+            },
+          }}
+          filter={{
+            expanded: chromeFilterOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeSearchOpen(false);
+              setChromeFilterOpen((open) => !open);
+            },
+          }}
+          inspector={
+            pageNavigation
+              ? {
+                  expanded: pageNavigation.inspector.open,
+                  disabled: blocked,
+                  onClick: () => pageNavigation.inspector.setOpen((open) => !open),
+                }
+              : undefined
+          }
+        />
+      )}
       <div className="collection-main">
         <div ref={setDetailTarget} className="customer-detail-slot" hidden={!detailId} />
         <div className="customer-list-page" hidden={Boolean(detailId)}>
-          <header className="collection-heading">
-            <h1>联系人</h1>
-            <button
-              type="button"
-              className="primary"
-              disabled={blocked || Boolean(read.error) || !read.data}
-              onClick={() => setCreating(true)}
-            >
-              ＋ 新建联系人
-            </button>
-          </header>
           <p className="workbench-list-caption">管理联系人资料，记录每次沟通。</p>
-          <div className="view-tabs contacts-tabs">
-            {(['', 'person', 'organization'] as const).map((value) => (
+          <div
+            id={chromeFiltersId}
+            className="workspace-filter-panel"
+            hidden={!chromeSearchOpen && !chromeFilterOpen}
+          >
+            <div className="customer-list-filters">
+              <label className="customer-search">
+                <Icon name="search" size={16} />
+                <input
+                  aria-label="搜索联系人"
+                  placeholder="搜索姓名、单位、电话或邮箱…"
+                  value={text}
+                  disabled={blocked}
+                  onChange={(event) => filter(() => setText(event.target.value))}
+                />
+              </label>
+              <select
+                aria-label="筛选联系人关系"
+                disabled={blocked}
+                value={relationship}
+                onChange={(e) => filter(() => setRelationship(e.target.value))}
+              >
+                <option value="">关系</option>
+                {[...new Set(contacts.map((row) => row.relationship).filter(Boolean))].map(
+                  (value) => (
+                    <option key={value}>{value}</option>
+                  ),
+                )}
+              </select>
+              <select
+                aria-label="筛选联系人标签"
+                disabled={blocked}
+                value={tag}
+                onChange={(e) => filter(() => setTag(e.target.value))}
+              >
+                <option value="">标签</option>
+                {[...new Set(contacts.flatMap((row) => row.tags))].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+              <select
+                aria-label="筛选关联项目"
+                disabled={blocked || Boolean(catalog.error)}
+                value={projectFilter}
+                onChange={(e) => filter(() => setProjectFilter(e.target.value))}
+              >
+                <option value="">关联项目</option>
+                {projects.map((row) => (
+                  <option value={row.id} key={row.id}>
+                    {row.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="customer-list-views">
               <button
                 type="button"
-                key={value || 'all'}
+                aria-pressed={!recent}
                 disabled={blocked}
-                aria-pressed={kind === value}
-                onClick={() => filter(() => setKind(value))}
+                onClick={() => filter(() => setRecent(false))}
               >
-                {value ? names[value] : '全部'}{' '}
-                <small>{contacts.filter((row) => !value || row.kind === value).length}</small>
+                全部联系人
               </button>
-            ))}
-          </div>
-          <div className="customer-list-filters">
-            <label className="customer-search">
-              <Icon name="search" size={16} />
-              <input
-                aria-label="搜索联系人"
-                placeholder="搜索姓名、单位、电话或邮箱…"
-                value={text}
+              <button
+                type="button"
+                aria-pressed={recent}
                 disabled={blocked}
-                onChange={(event) => filter(() => setText(event.target.value))}
-              />
-            </label>
-            <select
-              aria-label="筛选联系人关系"
-              disabled={blocked}
-              value={relationship}
-              onChange={(e) => filter(() => setRelationship(e.target.value))}
-            >
-              <option value="">关系</option>
-              {[...new Set(contacts.map((row) => row.relationship).filter(Boolean))].map(
-                (value) => (
-                  <option key={value}>{value}</option>
-                ),
-              )}
-            </select>
-            <select
-              aria-label="筛选联系人标签"
-              disabled={blocked}
-              value={tag}
-              onChange={(e) => filter(() => setTag(e.target.value))}
-            >
-              <option value="">标签</option>
-              {[...new Set(contacts.flatMap((row) => row.tags))].map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-            <select
-              aria-label="筛选关联项目"
-              disabled={blocked || Boolean(catalog.error)}
-              value={projectFilter}
-              onChange={(e) => filter(() => setProjectFilter(e.target.value))}
-            >
-              <option value="">关联项目</option>
-              {projects.map((row) => (
-                <option value={row.id} key={row.id}>
-                  {row.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="customer-list-views">
+                onClick={() => filter(() => setRecent(true))}
+              >
+                最近联系
+              </button>
+            </div>
             <button
               type="button"
-              aria-pressed={!recent}
-              disabled={blocked}
-              onClick={() => filter(() => setRecent(false))}
+              disabled={
+                blocked || !(text || kind || relationship || tag || projectFilter || recent)
+              }
+              onClick={() =>
+                filter(() => {
+                  setText('');
+                  setKind('');
+                  setRelationship('');
+                  setTag('');
+                  setProjectFilter('');
+                  setRecent(false);
+                })
+              }
             >
-              全部联系人
-            </button>
-            <button
-              type="button"
-              aria-pressed={recent}
-              disabled={blocked}
-              onClick={() => filter(() => setRecent(true))}
-            >
-              最近联系
+              清除筛选
             </button>
           </div>
           {read.error ? (

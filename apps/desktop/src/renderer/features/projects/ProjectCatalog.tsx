@@ -1,5 +1,8 @@
 import SharedTaskTable from '../../ui/SharedTaskTable';
 import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
+import WorkspacePageChrome, {
+  closeWorkspaceDisplayOnEscape,
+} from '../../shared/ui/WorkspacePageChrome';
 import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import {
@@ -27,6 +30,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useId,
   useEffect,
   useLayoutEffect,
   useState,
@@ -107,6 +111,7 @@ export default function ProjectCatalog({
   onDirty(v: boolean): void;
   onChanged(): void | Promise<boolean>;
 }) {
+  const chromeFiltersId = useId();
   const readCatalog = useProjectCatalog();
   const c = useCatalog(true, readCatalog),
     [selected, setSelected] = useState<string | null>(initialView?.selected ?? null),
@@ -122,6 +127,8 @@ export default function ProjectCatalog({
     [assigning, setAssigning] = useState('');
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<Record<string, boolean>>({});
   const [listInspectorOpen, setListInspectorOpen] = useState(false);
+  const [chromeFilterOpen, setChromeFilterOpen] = useState(false);
+  const [chromeSearchOpen, setChromeSearchOpen] = useState(false);
   const [visualizationCollapsed, setVisualizationCollapsed] = useWorkspaceInspector(false, true);
   const [visualizationInspection, setVisualizationInspection] =
     useState<VisualizationInspection | null>(null);
@@ -483,12 +490,72 @@ export default function ProjectCatalog({
         ?.focus({ preventScroll: true }),
     );
   };
+  const chromeDisplay = (
+    <details
+      className="project-display-menu"
+      onToggle={(event) => {
+        const menu = event.currentTarget;
+        const panel = menu.querySelector<HTMLElement>('div');
+        const trigger = menu.querySelector('summary');
+        const center = workspace.current?.querySelector('.collection-main');
+        if (!menu.open || !panel || !trigger || !center) return;
+        // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
+        panel.style.position = 'fixed';
+        panel.style.right = 'auto';
+        panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
+        const anchor = trigger.getBoundingClientRect();
+        const bounds = center.getBoundingClientRect();
+        const rect = panel.getBoundingClientRect();
+        panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
+        panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
+      }}
+      onKeyDown={closeWorkspaceDisplayOnEscape}
+    >
+      <summary>
+        <Icon name="settings" size={16} /> 显示设置
+      </summary>
+      <div>
+        <button
+          type="button"
+          aria-label="项目预览"
+          aria-expanded={listInspectorOpen}
+          disabled={blocked}
+          onClick={() => {
+            if (!listInspectorOpen) pageNavigation?.inspector.setOpen(true);
+            setListInspectorOpen((open) => !open);
+          }}
+        >
+          项目预览
+        </button>
+        <label>
+          <input
+            type="checkbox"
+            checked={groupByStatus}
+            disabled={blocked}
+            onChange={(event) => setGroupByStatus(event.target.checked)}
+          />
+          按状态分组
+        </label>
+        <p>显示属性 · 本次会话</p>
+        {Object.entries(projectListProperties).map(([id, label]) => (
+          <label key={id}>
+            <input
+              type="checkbox"
+              checked={columns[id as keyof typeof columns]}
+              onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </details>
+  );
   return (
     <section
       ref={workspace}
       inert={navigationPending}
       aria-busy={navigationPending}
-      className="collection-workspace catalog-view project-catalog property-resizable"
+      className={`collection-workspace catalog-view project-catalog property-resizable${editor ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-project-view={editor ? section : 'list'}
       data-visualization-collapsed={Boolean(
@@ -498,101 +565,87 @@ export default function ProjectCatalog({
       data-testid="project-catalog"
     >
       {section !== 'documents' && <PropertyResizeHandle module="projects" />}
-      <div className="collection-main">
-        {backSlot && createPortal(backButton, backSlot)}
-        <div className="collection-heading project-catalog-heading">
-          {!backSlot && backButton}
-          {editor ? (
-            <>
-              <Icon name="folder" size={16} />
-              <h1>{(p ?? editor.project).title}</h1>
-              {favoriteAction?.(
-                p ?? editor.project,
-                blocked || !!(p ?? editor.project).archived_at,
-              )}
-            </>
-          ) : (
-            <div className="project-dashboard-title">
-              <h1>项目管理</h1>
-              <p>集中管理案件与项目，跟踪进展、重要日期与团队协作。</p>
-            </div>
-          )}
-          <button className="work-list-create" disabled={blocked} onClick={() => setCreating(true)}>
-            <Icon name="plus" size={15} /> 创建项目
-          </button>
-        </div>
-        <InlinePropertiesSlot />
-        {!editor && (
-          <div className="project-list-stages" aria-label="项目阶段">
+      {!editor && (
+        <WorkspacePageChrome
+          title="项目"
+          createLabel="新建项目"
+          create={{ onClick: () => setCreating(true), disabled: blocked }}
+          navigation={(
+            [
+              ['all', '全部项目'],
+              ['active', '进行中'],
+              ['planned', '待启动'],
+              ['done', '已结项'],
+            ] as const
+          ).map(([value, label]) => (
             <button
+              key={value}
               type="button"
-              aria-pressed={statusFilter === 'all'}
               disabled={blocked}
+              aria-pressed={statusFilter === value}
               onClick={() => {
                 setSelected(null);
-                setStatusFilter('all');
+                setStatusFilter(value === statusFilter ? 'all' : value);
               }}
             >
-              全部项目 <span>{projects.filter((item) => !item.archived_at).length}</span>
+              {label}
             </button>
-            {(
-              [
-                ['active', '进行中'],
-                ['planned', '待启动'],
-                ['done', '已结项'],
-              ] as const
-            ).map(([status, label]) => (
-              <button
-                type="button"
-                key={status}
-                aria-pressed={statusFilter === status}
-                disabled={blocked}
-                onClick={() => {
-                  setSelected(null);
-                  setStatusFilter(statusFilter === status ? 'all' : status);
-                }}
-              >
-                {label}{' '}
-                <span>{projects.filter((item) => projectStatus(item) === status).length}</span>
-              </button>
-            ))}
-            {(query || statusFilter !== 'all' || ownerFilter || typeFilter) && (
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => {
-                  setQuery('');
-                  setStatusFilter('all');
-                  setOwnerFilter('');
-                  setTypeFilter('');
-                  setSelected(null);
-                }}
-              >
-                清除筛选
-              </button>
-            )}
+          ))}
+          search={{
+            expanded: chromeSearchOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeFilterOpen(false);
+              setChromeSearchOpen((open) => !open);
+            },
+          }}
+          filter={{
+            expanded: chromeFilterOpen,
+            controls: chromeFiltersId,
+            disabled: blocked,
+            onClick: () => {
+              setChromeSearchOpen(false);
+              setChromeFilterOpen((open) => !open);
+            },
+          }}
+          display={chromeDisplay}
+          inspector={
+            pageNavigation
+              ? {
+                  expanded: pageNavigation.inspector.open,
+                  disabled: blocked,
+                  onClick: () => pageNavigation.inspector.setOpen((open) => !open),
+                }
+              : undefined
+          }
+        />
+      )}
+      <div className="collection-main">
+        {backSlot && createPortal(backButton, backSlot)}
+        {editor && (
+          <div className="collection-heading project-catalog-heading">
+            {!backSlot && backButton}
+            <Icon name="folder" size={16} />
+            <h1>{(p ?? editor.project).title}</h1>
+            {favoriteAction?.(p ?? editor.project, blocked || !!(p ?? editor.project).archived_at)}
             <button
-              className="project-list-inspector-toggle"
-              type="button"
-              aria-label="项目预览"
-              aria-expanded={listInspectorOpen}
+              className="work-list-create"
               disabled={blocked}
-              onClick={() => {
-                if (!listInspectorOpen) pageNavigation?.inspector.setOpen(true);
-                setListInspectorOpen((open) => !open);
-              }}
+              onClick={() => setCreating(true)}
             >
-              <Icon name="panel" size={16} />
+              <Icon name="plus" size={15} /> 创建项目
             </button>
           </div>
         )}
-
+        <InlinePropertiesSlot />
         {!editor && <h2 className="project-dashboard-list-title">项目列表</h2>}
         {!editor && (
           <div
             className="project-list-controls"
-            id="project-list-filters"
+            id={chromeFiltersId}
             aria-label="项目列表选项"
+            hidden={!chromeSearchOpen && !chromeFilterOpen}
           >
             <label className="project-list-search">
               <Icon name="search" size={15} />
@@ -660,57 +713,19 @@ export default function ProjectCatalog({
               <option value="title">名称</option>
               <option value="status">状态</option>
             </select>
-            <details
-              className="project-display-menu"
-              onToggle={(event) => {
-                const menu = event.currentTarget;
-                const panel = menu.querySelector<HTMLElement>('div');
-                const trigger = menu.querySelector('summary');
-                const center = workspace.current?.querySelector('.collection-main');
-                if (!menu.open || !panel || !trigger || !center) return;
-                // 工具栏换行后菜单可能贴近窗口底部，浮层仍须完整可达。
-                panel.style.position = 'fixed';
-                panel.style.right = 'auto';
-                panel.style.maxHeight = `${Math.max(80, window.innerHeight - 16)}px`;
-                const anchor = trigger.getBoundingClientRect();
-                const bounds = center.getBoundingClientRect();
-                const rect = panel.getBoundingClientRect();
-                panel.style.left = `${Math.max(bounds.left + 8, Math.min(anchor.right - rect.width, bounds.right - rect.width - 8, window.innerWidth - rect.width - 8))}px`;
-                panel.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8))}px`;
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.currentTarget.open = false;
-                  event.currentTarget.querySelector('summary')?.focus();
-                }
+            <button
+              type="button"
+              disabled={blocked || !(query || statusFilter !== 'all' || ownerFilter || typeFilter)}
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('all');
+                setOwnerFilter('');
+                setTypeFilter('');
+                setSelected(null);
               }}
             >
-              <summary>
-                <Icon name="list" size={15} /> 显示
-              </summary>
-              <div>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={groupByStatus}
-                    disabled={blocked}
-                    onChange={(event) => setGroupByStatus(event.target.checked)}
-                  />
-                  按状态分组
-                </label>
-                <p>显示属性 · 本次会话</p>
-                {Object.entries(projectListProperties).map(([id, label]) => (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={columns[id as keyof typeof columns]}
-                      onChange={(e) => setColumns({ ...columns, [id]: e.target.checked })}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </details>
+              清除筛选
+            </button>
           </div>
         )}
         {readError && <p role="alert">{readError}</p>}

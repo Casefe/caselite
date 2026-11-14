@@ -60,6 +60,10 @@ export async function runDocumentReviewDemo(
     )
   )
     throw new Error('Document review demo isolation failed');
+  // 专项只分离旧设置/伸缩合同，文档审阅业务断言和原验收模式保持不变。
+  const reviewFunctionOnly = process.env.CASELITE_DOCUMENT_REVIEW_ONLY === '1';
+  if (reviewFunctionOnly && process.env.CASELITE_SIDEBAR_RESIZE === 'test')
+    throw new Error('Select only one document review native acceptance lane');
   const window = await createWindow().catch((error: unknown) => {
     writeFileSync(
       join(root, 'review-window-failure.txt'),
@@ -102,11 +106,33 @@ export async function runDocumentReviewDemo(
       throw error;
     }
   };
+  const visibleControl = async (target: string) => {
+    await evaluate(`${target}.scrollIntoView({block:'nearest',inline:'nearest'})`);
+    await wait(
+      `(()=>{const e=${target},r=e?.getBoundingClientRect();return r&&r.width>0&&r.height>0&&r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1&&!e.closest('[inert]')&&getComputedStyle(e).visibility==='visible'&&e.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));})()`,
+    );
+  };
+  const showReview = async () => {
+    await wait("document.querySelector('.workspace-inspector-toggle:not(:disabled)')");
+    await evaluate(
+      "(()=>{const toggle=document.querySelector('.workspace-inspector-toggle');if(toggle.getAttribute('aria-expanded')==='false')toggle.click();})()",
+    );
+    await evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+    await wait("document.querySelector('[aria-label=文档审阅侧栏] .inspector-split')");
+    await evaluate(
+      "(()=>{const split=document.querySelector('[aria-label=文档审阅侧栏] .inspector-split');if(split.dataset.aiExpanded!=='true'){const label=split.dataset.responsiveInspector==='inline'?'打开 AI 对话':'展开 AI 对话';const button=split.querySelector('[aria-label=\"'+label+'\"]');if(!button||button.disabled)throw new Error('Review dock launcher unavailable');button.click();}})()",
+    );
+    await wait(
+      "document.querySelector('[aria-label=文档审阅侧栏] .inspector-split')?.dataset.aiExpanded==='true'",
+    );
+    await visibleControl("document.querySelector('.document-review textarea')");
+  };
   const button = (label: string) =>
     `[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)})`;
   const click = async (label: string) => {
     const target = button(label);
     await wait(`${target} && !${target}.disabled`);
+    if (reviewFunctionOnly) await visibleControl(target);
     await evaluate(`${target}.click()`);
   };
   const body = "document.querySelector('[data-testid=body-editor]')";
@@ -118,10 +144,33 @@ export async function runDocumentReviewDemo(
     await wait("document.querySelector('[data-nav=documents]')");
     await evaluate("document.querySelector('[data-nav=documents]').click()");
     const row = `document.querySelector('[data-document-id="${id}"]')`;
-    await wait(row);
+    await wait(`${row} && !${row}.disabled && ${row}.getBoundingClientRect().width>0`);
     await evaluate(`${row}.click()`);
-    await click('打开正文');
-    await wait(`${body} && document.querySelector('.document-review textarea')`);
+    await wait(`${row}?.getAttribute('aria-pressed')==='true' && ${body}`);
+    await wait("document.querySelector('[aria-label=更多文档操作]:not(:disabled)')");
+    await evaluate("document.querySelector('[aria-label=更多文档操作]').click()");
+    await click('AI 审阅');
+    const expected = [a, b].find((item) => item.document_id === id);
+    if (!expected) throw new Error('Unknown synthetic review document');
+    await wait(
+      `${body} && ${body}.closest('.task-detail')?.dataset.activeTask===${JSON.stringify(expected.id)} && ${body}.closest('.task-detail')?.dataset.taskTab==='result' && document.querySelector('.document-review textarea')`,
+    );
+    if (reviewFunctionOnly) await showReview();
+    writeFileSync(
+      join(root, `${phase}-open-${id}.json`),
+      JSON.stringify(
+        {
+          expectedTaskId: expected.id,
+          documentId: expected.document_id,
+          bodyId: expected.body_id,
+          actual: await evaluate(
+            "(()=>{const detail=document.querySelector('.task-detail');return {taskId:detail?.dataset.activeTask,tab:detail?.dataset.taskTab,reviewCount:document.querySelectorAll('.document-review').length};})()",
+          ),
+        },
+        null,
+        2,
+      ),
+    );
   };
   const select = async () => {
     await evaluate(`(() => {
@@ -150,7 +199,7 @@ export async function runDocumentReviewDemo(
   const assertRunCount = (count: number) => {
     if (runs().length !== count) throw new Error('Unexpected local Run count');
   };
-  if (process.env.CASELITE_SIDEBAR_RESIZE === 'test') {
+  if (process.env.CASELITE_SIDEBAR_RESIZE === 'test' || reviewFunctionOnly) {
     await wait("document.querySelector('[data-nav=settings]')");
     await evaluate("document.querySelector('[data-nav=settings]').click()");
     await wait("document.querySelector('.theme-option:nth-child(2):not(:disabled)')");
@@ -223,6 +272,9 @@ export async function runDocumentReviewDemo(
         {
           documents: [a.document_id, b.document_id],
           revisions: [a.body_revision, b.body_revision],
+          lane: reviewFunctionOnly ? 'document-review-only' : 'original',
+          legacySettings: reviewFunctionOnly ? 'NOT_RUN_THIS_LANE' : 'ORIGINAL_LANE',
+          legacySidebarResize: reviewFunctionOnly ? 'NOT_RUN_THIS_LANE' : 'ORIGINAL_LANE',
           runs: runs().length,
         },
         null,
@@ -297,6 +349,8 @@ export async function runDocumentReviewDemo(
   await wait(
     "document.querySelector('[aria-label=替换差异] ins')?.textContent.includes('十个工作日')",
   );
+  if (reviewFunctionOnly)
+    await visibleControl("document.querySelector('.document-review [aria-label=替换差异] ins')");
   await capture('diff.png');
   await click('拒绝');
   await wait(`${body}.textContent.includes(${JSON.stringify(lines[0])}) && ${revision}==='1'`);
@@ -319,6 +373,7 @@ export async function runDocumentReviewDemo(
     await wait(
       "innerWidth===640 && document.documentElement.scrollWidth<=640 && document.querySelector('.document-review').scrollWidth<=document.querySelector('.document-review').clientWidth",
     );
+    if (reviewFunctionOnly) await showReview();
     await evaluate(
       "document.querySelector('.document-review textarea').scrollIntoView({block:'center'})",
     );
@@ -337,6 +392,9 @@ export async function runDocumentReviewDemo(
         expectedRevisions: [2, 1],
         runs: runs().map(({ id, status, scope }) => ({ id, status, scope })),
         requestsBeforeSend: 0,
+        lane: reviewFunctionOnly ? 'document-review-only' : 'original',
+        legacySettings: reviewFunctionOnly ? 'NOT_RUN_THIS_LANE' : 'ORIGINAL_LANE',
+        legacySidebarResize: reviewFunctionOnly ? 'NOT_RUN_THIS_LANE' : 'ORIGINAL_LANE',
         intactEmojiPreview: true,
         splitEmojiRejected: true,
         compositionEvent: 'synthetic',

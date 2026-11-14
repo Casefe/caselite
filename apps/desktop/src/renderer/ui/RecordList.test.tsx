@@ -169,12 +169,15 @@ it('hides the completed A count while query B is pending rather than assigning i
         }),
   );
   await screen.findByRole('row', { name: '选择任务：甲' });
-  expect(document.querySelector('.collection-total')?.textContent).toBe('2');
+  expect(document.querySelector('.collection-footer')?.textContent).toContain('2 个任务');
+  fireEvent.click(screen.getByRole('button', { name: '打开任务搜索' }));
   fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '乙' } });
-  expect(document.querySelector('.collection-total')?.textContent).toBe('…');
   expect(document.querySelector('.collection-footer')?.textContent).toContain('正在读取任务');
+  expect(document.querySelector('.collection-footer')?.textContent).not.toContain('2 个任务');
   await act(async () => finish(result([b])));
-  await waitFor(() => expect(document.querySelector('.collection-total')?.textContent).toBe('1'));
+  await waitFor(() =>
+    expect(document.querySelector('.collection-footer')?.textContent).toContain('1 个任务'),
+  );
 });
 it('waits for Chinese composition end before querying and retains task property draft guards', async () => {
   const t = task('中文任务');

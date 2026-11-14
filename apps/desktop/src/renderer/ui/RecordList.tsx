@@ -1,11 +1,14 @@
 import type { TaskCompletionActions } from '../features/tasks/useTaskCompletion';
+import WorkspacePageChrome, {
+  closeWorkspaceDisplayOnEscape,
+} from '../shared/ui/WorkspacePageChrome';
 import { InlinePropertiesSlot } from './ResponsiveWorkspace';
 import { createPortal } from 'react-dom';
 import { useWorkspaceInspector } from '../shared/navigation/PageNavigation';
 import PropertyResizeHandle from './PropertyResizeHandle';
 import TaskInspector from './TaskInspector';
 import { Icon } from '../shared/ui/Icon';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
 import { TaskTable, taskOptionalColumns, type TaskOptionalColumn } from './Workspace';
 import TaskBulkActions from '../features/tasks/TaskBulkActions';
@@ -66,6 +69,7 @@ export default function RecordList({
   onProjectDirty?(value: boolean): void;
   onTaskChanged(task: Task, state: number[] | null): void;
 }) {
+  const chromeFiltersId = useId();
   const [bulkBlocked, setBulkBlocked] = useState(false);
   const [inspectorBlocked, setInspectorBlocked] = useState(false);
   const propertiesBlocked =
@@ -212,7 +216,7 @@ export default function RecordList({
       >
         <Icon name="filter" size={17} />
       </button>
-      <details className="task-display-options">
+      <details className="task-display-options" onKeyDown={closeWorkspaceDisplayOnEscape}>
         <summary aria-label="任务显示设置">
           <Icon name="settings" size={16} />
           显示设置
@@ -273,40 +277,121 @@ export default function RecordList({
       </button>
     </div>
   );
+  const titleDisplay = (
+    <details className="task-display-options" onKeyDown={closeWorkspaceDisplayOnEscape}>
+      <summary aria-label="任务显示设置">
+        <Icon name="settings" size={16} />
+        显示设置
+      </summary>
+      <fieldset disabled={propertiesBlocked}>
+        <legend>当前列表</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={selectionMode}
+            onChange={(e) => {
+              setSelectionMode(e.target.checked);
+              setSelectedIds([]);
+            }}
+          />
+          选择多个任务
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={viewState.groupByStatus ?? false}
+            onChange={(e) =>
+              onViewState({ ...viewState, groupByStatus: e.target.checked, scroll: 0 })
+            }
+          />
+          按状态分组（当前页）
+        </label>
+        {optionalColumns
+          .filter(([id]) => !project || id !== 'project')
+          .map(([id, label]) => (
+            <label key={id}>
+              <input
+                type="checkbox"
+                checked={!hiddenColumns.includes(id)}
+                onChange={(e) =>
+                  onViewState({
+                    ...viewState,
+                    hiddenColumns: e.target.checked
+                      ? hiddenColumns.filter((column) => column !== id)
+                      : [...hiddenColumns, id],
+                  })
+                }
+              />
+              {label}
+            </label>
+          ))}
+      </fieldset>
+    </details>
+  );
   return (
     <section
-      className="list-view collection-workspace issue-collection task-query-list compact-task-list property-resizable"
+      className={`list-view collection-workspace issue-collection task-query-list compact-task-list property-resizable${project ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-layout={previewOpen ? 'three-column' : 'list'}
       data-collection="tasks"
     >
       {previewOpen && <PropertyResizeHandle module="tasks" />}
-      <div className="collection-main">
-        {!project && (
-          <div className="collection-heading">
-            <Icon name="check" size={18} />
-            <h1>任务</h1>
-            <span className="collection-total">{loading ? '…' : total}</span>
+      {!project && (
+        <WorkspacePageChrome
+          title="任务"
+          createLabel="新建任务"
+          create={{ onClick: onNew, disabled: propertiesBlocked }}
+          navigation={(['all', 'todo', 'in_progress', 'done'] as const).map((value) => (
             <button
-              className="work-list-create"
-              data-testid="new-task"
+              key={value}
+              type="button"
               disabled={propertiesBlocked}
-              onClick={onNew}
+              aria-pressed={value === 'all' ? !q.status : q.status === value}
+              onClick={() => change({ status: value === 'all' ? null : value })}
             >
-              <Icon name="plus" size={15} />
-              新建任务
+              {value === 'all' ? '全部任务' : taskStatusNames[value]}
             </button>
-          </div>
-        )}
+          ))}
+          search={{
+            label: '打开任务搜索',
+            expanded: searchOpen,
+            controls: chromeFiltersId,
+            disabled: propertiesBlocked,
+            onClick: () => {
+              setFiltersOpen(false);
+              setSearchOpen((open) => !open);
+            },
+          }}
+          filter={{
+            label: '筛选任务',
+            expanded: filtersOpen,
+            controls: chromeFiltersId,
+            disabled: propertiesBlocked,
+            onClick: () => {
+              setSearchOpen(false);
+              setFiltersOpen((open) => !open);
+            },
+          }}
+          display={titleDisplay}
+          inspector={{
+            label: '任务预览',
+            expanded: previewOpen,
+            disabled: propertiesBlocked,
+            onClick: () => setPreviewOpen((open) => !open),
+          }}
+        />
+      )}
+      <div className="collection-main">
         <InlinePropertiesSlot />
-        {toolbarHost ? (
-          createPortal(controls, toolbarHost)
-        ) : (
-          <div className="task-list-viewbar">{controls}</div>
-        )}
+        {project &&
+          (toolbarHost ? (
+            createPortal(controls, toolbarHost)
+          ) : (
+            <div className="task-list-viewbar">{controls}</div>
+          ))}
         <div
           className="task-query-toolbar"
-          id="task-list-filters"
+          id={chromeFiltersId}
           hidden={!filtersOpen && !searchOpen}
         >
           <input

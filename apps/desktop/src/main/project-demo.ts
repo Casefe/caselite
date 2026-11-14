@@ -1081,7 +1081,7 @@ export async function runProjectDemo(
 
       const globalCreate = async (title: string, group: boolean) => {
         await click('[data-nav=tasks]');
-        await click('[data-testid=new-task]');
+        await click('[data-collection=tasks] .workspace-page-create');
         await checkFields('todo', 0, '');
         await wait("document.querySelector('[aria-label=所属项目]:not(:disabled)')?.value===''");
         if (group) {
@@ -4559,7 +4559,7 @@ export async function runProjectDemo(
       let contactId: string;
       if (phase === 'project-files') {
         const before = new Set((await listContacts()).map((row) => row.id));
-        await clickVisible('.contacts-workbench .collection-heading button');
+        await clickVisible('.contacts-workbench .workspace-page-create');
         await wait("document.querySelector('.contact-create-dialog [aria-label=联系人姓名]')");
         await input('联系人姓名', syntheticContact);
         await clickVisible('.contact-create-projects summary');
@@ -4754,7 +4754,7 @@ export async function runProjectDemo(
         await clickVisible('.document-directory-back');
         await wait(`document.querySelector('[data-collection=documents]')?.dataset.directoryView==='list' &&
           getComputedStyle(document.querySelector('[data-collection=documents] > .collection-main')).display!=='none' &&
-          document.activeElement.matches('.collection-heading h1')`);
+          document.activeElement.matches('[data-collection=documents] > .collection-main > h2.sr-only[tabindex="-1"]')`);
         await clickVisible(file);
         await assertInlineBody();
         await captureRenderer('project-files-inline-reentered.png');
@@ -4781,8 +4781,10 @@ export async function runProjectDemo(
     } else if (phase === 'project-promote' || phase === 'project-promote-read') {
       if (phase === 'project-promote') {
         await evaluate("document.querySelector('[data-nav=tasks]').click()");
-        await wait("document.querySelector('[data-testid=new-task]')");
-        await evaluate("document.querySelector('[data-testid=new-task]').click()");
+        await wait("document.querySelector('[data-collection=tasks] .workspace-page-create')");
+        await evaluate(
+          "document.querySelector('[data-collection=tasks] .workspace-page-create').click()",
+        );
         await wait("document.querySelector('[data-testid=task-title]')");
         await evaluate(`(()=>{
           const input=document.querySelector('[data-testid=task-title]');

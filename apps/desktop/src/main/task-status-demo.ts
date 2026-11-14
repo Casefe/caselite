@@ -61,7 +61,7 @@ export async function runTaskStatusDemo(
     );
   const open = async (id: string) => {
     await wait(`document.querySelector('[data-row-task="${id}"]')`);
-    await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
+    await evaluate(`document.querySelector('[data-row-task="${id}"] .task-row-title').click()`);
     await wait(
       `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
     );
@@ -88,7 +88,9 @@ export async function runTaskStatusDemo(
     );
   };
   const createTask = async (title: string) => {
-    await evaluate("document.querySelector('[data-testid=new-task]').click()");
+    await evaluate(
+      "document.querySelector('[data-collection=tasks] .workspace-page-create').click()",
+    );
     await wait("document.querySelector('[data-testid=task-title]')");
     await evaluate(
       `(()=>{const e=document.querySelector('[data-testid=task-title]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(title)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`,
@@ -102,7 +104,7 @@ export async function runTaskStatusDemo(
   try {
     await wait("document.querySelector('[data-nav=tasks]')");
     await evaluate("document.querySelector('[data-nav=tasks]').click()");
-    await wait("document.querySelector('[data-testid=new-task]')");
+    await wait("document.querySelector('[data-collection=tasks] .workspace-page-create')");
     const displayTimezone: string = await evaluate(
       'Intl.DateTimeFormat().resolvedOptions().timeZone',
     );
@@ -162,7 +164,7 @@ export async function runTaskStatusDemo(
       await settled('done');
       if (digest((await read(id)).state) !== bodyHash)
         throw new Error('Status changed the saved body bytes');
-      await click('内容');
+      await click('返回任务');
       await wait("document.querySelector('[data-testid=task-content-editor]')");
       await evaluate(
         "document.querySelector('[data-testid=task-content-editor]').focus();document.execCommand('insertText',false,'人工确认的说明。')",
@@ -184,19 +186,42 @@ export async function runTaskStatusDemo(
       );
       await evaluate("document.querySelector('[data-testid=back-to-tasks]').click()");
       await wait(`document.querySelector('[data-row-task="${id}"]')`);
-      await wait("document.querySelector('.task-list-sidebar [aria-label=任务状态]')");
+      await evaluate(
+        "(()=>{const button=document.querySelector('[data-collection=tasks] [aria-label=任务预览]');if(button.getAttribute('aria-expanded')==='false')button.click();})()",
+      );
+      await wait(
+        "document.querySelector('.task-summary-sidebar:not([hidden]) [aria-label=任务状态]')",
+      );
       await status('done');
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
+      const dateDialog = '[aria-label=任务日期][open]';
+      const dateInput = `${dateDialog} [aria-label=截止日期]`;
+      const openDates = async () => {
+        await wait(
+          "document.querySelector('.task-summary-sidebar [aria-label=设置任务截止日期]:not(:disabled)')",
+        );
+        await evaluate(
+          "document.querySelector('.task-summary-sidebar [aria-label=设置任务截止日期]').click()",
+        );
+        await wait(`document.querySelector(${JSON.stringify(dateInput)})`);
+      };
+      const dateButton = async (label: string) => {
+        const button = `Array.from(document.querySelectorAll('${dateDialog} button')).find((b)=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
+        await wait(button);
+        await evaluate(`${button}.click()`);
+      };
       const attributes = async (date: string, priority: number) => {
         await evaluate(
           `(()=>{const p=document.querySelector('[aria-label=任务优先级]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(String(priority))});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
         );
+        await openDates();
         if (date) {
           await evaluate(
-            `(()=>{const d=document.querySelector('[aria-label=普通截止日期]');d.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,${JSON.stringify(date)});d.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+            `(()=>{const d=document.querySelector(${JSON.stringify(dateInput)});d.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,${JSON.stringify(date)});d.dispatchEvent(new Event('input',{bubbles:true}));})()`,
           );
-          await evaluate("document.querySelector('[aria-label=普通截止日期]').blur()");
-        } else await click('清空截止日期');
+          await dateButton('确定日期');
+        } else await dateButton('清除日期');
+        await wait(`!document.querySelector('${dateDialog}')`);
         await settled('done');
         const t = (await read(id)).tasks[0];
         if (t.due_date !== (date || null) || t.priority !== priority || t.status !== 'done')
@@ -209,22 +234,37 @@ export async function runTaskStatusDemo(
       window.focus();
       window.webContents.focus();
       await wait('document.hasFocus()');
-      await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
+      await openDates();
+      await evaluate(`document.querySelector(${JSON.stringify(dateInput)}).focus()`);
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
-      await evaluate("document.querySelector('[aria-label=普通截止日期]').blur()");
+      await evaluate(`document.querySelector(${JSON.stringify(dateInput)}).blur()`);
       await wait(
-        "document.querySelector('[aria-label=普通截止日期]')?.getAttribute('aria-invalid')==='true'",
+        `document.querySelector(${JSON.stringify(dateInput)})?.validity.badInput && !document.querySelector(${JSON.stringify(dateInput)})?.validity.valid`,
+      );
+      await dateButton('确定日期');
+      await wait(
+        `document.querySelector('${dateDialog} [role=alert]')?.textContent.includes('请输入有效日期')`,
       );
       if ((await read(id)).tasks[0].due_date !== '2026-01-01')
         throw new Error('Native incomplete date can silently clear saved date');
       await capture('attributes-incomplete-date.png');
-      await evaluate("document.querySelector('[aria-label=普通截止日期]').focus()");
+      await evaluate(`document.querySelector(${JSON.stringify(dateInput)}).focus()`);
       window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
       window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
       await wait(
-        "document.querySelector('[aria-label=普通截止日期]')?.value==='2026-01-01' && !document.querySelector('[aria-label=搜索任务]').disabled",
+        `!document.querySelector('${dateDialog}') && !document.querySelector('[aria-label=搜索任务]').disabled`,
       );
+      await openDates();
+      await wait(
+        `document.querySelector(${JSON.stringify(dateInput)})?.value==='2026-01-01' && !document.querySelector(${JSON.stringify(dateInput)})?.validity.badInput`,
+      );
+      await dateButton('取消');
+      await wait(
+        `!document.querySelector('${dateDialog}') && !document.querySelector('[aria-label=搜索任务]').disabled`,
+      );
+      if ((await read(id)).tasks[0].due_date !== '2026-01-01')
+        throw new Error('Escape changed the saved task date');
       await wait("!document.querySelector('[aria-label=新标签]')");
       await click('添加标签');
       await wait("document.activeElement?.matches('[aria-label=新标签]')");
@@ -260,6 +300,7 @@ export async function runTaskStatusDemo(
       await wait(`!document.querySelector('[data-row-task="${id}"] [data-column=owner]')`);
       await capture('task-display-options.png');
       await evaluate("document.querySelector('[aria-label=任务显示设置]').click()");
+      await evaluate("document.querySelector('[aria-label=筛选任务]').click()");
       const filter = async (label: string, value: string) =>
         evaluate(
           `(()=>{const p=document.querySelector('[aria-label="${label}"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(p,${JSON.stringify(value)});p.dispatchEvent(new Event('change',{bubbles:true}));})()`,
@@ -427,12 +468,33 @@ export async function runTaskStatusDemo(
       await wait(
         "document.querySelector('[data-discussion-id]')?.textContent.includes('归组任务单独')",
       );
-      await wait(
-        "document.querySelector('[aria-label=评论]').getBoundingClientRect().bottom <= document.querySelector('.task-inspector').getBoundingClientRect().top",
+      const responsiveLayout = `(()=>{
+        const shell=document.querySelector('.workbench'),work=document.querySelector('.task-work-area'),inspector=document.querySelector('.task-inspector'),comment=document.querySelector('[aria-label=评论]');
+        const rect=(e)=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+        return {mode:shell.dataset.propertiesLayout,open:shell.dataset.inspectorOpen,viewport:innerWidth,pageWidth:document.documentElement.scrollWidth,work:rect(work),inspector:rect(inspector),comment:rect(comment),grid:getComputedStyle(document.querySelector('.task-layout')).gridTemplateColumns,inspectorDisplay:getComputedStyle(inspector).display};
+      })()`;
+      writeFileSync(
+        join(root, 'task-detail-responsive-layout.json'),
+        JSON.stringify(await evaluate(responsiveLayout), null, 2),
       );
+      // 按实际已批准布局验不重叠；640只是比例边界，不能预设属性一定排在评论下方。
+      await wait(`(()=>{
+        const s=${responsiveLayout};
+        if(s.open!=='true'||s.pageWidth>s.viewport||s.work.width<=0||s.work.left<0||s.work.right>s.viewport+1||s.comment.left<s.work.left-1||s.comment.right>s.work.right+1)return false;
+        if(s.mode==='sidebar')return s.inspector.width>0&&s.inspector.height>0&&s.work.right<=s.inspector.left+1&&s.inspector.right<=s.viewport+1;
+        if(s.mode==='inline'){
+          const slot=document.querySelector('.task-content-overview > .inline-properties-slot');
+          const r=slot?.getBoundingClientRect();
+          return s.inspectorDisplay==='contents'&&slot?.childElementCount>0&&r.width>0&&r.height>0&&r.left>=s.work.left-1&&r.right<=s.work.right+1&&r.bottom<=s.comment.top+1;
+        }
+        return false;
+      })()`);
       await capture('task-detail-640-light.png');
       await evaluate(
         "document.querySelector('[aria-label=评论]').scrollIntoView({block:'center'})",
+      );
+      await wait(
+        "(()=>{const c=document.querySelector('[aria-label=评论] .project-discussion-compose'),w=document.querySelector('.task-work-area');const r=c?.getBoundingClientRect(),b=w?.getBoundingClientRect();return r&&b&&r.width>0&&r.height>0&&r.top>=b.top-1&&r.bottom<=b.bottom+1;})()",
       );
       await capture('task-detail-640-comment.png');
       const discussion = {
@@ -460,7 +522,7 @@ export async function runTaskStatusDemo(
       const expected = JSON.parse(readFileSync(join(root, 'task-status-expected.json'), 'utf8'));
       id = expected.task.id;
       await wait(`document.querySelector('[data-row-task="${id}"] [data-status=done]')`);
-      await evaluate(`document.querySelector('[data-row-task="${id}"]').click()`);
+      await evaluate(`document.querySelector('[data-row-task="${id}"] .task-row-title').click()`);
       await wait(
         `document.querySelector('[data-active-task]')?.dataset.activeTask===${JSON.stringify(id)}`,
       );

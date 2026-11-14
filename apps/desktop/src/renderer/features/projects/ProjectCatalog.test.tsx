@@ -16,7 +16,8 @@ import {
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../../preload/caselite-api';
 import { QueryClientProvider } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { PageNavigationProvider } from '../../shared/navigation/PageNavigation';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import ProjectCatalog, { type ProjectViewState } from './ProjectCatalog';
 vi.mock('../documents/BodyEditor', () => ({
@@ -105,6 +106,25 @@ function renderProject(ui: ReactElement) {
 function createButton() {
   return within(screen.getByRole('dialog')).getByRole('button', { name: '创建项目' });
 }
+function openProjectDisplay() {
+  const summary = screen.getByText('显示设置').closest('summary')!;
+  if (!summary.parentElement!.hasAttribute('open')) fireEvent.click(summary);
+  return summary;
+}
+function projectPreviewButton() {
+  const summary = openProjectDisplay();
+  return within(summary.parentElement!).getByRole('button', { name: '项目预览' });
+}
+function toggleProjectPreview() {
+  const button = projectPreviewButton();
+  const summary = button.closest('details')!.querySelector('summary')!;
+  fireEvent.click(button);
+  fireEvent.click(summary);
+}
+function revealProjectFilters() {
+  const trigger = screen.getByRole('button', { name: '项目筛选' });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+}
 function show(tasks: Task[] = []) {
   const changed = vi.fn();
   renderProject(
@@ -112,6 +132,52 @@ function show(tasks: Task[] = []) {
   );
   return changed;
 }
+
+it('toggles the shared sidebar independently from the project preview mode', async () => {
+  const p = project();
+  window.caselite = { catalog: vi.fn(async () => response([p])) } as unknown as Window['caselite'];
+  function Fixture() {
+    const [open, setOpen] = useState(true);
+    return (
+      <PageNavigationProvider
+        value={{
+          initial: null,
+          register: () => () => {},
+          report() {},
+          beforeChange() {},
+          inspector: { open, setOpen, pageKey: 'projects', initialize() {} },
+        }}
+      >
+        <ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />
+        <output data-testid="sidebar-open">{String(open)}</output>
+      </PageNavigationProvider>
+    );
+  }
+  renderProject(<Fixture />);
+  await screen.findByRole('table', { name: '项目列表' });
+  const sidebar = screen.getByRole('button', { name: '项目侧栏' });
+  fireEvent.click(sidebar);
+  expect(screen.getByTestId('sidebar-open').textContent).toBe('false');
+  fireEvent.click(sidebar);
+  expect(screen.getByTestId('sidebar-open').textContent).toBe('true');
+  toggleProjectPreview();
+  expect(screen.getByTestId('sidebar-open').textContent).toBe('true');
+  expect(projectPreviewButton().getAttribute('aria-expanded')).toBe('true');
+});
+
+it('restores all projects when the active quick status is selected again', async () => {
+  const p = { ...project(), status: 'active' as const };
+  window.caselite = { catalog: vi.fn(async () => response([p])) } as unknown as Window['caselite'];
+  show();
+  await screen.findByRole('table', { name: '项目列表' });
+  const active = screen.getByRole('button', { name: '进行中', exact: true });
+  fireEvent.click(active);
+  expect(active.getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(active);
+  expect(
+    screen.getByRole('button', { name: '全部项目', exact: true }).getAttribute('aria-pressed'),
+  ).toBe('true');
+});
 describe('durable project UI receipts and target identity', () => {
   it('filters and sorts committed projects without mutations, then opens the filtered identity', async () => {
     const a = project(undefined, '甲项目');
@@ -131,24 +197,28 @@ describe('durable project UI receipts and target identity', () => {
     const table = await screen.findByRole('table', { name: '项目列表' });
     await within(table).findByRole('button', { name: '乙项目' });
     expect(within(table).getAllByRole('row')[1].textContent).toContain('乙项目');
-    const preview = screen.getByRole('button', { name: '项目预览' });
+    const preview = projectPreviewButton();
     expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'AI 对话' })).toBeTruthy();
     expect(screen.queryByLabelText('侧栏项目名称')).toBeNull();
     fireEvent.click(preview);
     expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
     fireEvent.click(preview);
+    fireEvent.click(preview.closest('details')!.querySelector('summary')!);
     expect(screen.getByRole('complementary', { name: '项目辅助栏' })).toBeTruthy();
     expect(screen.queryByLabelText('侧栏项目名称')).toBeNull();
+    revealProjectFilters();
     fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'status' } });
     expect(within(table).getAllByRole('row')[1].textContent).toContain('甲项目');
+    revealProjectFilters();
     fireEvent.change(screen.getByLabelText('筛选项目状态'), { target: { value: 'active' } });
     expect(within(table).queryByRole('button', { name: '甲项目' })).toBeNull();
+    revealProjectFilters();
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '  不存在  ' } });
     await screen.findByText('没有匹配的项目。');
     fireEvent.click(screen.getByText('清除筛选'));
     expect(table.querySelectorAll('tbody .project-title-link')).toHaveLength(2);
-    const display = screen.getByText('显示').closest('summary')!;
+    const display = screen.getByText('显示设置').closest('summary')!;
     fireEvent.click(display);
     expect(display.parentElement!.hasAttribute('open')).toBe(true);
     const tasksColumn = screen.getByRole('checkbox', { name: '任务', exact: true });
@@ -160,6 +230,7 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.keyDown(tasksColumn, { key: 'Escape' });
     expect(display.parentElement!.hasAttribute('open')).toBe(false);
     expect(document.activeElement).toBe(display);
+    revealProjectFilters();
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '乙' } });
     fireEvent.click(within(table).getByRole('button', { name: '乙项目' }));
     await waitFor(() =>
@@ -294,8 +365,9 @@ describe('durable project UI receipts and target identity', () => {
     } as unknown as Window['caselite'];
     show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
+    revealProjectFilters();
     fireEvent.change(screen.getByLabelText('筛选项目状态'), { target: { value: 'archived' } });
-    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.click(screen.getByText('新建项目'));
     const name = screen.getByLabelText('项目名称');
     expect(document.activeElement).toBe(name);
     expect((createButton() as HTMLButtonElement).disabled).toBe(true);
@@ -329,7 +401,7 @@ describe('durable project UI receipts and target identity', () => {
     } as unknown as Window['caselite'];
     show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
-    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.click(screen.getByText('新建项目'));
     const name = screen.getByLabelText('项目名称');
     fireEvent.change(name, { target: { value: '验收项目' } });
     const overview = screen.getByLabelText('项目概述');
@@ -356,7 +428,7 @@ describe('durable project UI receipts and target identity', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
-    const trigger = screen.getByText('创建项目');
+    const trigger = screen.getByText('新建项目');
     trigger.focus();
     fireEvent.click(trigger);
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '未提交项目' } });
@@ -374,7 +446,7 @@ describe('durable project UI receipts and target identity', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
-    const trigger = screen.getByText('创建项目');
+    const trigger = screen.getByText('新建项目');
     trigger.focus();
     fireEvent.click(trigger);
     fireEvent.change(screen.getByLabelText('项目概述'), { target: { value: '尚未命名的概述' } });
@@ -403,7 +475,7 @@ describe('durable project UI receipts and target identity', () => {
     } as unknown as Window['caselite'];
     show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
-    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.click(screen.getByText('新建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
     fireEvent.click(createButton());
     fireEvent.click(await screen.findByText('重新打开已创建项目'));
@@ -428,7 +500,7 @@ describe('durable project UI receipts and target identity', () => {
     window.caselite = { catalog } as unknown as Window['caselite'];
     const changed = show();
     await screen.findByText('暂无项目，独立任务仍可直接使用。');
-    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.click(screen.getByText('新建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
     fireEvent.change(screen.getByLabelText('项目概述'), { target: { value: '未知回执保全概述' } });
     fireEvent.click(createButton());
@@ -459,7 +531,7 @@ describe('durable project UI receipts and target identity', () => {
     });
     window.caselite = { catalog } as unknown as Window['caselite'];
     show();
-    fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
+    toggleProjectPreview();
     const name = await screen.findByLabelText('侧栏项目名称');
     fireEvent.change(name, { target: { value: 'B' } });
     fireEvent.blur(name);
@@ -483,7 +555,7 @@ describe('durable project UI receipts and target identity', () => {
     window.caselite = { catalog } as unknown as Window['caselite'];
     show();
     await waitFor(() => expect(reads).toBe(1));
-    fireEvent.click(screen.getByText('创建项目'));
+    fireEvent.click(screen.getByText('新建项目'));
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'A' } });
     fireEvent.click(createButton());
     await screen.findByText('返回项目列表');
@@ -503,11 +575,12 @@ describe('durable project UI receipts and target identity', () => {
     });
     window.caselite = { catalog } as unknown as Window['caselite'];
     show();
-    fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
+    toggleProjectPreview();
     // 归档后关闭编辑能力，同一项目保留只读属性与恢复入口。
     const status = (await screen.findByLabelText('项目状态')) as HTMLSelectElement;
     fireEvent.change(status, { target: { value: 'archived' } });
     await waitFor(() => expect(status.value).toBe('archived'));
+    revealProjectFilters();
     expect((screen.getByLabelText('筛选项目状态') as HTMLSelectElement).value).toBe('archived');
     expect((screen.getByLabelText('侧栏项目名称') as HTMLInputElement).disabled).toBe(true);
     fireEvent.change(status, { target: { value: 'restore' } });
@@ -628,7 +701,9 @@ it('edits list properties without opening detail and keeps drafts during filteri
     }),
   } as unknown as Window['caselite'];
   show([{ id: crypto.randomUUID(), title: '合成项目任务', matter_id: p.id } as Task]);
-  fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
+  await screen.findByRole('table', { name: '项目列表' });
+  revealProjectFilters();
+  toggleProjectPreview();
   await screen.findByLabelText('侧栏项目名称');
   fireEvent.change(screen.getByLabelText('项目负责人'), { target: { value: '合成负责人' } });
   for (const name of ['搜索项目', '筛选项目状态', '项目排序'])
@@ -705,7 +780,7 @@ it('separates a confirmed property save from a failed list refresh and recovers 
     }),
   } as unknown as Window['caselite'];
   show();
-  fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
+  toggleProjectPreview();
   await screen.findByLabelText('侧栏项目名称');
   fireEvent.change(screen.getByLabelText('侧栏项目名称'), { target: { value: '保存后的名称' } });
   await screen.findByText('重新读取项目列表');
@@ -730,9 +805,10 @@ it('discards incomplete date validation together with its property draft', async
   } as unknown as Window['caselite'];
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   show();
-  const preview = await screen.findByRole('button', { name: '项目预览' });
+  const preview = projectPreviewButton();
   await waitFor(() => expect((preview as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(preview);
+  fireEvent.click(preview.closest('details')!.querySelector('summary')!);
   await screen.findByLabelText('侧栏项目名称');
   const target = screen.getByLabelText('项目目标日') as HTMLInputElement;
   fireEvent.change(target, { target: { value: '2024-02-29' } });
@@ -820,7 +896,7 @@ it('coalesces composing text and holds a conflicting draft until an explicit rer
     }),
   } as unknown as Window['caselite'];
   show();
-  fireEvent.click(screen.getByRole('button', { name: '项目预览' }));
+  toggleProjectPreview();
   const name = await screen.findByLabelText('侧栏项目名称');
   fireEvent.compositionStart(name);
   fireEvent.change(name, { target: { value: 'han' } });
@@ -1002,12 +1078,15 @@ it('keeps real totals independent of filters and resets paging on search', async
   fireEvent.click(screen.getByRole('button', { name: '项目下一页' }));
   expect(document.querySelectorAll('[data-project-id]')).toHaveLength(3);
   expect(screen.getByText('显示 9–11 条，共 11 条')).toBeTruthy();
+  revealProjectFilters();
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '项目00' } });
   expect(screen.getByRole('button', { name: '项目00', exact: true })).toBeTruthy();
   expect(screen.getByText('显示 1–1 条，共 1 条')).toBeTruthy();
   expect(totals()).toEqual(['11', '6', '3', '2']);
+  revealProjectFilters();
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '' } });
   expect(screen.getByText('显示 1–8 条，共 11 条')).toBeTruthy();
+  revealProjectFilters();
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: projects[10].id } });
   expect(screen.getByRole('button', { name: '项目10', exact: true })).toBeTruthy();
 });
@@ -1183,7 +1262,7 @@ it('does not consume project IME confirmation or submit while composing', async 
   });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: '创建项目', exact: true }));
+  fireEvent.click(await screen.findByRole('button', { name: '新建项目', exact: true }));
   const modal = screen.getByRole('dialog', { name: '新建项目' });
   const name = within(modal).getByLabelText('项目名称');
   fireEvent.change(name, { target: { value: '输入法合成项目' } });

@@ -1,5 +1,9 @@
 import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
-import { useRef, useState, type ReactNode } from 'react';
+import WorkspacePageChrome, {
+  closeWorkspaceDisplayOnEscape,
+} from '../../shared/ui/WorkspacePageChrome';
+import { usePageNavigation } from '../../shared/navigation/PageNavigation';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../../../preload/caselite-api';
 import { calendarQuery, localDate, shiftDate, useCalendar } from './calendar-query';
 import ImportantSchedules from './ImportantSchedules';
@@ -30,15 +34,43 @@ export default function CalendarView({
   onReminders(): void;
   onSettings(): void;
 }) {
+  const chromeFiltersId = useId();
+  const pageNavigation = usePageNavigation();
   const layoutRoot = useRef<HTMLElement>(null);
   const layout = useCalendarLayout(layoutRoot);
+  useLayoutEffect(() => {
+    const root = layoutRoot.current;
+    const chrome = root?.querySelector<HTMLElement>(':scope > .workspace-page-chrome');
+    if (!root || !chrome) return;
+    // 浮动区使用视口坐标；标题筛选换行或容器位置变化时同步实际底边。
+    const measure = () =>
+      root.style.setProperty(
+        '--calendar-chrome-bottom',
+        `${chrome.getBoundingClientRect().bottom}px`,
+      );
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(chrome);
+    observer?.observe(root);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('pageshow', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('pageshow', measure);
+      root.style.removeProperty('--calendar-chrome-bottom');
+    };
+  }, []);
   const [datesOpen, setDatesOpen] = useState(false),
     [offset, setOffset] = useState(0),
     [timedOffset, setTimedOffset] = useState(0),
     [undatedOffset, setUndatedOffset] = useState(0),
     [closed, setClosed] = useState(false),
     [range, setRange] = useState<'day' | 'past' | 'future'>('day'),
-    [rangeOffset, setRangeOffset] = useState(0);
+    [rangeOffset, setRangeOffset] = useState(0),
+    [calendarOptionsOpen, setCalendarOptionsOpen] = useState(false);
   const today = localDate(),
     first = date.slice(0, 7) + '-01';
   const start = shiftDate(first, -((new Date(`${first}T12:00:00`).getDay() + 6) % 7)),
@@ -130,26 +162,84 @@ export default function CalendarView({
     <section
       ref={layoutRoot}
       style={layout.style}
-      className={`calendar-workbench ${datesOpen ? 'calendar-dates-open' : ''} ${selected ? 'calendar-task-open' : ''}`}
+      className={`calendar-workbench workspace-has-page-chrome ${datesOpen ? 'calendar-dates-open' : ''} ${selected ? 'calendar-task-open' : ''}`}
       aria-label="日历工作台"
     >
-      <header className="calendar-creation-toolbar">
-        <h1>日历</h1>
-        <span>{date}</span>
-        <div>
-          <button aria-label="新建任务" disabled={blocked} onClick={() => onCreate?.('task')}>
-            ＋ 新建任务
-          </button>
-          <button
-            aria-label="新建日程"
-            className="primary"
-            disabled={blocked}
-            onClick={() => onCreate?.('schedule')}
-          >
-            ＋ 新建日程
-          </button>
-        </div>
-      </header>
+      <WorkspacePageChrome
+        title="日历"
+        createLabel="新建日历"
+        create={{ onClick: onCreate ? () => onCreate('schedule') : undefined, disabled: blocked }}
+        navigation={
+          <>
+            <button
+              type="button"
+              aria-label="筛选栏上个月"
+              disabled={blocked}
+              onClick={() => {
+                const value = new Date(`${first}T12:00:00`);
+                value.setMonth(value.getMonth() - 1);
+                choose(localDate(value));
+              }}
+            >
+              ‹
+            </button>
+            <span>{date.slice(0, 7)}</span>
+            <button
+              type="button"
+              aria-label="筛选栏下个月"
+              disabled={blocked}
+              onClick={() => {
+                const value = new Date(`${first}T12:00:00`);
+                value.setMonth(value.getMonth() + 1);
+                choose(localDate(value));
+              }}
+            >
+              ›
+            </button>
+            <button type="button" disabled={blocked} onClick={() => choose(today)}>
+              今天
+            </button>
+            <details className="workspace-page-more" onKeyDown={closeWorkspaceDisplayOnEscape}>
+              <summary>更多</summary>
+              <button
+                type="button"
+                disabled={blocked || !onCreate}
+                onClick={() => onCreate?.('task')}
+              >
+                新建任务
+              </button>
+            </details>
+          </>
+        }
+        search={{ unavailableReason: '日历暂不支持全范围搜索' }}
+        filter={{
+          expanded: calendarOptionsOpen,
+          controls: chromeFiltersId,
+          disabled: blocked,
+          onClick: () => {
+            if (!calendarOptionsOpen) setDatesOpen(true);
+            setCalendarOptionsOpen((open) => !open);
+          },
+        }}
+        displayAction={{
+          expanded: calendarOptionsOpen,
+          controls: chromeFiltersId,
+          disabled: blocked,
+          onClick: () => {
+            if (!calendarOptionsOpen) setDatesOpen(true);
+            setCalendarOptionsOpen((open) => !open);
+          },
+        }}
+        inspector={
+          pageNavigation
+            ? {
+                expanded: pageNavigation.inspector.open,
+                disabled: blocked,
+                onClick: () => pageNavigation.inspector.setOpen((open) => !open),
+              }
+            : undefined
+        }
+      />
       <aside className="calendar-dates" aria-label="日期与安排">
         <header>
           <h2>日历</h2>
@@ -212,7 +302,11 @@ export default function CalendarView({
         <ImportantSchedules onOpen={onOpen} compact title="重要日期" blocked={blocked} />
         <details
           className="calendar-options"
-          open={!!layout.preferences.error || layout.preferences.phase !== 'idle'}
+          id={chromeFiltersId}
+          open={
+            calendarOptionsOpen || !!layout.preferences.error || layout.preferences.phase !== 'idle'
+          }
+          onToggle={(event) => setCalendarOptionsOpen(event.currentTarget.open)}
         >
           <summary>日历选项</summary>
           <label>
