@@ -67,12 +67,14 @@ export function WorkspaceShell({
 }) {
   const { preferences } = useLocalPreferences();
   const responsive = useResponsiveWorkspace();
+  const homeRail = view === 'home';
   return (
     <main
       className={`workbench ${collapsed ? 'is-collapsed' : ''}`}
+      data-home-rail={homeRail}
       data-inspector-open={inspectorOpen}
-      data-navigation-hidden={responsive.navigationHidden && !responsive.drawerOpen}
-      data-navigation-overlay={responsive.drawerOpen}
+      data-navigation-hidden={!homeRail && responsive.navigationHidden && !responsive.drawerOpen}
+      data-navigation-overlay={!homeRail && responsive.drawerOpen}
       data-properties-layout={responsive.inlineProperties ? 'inline' : 'sidebar'}
       data-platform={/Mac/.test(navigator.userAgent) ? 'mac' : 'other'}
     >
@@ -87,16 +89,18 @@ export function WorkspaceShell({
                   <b>CaseLite</b>
                 </div>
               )}
-              <button
-                className="workspace-navigation-toggle"
-                aria-label={collapsed ? '展开导航' : '收起导航'}
-                aria-expanded={!collapsed}
-                aria-controls="primary-navigation"
-                title={collapsed ? '展开导航' : '收起导航'}
-                onClick={onCollapse}
-              >
-                <Icon name="panel" size={18} />
-              </button>
+              {!homeRail && (
+                <button
+                  className="workspace-navigation-toggle"
+                  aria-label={collapsed ? '展开导航' : '收起导航'}
+                  aria-expanded={!collapsed}
+                  aria-controls="primary-navigation"
+                  title={collapsed ? '展开导航' : '收起导航'}
+                  onClick={onCollapse}
+                >
+                  <Icon name="panel" size={18} />
+                </button>
+              )}
             </div>
             <div className="workspace-project-back" ref={projectBackSlot} />
           </>
@@ -105,7 +109,7 @@ export function WorkspaceShell({
       <aside
         className="primary-sidebar"
         aria-label="一级导航"
-        inert={responsive.navigationHidden && !responsive.drawerOpen}
+        inert={!homeRail && responsive.navigationHidden && !responsive.drawerOpen}
       >
         {topbar && (
           <div className="workspace-sidebar-heading">
@@ -137,28 +141,33 @@ export function WorkspaceShell({
                         : undefined
                     }
                     aria-describedby={
-                      !collapsed && item.id === 'calendar' && importantDatesCount !== undefined
+                      (homeRail || !collapsed) &&
+                      item.id === 'calendar' &&
+                      importantDatesCount !== undefined
                         ? 'calendar-important-count'
                         : undefined
                     }
                     onClick={() => onNavigate(item.id)}
                   >
                     <Icon name={item.icon} />
-                    {!collapsed && <span>{item.label}</span>}
-                    {!collapsed && item.id === 'calendar' && importantDatesCount !== undefined && (
-                      <small
-                        id="calendar-important-count"
-                        aria-label={`重要日期 ${importantDatesCount} 项`}
-                      >
-                        {importantDatesCount}
-                      </small>
-                    )}
+                    {(!collapsed || homeRail) && <span>{item.label}</span>}
+                    {(homeRail || !collapsed) &&
+                      item.id === 'calendar' &&
+                      importantDatesCount !== undefined && (
+                        <small
+                          id="calendar-important-count"
+                          aria-label={`重要日期 ${importantDatesCount} 项`}
+                        >
+                          {importantDatesCount}
+                        </small>
+                      )}
                   </button>
                 ))}
               </div>
             ))}
           </nav>
-          {!collapsed &&
+          {!homeRail &&
+            !collapsed &&
             (favoritesPanel ?? (
               <section className="shortcuts" aria-label="收藏">
                 <p className="sidebar-caption">收藏</p>

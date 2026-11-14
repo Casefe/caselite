@@ -1,0 +1,402 @@
+/* 首页固定入口和分栏均是展示投影，隐藏面板不卸载原对话与草稿。 */
+.workbench[data-home-rail='true'],
+.workbench.is-collapsed[data-home-rail='true'] {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.workbench[data-home-rail='true'] > .primary-sidebar,
+.workbench.is-collapsed[data-home-rail='true'] > .primary-sidebar {
+  width: 64px;
+  min-width: 64px;
+  padding: 10px 6px;
+}
+.workbench[data-home-rail='true'] .workspace-sidebar-heading {
+  justify-content: center;
+  padding: 8px 0 16px;
+}
+.workbench[data-home-rail='true'] .workspace-topbar-brand b,
+.workbench[data-home-rail='true'] .profile-name {
+  display: none;
+}
+.workbench[data-home-rail='true'] .workspace-topbar-brand {
+  justify-content: center;
+}
+.workbench[data-home-rail='true'] .primary-navigation button {
+  width: 100%;
+  min-height: 54px;
+  padding: 5px 0;
+  gap: 3px;
+  flex-direction: column;
+  justify-content: center;
+  font-size: 11px;
+}
+.workbench[data-home-rail='true'] .primary-navigation button > span {
+  display: block;
+  max-width: 100%;
+}
+.workbench[data-home-rail='true'] .primary-navigation button small {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.workbench[data-home-rail='true'] .primary-navigation button[aria-current='page']:before {
+  display: none;
+}
+.workbench[data-home-rail='true'] .sidebar-bottom {
+  justify-content: center;
+}
+.workbench[data-home-rail='true'] .profile-settings {
+  justify-content: center;
+  padding: 5px;
+}
+.home-topbar-left-slot,
+.home-topbar-right-slot,
+.home-topbar-actions {
+  display: flex;
+  align-items: center;
+}
+.home-topbar-left-slot button,
+.home-topbar-right-slot button {
+  -webkit-app-region: no-drag;
+}
+.home-directory-toggle,
+.home-topbar-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--theme-secondary);
+  font-size: 12px;
+}
+.home-directory-toggle[aria-expanded='true'],
+.home-directory-toggle:hover,
+.home-topbar-actions button:hover {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.home-topbar-actions button {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+}
+.home-control-fallback {
+  display: inline-flex;
+  position: absolute;
+  top: 4px;
+  z-index: 3;
+}
+.home-v3.agent-home,
+.home-v3.agent-home.home-conversation {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--theme-panel);
+}
+.home-v3-group {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.home-v3-group > [data-panel] {
+  min-width: 0;
+}
+.home-v3-separator {
+  flex: 0 0 3px;
+  background: var(--line);
+  cursor: col-resize;
+}
+.home-v3-separator:hover,
+.home-v3-separator:focus-visible {
+  background: var(--accent);
+}
+.home-v3 [hidden] {
+  display: none !important;
+}
+.home-v3-directory,
+.home-v3-running,
+.home-v3-auxiliary {
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  background: var(--theme-panel);
+}
+.home-v3-directory {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+  border-right: 1px solid var(--line);
+}
+.home-v3-directory h2,
+.home-v3-running h3,
+.home-v3-auxiliary h2 {
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+.home-new-conversation {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: var(--line);
+  background: var(--theme-panel);
+}
+.home-directory-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px 4px;
+  color: var(--theme-secondary);
+}
+.home-directory-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.home-directory-section {
+  margin-top: 22px;
+}
+.home-directory-section h3 {
+  margin: 0 0 8px;
+  padding: 0 8px;
+  color: var(--theme-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.home-directory-section h3 button {
+  width: 100%;
+  justify-content: space-between;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.home-directory-section p {
+  margin: 6px 8px;
+  color: var(--theme-secondary);
+  font-size: 11px;
+}
+.home-directory-entry {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--theme-secondary);
+}
+.home-directory-entry span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-directory-entry:hover,
+.home-directory-entry[aria-current='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.home-directory-run {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.home-directory-run > .home-directory-entry {
+  flex: 1;
+}
+.home-directory-pin {
+  flex: none;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--theme-secondary);
+  font-size: 10px;
+}
+.home-all-link,
+.home-all-history {
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--theme-secondary);
+  font-size: 11px;
+}
+.home-all-history {
+  margin-top: auto;
+  padding: 20px 8px 0;
+}
+.home-v3-main,
+.home-v3 .agent-start {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.home-v3 .agent-start {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 24px 30px;
+}
+.home-v3-welcome {
+  margin: auto 0 28px;
+  text-align: center;
+}
+.home-v3-welcome h1 {
+  font-size: 23px;
+  font-weight: 500;
+}
+.home-v3-welcome p {
+  color: var(--theme-secondary);
+}
+.home-live-panel,
+.home-record-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.home-v3:not(.home-conversation) .home-live-panel {
+  flex: 0 0 auto;
+}
+.home-v3 .assistant-panel,
+.home-v3 .assistant-thread,
+.home-v3 .assistant-viewport {
+  min-height: 0;
+}
+.home-v3.home-conversation .assistant-panel,
+.home-v3 .home-readonly-run {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.home-v3 .home-readonly-run .assistant-thread,
+.home-v3 .home-readonly-run .assistant-viewport {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.home-v3 .home-readonly-run .assistant-viewport {
+  display: block;
+  overflow: auto;
+}
+.home-v3 .agent-starters {
+  margin: 18px 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.home-v3-running {
+  padding: 20px 16px;
+  border-left: 1px solid var(--line);
+}
+.home-v3-running .home-reminder-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.home-v3-running .home-agent-item {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0 20px;
+}
+.home-v3-running .home-agent-row {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+.home-v3-auxiliary {
+  padding: 20px 16px;
+  border-left: 1px solid var(--line);
+}
+.home-v3-auxiliary p,
+.home-v3-auxiliary dt {
+  color: var(--theme-secondary);
+  font-size: 12px;
+}
+.home-v3-auxiliary dd {
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+.home-v3-rail {
+  display: flex;
+  flex: 0 0 44px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px;
+  border-left: 1px solid var(--line);
+  background: var(--theme-panel);
+}
+.home-v3-rail button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-secondary);
+}
+.home-v3-rail button[aria-expanded='true'],
+.home-v3-rail button:hover {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+@media (max-width: 850px) {
+  .home-v3 .agent-start {
+    width: 100%;
+    padding: 16px;
+  }
+  .home-v3-directory[data-overlay='true'],
+  .home-v3-running[data-overlay='true'],
+  .home-v3-auxiliary[data-overlay='true'] {
+    position: fixed;
+    top: 44px;
+    bottom: 0;
+    width: min(240px, calc(100vw - 108px));
+    box-shadow: 0 6px 22px rgb(0 0 0 / 18%);
+    z-index: 30;
+  }
+  .home-v3-directory[data-overlay='true'] {
+    left: 64px;
+    z-index: 32;
+  }
+  .home-v3-running[data-overlay='true'],
+  .home-v3-auxiliary[data-overlay='true'] {
+    right: 44px;
+  }
+}
+
+/* 旧首页在窄屏有独立滚动规则；V3 始终只让消息区滚动，输入框留在面板内。 */
+.home-v3.agent-home .home-v3-main {
+  overflow: hidden;
+  background: var(--theme-panel);
+}
+.home-v3.agent-home .assistant-panel {
+  overflow: hidden;
+}
+.home-v3 .agent-starters button {
+  background: var(--theme-panel);
+  color: var(--theme-secondary);
+  border-color: var(--line);
+}
+.home-v3 .agent-starters button:hover,
+.home-v3 .agent-starters button[aria-pressed='true'] {
+  background: var(--theme-hover);
+  color: var(--ink);
+}
+.home-v3 .home-v3-welcome h1 {
+  margin: 18px 0 8px;
+  font-size: 23px;
+}
+.home-v3-auxiliary > section[hidden] {
+  display: none;
+}

@@ -61,24 +61,83 @@ export async function runHomeContextDemo(
       "document.querySelector('.home-agents')?.textContent.includes('暂无运行中的智能体')",
     );
     const headings = await evaluate(
-      "[...document.querySelectorAll('.home-context-panel h3')].map(e=>e.textContent.trim())",
+      "[...document.querySelectorAll('.home-v3-directory > h2, .home-v3-running h3')].map(e=>e.textContent.trim())",
     );
-    if (
-      headings.length !== 2 ||
-      !headings[0].includes('重要日程') ||
-      !headings[1].includes('智能体')
-    )
-      throw new Error('Home context contains legacy cards');
-    if (await evaluate("Boolean(document.querySelector('.important-schedules header > button'))"))
-      throw new Error('Legacy calendar button remains');
-    if (await evaluate("Boolean(document.querySelector('[data-nav=tasks] small'))"))
-      throw new Error('Task navigation count remains');
+    if (headings.length !== 2 || headings[0] !== 'Agent' || !headings[1].includes('进行中的智能体'))
+      throw new Error('Home directory or running panel is missing');
     if (
       await evaluate(
-        "getComputedStyle(document.querySelector('.home-context-panel .important-schedules')).borderTopWidth !== '0px'",
+        "Boolean(document.querySelector('.home-conversation-toolbar, .home-topbar, .workspace-navigation-toggle'))",
       )
     )
-      throw new Error('Home important schedule top divider remains');
+      throw new Error('Legacy home toolbar remains');
+    if (await evaluate("Boolean(document.querySelector('[data-nav=tasks] small'))"))
+      throw new Error('Task navigation count remains');
+    // 直接验证可见入口与命中；保留原导航、草稿和运行组件，不用隐藏测试节点代替。
+    for (const width of [1440, 1180, 520]) {
+      await viewport(width);
+      await wait(
+        "document.querySelector('.home-v3')?.dataset.compact === '" + String(width <= 850) + "'",
+      );
+      const entrance = await evaluate(`(()=>{
+        const visible=e=>Boolean(e && e.getClientRects().length && !e.closest('[hidden],[inert]'));
+        const rail=document.querySelector('.primary-sidebar');
+        const nav=[...document.querySelectorAll('.primary-navigation button')];
+        const controls=[...document.querySelectorAll('.workspace-titlebar .home-directory-toggle')];
+        if(!visible(rail) || Math.abs(rail.getBoundingClientRect().width-64)>1 || nav.length!==7 || controls.length!==1) return false;
+        if(controls[0].getAttribute('aria-expanded')!=='true') controls[0].click();
+        return nav.every(b=>{
+          const r=b.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+          return visible(b) && b.querySelector('span')?.textContent.trim() && b.contains(hit);
+        });
+      })()`);
+      if (!entrance)
+        throw new Error('Home navigation entrance is not visible or clickable at ' + width);
+      await wait(
+        "document.querySelector('.home-directory-toggle')?.getAttribute('aria-expanded')==='true' && document.querySelector('.home-v3-directory')?.getClientRects().length",
+      );
+      const originalRunVisibility = await evaluate(
+        "document.querySelector('.home-topbar-actions button[aria-controls=home-active-runs]').getAttribute('aria-expanded')",
+      );
+      await evaluate(
+        "document.querySelector('.home-topbar-actions button[aria-controls=home-active-runs]').click()",
+      );
+      await wait(
+        "document.querySelector('.home-topbar-actions button[aria-controls=home-active-runs]')?.getAttribute('aria-expanded')==='" +
+          (originalRunVisibility === 'true' ? 'false' : 'true') +
+          "'",
+      );
+      await evaluate(
+        "document.querySelector('.home-topbar-actions button[aria-controls=home-active-runs]').click()",
+      );
+      await wait(
+        "document.querySelector('.home-topbar-actions button[aria-controls=home-active-runs]')?.getAttribute('aria-expanded')==='" +
+          originalRunVisibility +
+          "'",
+      );
+      await evaluate("document.querySelector('.home-v3-rail button[title=本轮材料]').click()");
+      await wait("document.querySelector('.home-v3-auxiliary')?.getClientRects().length");
+      const geometry = await evaluate(`(()=>{
+        const dir=document.querySelector('.home-v3-directory').getBoundingClientRect();
+        const aux=document.querySelector('.home-v3-auxiliary').getBoundingClientRect();
+        const compact=document.querySelector('.home-v3').dataset.compact==='true';
+        if(dir.left<63 || !document.querySelector('.home-live-panel').contains(document.querySelector('[data-testid=agent-input]')))return false;
+        const x=Math.max(dir.left,aux.left)+8,y=Math.max(dir.top,aux.top)+120;
+        return !compact || x>=Math.min(dir.right,aux.right) || document.querySelector('.home-v3-directory').contains(document.elementFromPoint(x,y));
+      })()`);
+      if (!geometry)
+        throw new Error('Home overlay covers navigation or has wrong stacking at ' + width);
+      await capture('home-v3-entrances-' + width + '.png');
+      await evaluate(
+        "document.querySelector('.home-topbar-actions button[aria-label=收起辅助面板]').click()",
+      );
+      await evaluate("document.querySelector('.home-directory-toggle').click()");
+      await wait(
+        "document.querySelector('.home-v3-directory')?.hidden && !document.querySelector('.primary-sidebar').hasAttribute('inert')",
+      );
+      await evaluate("document.querySelector('.home-directory-toggle').click()");
+    }
+    await viewport(1440);
     if (phase === 'agent-home-check') {
       await wait("document.querySelector('[data-nav=calendar] small')?.textContent === '0'");
       await capture('home-calendar-count-empty.png');
@@ -99,7 +158,13 @@ export async function runHomeContextDemo(
       if (!seeded) throw new Error('Important date fixtures could not be saved');
     }
     await wait("document.querySelector('[data-nav=calendar] small')?.textContent === '6'");
-    await evaluate("document.querySelector('.important-schedules h3 button').click()");
+    await evaluate("document.querySelector('.home-v3-rail button[title=重要日程]').click()");
+    await wait(
+      "document.querySelector('.home-v3-auxiliary .important-schedules h3 button')?.getClientRects().length",
+    );
+    await evaluate(
+      "document.querySelector('.home-v3-auxiliary .important-schedules h3 button').click()",
+    );
     await wait(
       "document.querySelector('[data-nav=calendar][aria-current=page]') && document.querySelector('.calendar-workbench')",
     );
@@ -110,8 +175,20 @@ export async function runHomeContextDemo(
     );
     if (phase === 'agent-home-read') {
       await wait(
-        "document.querySelector('.home-history-item')?.textContent.includes('首页智能体验收')",
+        "[...document.querySelectorAll('.home-history-open')].some(e=>e.getClientRects().length && e.textContent.includes('首页智能体验收'))",
       );
+      await evaluate(
+        "[...document.querySelectorAll('.home-history-open')].find(e=>e.textContent.includes('首页智能体验收')).click()",
+      );
+      await wait(
+        "document.querySelector('.home-history-detail .home-readonly-run')?.getClientRects().length",
+      );
+      if (
+        await evaluate(
+          "Boolean(document.querySelector('.home-history-detail form, .home-history-detail [data-testid=agent-input]'))",
+        )
+      )
+        throw new Error('Reopened history unexpectedly has a sending composer');
       await capture('home-context-reopened.png');
     } else {
       for (const theme of ['light', 'dark']) {

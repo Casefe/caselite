@@ -153,6 +153,8 @@ function Workbench() {
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
+  const [homeLeftSlot, setHomeLeftSlot] = useState<HTMLDivElement | null>(null);
+  const [homeRightSlot, setHomeRightSlot] = useState<HTMLDivElement | null>(null);
   const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
   const [pageEpoch, setPageEpoch] = useState(0);
@@ -409,6 +411,22 @@ function Workbench() {
     setCreateTagDraft(false);
     setCreating(false);
     setError('');
+  }
+  function openProjectFromNavigation(id: string) {
+    if (!canLeave()) return;
+    setProjectView({
+      selected: id,
+      projectId: id,
+      section: 'overview',
+      query: '',
+      statusFilter: 'all',
+      order: 'updated',
+      columns: projectListDefaults,
+      scrollTop: 0,
+      workspaceScrollTop: 0,
+      returnTaskId: '',
+    });
+    navigate('projects');
   }
   function newTask(source: ProjectViewState | null = null, mode: 'task' | 'schedule' = 'task') {
     if (!canLeave()) return;
@@ -1112,6 +1130,9 @@ function Workbench() {
         topbar={
           <WorkspaceTopbar
             navigation={workspaceNavigation}
+            home={view === 'home'}
+            homeLeftSlot={setHomeLeftSlot}
+            homeRightSlot={setHomeRightSlot}
             collapsed={effectiveCollapsed}
             onCollapse={toggleNavigation}
             inspectorOpen={inspectorOpen}
@@ -1126,22 +1147,7 @@ function Workbench() {
           <FavoriteNavigation
             tasks={tasks}
             onTask={(id, document) => void open(id, null, document, document)}
-            onProject={(id) => {
-              if (!canLeave()) return;
-              setProjectView({
-                selected: id,
-                projectId: id,
-                section: 'overview',
-                query: '',
-                statusFilter: 'all',
-                order: 'updated',
-                columns: projectListDefaults,
-                scrollTop: 0,
-                workspaceScrollTop: 0,
-                returnTaskId: '',
-              });
-              navigate('projects');
-            }}
+            onProject={openProjectFromNavigation}
           />
         }
         agentDraft={Boolean(agentPrompt.text.trim())}
@@ -1327,6 +1333,9 @@ function Workbench() {
           ) : view === 'home' ? (
             <AgentHome
               prompt={agentPrompt}
+              leftSlot={homeLeftSlot}
+              rightSlot={homeRightSlot}
+              onOpenProject={openProjectFromNavigation}
               onPrompt={setAgentPrompt}
               onNavigate={navigate}
               tasks={tasks}

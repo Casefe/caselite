@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceShell } from './Workspace';
+import { ResponsiveWorkspaceProvider } from './ResponsiveWorkspace';
 import ProjectPreview from '../features/projects/ProjectPreview';
 afterEach(cleanup);
 describe('workspace navigation and clearly bounded project prototype', () => {
@@ -10,7 +11,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
       collapse = vi.fn();
     const { rerender } = render(
       <WorkspaceShell
-        view="home"
+        view="tasks"
         collapsed={false}
         onCollapse={collapse}
         onNavigate={navigate}
@@ -58,7 +59,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     ).toBe(true);
     rerender(
       <WorkspaceShell
-        view="home"
+        view="tasks"
         collapsed
         onCollapse={collapse}
         onNavigate={navigate}
@@ -103,4 +104,54 @@ describe('workspace navigation and clearly bounded project prototype', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回项目列表' }));
     expect(screen.getByRole('button', { name: '项目列表视图' })).toBeTruthy();
   });
+});
+
+it('keeps the home rail labeled and interactive when responsive navigation is normally hidden', () => {
+  vi.stubGlobal('innerWidth', 400);
+  const screenWidth = Object.getOwnPropertyDescriptor(window.screen, 'width');
+  Object.defineProperty(window.screen, 'width', { configurable: true, value: 1920 });
+  try {
+    const navigate = vi.fn(),
+      collapse = vi.fn();
+    render(
+      <ResponsiveWorkspaceProvider>
+        <WorkspaceShell
+          view="home"
+          collapsed
+          onCollapse={collapse}
+          onNavigate={navigate}
+          tasks={[]}
+          onOpen={vi.fn()}
+        >
+          <p>首页内容</p>
+        </WorkspaceShell>
+      </ResponsiveWorkspaceProvider>,
+    );
+    const rail = screen.getByLabelText('一级导航');
+    expect(rail.getAttribute('inert')).toBeNull();
+    expect(rail.closest('main')?.dataset.navigationHidden).toBe('false');
+    expect(rail.closest('main')?.dataset.homeRail).toBe('true');
+    for (const label of ['首页', '日历', '任务', '项目', '文档', '财务', '联系人']) {
+      const button = screen.getByRole('button', { name: label, exact: true });
+      expect(button.querySelector('span')?.textContent).toBe(label);
+      fireEvent.click(button);
+    }
+    expect(navigate.mock.calls.map(([view]) => view)).toEqual([
+      'home',
+      'calendar',
+      'tasks',
+      'projects',
+      'documents',
+      'finance',
+      'contacts',
+    ]);
+    expect(screen.queryByRole('button', { name: /展开导航|收起导航/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: '收藏' })).toBeNull();
+    expect(collapse).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    if (screenWidth) Object.defineProperty(window.screen, 'width', screenWidth);
+    else Reflect.deleteProperty(window.screen, 'width');
+    vi.unstubAllGlobals();
+  }
 });

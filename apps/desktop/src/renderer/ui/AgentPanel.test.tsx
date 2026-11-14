@@ -3,7 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AgentRequest, AgentResponse, AgentRun } from '../../preload/caselite-api';
-import AgentPanel from './AgentPanel';
+import AgentPanel, { AgentRunReadOnly } from './AgentPanel';
 import SidebarAgent from './SidebarAgent';
 import InspectorLayout from './InspectorLayout';
 import userEvent from '@testing-library/user-event';
@@ -788,4 +788,180 @@ it('lets the attachment menu consume Escape before the layout collapses', async 
       ['start', 'cancel'].includes((request as AgentRequest).operation),
     ),
   ).toBe(false);
+});
+
+it('renders a read-only record with original-scope copy and attachment reads without a composer or polling', async () => {
+  const run: AgentRun = {
+    id: '31313131-3131-4131-8131-313131313131',
+    scope: 'task-history',
+    prompt: '历史材料问题',
+    output: '## 历史回答',
+    model: 'gpt-4.1-mini',
+    provider: 'openai',
+    status: 'succeeded',
+    sequence: 1,
+    message: '完成',
+    usage: null,
+    attachments: [
+      { source_id: 'source-original', task_id: 'task-origin', name: '原范围材料.pdf', pages: [1] },
+    ],
+  };
+  const agent = vi.fn<(request: AgentRequest) => Promise<AgentResponse>>(async () => profile);
+  const material = vi.fn(async () => ({
+    ok: false,
+    code: 'NOT_FOUND',
+    message: '附件来源暂不可读。',
+  }));
+  window.caselite = { agent, material } as unknown as Window['caselite'];
+  render(<AgentRunReadOnly run={run} />);
+  expect(await screen.findByRole('heading', { name: '历史回答' })).toBeTruthy();
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('button', { name: '发送' })).toBeNull();
+  expect(agent).not.toHaveBeenCalled();
+  expect(material).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '复制' }));
+  await screen.findByRole('button', { name: '已复制' });
+  expect(agent).toHaveBeenCalledExactlyOnceWith({
+    protocol_version: 1,
+    operation: 'copy_output',
+    scope: run.scope,
+    run_id: run.id,
+  });
+  fireEvent.click(screen.getByRole('button', { name: /原范围材料.pdf/ }));
+  await screen.findByText('附件来源暂不可读。');
+  expect(material).toHaveBeenCalledExactlyOnceWith({
+    protocol_version: 1,
+    operation: 'read',
+    scope: 'task-origin',
+    source_id: 'source-original',
+  });
+  expect(
+    agent.mock.calls.some(([request]) => (request as AgentRequest).operation === 'start'),
+  ).toBe(false);
+});
+
+it('hides home messages without changing the active cancel identity or unsent composer', async () => {
+  const scope = 'home';
+  const run: AgentRun = {
+    id: '32323232-3232-4232-8232-323232323232',
+    scope,
+    prompt: '已有问题',
+    output: '正在运行的部分回答',
+    model: 'gpt-4.1-mini',
+    provider: 'openai',
+    status: 'running',
+    sequence: 1,
+    message: '运行中',
+    usage: null,
+  };
+  const agent = vi.fn<(request: AgentRequest) => Promise<AgentResponse>>(async () => ({
+    ...profile,
+    runs: [run],
+  }));
+  window.caselite = { agent } as unknown as Window['caselite'];
+  const changed = vi.fn();
+  const view = render(<AgentPanel scope={scope} onHomeViewState={changed} />);
+  await screen.findByText('正在运行的部分回答');
+  const input = screen.getByTestId('agent-input') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '保留未发送草稿' } });
+  const observed = changed.mock.calls.length;
+  view.rerender(<AgentPanel scope={scope} onHomeViewState={changed} hideMessages otherRunActive />);
+  expect(screen.queryByText('正在运行的部分回答')).toBeNull();
+  expect(screen.getByTestId('agent-input')).toBe(input);
+  expect(input.value).toBe('保留未发送草稿');
+  expect(changed.mock.calls.length).toBe(observed);
+  fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+  await waitFor(() =>
+    expect(agent).toHaveBeenCalledWith({
+      protocol_version: 1,
+      operation: 'cancel',
+      scope,
+      run_id: run.id,
+    }),
+  );
+  expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+});
+
+it.each(['active', 'unknown'] as const)(
+  'preserves home input while %s global state prevents a new send',
+  async (state) => {
+    const agent = vi.fn<(request: AgentRequest) => Promise<AgentResponse>>(async () => profile);
+    window.caselite = { agent } as unknown as Window['caselite'];
+    render(
+      <AgentPanel
+        scope="home"
+        otherRunActive={state === 'active'}
+        otherRunStatusUnknown={state === 'unknown'}
+      />,
+    );
+    const input = screen.getByTestId('agent-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '仍可编辑的草稿' } });
+    await waitFor(() => expect(agent).toHaveBeenCalled());
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(input.closest('form')!);
+    expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+    expect(input.value).toBe('仍可编辑的草稿');
+  },
+);
+
+it('projects a non-owned active Run and its later interruption read-only with original visible status', async () => {
+  const run: AgentRun = {
+    id: '34343434-3434-4434-8434-343434343434',
+    scope: 'home',
+    prompt: '经受控入口发起的合成演示',
+    output: '合成演示部分输出',
+    model: 'gpt-4.1-mini',
+    provider: 'openai',
+    status: 'running',
+    sequence: 1,
+    message: '合成演示正在处理',
+    usage: null,
+  };
+  const agent = vi.fn<(request: AgentRequest) => Promise<AgentResponse>>(async () => profile);
+  const material = vi.fn();
+  window.caselite = { agent, material } as unknown as Window['caselite'];
+  const view = render(<AgentRunReadOnly run={run} />);
+  const status = view.container.querySelector('.assistant-run-status.running');
+  expect(status?.textContent).toBe(run.message);
+  expect(status?.getAttribute('data-run-id')).toBe(run.id);
+  expect(status?.getAttribute('data-run-scope')).toBe(run.scope);
+  // 既有 Markdown 使用流式平滑和延迟渲染；等待真实文本提交，不把初次空帧判为丢失。
+  const partial = await screen.findByText('合成演示部分输出');
+  expect(partial.closest('.assistant-message--assistant')?.getAttribute('data-message-id')).toBe(
+    `${run.id}:output`,
+  );
+  expect(partial.closest('[hidden], [inert]')).toBeNull();
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(view.container.querySelector('form')).toBeNull();
+  const late: AgentRun = { ...run, output: `${run.output}，迟到的追加内容`, sequence: 2 };
+  view.rerender(<AgentRunReadOnly run={late} />);
+  const lateOutput = await screen.findByText(late.output);
+  expect(lateOutput.closest('.assistant-message--assistant')?.getAttribute('data-message-id')).toBe(
+    `${run.id}:output`,
+  );
+  expect(lateOutput.closest('[hidden], [inert]')).toBeNull();
+  const interrupted: AgentRun = { ...late, status: 'interrupted', message: '上次运行被中断' };
+  view.rerender(<AgentRunReadOnly run={interrupted} />);
+  expect(
+    view.container.querySelector('.assistant-run-status.running, .assistant-generating'),
+  ).toBeNull();
+  expect(view.container.querySelector('.assistant-run-status.interrupted')?.textContent).toBe(
+    interrupted.message,
+  );
+  const retainedOutput = await screen.findByText(late.output);
+  expect(
+    retainedOutput.closest('.assistant-message--assistant')?.getAttribute('data-message-id'),
+  ).toBe(`${run.id}:output`);
+  expect(retainedOutput.closest('[hidden], [inert]')).toBeNull();
+  expect(
+    view.container.querySelector('.assistant-run-status.interrupted')?.getAttribute('data-run-id'),
+  ).toBe(run.id);
+  expect(
+    view.container
+      .querySelector('.assistant-run-status.interrupted')
+      ?.getAttribute('data-run-scope'),
+  ).toBe(run.scope);
+  expect(view.container.querySelector('form')).toBeNull();
+  expect(agent).not.toHaveBeenCalled();
+  expect(material).not.toHaveBeenCalled();
 });
