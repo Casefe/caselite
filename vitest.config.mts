@@ -11,6 +11,8 @@ export default defineConfig({
     },
   },
   test: {
+    // CI 为文件扫描和 Chrome 初始化留出资源，保留每条测试的原始预算。
+    maxWorkers: process.env.CI === 'true' ? 2 : undefined,
     coverage: {
       provider: 'v8',
       include: ['apps/desktop/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
