@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import type { TaskCalendar } from '../../../preload/caselite-api';
+import CreationScheduleFields from './CreationScheduleFields';
+import { CreationAttachments, CreationUploadButton } from './CreationAttachments';
+import type { TaskCreationAttachmentController } from './useTaskCreationAttachments';
 import type { Matter, Task } from '../../../preload/caselite-api';
 import { DraftEditor, type RichDraft } from '../../editors/RichEditor';
 import { Icon } from '../../shared/ui/Icon';
@@ -16,6 +20,10 @@ export type CreateProperties = TaskDates & {
   matter_id: string;
 };
 export default function TaskCreateDialog({
+  mode = 'task',
+  calendar,
+  onCalendar,
+  attachments,
   title,
   onTitle,
   objective,
@@ -38,6 +46,10 @@ export default function TaskCreateDialog({
   onCreate,
   onRetry,
 }: {
+  mode?: 'task' | 'schedule';
+  calendar?: TaskCalendar;
+  onCalendar?(value: TaskCalendar): void;
+  attachments?: TaskCreationAttachmentController;
   title: string;
   onTitle(value: string): void;
   objective: RichDraft;
@@ -75,7 +87,15 @@ export default function TaskCreateDialog({
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
-  const locked = busy || uncertain;
+  const [more, setMore] = useState(false);
+  const recovery = Boolean(attachments?.draft?.task_id);
+  const locked =
+    busy || uncertain || Boolean(attachments?.busy) || attachments?.ready === false || recovery;
+  const validCalendar =
+    !calendar ||
+    (window.caselite.validateTaskCalendar?.(calendar) ??
+      (!calendar.schedule && !calendar.important));
+  const name = mode === 'schedule' ? '新建日程' : '新建任务';
   const edit = (value: boolean) => {
     setFieldEditing(value);
     onFieldEditing(value);
@@ -83,8 +103,8 @@ export default function TaskCreateDialog({
   return (
     <dialog
       ref={dialog}
-      className={`task-create-dialog${expanded ? ' is-expanded' : ''}`}
-      aria-label="新建任务"
+      className={`task-create-dialog${expanded ? ' is-expanded' : ''}${mode === 'schedule' ? ' is-schedule' : ''}${more ? ' show-more' : ''}`}
+      aria-label={name}
       onCancel={(event) => {
         event.preventDefault();
         if (!locked) onCancel();
@@ -128,7 +148,7 @@ export default function TaskCreateDialog({
             !composing.current &&
             !fieldEditing &&
             !tagDraft &&
-            title.trim() &&
+            (recovery || (title.trim() && validCalendar)) &&
             objective.text.length <= 4000
           )
             onCreate();
@@ -136,33 +156,33 @@ export default function TaskCreateDialog({
       >
         <header className="create-form-header">
           <div className="create-form-context">
-            <Icon name="check" size={17} />
+            <Icon name={mode === 'schedule' ? 'calendar' : 'check'} size={17} />
             <span>本地工作区</span>
             <Icon name="chevron" size={13} />
-            <h1>新建任务</h1>
+            <h1>{name}</h1>
           </div>
           <div>
             <button
               type="button"
-              aria-label={expanded ? '缩小新建任务' : '展开新建任务'}
+              aria-label={`${expanded ? '缩小' : '展开'}${name}`}
               onClick={() => setExpanded((v) => !v)}
             >
               ⤢
             </button>
-            <button type="button" aria-label="取消新建任务" disabled={locked} onClick={onCancel}>
+            <button type="button" aria-label={`取消${name}`} disabled={locked} onClick={onCancel}>
               ×
             </button>
           </div>
         </header>
         <div className="create-form-body">
           <label className="create-title-label">
-            <span className="sr-only">任务名称</span>
+            <span className="sr-only">{mode === 'schedule' ? '日程名称' : '任务名称'}</span>
             <input
               data-testid="task-title"
-              required
+              required={!recovery}
               maxLength={160}
               value={title}
-              placeholder="任务标题"
+              placeholder={mode === 'schedule' ? '日程标题' : '任务标题'}
               disabled={locked}
               onChange={(e) => onTitle(e.target.value)}
             />
@@ -180,9 +200,34 @@ export default function TaskCreateDialog({
               <p role="alert">超过4000字符，请精简后创建；输入仍保留。</p>
             )}
           </div>
+          {mode === 'schedule' && calendar?.schedule && onCalendar && (
+            <CreationScheduleFields value={calendar} onChange={onCalendar} disabled={locked} />
+          )}
+          {mode === 'task' && calendar && onCalendar && (
+            <label className="creation-planned-date">
+              计划日
+              <input
+                type="date"
+                aria-label="任务计划日"
+                value={calendar.planned_date ?? ''}
+                disabled={locked}
+                onChange={(e) => onCalendar({ ...calendar, planned_date: e.target.value || null })}
+              />
+              {calendar.planned_date && (
+                <button
+                  type="button"
+                  disabled={locked}
+                  aria-label="清除任务计划日"
+                  onClick={() => onCalendar({ ...calendar, planned_date: null })}
+                >
+                  ×
+                </button>
+              )}
+            </label>
+          )}
           <fieldset className="task-create-choices" disabled={locked}>
             <legend className="sr-only">任务属性</legend>
-            <label className="create-choice">
+            <label className="create-choice create-property-extra">
               <Icon name="check" size={16} />
               <span>状态</span>
               <select
@@ -199,7 +244,7 @@ export default function TaskCreateDialog({
                 ))}
               </select>
             </label>
-            <label className="create-choice">
+            <label className="create-choice create-property-extra">
               <span aria-hidden="true">⚑</span>
               <span>优先级</span>
               <select
@@ -230,7 +275,7 @@ export default function TaskCreateDialog({
                 ))}
               </select>
             </label>
-            <div className="create-choice">
+            <div className="create-choice create-property-extra">
               <span>日期</span>
               <TaskDatePicker
                 value={properties}
@@ -286,6 +331,17 @@ export default function TaskCreateDialog({
               </div>
             </details>
           </fieldset>
+          {mode === 'schedule' && (
+            <button type="button" className="creation-more" onClick={() => setMore((v) => !v)}>
+              {more ? '▾' : '▸'} 更多属性
+            </button>
+          )}
+          {attachments && (
+            <CreationAttachments controller={attachments} disabled={busy || uncertain} />
+          )}
+          {calendar && !validCalendar && (
+            <p role="status">请补全同日开始、结束时间和有效时区；重要日程还需选择类型。</p>
+          )}
           {projectState !== 'ready' && (
             <p role="status">
               {projectState === 'loading' ? '正在读取项目…' : '项目列表读取失败。'}
@@ -300,10 +356,14 @@ export default function TaskCreateDialog({
           {busy && <p role="status">正在创建任务…</p>}
         </div>
         <footer className="create-form-footer">
-          <span className="create-attachment-hint">
-            <Icon name="file" size={18} />
-            创建后可添加附件
-          </span>
+          {attachments ? (
+            <>
+              <CreationUploadButton controller={attachments} disabled={busy || uncertain} />
+              <span className="creation-local-hint">仅保存到本机</span>
+            </>
+          ) : (
+            <span className="create-attachment-hint">创建后可添加附件</span>
+          )}
           <span className="create-form-spacer" />
           {uncertain && (
             <button type="button" disabled={busy} onClick={onRetry}>
@@ -316,13 +376,27 @@ export default function TaskCreateDialog({
           <button
             className="primary"
             aria-keyshortcuts="Meta+Enter Control+Enter"
-            title="创建任务（⌘ / Ctrl + Enter）"
+            title={`${mode === 'schedule' ? '创建日程' : '创建任务'}（⌘ / Ctrl + Enter）`}
             data-testid="create-task"
             disabled={
-              busy || tagDraft || fieldEditing || !title.trim() || objective.text.length > 4000
+              busy ||
+              attachments?.busy ||
+              attachments?.ready === false ||
+              tagDraft ||
+              fieldEditing ||
+              (!recovery && (!title.trim() || !validCalendar)) ||
+              objective.text.length > 4000
             }
           >
-            {busy ? '创建中…' : uncertain ? '核对创建结果' : '创建任务'}
+            {busy
+              ? '正在保存…'
+              : recovery
+                ? '继续保存附件'
+                : uncertain
+                  ? '核对创建结果'
+                  : mode === 'schedule'
+                    ? '创建日程'
+                    : '创建任务'}
           </button>
         </footer>
       </form>

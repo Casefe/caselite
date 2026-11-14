@@ -7,6 +7,8 @@ import {
   type MaterialScope,
   materialBatchSchema,
   type MaterialBatch,
+  creationDraftRecordSchema,
+  type CreationDraftRecord,
 } from '@caselite/contracts';
 export type StagedMaterial = {
   token: string;
@@ -18,12 +20,13 @@ export type StagedMaterial = {
   task_id?: string;
   restored_source_id?: string;
   batch_id?: string;
+  creation_draft_id?: string;
 };
 export function createMaterialStore(db: Database.Database, workspace: string) {
   const stage = (token: string): StagedMaterial | undefined => {
     const row = db
       .prepare(
-        "SELECT payload FROM material_stages WHERE token=? AND workspace_id=? AND json_extract(payload,'$.kind') IS NOT 'batch'",
+        "SELECT payload FROM material_stages WHERE token=? AND workspace_id=? AND json_extract(payload,'$.kind') IS NULL",
       )
       .get(token, workspace) as { payload: string } | undefined;
     return row ? (JSON.parse(row.payload) as StagedMaterial) : undefined;
@@ -55,6 +58,52 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
       : undefined;
   };
   return {
+    creationDraft(id: string): CreationDraftRecord | undefined {
+      const row = db
+        .prepare(
+          "SELECT payload FROM material_stages WHERE token=? AND workspace_id=? AND json_extract(payload,'$.kind')='creation'",
+        )
+        .get(id, workspace) as { payload: string } | undefined;
+      return row ? creationDraftRecordSchema.parse(JSON.parse(row.payload).draft) : undefined;
+    },
+    pendingCreationDraft(): CreationDraftRecord | undefined {
+      const row = db
+        .prepare(
+          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.kind')='creation' AND json_extract(payload,'$.draft.state') IN ('open','bound') AND json_array_length(json_extract(payload,'$.draft.tokens'))>0 ORDER BY rowid DESC LIMIT 1",
+        )
+        .get(workspace) as { payload: string } | undefined;
+      return row ? creationDraftRecordSchema.parse(JSON.parse(row.payload).draft) : undefined;
+    },
+    putCreationDraft(value: CreationDraftRecord, file?: StagedMaterial) {
+      const draft = creationDraftRecordSchema.parse(value);
+      db.transaction(() => {
+        if (file) putStage(file);
+        const saved = db
+          .prepare(
+            "INSERT INTO material_stages(token,workspace_id,payload) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET payload=excluded.payload WHERE workspace_id=excluded.workspace_id AND json_extract(payload,'$.kind')='creation'",
+          )
+          .run(draft.id, workspace, JSON.stringify({ kind: 'creation', draft }));
+        if (saved.changes !== 1) throw Error('Draft identity already reserved');
+      })();
+    },
+    bindCreationDraft(value: CreationDraftRecord, taskId: string) {
+      db.transaction(() => {
+        for (const token of value.tokens) {
+          const item = stage(token);
+          if (!item || item.scope !== value.id || item.state !== 'staged')
+            throw Error('Draft attachment changed');
+          putStage({ ...item, scope: taskId, task_id: taskId });
+        }
+        db.prepare('UPDATE material_stages SET payload=? WHERE token=? AND workspace_id=?').run(
+          JSON.stringify({
+            kind: 'creation',
+            draft: { ...value, state: 'bound', task_id: taskId },
+          }),
+          value.id,
+          workspace,
+        );
+      })();
+    },
     activeBatch(scope: MaterialScope): MaterialBatch | undefined {
       const row = db
         .prepare(
@@ -108,7 +157,7 @@ export function createMaterialStore(db: Database.Database, workspace: string) {
     pending(scope: MaterialScope) {
       const row = db
         .prepare(
-          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.scope')=? AND json_extract(payload,'$.state')='staged' AND json_extract(payload,'$.batch_id') IS NULL ORDER BY rowid DESC LIMIT 1",
+          "SELECT payload FROM material_stages WHERE workspace_id=? AND json_extract(payload,'$.scope')=? AND json_extract(payload,'$.state')='staged' AND json_extract(payload,'$.batch_id') IS NULL AND json_extract(payload,'$.creation_draft_id') IS NULL ORDER BY rowid DESC LIMIT 1",
         )
         .get(workspace, scope) as { payload: string } | undefined;
       return row ? (JSON.parse(row.payload) as StagedMaterial) : undefined;

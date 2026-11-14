@@ -1,4 +1,12 @@
-import { defaultExportStyle, type ExportStyle } from '@caselite/contracts';
+import {
+  defaultExportStyle,
+  type ExportStyle,
+  MATERIAL_FILE_EXTENSIONS,
+  MATERIAL_MAX_BYTES,
+  CREATION_ATTACHMENT_LIMIT,
+  taskCalendarSchema,
+  type TaskCalendar,
+} from '@caselite/contracts';
 import {
   LOCAL_PREFERENCES_CHANNEL,
   localPreferencesResponseSchema,
@@ -140,6 +148,12 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  readonly creationPolicy?: {
+    file_extensions: readonly string[];
+    max_file_bytes: number;
+    max_files: number;
+  };
+  validateTaskCalendar?(value: TaskCalendar): boolean;
   readonly exportStyleDefaults?: ExportStyle;
   materialBatch(request: MaterialBatchRequest): Promise<MaterialBatchResponse>;
   preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
@@ -177,6 +191,12 @@ export function createCaseLitePreloadApi(
   };
   return {
     exportStyleDefaults: structuredClone(defaultExportStyle),
+    creationPolicy: Object.freeze({
+      file_extensions: Object.freeze([...MATERIAL_FILE_EXTENSIONS]),
+      max_file_bytes: MATERIAL_MAX_BYTES,
+      max_files: CREATION_ATTACHMENT_LIMIT,
+    }),
+    validateTaskCalendar: (value) => taskCalendarSchema.safeParse(value).success,
     async materialBatch(request) {
       // 选择器和批次逐项保存是本地长操作；结果未知时只查询原批次，不重建token。
       try {
@@ -361,6 +381,7 @@ export type {
   MaterialResponse,
   MaterialRequest,
   MaterialPreview,
+  CreationAttachmentDraft,
   TextPage,
 } from '@caselite/contracts';
 export type {
