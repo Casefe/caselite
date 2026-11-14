@@ -1,0 +1,69 @@
+.task-table-structured .task-row .task-row-title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.task-table-structured .task-row .task-row-title:hover {
+  text-decoration: underline;
+}
+.task-table-structured .task-name-with-metadata {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.task-table-structured .task-row-metadata {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-table-structured .task-complete-toggle {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.task-table-structured .task-complete-toggle[aria-pressed='true'] {
+  background: var(--muted);
+  color: var(--theme-panel, white);
+}
+.task-table-structured .task-complete-toggle:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.task-table-structured :is(.task-row-title, .task-complete-toggle):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.calendar-shared-task .table-head {
+  display: none;
+}
+.calendar-shared-task .task-table-structured .task-row {
+  min-height: 48px;
+  height: auto;
+}
+.calendar-shared-task .task-table-structured .task-row-metadata {
+  overflow: visible;
+  white-space: normal;
+}

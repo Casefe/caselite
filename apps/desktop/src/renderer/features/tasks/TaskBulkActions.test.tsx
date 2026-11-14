@@ -64,3 +64,44 @@ it('keeps one original identity through an unknown bulk result and never clears 
   });
   expect(blocked).toHaveBeenLastCalledWith(false);
 });
+
+it('pauses unknown bulk recovery under an external completion lock without losing its original key', async () => {
+  const saved = { ...task, status: 'done' as const, version: 2 };
+  let key = '';
+  const api = vi.fn(async (request: TaskRequest) => {
+    if (request.operation === 'change_status') {
+      key = request.idempotency_key;
+      return { ok: false, code: 'RESULT_UNKNOWN', message: '批量结果未知' };
+    }
+    return {
+      ok: true,
+      tasks: [request.operation === 'status' ? saved : key ? saved : task],
+      receipt: request.operation === 'status' ? request.idempotency_key : null,
+      state: null,
+    };
+  });
+  window.caselite = { task: api } as unknown as Window['caselite'];
+  const changed = vi.fn();
+  const props = {
+    tasks: [task],
+    selected: [task.id],
+    onSelection: vi.fn(),
+    onBlocked: vi.fn(),
+    onChanged: changed,
+  };
+  const view = render(<TaskBulkActions {...props} disabled={false} />);
+  fireEvent.click(screen.getByRole('button', { name: /标记完成/ }));
+  await screen.findByText('批量结果未知');
+  view.rerender(<TaskBulkActions {...props} disabled />);
+  const recover = screen.getByRole('button', { name: '核对并继续原操作' });
+  expect((recover as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(recover);
+  expect(api.mock.calls.filter(([r]) => r.operation === 'status')).toHaveLength(0);
+  view.rerender(<TaskBulkActions {...props} disabled={false} />);
+  fireEvent.click(recover);
+  await waitFor(() => expect(changed).toHaveBeenCalledWith(saved, null));
+  expect(api.mock.calls.filter(([r]) => r.operation === 'change_status')).toHaveLength(1);
+  expect(api.mock.calls.find(([r]) => r.operation === 'status')?.[0]).toMatchObject({
+    idempotency_key: key,
+  });
+});

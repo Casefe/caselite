@@ -1347,3 +1347,42 @@ it('consumes an old document target once but honors a new host navigation', asyn
     expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(a.id),
   );
 });
+
+it('uses the shared task completion action while preserving the project navigation and removal action', async () => {
+  const p = project();
+  const member: Task = {
+    id: crypto.randomUUID(),
+    title: '项目完成入口',
+    objective: '',
+    status: 'todo',
+    priority: 0,
+    due_date: null,
+    version: 1,
+    matter_id: p.id,
+    document_id: crypto.randomUUID(),
+    body_id: crypto.randomUUID(),
+    body_revision: 0,
+    editor_schema: 1,
+    updated_at: '2030-01-01',
+  };
+  const complete = vi.fn(),
+    open = vi.fn();
+  window.caselite = {
+    catalog: vi.fn(async () => response([p], p.id)),
+  } as unknown as Window['caselite'];
+  renderProject(
+    <ProjectCatalog
+      tasks={[member]}
+      onOpen={open}
+      onDirty={vi.fn()}
+      onChanged={vi.fn()}
+      completion={{ complete, busyIds: [], blocked: false }}
+    />,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'A' }));
+  fireEvent.click(await screen.findByRole('tab', { name: '任务' }));
+  fireEvent.click(await screen.findByRole('button', { name: '完成任务：项目完成入口' }));
+  expect(complete).toHaveBeenCalledExactlyOnceWith(member);
+  expect(open).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: '移出项目' })).toBeTruthy();
+});

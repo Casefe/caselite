@@ -27,3 +27,5 @@
 
 @import './styles/responsive-workspace.css';
 @import './styles/agent-home-workspace.css';
+
+@import './styles/shared-task-table.css';

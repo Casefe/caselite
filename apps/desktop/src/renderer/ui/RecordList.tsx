@@ -1,3 +1,4 @@
+import type { TaskCompletionActions } from '../features/tasks/useTaskCompletion';
 import { InlinePropertiesSlot } from './ResponsiveWorkspace';
 import { createPortal } from 'react-dom';
 import { useWorkspaceInspector } from '../shared/navigation/PageNavigation';
@@ -49,8 +50,10 @@ export default function RecordList({
   onProjectDirty,
   project,
   toolbarHost,
+  completion,
 }: {
   tasks: Task[];
+  completion?: TaskCompletionActions;
   project?: Matter;
   toolbarHost?: HTMLElement | null;
   viewState: TaskListState;
@@ -65,7 +68,12 @@ export default function RecordList({
 }) {
   const [bulkBlocked, setBulkBlocked] = useState(false);
   const [inspectorBlocked, setInspectorBlocked] = useState(false);
-  const propertiesBlocked = propertyEditBlocked || projectDirty || bulkBlocked || inspectorBlocked;
+  const propertiesBlocked =
+    propertyEditBlocked ||
+    projectDirty ||
+    bulkBlocked ||
+    inspectorBlocked ||
+    Boolean(completion?.blocked);
   useEffect(() => {
     onPropertiesBlocked(bulkBlocked || inspectorBlocked);
   }, [bulkBlocked, inspectorBlocked, onPropertiesBlocked]);
@@ -498,7 +506,12 @@ export default function RecordList({
           <TaskBulkActions
             tasks={rows}
             selected={selectedIds.filter((id) => rows.some((t) => t.id === id))}
-            disabled={inspectorBlocked || projectDirty}
+            disabled={
+              inspectorBlocked ||
+              projectDirty ||
+              (propertyEditBlocked && !bulkBlocked) ||
+              Boolean(completion?.blocked)
+            }
             onSelection={setSelectedIds}
             onBlocked={setBulkBlocked}
             onChanged={onTaskChanged}
@@ -547,6 +560,9 @@ export default function RecordList({
                 )}
                 <TaskTable
                   compact
+                  disabled={propertiesBlocked}
+                  busyIds={completion?.busyIds}
+                  onComplete={completion?.complete}
                   tasks={group.rows}
                   hiddenColumns={hiddenColumns}
                   selectedId={selected?.id}
@@ -620,9 +636,11 @@ export default function RecordList({
           suggestions={[...new Set(scopedTasks.flatMap((t) => t.tags ?? []))]}
           assigneeSuggestions={scopedTasks.flatMap((t) => (t.assignee ? [t.assignee] : []))}
           onPropertiesBlocked={setInspectorBlocked}
-          propertiesDisabled={projectDirty || bulkBlocked}
-          projectDisabled={inspectorBlocked || bulkBlocked || loading}
-          reminderEditing={projectDirty || bulkBlocked}
+          propertiesDisabled={projectDirty || bulkBlocked || Boolean(completion?.blocked)}
+          projectDisabled={
+            inspectorBlocked || bulkBlocked || loading || Boolean(completion?.blocked)
+          }
+          reminderEditing={projectDirty || bulkBlocked || Boolean(completion?.blocked)}
           onProjectDirty={onProjectDirty}
           onProjectChanged={onTaskChanged}
           onTaskChanged={onTaskChanged}

@@ -2,7 +2,7 @@ import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useEffect } from 'react';
 import type { TaskListQuery } from '../../preload/caselite-api';
 
-const taskPages = ['task-list', 'pages'] as const;
+export const taskPages = ['task-list', 'pages'] as const;
 
 export function invalidateTaskPages(client: QueryClient) {
   // IPC 本身不可中止。先取消缓存里的旧读取，避免它在提交之后写回过期结果。

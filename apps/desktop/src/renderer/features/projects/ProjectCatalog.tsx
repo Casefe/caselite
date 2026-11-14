@@ -1,3 +1,5 @@
+import SharedTaskTable from '../../ui/SharedTaskTable';
+import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
 import { InlinePropertiesSlot } from '../../ui/ResponsiveWorkspace';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import {
@@ -89,8 +91,10 @@ export default function ProjectCatalog({
   backSlot,
   navigationPending = false,
   favoriteAction,
+  completion,
 }: {
   tasks: Task[];
+  completion?: TaskCompletionActions;
   onOpen(id: string, source: ProjectViewState): void;
   onFinance?(projectId: string): void;
   onCalendar?(): void;
@@ -413,7 +417,14 @@ export default function ProjectCatalog({
       await read(project.id);
     }
   };
-  const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
+  const blocked =
+    navigationPending ||
+    reading ||
+    dirty ||
+    creating ||
+    c.pending ||
+    c.unknown ||
+    Boolean(completion?.blocked);
   const openActivityProject = (id: string) => {
     if (!blocked) {
       pageNavigation?.beforeChange();
@@ -959,102 +970,60 @@ export default function ProjectCatalog({
                 </div>
                 {!!members.length && (
                   <div className="project-task-table-scroll">
-                    <table className="catalog-table project-task-table" aria-label="项目任务列表">
-                      <thead>
-                        <tr>
-                          {['优先级', '状态', '任务名称', '负责人', '截止日期', '操作'].map(
-                            (label) => (
-                              <th key={label} scope="col">
-                                {label}
-                              </th>
-                            ),
-                          )}
-                        </tr>
-                      </thead>
-                      {projectTaskStatuses.map((status) => {
-                        const group = members.filter((task) => (task.status ?? 'todo') === status);
-                        if (!group.length) return null;
-                        const key = `${editor.project.id}:${status}`;
-                        const expanded = !collapsedTaskGroups[key];
-                        return (
-                          <tbody key={status} aria-label={taskStatusNames[status]}>
-                            <tr className="project-task-group">
-                              <th scope="rowgroup" colSpan={6}>
+                    {projectTaskStatuses.map((status) => {
+                      const group = members.filter((task) => (task.status ?? 'todo') === status);
+                      if (!group.length) return null;
+                      const key = `${editor.project.id}:${status}`;
+                      const expanded = !collapsedTaskGroups[key];
+                      return (
+                        <section key={status} aria-label={taskStatusNames[status]}>
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            disabled={blocked}
+                            onClick={() =>
+                              setCollapsedTaskGroups((previous) => ({
+                                ...previous,
+                                [key]: expanded,
+                              }))
+                            }
+                          >
+                            <Icon name="chevron" size={12} />
+                            <StatusGlyph status={status} />
+                            {taskStatusNames[status]} <small>{group.length}</small>
+                          </button>
+                          {expanded && (
+                            <SharedTaskTable
+                              tasks={group}
+                              titleData={(task) => ({ 'data-project-task': task.id })}
+                              onOpen={openTask}
+                              disabled={blocked}
+                              busyIds={completion?.busyIds}
+                              onComplete={p?.archived_at ? undefined : completion?.complete}
+                              hiddenColumns={['project']}
+                              rowActions={(task) => (
                                 <button
                                   type="button"
-                                  aria-expanded={expanded}
+                                  disabled={blocked || !!p?.archived_at}
                                   onClick={() =>
-                                    setCollapsedTaskGroups((previous) => ({
-                                      ...previous,
-                                      [key]: expanded,
-                                    }))
+                                    void command(
+                                      catalogMutation({
+                                        operation: 'assign_task' as const,
+                                        task_id: task.id,
+                                        expected_version: task.version,
+                                        matter_id: null,
+                                      }),
+                                    )
                                   }
                                 >
-                                  <Icon name="chevron" size={12} />
-                                  <span aria-hidden="true">
-                                    <StatusGlyph status={status} />
-                                  </span>
-                                  {taskStatusNames[status]} <small>{group.length}</small>
+                                  移出项目
                                 </button>
-                              </th>
-                            </tr>
-                            {expanded &&
-                              group.map((task) => (
-                                <tr key={task.id} onClick={() => openTask(task.id)}>
-                                  <td>
-                                    <PriorityGlyph priority={task.priority ?? 0} />
-                                  </td>
-                                  <td>
-                                    <StatusGlyph status={task.status ?? 'todo'} />
-                                  </td>
-                                  <td>
-                                    <button
-                                      className="project-title-link"
-                                      disabled={blocked}
-                                      data-project-task={task.id}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        openTask(task.id);
-                                      }}
-                                    >
-                                      {task.title}
-                                    </button>
-                                  </td>
-                                  <td>
-                                    {task.assignee === undefined
-                                      ? '本人'
-                                      : (task.assignee ?? '未分配')}
-                                  </td>
-                                  <td>
-                                    {task.due_date && (
-                                      <time dateTime={task.due_date}>{task.due_date}</time>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <button
-                                      type="button"
-                                      disabled={blocked || !!p?.archived_at}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        void command(
-                                          catalogMutation({
-                                            operation: 'assign_task' as const,
-                                            task_id: task.id,
-                                            expected_version: task.version,
-                                            matter_id: null,
-                                          }),
-                                        );
-                                      }}
-                                    >
-                                      移出项目
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        );
-                      })}
-                    </table>
+                              )}
+                            />
+                          )}
+                        </section>
+                      );
+                    })}
                   </div>
                 )}
                 {!p?.archived_at && (

@@ -1,3 +1,5 @@
+import { useTaskCompletion } from './features/tasks/useTaskCompletion';
+import { refreshTaskConsumers } from './ui/refresh-task-consumers';
 import {
   ResponsiveWorkspaceProvider,
   useResponsiveWorkspace,
@@ -231,6 +233,21 @@ function Workbench() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
+  const completion = useTaskCompletion({
+    disabled:
+      loading ||
+      dirty ||
+      commentDirty ||
+      projectDirty ||
+      propertiesBlocked ||
+      reminderBlocked ||
+      attachmentBlocked ||
+      busy ||
+      uncertain ||
+      reviewSaving ||
+      creating,
+    onChanged: acceptTaskCompletion,
+  });
   const readSequence = useRef(0);
   const createRequest = useRef<CreateTaskCommand | null>(null);
   const recoveredTaskId = creationAttachments.recovered
@@ -333,6 +350,7 @@ function Workbench() {
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (
+        completion.blocked ||
         dirty ||
         commentDirty ||
         projectDirty ||
@@ -352,6 +370,7 @@ function Workbench() {
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
   }, [
+    completion.blocked,
     dirty,
     commentDirty,
     projectDirty,
@@ -366,6 +385,7 @@ function Workbench() {
   ]);
   function canLeave() {
     if (
+      completion.blocked ||
       reviewSaving ||
       dirty ||
       commentDirty ||
@@ -810,7 +830,16 @@ function Workbench() {
     setTaskNavigation(null);
     setError('');
   };
-  const acceptTaskProperties = (saved: Task, description: number[] | null) => {
+  async function acceptTaskCompletion(saved: Task, description: number[] | null) {
+    if (!(await acceptTaskProperties(saved, description))) return false;
+    try {
+      await refreshTaskConsumers(queryClient);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function acceptTaskProperties(saved: Task, description: number[] | null) {
     setTasks((rows) =>
       rows.map((row) => (row.id === saved.id && row.version <= saved.version ? saved : row)),
     );
@@ -821,8 +850,11 @@ function Workbench() {
       setPropertiesRead((epoch) => epoch + 1);
       void refreshTaskPosition(saved.id);
     }
-    void refresh().catch(() => setError('任务属性已保存，列表刷新失败，请重试列表。'));
-  };
+    return refresh().catch(() => {
+      setError('任务属性已保存，列表刷新失败，请重试列表。');
+      return false;
+    });
+  }
   const taskInspector = active ? (
     <TaskInspector
       compactAi={view === 'tasks'}
@@ -834,6 +866,7 @@ function Workbench() {
           compact
           taskId={active.id}
           disabled={
+            completion.blocked ||
             loading ||
             dirty ||
             commentDirty ||
@@ -862,6 +895,7 @@ function Workbench() {
         ) : undefined
       }
       projectDisabled={
+        completion.blocked ||
         loading ||
         dirty ||
         commentDirty ||
@@ -872,6 +906,7 @@ function Workbench() {
         uncertain
       }
       propertiesDisabled={
+        completion.blocked ||
         loading ||
         dirty ||
         commentDirty ||
@@ -882,7 +917,13 @@ function Workbench() {
         uncertain
       }
       reminderEditing={
-        loading || reminderBlocked || attachmentBlocked || dirty || commentDirty || projectDirty
+        completion.blocked ||
+        loading ||
+        reminderBlocked ||
+        attachmentBlocked ||
+        dirty ||
+        commentDirty ||
+        projectDirty
       }
       onPropertiesBlocked={setPropertiesBlocked}
       onTaskChanged={acceptTaskProperties}
@@ -1153,6 +1194,7 @@ function Workbench() {
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
       >
+        {completion.feedback}
         {navigationNotice &&
           !creating &&
           (reviewSaving ||
@@ -1264,13 +1306,14 @@ function Workbench() {
             </div>
           ) : view === 'projects' ? (
             <ProjectCatalog
+              completion={completion}
               favoriteAction={(project, disabled) => (
                 <FavoriteButton kind="project" id={project.id} disabled={disabled} />
               )}
               tasks={tasks}
               initialView={projectView}
               backSlot={projectBackSlot}
-              navigationPending={loading}
+              navigationPending={loading || completion.blocked}
               onOpen={(id, source) => void open(id, source)}
               onNewTask={newTask}
               onCalendar={() => navigate('calendar')}
@@ -1292,11 +1335,13 @@ function Workbench() {
             />
           ) : view === 'calendar' ? (
             <CalendarView
+              completion={completion}
               onCreate={(mode) => newTask(null, mode)}
               date={calendarDate}
               selected={active}
               inspector={taskInspector}
               blocked={
+                completion.blocked ||
                 loading ||
                 dirty ||
                 propertiesBlocked ||
@@ -1634,6 +1679,7 @@ function Workbench() {
             />
           ) : view === 'tasks' ? (
             <RecordList
+              completion={completion}
               key={view}
               tasks={tasks}
               viewState={taskListState}

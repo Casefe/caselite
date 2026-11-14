@@ -1,4 +1,9 @@
 import { useResponsiveWorkspace } from './ResponsiveWorkspace';
+import SharedTaskTable, {
+  taskOptionalColumns,
+  type TaskOptionalColumn,
+  type SharedTaskTableProps,
+} from './SharedTaskTable';
 import { taskPriorityNames } from './task-priority';
 import { taskStatusNames } from './task-status';
 import { PriorityGlyph, StatusGlyph } from './TaskListGlyph';
@@ -8,6 +13,9 @@ import type { ReactNode, Ref } from 'react';
 import type { Task } from '../../preload/caselite-api';
 import BrandLogo from './BrandLogo';
 import { useLocalPreferences } from '../shared/data/LocalPreferences';
+
+export { taskOptionalColumns };
+export type { TaskOptionalColumn };
 
 const profileAvatar = new URL('./profile-avatar.svg', import.meta.url).href;
 
@@ -214,12 +222,6 @@ export function WorkspaceShell({
     </main>
   );
 }
-export const taskOptionalColumns = {
-  project: '关联项目',
-  owner: '负责人',
-  'due-date': '截止日期',
-} as const;
-export type TaskOptionalColumn = keyof typeof taskOptionalColumns;
 
 const taskColumnWidths: Record<string, string> = {
   priority: '42px',
@@ -230,7 +232,17 @@ const taskColumnWidths: Record<string, string> = {
   'due-date': 'max-content',
 };
 
-export function TaskTable({
+export function TaskTable(
+  props: Omit<SharedTaskTableProps, 'hiddenColumns'> & {
+    documents?: boolean;
+    hiddenColumns?: TaskOptionalColumn[];
+  },
+) {
+  if (props.documents) return <LegacyTaskTable {...props} />;
+  return <SharedTaskTable {...props} />;
+}
+
+function LegacyTaskTable({
   tasks,
   onOpen,
   documents = false,

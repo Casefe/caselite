@@ -1,3 +1,4 @@
+import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
 import { useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../../../preload/caselite-api';
 import { calendarQuery, localDate, shiftDate, useCalendar } from './calendar-query';
@@ -15,8 +16,10 @@ export default function CalendarView({
   blocked,
   onOpen,
   onClose,
+  completion,
 }: {
   date: string;
+  completion?: TaskCompletionActions;
   onCreate?(mode: 'task' | 'schedule'): void;
   onDate(date: string): void;
   selected: Task | null;
@@ -105,6 +108,7 @@ export default function CalendarView({
         selected={selected?.id === task.id}
         blocked={blocked}
         onOpen={onOpen}
+        completion={completion}
       />
     ));
   }

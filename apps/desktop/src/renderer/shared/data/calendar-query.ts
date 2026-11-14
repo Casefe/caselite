@@ -25,13 +25,14 @@ export const calendarQuery = (
   offset: 0,
   ...extra,
 });
+export const calendarQueries = ['calendar'] as const;
 export function invalidateCalendar(client: QueryClient) {
-  void client.cancelQueries({ queryKey: ['calendar'] });
-  void client.invalidateQueries({ queryKey: ['calendar'] });
+  void client.cancelQueries({ queryKey: calendarQueries });
+  void client.invalidateQueries({ queryKey: calendarQueries });
 }
 export function useCalendar(query: CalendarQuery, enabled = true) {
   return useQuery({
-    queryKey: ['calendar', query],
+    queryKey: [...calendarQueries, query],
     enabled,
     queryFn: async () => {
       const r = await window.caselite.task({
