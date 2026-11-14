@@ -1,3 +1,4 @@
+import { usePageNavigation } from '../shared/navigation/PageNavigation';
 import PropertyResizeHandle from './PropertyResizeHandle';
 import TaskInspector from './TaskInspector';
 import TaskListSummary from '../features/tasks/TaskListSummary';
@@ -66,6 +67,7 @@ export default function RecordList({
   useEffect(() => {
     onPropertiesBlocked(bulkBlocked || inspectorBlocked);
   }, [bulkBlocked, inspectorBlocked, onPropertiesBlocked]);
+  const pageNavigation = usePageNavigation();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -269,7 +271,10 @@ export default function RecordList({
             aria-label="任务预览"
             aria-expanded={previewOpen}
             disabled={propertiesBlocked}
-            onClick={() => setPreviewOpen((open) => !open)}
+            onClick={() => {
+              if (!previewOpen) pageNavigation?.inspector.setOpen(true);
+              setPreviewOpen((open) => !open);
+            }}
           >
             <Icon name="panel" size={16} />
           </button>

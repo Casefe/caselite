@@ -1,4 +1,5 @@
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
+import { useChildPage, usePageNavigation } from '../../shared/navigation/PageNavigation';
 import { useProjectCatalog } from '../../shared/data/ordinary-catalog-query';
 import ProjectMetrics from './ProjectMetrics';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
@@ -361,15 +362,40 @@ export default function ProjectCatalog({
     returnTaskId: id,
     ...(documentId ? { documentId } : {}),
   });
+  const pageNavigation = usePageNavigation();
+  useChildPage(() => {
+    const id = editor?.project.id ?? (sourceUnavailable ? initialView?.projectId : null);
+    const title = editor
+      ? (p ?? editor.project).title
+      : sourceUnavailable
+        ? ((initialView as ProjectViewState & { pageTitle?: string })?.pageTitle ?? '项目')
+        : '项目';
+    return {
+      key: id ? `projects:${id}:${section}` : 'projects:list',
+      title,
+      icon: 'folder',
+      state: { ...sourceView(''), projectId: id ?? null, pageTitle: title },
+    };
+  }, !reading && !navigationPending);
+  function changeSection(next: keyof typeof sections) {
+    pageNavigation?.beforeChange();
+    setSection(next);
+  }
   const openTask = (id: string, documentId?: string) => {
     if (!blocked) onOpen(id, sourceView(id, documentId));
   };
   const open = async (project: Matter) => {
-    if (!dirty && !creating && !reading && !c.pending && !c.unknown) await read(project.id);
+    if (!dirty && !creating && !reading && !c.pending && !c.unknown) {
+      pageNavigation?.beforeChange();
+      await read(project.id);
+    }
   };
   const blocked = navigationPending || reading || dirty || creating || c.pending || c.unknown;
   const openActivityProject = (id: string) => {
-    if (!blocked) void read(id);
+    if (!blocked) {
+      pageNavigation?.beforeChange();
+      void read(id);
+    }
   };
   const documentLinks = () => {
     if (c.error) return <p role="status">暂时无法读取项目文档。</p>;
@@ -420,6 +446,7 @@ export default function ProjectCatalog({
       title="返回项目列表"
       onClick={() => {
         returnProjectId.current = editor.project.id;
+        pageNavigation?.beforeChange();
         setEditor(null);
       }}
     >
@@ -522,7 +549,10 @@ export default function ProjectCatalog({
               aria-label="项目预览"
               aria-expanded={listInspectorOpen}
               disabled={blocked}
-              onClick={() => setListInspectorOpen((open) => !open)}
+              onClick={() => {
+                if (!listInspectorOpen) pageNavigation?.inspector.setOpen(true);
+                setListInspectorOpen((open) => !open);
+              }}
             >
               <Icon name="panel" size={16} />
             </button>
@@ -748,7 +778,7 @@ export default function ProjectCatalog({
                       c.pending ||
                       c.unknown
                     }
-                    onClick={() => setSection(id as keyof typeof sections)}
+                    onClick={() => changeSection(id as keyof typeof sections)}
                   >
                     {label}
                   </button>
@@ -757,7 +787,7 @@ export default function ProjectCatalog({
               {bodyDirty && section !== 'overview' && (
                 <div className="project-draft-notice" role="status">
                   项目说明尚未保存，草稿仍保留。
-                  <button type="button" onClick={() => setSection('overview')}>
+                  <button type="button" onClick={() => changeSection('overview')}>
                     返回概述保存
                   </button>
                 </div>
@@ -870,7 +900,7 @@ export default function ProjectCatalog({
                       className="project-update-entry"
                       type="button"
                       disabled={blocked}
-                      onClick={() => setSection('activity')}
+                      onClick={() => changeSection('activity')}
                     >
                       <Icon name="plus" size={15} />
                       {p?.archived_at ? '查看项目更新' : '撰写项目更新'}
