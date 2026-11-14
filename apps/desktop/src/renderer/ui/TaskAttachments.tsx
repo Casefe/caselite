@@ -4,6 +4,7 @@ import PhotoReader from './PhotoReader';
 import { isDocx, useMaterials } from './useMaterials';
 import ImportantDates from '../features/calendar/ImportantDates';
 import type { Task } from '../../preload/caselite-api';
+import type { ReactNode } from 'react';
 
 const PdfReader = lazy(() => import('./PdfReader'));
 const statuses = {
@@ -22,12 +23,14 @@ export default function TaskAttachments({
   task,
   onDateBlocked,
   onTaskChanged,
+  bodyAction,
 }: {
   taskId: string;
   disabled?: boolean;
   task?: Task;
   onDateBlocked?(value: boolean): void;
   onTaskChanged?(task: Task, state: number[] | null): void;
+  bodyAction?: ReactNode;
 }) {
   // 属性栏只消费材料，不把导入或阅读动作变成 AI 选材授权。
   const c = useMaterials(taskId, true, false);
@@ -57,7 +60,7 @@ export default function TaskAttachments({
     <section className="task-attachments" aria-label="任务附件">
       <header>
         <h3>
-          附件 <small>{c.items.length || ''}</small>
+          {bodyAction ? '文档与材料' : '附件'} <small>{c.items.length || ''}</small>
         </h3>
         <button
           ref={trigger}
@@ -69,6 +72,7 @@ export default function TaskAttachments({
           添加附件
         </button>
       </header>
+      {bodyAction}
       {task && onDateBlocked && onTaskChanged && (
         <ImportantDates
           key={task.id}
@@ -124,6 +128,17 @@ export default function TaskAttachments({
                   </small>
                 </span>
               </button>
+              {bodyAction && (
+                <button
+                  type="button"
+                  className="task-attachment-preview"
+                  disabled={disabled || c.readPending}
+                  onClick={() => open(item.id)}
+                  aria-label={`预览附件：${item.name}`}
+                >
+                  预览
+                </button>
+              )}
             </li>
           ))}
         </ul>

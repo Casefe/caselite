@@ -3,7 +3,8 @@ import { LocalPreferencesProvider, initialLocalPreferences } from '../shared/dat
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { invalidateTaskPages } from './task-list-query';
 import { createWorkbenchQueryClient } from '../shared/data/workbench-query-client';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { PageNavigationProvider } from '../shared/navigation/PageNavigation';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Task, TaskRequest, TaskResponse } from '../../preload/caselite-api';
@@ -41,7 +42,11 @@ const result = (rows: Task[], offset = 0): TaskResponse => ({
   page: { offset, total: rows.length + offset, has_more: false },
 });
 const source: Task[] = [];
-function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialTaskListState) {
+function show(
+  api: (r: TaskRequest) => Promise<TaskResponse>,
+  initial = initialTaskListState,
+  sharedInspector = false,
+) {
   window.caselite = {
     // 新增类型查询不属于本组任务页IPC计数；该通道在Calendar专项中单独验收。
     task: (r: TaskRequest) =>
@@ -68,8 +73,10 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
   function Host() {
     const [state, setState] = useState<TaskListState>(initial),
       [blocked, setBlocked] = useState(false),
-      [opened, setOpened] = useState('');
-    return opened ? (
+      [opened, setOpened] = useState(''),
+      [inspectorOpen, setInspectorOpen] = useState(false);
+    const initialize = useCallback((_key: string, open: boolean) => setInspectorOpen(open), []);
+    const content = opened ? (
       <button onClick={() => setOpened('')}>返回列表</button>
     ) : (
       <RecordList
@@ -85,6 +92,27 @@ function show(api: (r: TaskRequest) => Promise<TaskResponse>, initial = initialT
         onPropertiesBlocked={setBlocked}
         onTaskChanged={() => invalidateTaskPages(client)}
       />
+    );
+    return sharedInspector ? (
+      <PageNavigationProvider
+        value={{
+          initial: null,
+          register: () => () => {},
+          report: () => {},
+          beforeChange: () => {},
+          inspector: {
+            open: inspectorOpen,
+            setOpen: setInspectorOpen,
+            pageKey: 'tasks',
+            initialize,
+          },
+        }}
+      >
+        <button onClick={() => setInspectorOpen((open) => !open)}>顶栏属性开关</button>
+        {content}
+      </PageNavigationProvider>
+    ) : (
+      content
     );
   }
   return {
@@ -111,8 +139,6 @@ it('invalidates query A before B and never displays its late rows or count under
   );
   await waitFor(() => expect(pending).toHaveLength(1));
   const filter = screen.getByRole('button', { name: '筛选任务' });
-  expect(filter.getAttribute('aria-expanded')).toBe('true');
-  fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(filter);
   expect(filter.getAttribute('aria-expanded')).toBe('true');
@@ -396,6 +422,8 @@ it('retains the batch recovery lock while the preview is open and disables unrel
   show(api);
   await screen.findByRole('row', { name: '选择任务：批量与预览' });
   fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
+  fireEvent.click(screen.getByText('显示设置'));
+  fireEvent.click(screen.getByLabelText('选择多个任务'));
   fireEvent.click(screen.getByLabelText('批量选择当前页任务'));
   fireEvent.click(screen.getByRole('button', { name: /标记完成/ }));
   await screen.findByText('等待核对批量原提交。');
@@ -419,13 +447,53 @@ it('retains the batch recovery lock while the preview is open and disables unrel
   ).toBe(true);
 });
 
+// 保留原回归场景名；按本轮确认的简化设计，空预览不再显示统计或启用无任务 AI。
 it('retains workspace statistics in an empty preview without enabling a task AI', async () => {
   show(async () => result([]));
-  const card = await screen.findByRole('region', { name: '任务统计' });
-  expect(card.closest('[aria-label="任务辅助栏"]')).toBeTruthy();
-  expect(document.querySelector('.collection-main [data-statistics-module]')).toBeNull();
+  await screen.findByText('没有匹配的任务。可以新建任务，或调整搜索条件。');
+  expect(document.querySelector('[data-statistics-module]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '任务预览' }));
-  const emptyPreview = screen.getByLabelText('任务属性');
-  expect(emptyPreview.querySelector('[data-statistics-module="tasks"]')).toBeTruthy();
+  const emptyPreview = screen.getByLabelText('任务辅助栏');
+  expect(emptyPreview.querySelector('[data-statistics-module]')).toBeNull();
   expect(emptyPreview.querySelector('[aria-label="AI 对话"]')).toBeNull();
+});
+
+it('shares the titlebar inspector choice without remounting a hidden property draft', async () => {
+  const row = task('共享右栏草稿');
+  const api = vi.fn(async (request: TaskRequest) => {
+    if (request.operation !== 'list') throw new Error('显隐不应提交任务命令');
+    return result([row]);
+  });
+  show(api, initialTaskListState, true);
+  await screen.findByRole('row', { name: '选择任务：共享右栏草稿' });
+  const sidebar = screen.getByLabelText('任务辅助栏');
+  expect(sidebar.hidden).toBe(true);
+  expect(screen.getByRole('button', { name: '任务预览' }).getAttribute('aria-expanded')).toBe(
+    'false',
+  );
+  fireEvent.click(screen.getByRole('button', { name: '顶栏属性开关' }));
+  expect(sidebar.hidden).toBe(false);
+  expect(screen.getByRole('button', { name: '任务预览' }).getAttribute('aria-expanded')).toBe(
+    'true',
+  );
+  fireEvent.click(screen.getByText('添加标签'));
+  const input = screen.getByLabelText('新标签');
+  fireEvent.change(input, { target: { value: '保留未提交标签' } });
+  fireEvent.click(screen.getByRole('button', { name: '顶栏属性开关' }));
+  expect(sidebar.hidden).toBe(true);
+  expect(input.isConnected).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '顶栏属性开关' }));
+  expect(screen.getByLabelText('新标签')).toBe(input);
+  expect((input as HTMLInputElement).value).toBe('保留未提交标签');
+  expect((screen.getByRole('button', { name: '任务预览' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(
+    api.mock.calls.every(
+      (call) =>
+        !['update', 'update_attributes', 'change_status'].includes(
+          (call[0] as TaskRequest | undefined)?.operation ?? '',
+        ),
+    ),
+  ).toBe(true);
 });

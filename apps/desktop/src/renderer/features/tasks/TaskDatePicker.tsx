@@ -19,11 +19,13 @@ export default function TaskDatePicker({
   disabled = false,
   onChange,
   onEditing,
+  separate = false,
 }: {
   value: TaskDates;
   disabled?: boolean;
   onChange(value: TaskDates): void;
   onEditing?(value: boolean): void;
+  separate?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -55,27 +57,49 @@ export default function TaskDatePicker({
     onChange(draft);
     close();
   };
+  // 两个日期行共用一个编辑草稿和弹窗，避免重复控件与并发保存路径。
+  const open = (button: HTMLButtonElement) => {
+    trigger.current = button;
+    setDraft({ start_date: value.start_date, due_date: value.due_date });
+    setError('');
+    dialog.current?.showModal();
+    onEditing?.(true);
+  };
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className="task-date-trigger"
-        aria-label="设置任务日期"
-        disabled={disabled}
-        title={`${value.start_date ?? '未设开始日期'} — ${value.due_date ?? '未设截止日期'}`}
-        onClick={() => {
-          // 仅取日期字段，不能把调用方的 status 等属性带回属性操作队列。
-          setDraft({ start_date: value.start_date, due_date: value.due_date });
-          setError('');
-          dialog.current?.showModal();
-          onEditing?.(true);
-        }}
-      >
-        <Icon name="calendar" size={16} />
-        <span>{dateLabel(value)}</span>
-        <span aria-hidden="true">⌄</span>
-      </button>
+      {separate ? (
+        (['start_date', 'due_date'] as const).map((field) => (
+          <div key={field} className="inspector-property-row">
+            <span className="inspector-property-label">
+              {field === 'start_date' ? '开始日期' : '截止日期'}
+            </span>
+            <button
+              type="button"
+              className="task-date-trigger"
+              aria-label={field === 'start_date' ? '设置任务日期' : '设置任务截止日期'}
+              disabled={disabled}
+              onClick={(event) => open(event.currentTarget)}
+            >
+              <Icon name="calendar" size={16} />
+              <span>{value[field] ?? '未设置'}</span>
+            </button>
+          </div>
+        ))
+      ) : (
+        <button
+          ref={trigger}
+          type="button"
+          className="task-date-trigger"
+          aria-label="设置任务日期"
+          disabled={disabled}
+          title={`${value.start_date ?? '未设开始日期'} — ${value.due_date ?? '未设截止日期'}`}
+          onClick={(event) => open(event.currentTarget)}
+        >
+          <Icon name="calendar" size={16} />
+          <span>{dateLabel(value)}</span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+      )}
       <dialog
         ref={dialog}
         className="task-property-dialog"

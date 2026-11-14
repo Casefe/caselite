@@ -202,7 +202,8 @@ it('keeps the source when settings rereads the same task and clears it on a glob
   fireEvent.click(screen.getByText('设置入口'));
   fireEvent.click(screen.getByText('关闭设置'));
   await screen.findByRole('button', { name: '返回来源项目' });
-  expect(screen.getByTestId('task-result-tab').getAttribute('aria-selected')).toBe('true');
+  expect(document.querySelector('.task-detail')?.getAttribute('data-task-tab')).toBe('result');
+  expect(screen.getByRole('button', { name: '返回任务' })).toBeTruthy();
   fireEvent.click(screen.getByTestId('back-to-tasks'));
   await screen.findByText('项目视图P');
   fireEvent.click(screen.getByText('全局B'));

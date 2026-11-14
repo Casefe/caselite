@@ -169,7 +169,7 @@ export async function runTaskViewsDemo(
     await click('[data-nav=tasks]');
     await wait("document.querySelectorAll('[data-row-task]').length===7");
     await wait(
-      "(()=>{const e=document.querySelector('.task-table-overview .table-head');const r=e?.getBoundingClientRect();return r&&r.width>700&&r.height>20&&getComputedStyle(e).clipPath==='none';})()",
+      "(()=>{const list=document.querySelector('.compact-task-list');const e=list?.querySelector('.table-head');const r=e?.getBoundingClientRect();return list?.getAttribute('data-layout')==='list'&&r&&r.width<=1&&r.height<=1&&!list.querySelector('[data-statistics-module]')&&document.querySelector('#task-list-filters').hidden&&getComputedStyle(document.querySelector('#task-list-filters')).display==='none';})()",
     );
     await capture('01-task-summary.png');
     await click('[data-nav=settings]');

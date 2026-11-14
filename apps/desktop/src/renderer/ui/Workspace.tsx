@@ -221,6 +221,7 @@ export function TaskTable({
   hiddenColumns = [],
   selectedIds = [],
   onSelection,
+  compact = false,
 }: {
   tasks: Task[];
   onOpen(id: string): void;
@@ -230,6 +231,7 @@ export function TaskTable({
   hiddenColumns?: TaskOptionalColumn[];
   selectedIds?: string[];
   onSelection?(ids: string[]): void;
+  compact?: boolean;
 }) {
   const overview = !documents && Boolean(onSelection);
   const RowElement = overview ? 'div' : 'button';
@@ -274,7 +276,7 @@ export function TaskTable({
           cell: ({ row }) => (
             <span className="task-cell-value">
               <PriorityGlyph priority={row.original.priority ?? 0} />
-              {overview && taskPriorityNames[row.original.priority ?? 0]}
+              {overview && !compact && taskPriorityNames[row.original.priority ?? 0]}
             </span>
           ),
         },
@@ -284,7 +286,7 @@ export function TaskTable({
           cell: ({ row }) => (
             <span className="task-cell-value" data-status={row.original.status ?? 'todo'}>
               <StatusGlyph status={row.original.status ?? 'todo'} />
-              {overview && taskStatusNames[row.original.status ?? 'todo']}
+              {overview && !compact && taskStatusNames[row.original.status ?? 'todo']}
             </span>
           ),
         },
@@ -293,51 +295,117 @@ export function TaskTable({
         {
           id: 'owner',
           header: '负责人',
-          accessorFn: (task) =>
-            task.assignee === undefined ? '本人' : (task.assignee ?? '未分配'),
+          cell: ({ row: { original: task } }) => {
+            const name = task.assignee === undefined ? '本人' : (task.assignee ?? '未分配');
+            return compact ? (
+              <span className="task-assignee-avatar" title={name} aria-label={`负责人：${name}`}>
+                {name.slice(0, 1)}
+              </span>
+            ) : (
+              name
+            );
+          },
         },
-        { id: 'due-date', header: '截止日期', accessorFn: (task) => task.due_date ?? '—' },
-      ];
-  const arranged: ColumnDef<Task>[] = overview
-    ? [
         {
-          id: 'selection',
-          header: () => (
-            <input
-              type="checkbox"
-              aria-label="全选当前页任务"
-              checked={tasks.length > 0 && tasks.every((t) => selectedIds.includes(t.id))}
-              onChange={(e) =>
-                onSelection?.(
-                  e.target.checked
-                    ? [...new Set([...selectedIds, ...tasks.map((t) => t.id)])]
-                    : selectedIds.filter((id) => !tasks.some((t) => t.id === id)),
-                )
-              }
-            />
-          ),
-          cell: ({ row }) => (
-            <input
-              type="checkbox"
-              aria-label={`勾选任务：${row.original.title}`}
-              checked={selectedIds.includes(row.id)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                onSelection?.(
-                  e.target.checked
-                    ? [...selectedIds, row.id]
-                    : selectedIds.filter((id) => id !== row.id),
-                )
-              }
-            />
-          ),
+          id: 'due-date',
+          header: '截止日期',
+          cell: ({ row: { original: task } }) =>
+            task.due_date ? (
+              <time dateTime={task.due_date} title={task.due_date}>
+                {compact
+                  ? `${Number(task.due_date.slice(5, 7))}月${Number(task.due_date.slice(8, 10))}日`
+                  : task.due_date}
+              </time>
+            ) : (
+              '—'
+            ),
         },
-        ...['title', 'priority', 'status', 'due-date', 'owner', 'project'].map((id) =>
+        ...(compact
+          ? [
+              {
+                id: 'tags',
+                header: '标签',
+                cell: ({ row }: { row: { original: Task } }) => (
+                  <span className="task-row-tags">
+                    {row.original.tags?.slice(0, 2).map((tag) => (
+                      <small key={tag}>{tag}</small>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+      ];
+  const arranged: ColumnDef<Task>[] = compact
+    ? [
+        ...(onSelection
+          ? [
+              {
+                id: 'selection',
+                header: '选择',
+                cell: ({ row }: { row: { original: Task; id: string } }) => (
+                  <input
+                    type="checkbox"
+                    aria-label={`勾选任务：${row.original.title}`}
+                    checked={selectedIds.includes(row.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onChange={(e) =>
+                      onSelection(
+                        e.target.checked
+                          ? [...selectedIds, row.id]
+                          : selectedIds.filter((id) => id !== row.id),
+                      )
+                    }
+                  />
+                ),
+              },
+            ]
+          : []),
+        ...['priority', 'status', 'title', 'tags', 'project', 'due-date', 'owner'].map((id) =>
           columns.find((c) => c.id === id)!,
         ),
       ]
-    : columns;
+    : overview
+      ? [
+          {
+            id: 'selection',
+            header: () => (
+              <input
+                type="checkbox"
+                aria-label="全选当前页任务"
+                checked={tasks.length > 0 && tasks.every((t) => selectedIds.includes(t.id))}
+                onChange={(e) =>
+                  onSelection?.(
+                    e.target.checked
+                      ? [...new Set([...selectedIds, ...tasks.map((t) => t.id)])]
+                      : selectedIds.filter((id) => !tasks.some((t) => t.id === id)),
+                  )
+                }
+              />
+            ),
+            cell: ({ row }) => (
+              <input
+                type="checkbox"
+                aria-label={`勾选任务：${row.original.title}`}
+                checked={selectedIds.includes(row.id)}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  onSelection?.(
+                    e.target.checked
+                      ? [...selectedIds, row.id]
+                      : selectedIds.filter((id) => id !== row.id),
+                  )
+                }
+              />
+            ),
+          },
+          ...['title', 'priority', 'status', 'due-date', 'owner', 'project'].map((id) =>
+            columns.find((c) => c.id === id)!,
+          ),
+        ]
+      : columns;
   const visible = arranged.filter(
     (column) => !hiddenColumns.some((hidden) => hidden === column.id),
   );
@@ -346,19 +414,32 @@ export function TaskTable({
     : {
         gridTemplateColumns: visible
           .map((column) =>
-            overview
+            compact
               ? (
                   {
-                    selection: '32px',
-                    title: 'minmax(200px,1fr)',
-                    priority: '90px',
-                    status: '100px',
-                    'due-date': '125px',
-                    owner: '100px',
-                    project: 'minmax(130px,17%)',
+                    selection: '24px',
+                    priority: '20px',
+                    status: '20px',
+                    title: 'minmax(140px,1fr)',
+                    tags: 'minmax(0, auto)',
+                    project: 'minmax(60px, 13%)',
+                    'due-date': '86px',
+                    owner: '32px',
                   } as Record<string, string>
                 )[column.id ?? 'title']
-              : taskColumnWidths[column.id ?? 'title'],
+              : overview
+                ? (
+                    {
+                      selection: '32px',
+                      title: 'minmax(200px,1fr)',
+                      priority: '90px',
+                      status: '100px',
+                      'due-date': '125px',
+                      owner: '100px',
+                      project: 'minmax(130px,17%)',
+                    } as Record<string, string>
+                  )[column.id ?? 'title']
+                : taskColumnWidths[column.id ?? 'title'],
           )
           .join(' '),
       };
@@ -374,7 +455,7 @@ export function TaskTable({
   });
   return (
     <div
-      className={`task-table${documents ? '' : ' task-table-structured'}${overview ? ' task-table-overview' : ''}`}
+      className={`task-table${documents ? '' : ' task-table-structured'}${overview ? ' task-table-overview' : ''}${compact ? ' task-table-compact' : ''}`}
       aria-busy={undefined}
       role="table"
       aria-label={documents ? '成果文档列表' : '本地任务列表'}
@@ -390,7 +471,7 @@ export function TaskTable({
       ))}
       {table.getRowModel().rows.map((row) => (
         <RowElement
-          tabIndex={overview ? 0 : undefined}
+          tabIndex={overview || compact ? 0 : undefined}
           className="task-row"
           style={rowStyle}
           role="row"
