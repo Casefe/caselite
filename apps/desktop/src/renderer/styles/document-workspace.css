@@ -1,6 +1,9 @@
 .collection-workspace.document-workspace {
-  grid-template-columns: 248px minmax(280px, 1fr) 296px;
+  grid-template-columns:
+    var(--document-directory-width) minmax(var(--document-center-min-width), 1fr)
+    var(--property-panel-width, var(--workspace-inspector-width));
   grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
 }
 .document-workspace > .collection-main {
   min-width: 0;
@@ -87,11 +90,6 @@
 }
 .document-workspace > .document-directory-sidebar > .task-inspector {
   height: 100%;
-}
-@media (max-width: 1250px) and (min-width: 901px) {
-  .collection-workspace.document-workspace {
-    grid-template-columns: 210px minmax(240px, 1fr) 252px;
-  }
 }
 @media (max-width: 900px) {
   .collection-workspace.document-workspace {

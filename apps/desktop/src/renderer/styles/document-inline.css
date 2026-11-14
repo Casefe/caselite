@@ -1,7 +1,9 @@
 /* 文件夹和直属文件共用一棵目录树，不复制正文或建立磁盘同步。 */
 .collection-workspace.document-workspace,
 .document-workspace[data-collection='knowledge'] {
-  grid-template-columns: 288px minmax(280px, 1fr) 296px;
+  --document-directory-width: 288px;
+  --document-center-min-width: 280px;
+  --workspace-inspector-width: 296px;
 }
 .document-workspace > .collection-main {
   display: flex;
@@ -148,6 +150,14 @@
   padding: 0;
   min-width: 0;
 }
+/* 每个预览栏独立横滚整个显示稿，不能把保存和格式工具挤成纵排。 */
+.document-workspace .split-preview-scroll > :is(.document-inline-editor, .rich-editor) {
+  min-width: 600px;
+}
+/* 纸张边距不能随属性栏挤掉正文；窄预览沿原正文容器横滚，不改保存或导出纸张。 */
+.document-workspace .rich-editor[data-editor-scheme='word'] .tiptap {
+  min-width: 560px;
+}
 .document-inline-editor .document > footer {
   position: sticky;
   top: 0;
@@ -246,6 +256,8 @@
 @media (min-width: 901px) and (max-width: 1250px) {
   .collection-workspace.document-workspace,
   .document-workspace[data-collection='knowledge'] {
-    grid-template-columns: 230px minmax(200px, 1fr) 252px;
+    --document-directory-width: 230px;
+    --document-center-min-width: 200px;
+    --workspace-inspector-width: 252px;
   }
 }

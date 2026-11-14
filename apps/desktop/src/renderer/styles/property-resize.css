@@ -1,5 +1,7 @@
 /* 分隔线只占命中区域，不增加网格列，也不改变正文、表单和 AI 子树身份。 */
-.collection-workspace.property-resizable[data-properties-resizable='true'][data-layout='three-column'],
+.collection-workspace.property-resizable:not(
+    .document-workspace
+  )[data-properties-resizable='true'][data-layout='three-column'],
 .task-detail > .task-layout.property-resizable[data-properties-resizable='true'] {
   position: relative;
   grid-template-columns: minmax(280px, 1fr) var(
@@ -7,6 +9,9 @@
       var(--workspace-inspector-width)
     );
   min-width: calc(280px + var(--property-panel-width, var(--workspace-inspector-width)));
+}
+.document-workspace.property-resizable {
+  position: relative;
 }
 .property-resize-handle {
   position: absolute;
@@ -36,6 +41,12 @@
 .property-resizable > .task-summary-sidebar {
   border-left: 1px solid var(--line);
   border-top: 0;
+}
+@media (max-width: 900px) {
+  /* 文档窄窗沿原有上下排版，调宽记忆保留到恢复三栏时使用。 */
+  .document-workspace.property-resizable > .property-resize-handle {
+    display: none;
+  }
 }
 @media (max-width: 780px) {
   /* 任务原有上下排版不能被可调双栏的最小宽度覆盖；保留原子树与宽窗选宽。 */
