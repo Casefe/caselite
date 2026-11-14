@@ -45,9 +45,27 @@ vi.mock('./ui/Workspace', () => ({
 vi.mock('./ui/AgentHome', () => ({ default: () => <p>首页内容</p> }));
 vi.mock('./ui/RecordList', () => ({
   initialTaskListState: { query: { scope: { type: 'workspace' } }, scroll: 0, selected: null },
-  default: () => <p>任务列表内容</p>,
+  default: ({ onNew }: { onNew(): void }) => (
+    <>
+      <p>任务列表内容</p>
+      <button onClick={onNew}>创建合成任务</button>
+    </>
+  ),
 }));
-vi.mock('./features/projects/ProjectCatalog', () => ({ default: () => <p>项目列表内容</p> }));
+vi.mock('./features/projects/ProjectCatalog', async () => {
+  const { useChildPage } = await import('./shared/navigation/PageNavigation');
+  return {
+    default: function MockProjectCatalog() {
+      useChildPage(() => ({
+        key: 'projects:list',
+        title: '项目',
+        icon: 'folder',
+        state: null,
+      }));
+      return <p>项目列表内容</p>;
+    },
+  };
+});
 vi.mock('./ui/SettingsView', () => ({
   default: ({ onBack }: { onBack(): void }) => (
     <>
@@ -86,7 +104,10 @@ vi.mock('./ui/TaskInspector', () => ({
 }));
 vi.mock('./editors/TaskContentEditor', () => ({
   default: ({ onDirty }: { onDirty(value: boolean): void }) => (
-    <input aria-label="正文草稿" onChange={() => onDirty(true)} />
+    <>
+      <input aria-label="正文草稿" onChange={() => onDirty(true)} />
+      <button onClick={() => onDirty(false)}>合成正文保存确认</button>
+    </>
   ),
 }));
 vi.mock('./features/documents/BodyEditor', () => ({ default: () => <p>成果正文内容</p> }));
@@ -99,6 +120,21 @@ const task = {
   body_revision: 1,
   document_id: 'docA',
   body_id: 'bodyA',
+} as Task;
+const createdTask = {
+  ...task,
+  id: '11111111-1111-4111-8111-111111111111',
+  title: '合成创建任务',
+  status: 'todo',
+  priority: 0,
+  assignee: '本人',
+  due_date: null,
+  start_date: null,
+  matter_id: null,
+  tags: [],
+  version: 1,
+  document_id: 'docSynthetic',
+  body_id: 'bodySynthetic',
 } as Task;
 function setup() {
   const api = vi.fn(async (request: TaskRequest) =>
@@ -121,6 +157,98 @@ const selected = () =>
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it('records the project list once under its canonical page identity', async () => {
+  setup();
+  await screen.findByText('首页内容');
+  fireEvent.click(button('项目入口'));
+  await screen.findByText('项目列表内容');
+  await waitFor(() => expect(selected()).toBe('项目'));
+  fireEvent.click(button('最近访问'));
+  const recent = screen.getByLabelText('最近访问页面');
+  expect(
+    within(recent)
+      .getAllByRole('button')
+      .filter((item) => item.textContent === '项目'),
+  ).toHaveLength(1);
+});
+
+it('drops a completed creation notice before later editor dirty state', async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value() {
+      this.setAttribute('open', '');
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+    configurable: true,
+    value() {
+      this.removeAttribute('open');
+    },
+  });
+  let created = false;
+  const api = vi.fn(async (request: TaskRequest) => {
+    if (request.operation === 'create') {
+      created = true;
+      return {
+        ok: true,
+        receipt: request.idempotency_key,
+        tasks: [{ ...createdTask, title: request.title }],
+        state: null,
+      };
+    }
+    if (request.operation === 'read' && request.task_id === createdTask.id) {
+      return { ok: true, tasks: [createdTask], state: null };
+    }
+    return { ok: true, tasks: created ? [createdTask] : [], state: null };
+  });
+  const material = vi.fn(async () => ({ ok: true, creation_draft: null }));
+  window.caselite = {
+    task: api,
+    material,
+    catalog: vi.fn(async () => ({ ok: true, projects: [], documents: [] })),
+  } as unknown as Window['caselite'];
+
+  render(<App />);
+  await screen.findByText('首页内容');
+  fireEvent.click(button('任务入口'));
+  await screen.findByText('任务列表内容');
+  fireEvent.click(button('创建合成任务'));
+  const title = (await screen.findByLabelText('任务名称')) as HTMLInputElement;
+  fireEvent.change(title, { target: { value: createdTask.title } });
+  await waitFor(() => expect((button('创建任务') as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button('增加页面'));
+  expect(screen.getByRole('alert').textContent).toContain('请先完成或取消当前新建表单。');
+  expect(title.value).toBe(createdTask.title);
+  expect(pageTabs().getAllByRole('tab')).toHaveLength(1);
+
+  fireEvent.click(button('创建任务'));
+  const body = (await screen.findByLabelText('正文草稿')) as HTMLInputElement;
+  expect(screen.queryByRole('dialog', { name: '新建任务' })).toBeNull();
+  const create = api.mock.calls.find(([request]) => request.operation === 'create')![0];
+  expect(api.mock.calls.filter(([request]) => request.operation === 'create')).toHaveLength(1);
+  expect(
+    api.mock.calls.some(
+      ([request]) =>
+        request.operation === 'read' &&
+        request.task_id === createdTask.id &&
+        create.operation === 'create',
+    ),
+  ).toBe(true);
+  expect(screen.queryByRole('alert')).toBeNull();
+
+  fireEvent.change(body, { target: { value: '新正文输入应保留' } });
+  expect(screen.queryByRole('alert')).toBeNull();
+  fireEvent.click(button('增加页面'));
+  expect(pageTabs().getAllByRole('tab')).toHaveLength(1);
+  expect(screen.getByLabelText('正文草稿')).toBe(body);
+  expect(body.value).toBe('新正文输入应保留');
+  expect(screen.getByRole('alert').textContent).toContain('请先保存当前内容或核对提交结果');
+  fireEvent.click(button('合成正文保存确认'));
+  fireEvent.click(button('首页入口'));
+  await screen.findByText('首页内容');
+  expect(screen.queryByLabelText('正文草稿')).toBeNull();
 });
 
 it('keeps each page tab history independent and orders recent pages by the actual target', async () => {
