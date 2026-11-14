@@ -2,31 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Contact, ContactsRequest } from '../../../preload/caselite-api';
 import type { ContactWrite } from './useContactsWrite';
+import {
+  contactFactFields,
+  contactPropertyDetail,
+  contactPropertyPage,
+  type ContactField,
+} from './contact-property-config';
 
 type Save = Extract<ContactsRequest, { operation: 'save' }>;
-type Field =
-  'name' | 'kind' | 'company' | 'position' | 'phone' | 'wechat' | 'email' | 'address' | 'tags';
-const labels: Record<Field, string> = {
-  name: '姓名／名称',
-  kind: '类型',
-  company: '单位',
-  position: '职务',
-  phone: '电话',
-  wechat: '微信',
-  email: '邮箱',
-  address: '地址',
-  tags: '标签',
-};
-const limits: Partial<Record<Field, number>> = {
-  name: 120,
-  phone: 64,
-  wechat: 80,
-  email: 254,
-  company: 160,
-  position: 80,
-  address: 500,
-};
-const fields = Object.keys(labels) as Field[];
+type Field = ContactField;
 export function profileRequest(contact: Contact): Save {
   return {
     protocol_version: 1,
@@ -78,6 +62,22 @@ export default function ContactInlineProfile({
   const composing = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const triggers = useRef(new Map<Field, HTMLButtonElement>());
+  const config = identityTarget ? contactPropertyDetail : contactPropertyPage;
+  const labels = Object.fromEntries(config.fields.map(({ id, label }) => [id, label])) as Record<
+    Field,
+    string
+  >;
+  const limits = Object.fromEntries(
+    config.fields
+      .filter(({ maxLength }) => maxLength !== undefined)
+      .map(({ id, maxLength }) => [id, maxLength]),
+  ) as Partial<Record<Field, number>>;
+  const fields = config.fields.map(({ id }) => id);
+  const propertyStyle = {
+    '--property-font-size': config.style.fontSize,
+    '--property-small-font-size': config.style.smallFontSize,
+    '--property-gap': config.style.gap,
+  } as React.CSSProperties;
   const isEditing = Boolean(edit);
   useEffect(() => {
     onDirty(isEditing);
@@ -277,7 +277,7 @@ export default function ContactInlineProfile({
     );
   const identity = (
     <>
-      <header className="customer-identity">
+      <header className="customer-identity" style={identityTarget ? propertyStyle : undefined}>
         <span className="customer-avatar" aria-hidden="true">
           {contact.name.slice(0, 1)}
         </span>
@@ -293,6 +293,7 @@ export default function ContactInlineProfile({
       </header>
       <details
         className="customer-affiliation"
+        style={identityTarget ? propertyStyle : undefined}
         open={affiliationOpen || edit?.field === 'company' || edit?.field === 'position'}
         onToggle={(event) => setAffiliationOpen(event.currentTarget.open)}
       >
@@ -306,7 +307,7 @@ export default function ContactInlineProfile({
     </>
   );
   return (
-    <div ref={root} className="customer-inline-profile">
+    <div ref={root} className="customer-inline-profile" style={propertyStyle}>
       {identityTarget ? createPortal(identity, identityTarget) : identity}
       {identityTarget && (
         <h2 className="customer-profile-heading">
@@ -314,7 +315,7 @@ export default function ContactInlineProfile({
         </h2>
       )}
       <dl className="customer-facts">
-        {(['phone', 'wechat', 'email', 'address'] as const).map((field) => (
+        {contactFactFields.map((field) => (
           <div key={field}>
             <dt>{labels[field]}</dt>
             <dd>{cell(field)}</dd>
