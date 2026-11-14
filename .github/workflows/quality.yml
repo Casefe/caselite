@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 15
     env:
       QUALITY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      DEBUG: pw:browser
     steps:
       - uses: actions/checkout@v6
         with:
@@ -27,6 +28,14 @@ jobs:
           node-version: 24.22.2
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Record browser runner environment
+        continue-on-error: true
+        run: |
+          node -e "const os = require('node:os'); console.log(JSON.stringify({ node: process.version, arch: process.arch, cpus: os.availableParallelism(), totalMemoryBytes: os.totalmem(), freeMemoryBytes: os.freemem() }))" || printf 'runner-metrics UNKNOWN exit=%s\n' "$?"
+          node node_modules/@playwright/test/cli.js --version || printf 'playwright-version UNKNOWN exit=%s\n' "$?"
+          command -v google-chrome || printf 'chrome-path UNKNOWN exit=%s\n' "$?"
+          google-chrome --version || printf 'chrome-version UNKNOWN exit=%s\n' "$?"
+          df -h /dev/shm || printf 'dev-shm UNKNOWN exit=%s\n' "$?"
       - run: pnpm run ci
       - name: Upload quality evidence
         if: always()

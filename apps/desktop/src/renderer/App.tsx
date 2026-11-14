@@ -741,6 +741,7 @@ function Workbench() {
   }
   function showCreated(current: Extract<TaskResponse, { ok: true }>, saved: Task) {
     setUncertain(false);
+    setNavigationNotice('');
     createRequest.current = null;
     setTaskReturn(
       createSource
@@ -870,7 +871,12 @@ function Workbench() {
     childActive && childLocation?.key.startsWith(view + ':') ? childLocation : null;
   const pageKey = taskPage
     ? `${view}:${taskPage.id}:${documentEntry ? 'document:' : ''}${detailTab}`
-    : (visibleChild?.key ?? (view === 'settings' ? `settings:${settingsSection}` : view));
+    : (visibleChild?.key ??
+      (view === 'settings'
+        ? `settings:${settingsSection}`
+        : view === 'projects'
+          ? 'projects:list'
+          : view));
   const pageTitle = taskPage ? taskPage.title : (visibleChild?.title ?? workspacePages[view].title);
   const inspectorOpen =
     inspectorChoices[pageKey] ?? !(view === 'documents' && window.innerWidth <= 900);
