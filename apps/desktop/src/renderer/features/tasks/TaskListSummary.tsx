@@ -1,4 +1,5 @@
 import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
+import { taskStatistics, buildStatisticsRows } from '../../shared/statistics/statistics-config';
 import type { Task } from '../../../preload/caselite-api';
 
 export default function TaskListSummary({
@@ -13,34 +14,21 @@ export default function TaskListSummary({
   variant?: 'all' | 'stats' | 'deadlines';
 }) {
   const total = BigInt(tasks.length);
+  const display = (count: number) => ({
+    value: String(count),
+    progress: statisticsProgress(BigInt(count), total),
+  });
   const statistics = (
     <StatisticsCard
-      module="tasks"
-      title="任务统计"
-      totalLabel="总任务"
+      module={taskStatistics.module}
+      title={taskStatistics.title}
+      totalLabel={taskStatistics.totalLabel}
       total={String(tasks.length)}
-      rows={[
-        {
-          label: '未开始',
-          count: tasks.filter((task) => !task.status || task.status === 'todo').length,
-          tone: 'blue' as const,
-        },
-        {
-          label: '进行中',
-          count: tasks.filter((task) => task.status === 'in_progress').length,
-          tone: 'amber' as const,
-        },
-        {
-          label: '已完成',
-          count: tasks.filter((task) => task.status === 'done').length,
-          tone: 'green' as const,
-        },
-      ].map(({ label, count, tone }) => ({
-        label,
-        value: String(count),
-        tone,
-        progress: statisticsProgress(BigInt(count), total),
-      }))}
+      rows={buildStatisticsRows(taskStatistics.fields, {
+        todo: display(tasks.filter((task) => !task.status || task.status === 'todo').length),
+        in_progress: display(tasks.filter((task) => task.status === 'in_progress').length),
+        done: display(tasks.filter((task) => task.status === 'done').length),
+      })}
     />
   );
   if (variant === 'stats') return statistics;

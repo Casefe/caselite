@@ -1,4 +1,7 @@
+import type { StatisticsModule } from './statistics-preferences';
+
 export type StatisticsRow = {
+  id: string;
   label: string;
   value: string;
   progress: number | null;
@@ -19,7 +22,7 @@ export default function StatisticsCard({
   rows,
   note,
 }: {
-  module: string;
+  module: StatisticsModule;
   title: string;
   totalLabel: string;
   total: string;
@@ -35,7 +38,7 @@ export default function StatisticsCard({
       </div>
       <dl className="statistics-card-rows">
         {rows.map((row) => (
-          <div key={row.label} data-statistic-row={row.label}>
+          <div key={row.id} data-statistic-row={row.label} data-statistic-id={row.id}>
             <dt>{row.label}</dt>
             <dd>
               <span className="statistics-card-track" aria-hidden="true">

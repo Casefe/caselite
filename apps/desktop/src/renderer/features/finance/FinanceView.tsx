@@ -1,5 +1,6 @@
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import StatisticsCard, { statisticsProgress } from '../../shared/statistics/StatisticsCard';
+import { financeStatistics, buildStatisticsRows } from '../../shared/statistics/statistics-config';
 import { useStatisticsCards } from '../../shared/statistics/statistics-preferences';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -523,27 +524,24 @@ export default function FinanceView({
           0n,
         )
     : null;
+  const displayAmount = (amount: bigint | null | undefined) => ({
+    value: amount != null && amount < 0n ? `−${formatCents(-amount)}` : formatCents(amount),
+    progress: income != null && amount != null ? statisticsProgress(amount, income) : null,
+  });
   const cards = useStatisticsCards(
     'finance',
     <StatisticsCard
-      module="finance"
-      title="财务统计"
-      totalLabel="总收入"
+      module={financeStatistics.module}
+      title={financeStatistics.title}
+      totalLabel={financeStatistics.totalLabel}
       total={formatCents(income)}
-      rows={[
-        { label: '已开票', amount: invoiced, tone: 'blue' as const },
-        { label: '已收款', amount: totalsKnown ? received : null, tone: 'green' as const },
-        {
-          label: '待收款',
-          amount: projects && !read.error && registered.length ? outstanding : null,
-          tone: 'amber' as const,
-        },
-      ].map(({ label, amount, tone }) => ({
-        label,
-        value: amount != null && amount < 0n ? `−${formatCents(-amount)}` : formatCents(amount),
-        progress: income != null && amount != null ? statisticsProgress(amount, income) : null,
-        tone,
-      }))}
+      rows={buildStatisticsRows(financeStatistics.fields, {
+        invoiced: displayAmount(invoiced),
+        received: displayAmount(totalsKnown ? received : null),
+        outstanding: displayAmount(
+          projects && !read.error && registered.length ? outstanding : null,
+        ),
+      })}
       note={totalsKnown ? '总收入为有效收费合同总额；进度独立对比，单位：元。' : '数据尚未确认'}
     />,
     !opened,
