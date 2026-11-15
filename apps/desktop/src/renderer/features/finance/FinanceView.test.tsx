@@ -158,6 +158,8 @@ async function register() {
 }
 
 it('keeps the live finance and AI drafts while resizing, cancelling and temporarily clamping', async () => {
+  const originalViewport = window.innerWidth;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 2160 });
   const size = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   const { finance } = show(async () => read(true));
   try {
@@ -192,6 +194,11 @@ it('keeps the live finance and AI drafts while resizing, cancelling and temporar
     expect(vi.mocked(window.caselite.agent).mock.calls.length).toBe(agentCalls);
   } finally {
     size.mockRestore();
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: originalViewport,
+    });
   }
 });
 

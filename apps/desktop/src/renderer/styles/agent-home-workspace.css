@@ -1,55 +1,4 @@
-/* 首页固定入口和分栏均是展示投影，隐藏面板不卸载原对话与草稿。 */
-.workbench[data-home-rail='true'],
-.workbench.is-collapsed[data-home-rail='true'] {
-  grid-template-columns: 64px minmax(0, 1fr);
-}
-.workbench[data-home-rail='true'] > .primary-sidebar,
-.workbench.is-collapsed[data-home-rail='true'] > .primary-sidebar {
-  width: 64px;
-  min-width: 64px;
-  padding: 10px 6px;
-}
-.workbench[data-home-rail='true'] .workspace-sidebar-heading {
-  justify-content: center;
-  padding: 8px 0 16px;
-}
-.workbench[data-home-rail='true'] .workspace-topbar-brand b,
-.workbench[data-home-rail='true'] .profile-name {
-  display: none;
-}
-.workbench[data-home-rail='true'] .workspace-topbar-brand {
-  justify-content: center;
-}
-.workbench[data-home-rail='true'] .primary-navigation button {
-  width: 100%;
-  min-height: 54px;
-  padding: 5px 0;
-  gap: 3px;
-  flex-direction: column;
-  justify-content: center;
-  font-size: 11px;
-}
-.workbench[data-home-rail='true'] .primary-navigation button > span {
-  display: block;
-  max-width: 100%;
-}
-.workbench[data-home-rail='true'] .primary-navigation button small {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-.workbench[data-home-rail='true'] .primary-navigation button[aria-current='page']:before {
-  display: none;
-}
-.workbench[data-home-rail='true'] .sidebar-bottom {
-  justify-content: center;
-}
-.workbench[data-home-rail='true'] .profile-settings {
-  justify-content: center;
-  padding: 5px;
-}
+/* 首页内容保留自身分栏；一级导航统一使用工作台布局。 */
 .home-topbar-left-slot,
 .home-topbar-right-slot,
 .home-topbar-actions {
@@ -399,4 +348,65 @@
 }
 .home-v3-auxiliary > section[hidden] {
   display: none;
+}
+
+.home-conversation-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.home-run-status {
+  flex: 0 0 auto;
+  max-height: 24vh;
+  overflow: auto;
+  border-bottom: 1px solid var(--line);
+}
+.home-run-status .home-reminder-card {
+  margin: 0;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.home-run-status h3,
+.home-run-status p {
+  margin: 3px 0;
+  font-size: 12px;
+}
+.home-run-status .home-agent-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.home-run-status .home-agent-row {
+  flex: 1;
+  min-width: 0;
+}
+.home-run-status .home-agent-detail {
+  flex-basis: 100%;
+}
+.home-preview-content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.home-material-reader,
+.home-material-reader .material-reader {
+  min-width: 0;
+  height: 100%;
+}
+.home-output-preview {
+  overflow-wrap: anywhere;
+  padding: 8px 0;
+}
+.home-preview-heading h2 {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

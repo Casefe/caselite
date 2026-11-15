@@ -54,12 +54,19 @@ it('returns to the exact section and current project, preserving list preference
   const onOpen = vi.fn();
   const props = { tasks: [task], onOpen, onDirty: vi.fn(), onChanged: vi.fn() };
   const first = renderProject(<ProjectCatalog {...props} />);
-  await screen.findByRole('button', { name: '来源项目', exact: true });
+  await within(
+    document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+  ).findByRole('button', { name: '来源项目', exact: true });
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '来源' } });
   fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'title' } });
   fireEvent.change(screen.getByLabelText('筛选项目状态'), { target: { value: 'active' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '更新时间' }));
-  fireEvent.click(screen.getByRole('button', { name: '来源项目', exact: true }));
+  fireEvent.click(
+    within(document.querySelector<HTMLElement>('.project-catalog > .collection-main')!).getByRole(
+      'button',
+      { name: '来源项目', exact: true },
+    ),
+  );
   await screen.findByLabelText('编辑项目名称');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   const scroll = document.querySelector('.collection-scroll')!;
@@ -182,7 +189,11 @@ it('refreshes same-version task counts and compact PDF projection after assignin
     );
   }
   renderProject(<Container />);
-  fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
+  fireEvent.click(
+    await within(
+      document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+    ).findByRole('button', { name: '来源项目', exact: true }),
+  );
   await screen.findByLabelText('编辑项目名称');
   await screen.findByText('项目还没有已登记材料，请在任务中添加 PDF 或 Word。');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
@@ -217,11 +228,18 @@ it.each([false, true])(
     const onOpen = vi.fn();
     const props = { tasks: [task], onOpen, onDirty: vi.fn(), onChanged: vi.fn() };
     const first = renderProject(<ProjectCatalog {...props} />);
-    await screen.findByRole('button', { name: '来源项目', exact: true });
+    await within(
+      document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+    ).findByRole('button', { name: '来源项目', exact: true });
     fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '来源' } });
     fireEvent.change(screen.getByLabelText('项目排序'), { target: { value: 'title' } });
     // 原列表侧栏入口已移到项目任务栏目，往返后仍应保留列表筛选与焦点。
-    fireEvent.click(screen.getByRole('button', { name: '来源项目', exact: true }));
+    fireEvent.click(
+      within(document.querySelector<HTMLElement>('.project-catalog > .collection-main')!).getByRole(
+        'button',
+        { name: '来源项目', exact: true },
+      ),
+    );
     await screen.findByLabelText('编辑项目名称');
     fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
     const scroll = document.querySelector('.collection-scroll')!;

@@ -1,3 +1,4 @@
+import { WorkspaceShell } from '../../ui/Workspace';
 import {
   LocalPreferencesProvider,
   initialLocalPreferences,
@@ -20,6 +21,8 @@ import { useState, type ReactElement } from 'react';
 import { PageNavigationProvider } from '../../shared/navigation/PageNavigation';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
 import ProjectCatalog, { type ProjectViewState } from './ProjectCatalog';
+const projectCenter = () =>
+  within(document.querySelector<HTMLElement>('.project-catalog > .collection-main')!);
 vi.mock('../documents/BodyEditor', () => ({
   default: ({ task }: { task: Task }) => (
     <div aria-label="恢复的正文" data-document={task.document_id} />
@@ -264,7 +267,7 @@ describe('durable project UI receipts and target identity', () => {
     );
     window.caselite = { catalog } as unknown as Window['caselite'];
     show([task]);
-    fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+    fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
     fireEvent.change(await screen.findByLabelText('关联里程碑的任务'), {
       target: { value: task.id },
     });
@@ -300,7 +303,7 @@ describe('durable project UI receipts and target identity', () => {
     renderProject(
       <ProjectCatalog tasks={[original]} onOpen={open} onDirty={vi.fn()} onChanged={vi.fn()} />,
     );
-    const projectTitle = await screen.findByRole('button', { name: 'A', exact: true });
+    const projectTitle = await projectCenter().findByRole('button', { name: 'A', exact: true });
     fireEvent.click(projectTitle.closest('tr')!);
     await screen.findByText('暂无项目评论。');
     fireEvent.click(screen.getByRole('button', { name: '撰写项目更新' }));
@@ -382,8 +385,8 @@ describe('durable project UI receipts and target identity', () => {
     });
     expect(requests.find((r) => r.operation === 'read_project')).toMatchObject({ id: p.id });
     fireEvent.click(screen.getByText('返回项目列表'));
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '中文项目' }));
-    fireEvent.click(screen.getByRole('button', { name: '中文项目' }));
+    expect(document.activeElement).toBe(projectCenter().getByRole('button', { name: '中文项目' }));
+    fireEvent.click(projectCenter().getByRole('button', { name: '中文项目' }));
     await screen.findByLabelText('编辑项目名称');
   });
   it('keeps input after a rejected write and never submits an IME confirmation', async () => {
@@ -536,7 +539,7 @@ describe('durable project UI receipts and target identity', () => {
     fireEvent.change(name, { target: { value: 'B' } });
     fireEvent.blur(name);
     fireEvent.click(await screen.findByText('核对原属性提交'));
-    await screen.findByRole('button', { name: 'B', exact: true });
+    await projectCenter().findByRole('button', { name: 'B', exact: true });
     expect(writes[0]).toEqual(writes[1]);
     fireEvent.change(name, { target: { value: 'C' } });
     fireEvent.blur(name);
@@ -599,8 +602,8 @@ describe('durable project UI receipts and target identity', () => {
     } as unknown as Window['caselite'];
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     show();
-    await screen.findByRole('button', { name: 'A', exact: true });
-    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    await projectCenter().findByRole('button', { name: 'A', exact: true });
+    fireEvent.click(projectCenter().getByRole('button', { name: 'A', exact: true }));
     await screen.findByLabelText('编辑项目名称');
     fireEvent.change(screen.getByLabelText('项目概述'), { target: { value: '未保存B' } });
     fireEvent.click(screen.getByText('放弃修改并重读'));
@@ -645,7 +648,7 @@ it.each(['编辑项目名称', '项目概述'])(
     renderProject(
       <ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+    fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
     const summary = await screen.findByRole('region', { name: '项目工作摘要' });
     fireEvent.click(await within(summary).findByRole('button', { name: /打开当前项目/ }));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
@@ -751,7 +754,7 @@ it('keeps one property draft across tabs and omits untouched saved Yjs from a de
     }),
   } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   await screen.findByLabelText('编辑项目名称');
   for (const tab of ['任务', '活动']) {
     fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
@@ -847,7 +850,7 @@ it('serializes edits during a late receipt without reloading or saving the open 
   });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const name = await screen.findByLabelText('编辑项目名称');
   const body = screen.getByLabelText('项目概述');
   fireEvent.change(body, { target: { value: '说明草稿' } });
@@ -935,7 +938,7 @@ it('keeps detail properties read-only after confirmed update when read_project f
     }),
   } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const name = await screen.findByLabelText('编辑项目名称');
   fireEvent.change(name, { target: { value: '已确认名称' } });
   fireEvent.blur(name);
@@ -970,7 +973,7 @@ it('locks the description during its reread and during an unresolved archive', a
   });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const editor = (await screen.findByLabelText('项目概述')) as HTMLTextAreaElement;
   fireEvent.click(screen.getByText('放弃修改并重读'));
   expect(editor.disabled).toBe(true);
@@ -1006,7 +1009,7 @@ it('keeps an unknown description receipt owned by the description until original
   });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const editor = (await screen.findByLabelText('项目概述')) as HTMLTextAreaElement;
   fireEvent.change(editor, { target: { value: '原说明' } });
   fireEvent.click(screen.getByText('保存项目概述'));
@@ -1068,19 +1071,23 @@ it('keeps real totals independent of filters and resets paging on search', async
     ),
   ).toEqual(['—', '—', '—', '—']);
   await act(async () => resolve(response(projects)));
-  await screen.findByRole('button', { name: '项目00', exact: true });
+  await projectCenter().findByRole('button', { name: '项目00', exact: true });
   const totals = () =>
     [...metrics.querySelectorAll('[data-statistic-total], .statistics-card-value')].map(
       (node) => node.textContent,
     );
   expect(totals()).toEqual(['11', '6', '3', '2']);
-  expect(document.querySelectorAll('[data-project-id]')).toHaveLength(8);
+  expect(
+    screen.getByRole('table', { name: '项目列表' }).querySelectorAll('[data-project-id]'),
+  ).toHaveLength(8);
   fireEvent.click(screen.getByRole('button', { name: '项目下一页' }));
-  expect(document.querySelectorAll('[data-project-id]')).toHaveLength(3);
+  expect(
+    screen.getByRole('table', { name: '项目列表' }).querySelectorAll('[data-project-id]'),
+  ).toHaveLength(3);
   expect(screen.getByText('显示 9–11 条，共 11 条')).toBeTruthy();
   revealProjectFilters();
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: '项目00' } });
-  expect(screen.getByRole('button', { name: '项目00', exact: true })).toBeTruthy();
+  expect(projectCenter().getByRole('button', { name: '项目00', exact: true })).toBeTruthy();
   expect(screen.getByText('显示 1–1 条，共 1 条')).toBeTruthy();
   expect(totals()).toEqual(['11', '6', '3', '2']);
   revealProjectFilters();
@@ -1088,7 +1095,7 @@ it('keeps real totals independent of filters and resets paging on search', async
   expect(screen.getByText('显示 1–8 条，共 11 条')).toBeTruthy();
   revealProjectFilters();
   fireEvent.change(screen.getByLabelText('搜索项目'), { target: { value: projects[10].id } });
-  expect(screen.getByRole('button', { name: '项目10', exact: true })).toBeTruthy();
+  expect(projectCenter().getByRole('button', { name: '项目10', exact: true })).toBeTruthy();
 });
 
 it('opens authoritative important task IDs and offers guarded quick actions only inside expanded AI', async () => {
@@ -1218,7 +1225,7 @@ it('keeps the same description draft across project tabs and saves it only after
   });
   window.caselite = { catalog } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const draft = await screen.findByLabelText('项目概述');
   fireEvent.change(draft, { target: { value: '仍需手动确认的说明' } });
   fireEvent.click(screen.getByRole('tab', { name: '活动', exact: true }));
@@ -1296,7 +1303,7 @@ it('unlocks the same description after a known save failure and can save the edi
     }),
   } as unknown as Window['caselite'];
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
   const editor = (await screen.findByLabelText('项目概述')) as HTMLTextAreaElement;
   fireEvent.change(editor, { target: { value: '保留失败说明' } });
   fireEvent.keyDown(editor, { key: 'Enter', metaKey: true });
@@ -1416,7 +1423,7 @@ it('consumes an old document target once but honors a new host navigation', asyn
   const back = screen.getByRole<HTMLButtonElement>('button', { name: '返回项目列表' });
   await waitFor(() => expect(back.disabled).toBe(false));
   fireEvent.click(back);
-  fireEvent.click(await screen.findByRole('button', { name: p.title, exact: true }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: p.title, exact: true }));
   fireEvent.click(await screen.findByRole('tab', { name: '文档', exact: true }));
   await waitFor(() =>
     expect(screen.getByLabelText('恢复的正文').getAttribute('data-document')).toBe(b.id),
@@ -1458,10 +1465,269 @@ it('uses the shared task completion action while preserving the project navigati
       completion={{ complete, busyIds: [], blocked: false }}
     />,
   );
-  fireEvent.click(await screen.findByRole('button', { name: 'A' }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A' }));
   fireEvent.click(await screen.findByRole('tab', { name: '任务' }));
   fireEvent.click(await screen.findByRole('button', { name: '完成任务：项目完成入口' }));
   expect(complete).toHaveBeenCalledExactlyOnceWith(member);
   expect(open).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: '移出项目' })).toBeTruthy();
+});
+
+it('preserves only visualization display state across sections and source return; protects unsaved labels', async () => {
+  const p = project();
+  const taskId = crypto.randomUUID();
+  const docId = crypto.randomUUID();
+  const { defaultProjectVisualizationConfig } = await import('./project-visualization-view-model');
+  let config = { ...defaultProjectVisualizationConfig, representation: 'list' as const };
+  let revision = 1;
+  const graph = {
+    project_id: p.id,
+    depth: 2 as const,
+    node_limit: 200,
+    read_only: false,
+    truncated: false,
+    fingerprint: 'a'.repeat(64),
+    nodes: [
+      {
+        kind: 'project' as const,
+        id: p.id,
+        title: p.title,
+        version: 1,
+        status: 'planned' as const,
+        project_type: 'general' as const,
+        professional_type: null,
+        professional_fields: [],
+      },
+      { kind: 'task' as const, id: taskId, title: '回源任务', version: 1 },
+      {
+        kind: 'document' as const,
+        id: docId,
+        title: '回源任务',
+        task_id: taskId,
+        task_version: 1,
+        metadata_version: 1,
+        body_revision: 0,
+      },
+    ],
+    edges: [
+      {
+        kind: 'project_task' as const,
+        from: { kind: 'project' as const, id: p.id },
+        to: { kind: 'task' as const, id: taskId },
+      },
+      {
+        kind: 'task_document' as const,
+        from: { kind: 'task' as const, id: taskId },
+        to: { kind: 'document' as const, id: docId },
+      },
+    ],
+  };
+  const viewReply = (receipt?: string): CatalogResponse => ({
+    ...response([], p.id),
+    project_graph: graph,
+    project_visualization_view: {
+      project_id: p.id,
+      view_id: 'current',
+      format_version: 1,
+      revision,
+      config,
+      saved_source_fingerprint: graph.fingerprint,
+      current_source_fingerprint: graph.fingerprint,
+      read_only: false,
+      scope_pruned: false,
+    },
+    ...(receipt
+      ? {
+          visualization_receipt: {
+            operation: 'save_project_visualization_view' as const,
+            project_id: p.id,
+            view_id: 'current' as const,
+            idempotency_key: receipt,
+            committed_revision: revision,
+          },
+        }
+      : {}),
+  });
+  const catalog = vi.fn(async (request: CatalogRequest): Promise<CatalogResponse> => {
+    if (request.operation === 'read_project_visualization_view') return viewReply();
+    if (request.operation === 'save_project_visualization_view') {
+      config = request.config as typeof config;
+      revision++;
+      return viewReply(request.idempotency_key);
+    }
+    return response([p], p.id);
+  });
+  window.caselite = { catalog } as unknown as Window['caselite'];
+  const onOpen = vi.fn();
+  const onDirty = vi.fn();
+  const tasks = [
+    { id: taskId, document_id: docId, title: '回源任务', matter_id: p.id, version: 1 },
+  ] as Task[];
+  const first = renderProject(
+    <ProjectCatalog tasks={tasks} onOpen={onOpen} onDirty={onDirty} onChanged={vi.fn()} />,
+  );
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
+  await screen.findByLabelText('项目概述');
+  fireEvent.click(screen.getByRole('tab', { name: '可视化' }));
+  const table = await screen.findByRole('table', { name: '项目记录列表' });
+  fireEvent.click(within(table).getByRole('button', { name: '选择文档：回源任务' }));
+  await waitFor(() => expect(onDirty.mock.lastCall?.[0]).toBe(false));
+  fireEvent.click(screen.getByRole('tab', { name: '概述' }));
+  fireEvent.click(screen.getByRole('tab', { name: '可视化' }));
+  expect(screen.getByRole('table', { name: '项目记录列表' })).toBe(table);
+  fireEvent.change(await screen.findByRole('textbox', { name: '显示标签' }), {
+    target: { value: '保留标签' },
+  });
+  await waitFor(() => expect(onDirty.mock.lastCall?.[0]).toBe(true));
+  expect((screen.getByRole('tab', { name: '概述' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(table).getAllByRole('button', { name: '打开原记录' })[1]);
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '保存视图' }));
+  await waitFor(() => expect(onDirty.mock.lastCall?.[0]).toBe(false));
+  fireEvent.click(within(table).getAllByRole('button', { name: '打开原记录' })[1]);
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  const source = onOpen.mock.lastCall![1] as ProjectViewState;
+  expect(source.visualization?.config.selected).toEqual({ kind: 'document', id: docId });
+  expect(JSON.stringify(source.visualization)).not.toMatch(
+    /"(?:nodes|edges|metadata_version|body_revision)":/,
+  );
+  first.unmount();
+  renderProject(
+    <ProjectCatalog
+      tasks={tasks}
+      onOpen={vi.fn()}
+      onDirty={vi.fn()}
+      onChanged={vi.fn()}
+      initialView={source}
+    />,
+  );
+  const reopened = await screen.findByRole('table', { name: '项目记录列表' });
+  await waitFor(() =>
+    expect(
+      within(reopened)
+        .getByRole('button', { name: '选择文档：回源任务' })
+        .closest('tr')
+        ?.getAttribute('aria-selected'),
+    ).toBe('true'),
+  );
+  expect(
+    ((await screen.findByRole('textbox', { name: '显示标签' })) as HTMLInputElement).value,
+  ).toBe('保留标签');
+});
+
+it('guards the portaled project-directory return while navigation is pending and preserves the description save path', async () => {
+  const p = project();
+  window.caselite = {
+    catalog: vi.fn(async () => response([p], p.id)),
+  } as unknown as Window['caselite'];
+  function Harness() {
+    const [pending, setPending] = useState(false);
+    return (
+      <>
+        <button onClick={() => setPending((value) => !value)}>切换恢复在途</button>
+        <WorkspaceShell
+          view="projects"
+          collapsed
+          onCollapse={vi.fn()}
+          onNavigate={vi.fn()}
+          tasks={[]}
+          onOpen={vi.fn()}
+        >
+          <ProjectCatalog
+            navigationPending={pending}
+            tasks={[]}
+            onOpen={vi.fn()}
+            onDirty={vi.fn()}
+            onChanged={vi.fn()}
+          />
+        </WorkspaceShell>
+      </>
+    );
+  }
+  renderProject(<Harness />);
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
+  const description = await screen.findByLabelText('项目概述');
+  fireEvent.click(screen.getByRole('tab', { name: '文档', exact: true }));
+  const back = await screen.findByRole<HTMLButtonElement>('button', { name: '返回项目概览' });
+  expect(back.closest('.workspace-page-directory')).not.toBeNull();
+  fireEvent.click(screen.getByText('切换恢复在途'));
+  expect(back.disabled).toBe(true);
+  fireEvent.click(back);
+  expect(
+    screen
+      .getByRole('tab', { name: '文档', exact: true, hidden: true })
+      .getAttribute('aria-selected'),
+  ).toBe('true');
+  fireEvent.click(screen.getByText('切换恢复在途'));
+  expect(back.disabled).toBe(false);
+  fireEvent.click(back);
+  expect(screen.getByLabelText('项目概述')).toBe(description);
+  fireEvent.change(description, { target: { value: '尚未保存的项目说明' } });
+  fireEvent.click(screen.getByRole('tab', { name: '文档', exact: true }));
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '返回项目概览' }).disabled).toBe(
+    false,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '返回项目概览' }));
+  expect(screen.getByLabelText<HTMLTextAreaElement>('项目概述').value).toBe('尚未保存的项目说明');
+});
+
+it('keeps the two keyed project modules and their own drafts stable for one project, then resets both for another project', async () => {
+  const a = project(),
+    b = project(crypto.randomUUID(), 'B');
+  window.caselite = {
+    catalog: vi.fn(async (request: CatalogRequest) =>
+      request.operation === 'read_project_plan'
+        ? { ...response([a, b]), project_plan: { milestones: [], assignments: [] } }
+        : response([a, b], request.operation === 'read_project' ? request.id : null),
+    ),
+  } as unknown as Window['caselite'];
+  function Harness() {
+    const [tick, setTick] = useState(0);
+    return (
+      <>
+        <button onClick={() => setTick((value) => value + 1)}>重绘父级 {tick}</button>
+        <ProjectCatalog tasks={[]} onOpen={vi.fn()} onDirty={vi.fn()} onChanged={vi.fn()} />
+      </>
+    );
+  }
+  renderProject(<Harness />);
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'A', exact: true }));
+  const name = await screen.findByLabelText<HTMLInputElement>('编辑项目名称');
+  const propertyForm = name.closest('form');
+  const planning = document.querySelector('.project-planning');
+  fireEvent.change(name, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: '重绘父级 0' }));
+  expect(screen.getByLabelText('编辑项目名称')).toBe(name);
+  expect(name.value).toBe('');
+  expect(name.closest('form')).toBe(propertyForm);
+  expect(document.querySelector('.project-planning')).toBe(planning);
+  fireEvent.click(screen.getByText('放弃属性修改并重读'));
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLInputElement>('编辑项目名称').value).toBe('A'),
+  );
+  const reloadedName = screen.getByLabelText<HTMLInputElement>('编辑项目名称');
+  expect(reloadedName).not.toBe(name);
+  expect(reloadedName.closest('form')).toBe(propertyForm);
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: '新建里程碑' });
+  await waitFor(() => expect(create.disabled).toBe(false));
+  fireEvent.click(create);
+  const milestone = screen.getByLabelText<HTMLInputElement>('里程碑名称');
+  fireEvent.change(milestone, { target: { value: '未提交里程碑' } });
+  fireEvent.click(screen.getByRole('button', { name: '重绘父级 1' }));
+  expect(screen.getByLabelText('里程碑名称')).toBe(milestone);
+  expect(milestone.value).toBe('未提交里程碑');
+  expect(document.querySelector('.project-planning')).toBe(planning);
+  expect(screen.getByLabelText('编辑项目名称')).toBe(reloadedName);
+  expect(reloadedName.closest('form')).toBe(propertyForm);
+  fireEvent.click(
+    within(milestone.closest('form')!).getByRole('button', { name: '取消', exact: true }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '返回项目列表' }));
+  fireEvent.click(await projectCenter().findByRole('button', { name: 'B', exact: true }));
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLInputElement>('编辑项目名称').value).toBe('B'),
+  );
+  expect(screen.getByLabelText('编辑项目名称').closest('form')).not.toBe(propertyForm);
+  expect(document.querySelector('.project-planning')).not.toBe(planning);
+  expect(screen.queryByLabelText('里程碑名称')).toBeNull();
 });

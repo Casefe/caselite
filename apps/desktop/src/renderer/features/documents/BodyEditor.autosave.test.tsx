@@ -492,3 +492,195 @@ it('请求准备同步失败也释放串行锁并保留输入，尚未派发时�
   expect(api).toHaveBeenCalledTimes(1);
   expect(screen.getByLabelText('父级保存状态').textContent).toBe('已保存到此设备');
 });
+
+it('personal documents share the real Yjs autosave state machine, retain unknown frozen requests and save later input separately', async () => {
+  const document = {
+    id: crypto.randomUUID(),
+    body_id: crypto.randomUUID(),
+    owner_kind: 'personal' as const,
+    task_id: null,
+    matter_id: null,
+    title: '独立稿',
+    body_revision: 1,
+    editor_schema: 1 as const,
+    version: 1,
+    collection: '',
+    tags: [],
+    favorite: false,
+    in_library: false,
+    archived_at: null,
+    updated_at: '2026-11-15',
+  };
+  type PersonalSave = Extract<
+    import('../../../preload/caselite-api').CatalogRequest,
+    { operation: 'save_document_body' }
+  >;
+  const saves: PersonalSave[] = [];
+  let statuses = 0;
+  const taskApi = vi.fn();
+  const catalog = vi.fn(async (request: import('../../../preload/caselite-api').CatalogRequest) => {
+    if (request.operation === 'status') {
+      statuses++;
+      return {
+        ok: false,
+        code: statuses === 1 ? 'UNAVAILABLE' : 'NOT_FOUND',
+        message: '合成核对结果',
+      };
+    }
+    if (request.operation !== 'save_document_body') throw Error('非预期操作');
+    saves.push(request);
+    if (saves.length === 1) return { ok: false, code: 'RESULT_UNKNOWN', message: '合成断连' };
+    return {
+      ok: true,
+      projects: [],
+      documents: [
+        {
+          ...document,
+          body_revision: request.expected_revision + 1,
+          editor_schema: request.editor_schema,
+        },
+      ],
+      receipt: request.idempotency_key,
+      target_id: document.id,
+      state: null,
+    };
+  });
+  vi.stubGlobal('caselite', { task: taskApi, catalog });
+  const saved = vi.fn();
+  let state: BodySaveState | null = null;
+  render(
+    <BodyEditor
+      document={document}
+      initial={null}
+      embedded
+      autosave
+      onSaved={saved}
+      onDirty={vi.fn()}
+      onSaveState={(value) => {
+        state = value;
+      }}
+      reviewDock={null}
+      reviewSaving={false}
+      onReviewSaving={vi.fn()}
+    />,
+  );
+  await settle(20);
+  const editor = current!;
+  act(() => editor.commands.insertContent('第一次正文'));
+  await settle(800);
+  expect(state!.phase).toBe('unknown');
+  expect(saved).not.toHaveBeenCalled();
+  act(() => editor.commands.insertContent('后来输入'));
+  await settle(1000);
+  expect(saves).toHaveLength(1);
+  act(() => state!.retry());
+  await settle();
+  expect(saves[1]).toEqual(saves[0]);
+  expect(saved).toHaveBeenCalledTimes(1);
+  expect(state!.phase).toBe('editing');
+  await settle(800);
+  expect(saves[2].idempotency_key).not.toBe(saves[0].idempotency_key);
+  expect(saves[2].expected_revision).toBe(2);
+  expect(() =>
+    validateBody(Uint8Array.from(saves[2].state), true, saves[2].editor_schema),
+  ).not.toThrow();
+  expect(editor.getText()).toContain('后来输入');
+  expect(current).toBe(editor);
+  expect(state!.phase).toBe('saved');
+  expect(taskApi).not.toHaveBeenCalled();
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '交付版本' }).disabled).toBe(true);
+});
+
+it.each(['receipt', 'target', 'owner', 'task', 'body', 'revision', 'schema'])(
+  'personal rejects mismatched %s ACK, keeps dirty input and reconciles only the original key',
+  async (field) => {
+    const document = {
+      id: crypto.randomUUID(),
+      body_id: crypto.randomUUID(),
+      owner_kind: 'personal' as const,
+      task_id: null,
+      matter_id: null,
+      title: '独立稿',
+      body_revision: 1,
+      editor_schema: 1 as const,
+      version: 1,
+      collection: '',
+      tags: [],
+      favorite: false,
+      in_library: false,
+      archived_at: null,
+      updated_at: '2026-11-15',
+    };
+    type Request = import('../../../preload/caselite-api').CatalogRequest;
+    type Save = Extract<Request, { operation: 'save_document_body' }>;
+    let frozen: Save;
+    const taskApi = vi.fn();
+    const catalog = vi.fn(async (request: Request) => {
+      if (request.operation === 'save_document_body') frozen = request;
+      else if (request.operation !== 'status') throw Error('非预期操作');
+      const savedDocument: Record<string, unknown> = {
+        ...document,
+        body_revision: frozen.expected_revision + 1,
+        editor_schema: frozen.editor_schema,
+      };
+      const response = {
+        ok: true,
+        projects: [],
+        documents: [savedDocument],
+        state: null,
+        receipt: frozen.idempotency_key,
+        target_id: document.id,
+      };
+      if (field === 'receipt') response.receipt = crypto.randomUUID();
+      if (field === 'target') response.target_id = crypto.randomUUID();
+      if (field === 'owner') savedDocument.owner_kind = 'task';
+      if (field === 'task') savedDocument.task_id = crypto.randomUUID();
+      if (field === 'body') savedDocument.body_id = crypto.randomUUID();
+      if (field === 'revision') savedDocument.body_revision = frozen.expected_revision + 2;
+      if (field === 'schema') savedDocument.editor_schema = frozen.editor_schema === 1 ? 2 : 1;
+      return response;
+    });
+    vi.stubGlobal('caselite', { task: taskApi, catalog });
+    const saved = vi.fn(),
+      dirty = vi.fn();
+    let state: BodySaveState | null = null;
+    render(
+      <BodyEditor
+        document={document}
+        initial={null}
+        embedded
+        autosave
+        onSaved={saved}
+        onDirty={dirty}
+        onSaveState={(value) => {
+          state = value;
+        }}
+        reviewDock={null}
+        reviewSaving={false}
+        onReviewSaving={vi.fn()}
+      />,
+    );
+    await settle(20);
+    const editor = current!;
+    act(() => editor.commands.insertContent('独立文档不能丢失的草稿'));
+    await settle(800);
+    expect(state!.phase).toBe('unknown');
+    expect(saved).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    await settle(5000);
+    expect(catalog).toHaveBeenCalledTimes(1);
+    act(() => state!.retry());
+    await settle();
+    expect(catalog).toHaveBeenCalledTimes(2);
+    expect(catalog.mock.calls[1][0]).toMatchObject({
+      operation: 'status',
+      idempotency_key: frozen!.idempotency_key,
+    });
+    expect(state!.phase).toBe('unknown');
+    expect(saved).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    expect(editor.getText()).toBe('独立文档不能丢失的草稿');
+    expect(current).toBe(editor);
+    expect(taskApi).not.toHaveBeenCalled();
+  },
+);

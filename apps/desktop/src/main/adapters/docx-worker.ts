@@ -1,7 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import { crc32 } from 'node:zlib';
 import { convertToHtml, extractRawText, images } from 'mammoth';
-import { DOMParser } from '@xmldom/xmldom';
+import { DOMParser, type Node as XmlNode } from '@xmldom/xmldom';
 import { fromBuffer, type Entry, type ZipFile } from 'yauzl';
 
 const wordNamespaces = [
@@ -9,6 +9,7 @@ const wordNamespaces = [
   'http://purl.oclc.org/ooxml/wordprocessingml/main',
 ];
 const maxExpanded = 32 * 1024 * 1024;
+const maxXmlDepth = 256;
 const revisionTags = new Set([
   'ins',
   'del',
@@ -66,6 +67,23 @@ export async function inspectZip(bytes: Buffer) {
         throw new Error(message);
       },
     }).parseFromString(text, 'application/xml');
+    // DOM构建仍受既有worker时限/V8预算约束；此迭代检查在依赖递归遍历前拒绝过深树，
+    // 不把DOM后的深度限制称为DOM构建或进程RSS上限。
+    let node: XmlNode | null = root.documentElement;
+    let depth = 1;
+    while (node) {
+      if (node.nodeType === 1 && depth > maxXmlDepth) throw new Error('DOCX XML depth budget');
+      if (node.firstChild) {
+        node = node.firstChild;
+        depth++;
+      } else {
+        while (node && !node.nextSibling) {
+          node = node.parentNode;
+          depth--;
+        }
+        node = node?.nextSibling ?? null;
+      }
+    }
     if (/\.rels$/i.test(name)) {
       const relationships = root.getElementsByTagNameNS(
         'http://schemas.openxmlformats.org/package/2006/relationships',

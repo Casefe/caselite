@@ -7,7 +7,19 @@ import * as Y from 'yjs';
 import { createAgentApplication, createTaskApplication } from '../../packages/application/src';
 import { openTaskStore } from '../../packages/local-db/src';
 import { documentReviewStore } from '../../apps/desktop/src/main/document-review-store';
-import type { AgentResponse } from '../../packages/contracts/src';
+import type {
+  AgentModel,
+  AgentResponse,
+  Material,
+  MaterialPreview,
+} from '../../packages/contracts/src';
+import { createImportantDateApplication } from '../../packages/application/src/important-date-application';
+import {
+  assessAgentInput,
+  agentUtf8Bytes,
+  AGENT_SYSTEM_TEXT,
+  AGENT_TEXT_MAX_BYTES,
+} from '../../packages/application/src/agent-input-budget';
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -239,6 +251,208 @@ it('revalidates a page after asynchronous attachment preparation and enforces th
       await budget.execute({ ...s.request(s.a.id, ref.id), context_id: randomUUID() }, 'window'),
     ).toMatchObject({ ok: false, code: 'LIMIT' });
     expect(s.start).not.toHaveBeenCalled();
+  } finally {
+    s.store.close();
+  }
+});
+
+it('applies the same budget after page wrapping and allows a full long attachment only for the qualified model', async () => {
+  const s = setup();
+  try {
+    const reference = await s.preview(s.a.id);
+    let text = 'a'.repeat(262_000);
+    const capability = {
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      baseUrl: 'https://api.deepseek.com',
+      contextWindow: 1_000_000,
+      input: ['text'],
+    };
+    const app = createAgentApplication({
+      ...s.ports,
+      credentials: { ...credentials, getDefaultModel: () => 'deepseek-flash' },
+      runtime: { start: s.start, inputCapability: () => capability },
+      resolveContext: async () => text,
+    });
+    const wrappedReference = ok(
+      await app.execute({ ...base, operation: 'preview_page', scope: s.a.id }, 'window'),
+    ).page_preview!;
+    const request = {
+      ...s.request(s.a.id, wrappedReference.id),
+      model: 'deepseek-flash',
+      context_id: randomUUID(),
+    };
+    expect(await app.execute(request, 'window')).toMatchObject({ ok: false, code: 'LIMIT' });
+    expect(s.start).not.toHaveBeenCalled();
+    expect(s.store.agentHistory.load()).toHaveLength(0);
+    text = '全量材料'.repeat(9000) + 'FINAL_ATTACHMENT_END';
+    expect((await app.execute({ ...request, run_id: randomUUID() }, 'window')).ok).toBe(true);
+    expect(s.start).toHaveBeenCalledTimes(1);
+    expect(s.start.mock.calls[0][0].prompt).toContain(text);
+    expect(reference).toBeDefined();
+  } finally {
+    s.store.close();
+  }
+});
+
+function dateBudgetFixture(defaultModel: AgentModel = 'deepseek-flash') {
+  const s = setup();
+  const typeId = 'synthetic-hearing';
+  const sourceId = randomUUID(),
+    derivationId = randomUUID(),
+    previewId = randomUUID();
+  const source: Material = {
+    id: sourceId,
+    task_id: s.a.id,
+    asset_version_id: randomUUID(),
+    name: '合成日期材料.pdf',
+    sha256: 'a'.repeat(64),
+    bytes: 100,
+    derivation_id: derivationId,
+    status: 'ready',
+    page_count: 3,
+    pages: [1, 2, 3].map((page) => ({
+      page,
+      text: '',
+      origin: 'pdf_text',
+      blocks: [],
+      width: 595,
+      height: 842,
+      rotation: 0,
+    })),
+  };
+  const preview: MaterialPreview = {
+    id: previewId,
+    task_id: s.a.id,
+    instruction: '提取重要日期',
+    model: 'deepseek-flash',
+    payload: '',
+    sha256: 'b'.repeat(64),
+    selections: [
+      { source_id: sourceId, derivation_id: derivationId, name: source.name, pages: [1, 2, 3] },
+    ],
+  };
+  const dates = createImportantDateApplication(
+    {
+      task: (id) => (id === s.a.id ? s.a : null),
+      types: () => [{ id: typeId, name: '合成开庭', version: 1, enabled: true, show_home: false }],
+      preview: (id, scope) => (id === previewId && scope === s.a.id ? preview : undefined),
+      source: (id, derivation) =>
+        id === sourceId && derivation === derivationId ? source : undefined,
+      configuration: (id) => (id === derivationId ? 'synthetic-date-budget-v1' : undefined),
+      run: () => undefined,
+      confirmations: () => [],
+      receipt: () => undefined,
+      commit: () => {
+        throw new Error('预算场景不可确认日期');
+      },
+    },
+    async () => {},
+  );
+  const binding = dates.prepare(s.a.id, preview.id, [typeId], s.a.version);
+  const remaining =
+    AGENT_TEXT_MAX_BYTES -
+    agentUtf8Bytes(AGENT_SYSTEM_TEXT) -
+    agentUtf8Bytes(dates.prompt(binding, ''));
+  const setText = (text: string) => {
+    preview.payload = text;
+    source.pages.forEach((page, index) => {
+      page.text = text.slice(index * 90_000, (index + 1) * 90_000);
+    });
+  };
+  setText('a'.repeat(remaining - 'END_SENTINEL'.length) + 'END_SENTINEL');
+  const prepare = vi.spyOn(dates, 'prepare'),
+    prompt = vi.spyOn(dates, 'prompt');
+  const capability = {
+    provider: 'deepseek',
+    model: 'deepseek-flash',
+    baseUrl: 'https://api.deepseek.com',
+    contextWindow: 1_000_000,
+    input: ['text'],
+  };
+  const resolveContext = vi.fn(async () => preview.payload);
+  const app = createAgentApplication({
+    ...s.ports,
+    dates,
+    resolveContext,
+    credentials: { ...credentials, getDefaultModel: () => defaultModel },
+    runtime: { start: s.start, inputCapability: () => capability },
+  });
+  const request = {
+    ...base,
+    operation: 'start' as const,
+    scope: s.a.id,
+    run_id: randomUUID(),
+    model: 'deepseek-flash' as const,
+    prompt: preview.instruction,
+    confirmed: true as const,
+    purpose: 'important_dates' as const,
+    context_id: preview.id,
+    date_types: [typeId],
+    task_version: s.a.version,
+  };
+  return { ...s, app, request, preview, prepare, prompt, resolveContext, capability, setText };
+}
+
+it('preserves MODEL_CHANGED before resolving materials or preparing dates', async () => {
+  const s = dateBudgetFixture('gpt-4.1-mini');
+  try {
+    expect(await s.app.execute(s.request, 'window')).toMatchObject({
+      ok: false,
+      code: 'MODEL_CHANGED',
+    });
+    expect(s.resolveContext).not.toHaveBeenCalled();
+    expect(s.prepare).not.toHaveBeenCalled();
+    expect(s.prompt).not.toHaveBeenCalled();
+    expect(s.start).not.toHaveBeenCalled();
+    expect(s.store.agentHistory.load()).toHaveLength(0);
+  } finally {
+    s.store.close();
+  }
+});
+
+it.each([0, 1])(
+  'checks real date wrapping at the visible UTF8 boundary plus %s byte before registration',
+  async (extra) => {
+    const s = dateBudgetFixture();
+    try {
+      s.setText(s.preview.payload + 'x'.repeat(extra));
+      expect(
+        assessAgentInput({
+          text: s.preview.payload,
+          model: 'deepseek-flash',
+          capability: s.capability,
+        }).accepted,
+      ).toBe(true);
+      const result = await s.app.execute(s.request, 'window');
+      expect(result).toMatchObject(extra ? { ok: false, code: 'BUDGET' } : { ok: true });
+      expect(s.prepare).toHaveBeenCalledTimes(1);
+      expect(s.prompt).toHaveBeenCalledTimes(1);
+      const wrapped = s.prompt.mock.results[0].value as string;
+      expect(agentUtf8Bytes(wrapped) + agentUtf8Bytes(AGENT_SYSTEM_TEXT)).toBe(
+        AGENT_TEXT_MAX_BYTES + extra,
+      );
+      expect(wrapped.endsWith('END_SENTINEL' + 'x'.repeat(extra))).toBe(true);
+      expect(s.start).toHaveBeenCalledTimes(extra ? 0 : 1);
+      expect(s.store.agentHistory.load()).toHaveLength(extra ? 0 : 1);
+      if (!extra) expect(s.start.mock.calls[0][0].prompt).toBe(wrapped);
+    } finally {
+      s.store.close();
+    }
+  },
+);
+
+it('rejects an unknown date type through real prepare without wrapping, registration or dispatch', async () => {
+  const s = dateBudgetFixture();
+  try {
+    expect(
+      await s.app.execute({ ...s.request, date_types: ['unknown-type'] }, 'window'),
+    ).toMatchObject({ ok: false, code: 'UNAVAILABLE' });
+    expect(s.prepare).toHaveBeenCalledTimes(1);
+    expect(s.prepare.mock.results[0].type).toBe('throw');
+    expect(s.prompt).not.toHaveBeenCalled();
+    expect(s.start).not.toHaveBeenCalled();
+    expect(s.store.agentHistory.load()).toHaveLength(0);
   } finally {
     s.store.close();
   }

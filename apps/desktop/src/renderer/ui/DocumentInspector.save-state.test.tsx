@@ -68,3 +68,21 @@ it('固定版本不显示工作稿保存/恢复入口，保留原只读AI限制'
   expect(screen.queryByRole('button', { name: '核对保存结果' })).toBeNull();
   expect(screen.getByLabelText('原AI范围').textContent).toContain('固定版本');
 });
+
+it('shows personal ownership honestly without assigning the document title to a nonexistent Task', () => {
+  render(
+    <DocumentInspector
+      document={{ ...document, owner_kind: 'personal', task_id: null, matter_id: null }}
+      blocked={false}
+      tagDraft={false}
+      tagsDisabled
+      tagsLocked
+      tagEditor={0}
+      suggestions={[]}
+      onTags={vi.fn()}
+      onTagDraft={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('关联任务').nextElementSibling?.textContent).toBe('未关联任务');
+  expect(screen.getByLabelText('原AI范围').textContent).toBe('');
+});

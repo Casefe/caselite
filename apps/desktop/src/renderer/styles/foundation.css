@@ -1763,3 +1763,85 @@ dd {
 .favorite-toggle[aria-pressed='true'] svg {
   fill: currentColor;
 }
+
+/* 收藏目录是对象工作区外的导航投影；右侧继续使用对象原有编辑和辅助面板。 */
+.favorites-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.favorites-workspace[data-active='true'] {
+  grid-template-columns: 250px minmax(0, 1fr);
+}
+.favorites-directory[hidden] {
+  display: none;
+}
+.favorites-directory {
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 10px;
+  background: var(--theme-panel);
+  border-right: 1px solid var(--line);
+}
+.favorites-workspace-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.favorites-directory .shortcuts {
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  border: 0;
+}
+.favorites-directory .shortcuts button {
+  color: var(--ink);
+}
+.favorites-directory .favorites-root {
+  color: var(--ink);
+}
+.favorites-directory .shortcuts .favorite-create-folder {
+  width: 30px;
+}
+.favorites-directory .favorite-entry > button[aria-current='page'] {
+  background: var(--active);
+  color: var(--ink);
+}
+.favorites-directory .favorite-search {
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--theme-panel);
+  color: var(--ink);
+}
+.favorites-directory .shortcuts button:hover {
+  color: var(--ink);
+  background: var(--theme-hover);
+}
+.favorites-directory .favorite-move {
+  background: var(--theme-panel);
+}
+.favorites-workspace[data-active='true']
+  .document-workspace[data-focus-document='true']
+  > .collection-main {
+  display: none;
+}
+.favorites-workspace[data-active='true'] .document-workspace[data-focus-document='true'] {
+  grid-template-columns: minmax(0, 1fr) var(
+      --property-panel-width,
+      var(--workspace-inspector-width)
+    );
+  min-width: 0;
+}
+@media (max-width: 800px) {
+  .favorites-workspace[data-active='true'] {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}

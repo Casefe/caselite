@@ -15,10 +15,12 @@ export function DocumentVersions({
 }) {
   const list = useInfiniteQuery({
     queryKey: ['delivery-snapshots', document.task_id, document.id],
+    enabled: document.owner_kind !== 'personal',
     initialPageParam: 0,
     gcTime: 0,
     staleTime: 0,
     queryFn: async ({ pageParam }) => {
+      if (!document.task_id) throw new Error('独立文档暂不支持固定交付版本。');
       const r = await window.caselite.task({
         protocol_version: 1,
         operation: 'list_snapshots',
@@ -71,7 +73,7 @@ export function DocumentVersions({
           <small>{new Date(s.created_at).toLocaleString('zh-CN')}</small>
         </button>
       ))}
-      {list.isPending && <p role="status">正在读取版本…</p>}
+      {document.owner_kind !== 'personal' && list.isPending && <p role="status">正在读取版本…</p>}
       {list.error && (
         <>
           <p role="alert">{list.error.message}</p>
@@ -79,6 +81,9 @@ export function DocumentVersions({
             重读版本
           </button>
         </>
+      )}
+      {document.owner_kind === 'personal' && (
+        <p className="caption">独立文档显示当前修订，固定交付版本暂不可用。</p>
       )}
       {!list.isPending && !list.error && !versions.length && (
         <p className="caption">暂无固定版本。</p>
@@ -97,6 +102,7 @@ export function FixedDocumentVersion({ document, id }: { document: CatalogDocume
     queryKey: ['document-fixed-version', document.id, id],
     gcTime: 0,
     queryFn: async () => {
+      if (!document.task_id) throw new Error('独立文档暂不支持固定交付版本。');
       const r = await window.caselite.task({
         protocol_version: 1,
         operation: 'read_snapshot',

@@ -52,6 +52,7 @@ export default function ContactInspector({
   detailTarget,
   onOpenDetail,
   onCloseDetail,
+  favoriteAction,
 }: {
   contact?: Contact;
   creating?: boolean;
@@ -69,6 +70,7 @@ export default function ContactInspector({
   detailTarget?: HTMLElement | null;
   onOpenDetail?(): void;
   onCloseDetail?(): void;
+  favoriteAction?(contact: Contact, disabled: boolean): React.ReactNode;
 }) {
   const inspector = useRef<HTMLElement>(null);
   const showSource = (id: string) => {
@@ -698,7 +700,10 @@ export default function ContactInspector({
                             })
                           }
                         >
-                          {(tab === 'tasks' ? tasks : documents).map((row) => (
+                          {(tab === 'tasks'
+                            ? tasks
+                            : documents.filter((item) => item.owner_kind !== 'personal')
+                          ).map((row) => (
                             <option key={row.id} value={row.id}>
                               {row.title}
                             </option>
@@ -735,7 +740,7 @@ export default function ContactInspector({
                               }
                               onClick={() => {
                                 if (tab === 'tasks') onOpenTask?.(id);
-                                else if (target && 'task_id' in target)
+                                else if (target && 'task_id' in target && target.task_id)
                                   onOpenDocument?.(id, target.task_id);
                               }}
                             >
@@ -764,6 +769,7 @@ export default function ContactInspector({
           <div className="customer-detail-page">
             <nav aria-label="联系人详情导航">
               <span>联系人 / {current.name}</span>
+              {favoriteAction?.(current, dirty)}
               <button type="button" disabled={dirty} onClick={onCloseDetail}>
                 ← 返回联系人列表
               </button>

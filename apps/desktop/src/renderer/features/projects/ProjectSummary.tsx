@@ -20,7 +20,10 @@ export default function ProjectSummary({
   onProject?(projectId: string): void;
 }) {
   const members = tasks.filter((task) => task.matter_id === project.id);
-  const visible = documents.filter((doc) => doc.matter_id === project.id && !doc.archived_at);
+  const visible = documents.filter(
+    (doc): doc is Extract<CatalogDocument, { owner_kind: 'task' }> =>
+      !!doc.task_id && doc.matter_id === project.id && !doc.archived_at,
+  );
   // 归组不修改项目版本；成员身份与版本变化也必须重读原查询。
   const refreshKey = `${project.id}:${project.version}:${project.task_count}:${members.map((task) => `${task.id}:${task.version}`).join(',')}`;
   return (

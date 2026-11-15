@@ -1,12 +1,18 @@
-import { crc32 } from 'node:zlib';
+import { crc32, deflateRawSync } from 'node:zlib';
 
-type Part = { name: string; data: string | Buffer; flags?: number; checksum?: number };
+type Part = {
+  name: string;
+  data: string | Buffer;
+  flags?: number;
+  checksum?: number;
+  deflate?: boolean;
+};
 export const wordNamespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 export function documentXml(body: string, namespace = wordNamespace) {
   return `<w:document xmlns:w="${namespace}"><w:body>${body}</w:body></w:document>`;
 }
 
-// 仅构造合成的存储型ZIP，以便独立改变CRC、加密位或同名部件，不使用真实案件样本。
+// 仅构造合成ZIP；可单独改变CRC、压缩、加密位或同名部件，不使用真实案件样本。
 export function storedZip(parts: Part[]) {
   const local: Buffer[] = [];
   const directory: Buffer[] = [];
@@ -15,11 +21,13 @@ export function storedZip(parts: Part[]) {
     const path = Buffer.from(part.name);
     const plain = Buffer.isBuffer(part.data) ? part.data : Buffer.from(part.data);
     // 传统ZIP加密元数据包含12字节头；只构造足以到达拒绝分支的元数据，不模拟解密。
-    const data = (part.flags ?? 0) & 1 ? Buffer.concat([Buffer.alloc(12), plain]) : plain;
+    const compressed = part.deflate ? deflateRawSync(plain) : plain;
+    const data = (part.flags ?? 0) & 1 ? Buffer.concat([Buffer.alloc(12), compressed]) : compressed;
     const crc = part.checksum ?? crc32(plain);
     const header = Buffer.alloc(30);
     header.writeUInt32LE(0x04034b50);
     header.writeUInt16LE(part.flags ?? 0x800, 6);
+    header.writeUInt16LE(part.deflate ? 8 : 0, 8);
     header.writeUInt32LE(crc, 14);
     header.writeUInt32LE(data.length, 18);
     header.writeUInt32LE(plain.length, 22);
@@ -28,6 +36,7 @@ export function storedZip(parts: Part[]) {
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50);
     central.writeUInt16LE(part.flags ?? 0x800, 8);
+    central.writeUInt16LE(part.deflate ? 8 : 0, 10);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(data.length, 20);
     central.writeUInt32LE(plain.length, 24);

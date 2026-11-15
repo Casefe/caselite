@@ -8,6 +8,9 @@ export function createAgentPageReader(
   workspace: string,
   getTask: (id: string) => Task | null,
 ) {
+  const personalDocuments = (
+    db.prepare('PRAGMA table_info(documents)').all() as { name: string }[]
+  ).some((column) => column.name === 'owner_kind');
   const body = (id: string, revision: number, editorSchema = 1) => {
     if (!revision) return '';
     const row = db
@@ -61,6 +64,35 @@ export function createAgentPageReader(
         };
       }
       const document = scope.startsWith('document:');
+      if (document && personalDocuments) {
+        const personal = db
+          .prepare(
+            `SELECT personal_title,body_id,body_revision,editor_schema,metadata_version,archived_at
+          FROM documents WHERE id=? AND owner_kind='personal' AND personal_workspace_id=?`,
+          )
+          .get(scope.slice(9), workspace) as
+          | {
+              personal_title: string;
+              body_id: string;
+              body_revision: number;
+              editor_schema: number;
+              metadata_version: number;
+              archived_at: string | null;
+            }
+          | undefined;
+        if (personal)
+          return {
+            title: personal.personal_title,
+            version: `${personal.body_revision}:${personal.metadata_version}`,
+            archived: !!personal.archived_at,
+            text: [
+              personal.personal_title,
+              body(personal.body_id, personal.body_revision, personal.editor_schema),
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          };
+      }
       const target = document
         ? (db
             .prepare(

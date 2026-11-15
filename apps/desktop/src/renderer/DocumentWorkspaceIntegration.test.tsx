@@ -120,7 +120,7 @@ async function inspector(open: boolean) {
 function toggleInspector() {
   fireEvent.click(topbar().getByRole('button', { name: /右侧属性栏$/ }));
 }
-function navigate(name: '项目' | '首页') {
+function navigate(name: '项目' | '首页' | '收藏') {
   fireEvent.click(
     within(screen.getByRole('complementary', { name: '一级导航' })).getByRole('button', {
       name,
@@ -135,9 +135,15 @@ async function section(name: '概述' | '文档') {
   await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
 }
 async function openProject(title: string) {
-  fireEvent.click(await screen.findByRole('button', { name: title, exact: true }));
+  fireEvent.click(
+    await within(
+      document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+    ).findByRole('button', { name: title, exact: true }),
+  );
   await screen.findByRole('tablist', { name: '项目栏目' });
   await waitFor(() => expect(button('返回项目列表').disabled).toBe(false));
+  expect(button('返回项目列表').closest('.project-catalog-heading')).not.toBeNull();
+  expect(screen.getByLabelText('一级导航').contains(button('返回项目列表'))).toBe(false);
   await waitFor(() =>
     expect(pageTabs().getByRole('tab', { name: title }).getAttribute('aria-selected')).toBe('true'),
   );
@@ -152,10 +158,14 @@ async function readDocument(doc: CatalogDocument) {
   await waitFor(() =>
     expect(document.querySelector('.project-document-panel .document-workspace')).not.toBeNull(),
   );
-  const workspace = document.querySelector('.project-document-panel .document-workspace')!;
-  const row = () => workspace.querySelector<HTMLButtonElement>(`[data-document-id="${doc.id}"]`);
+  const directories = document.querySelectorAll<HTMLElement>('.workspace-page-directory');
+  expect(directories).toHaveLength(1);
+  const directory = document.querySelector<HTMLElement>('.workspace-page-directory')!;
+  if (directory.closest('[hidden], [inert]')) fireEvent.click(button('展开目录栏'));
+  expect(directory.closest('[hidden], [inert]')).toBeNull();
+  const row = () => directory.querySelector<HTMLButtonElement>(`[data-document-id="${doc.id}"]`);
   if (!row()) {
-    const summary = workspace.querySelector<HTMLElement>(
+    const summary = directory.querySelector<HTMLElement>(
       `[data-folder-id="project:${doc.matter_id}"] > summary`,
     )!;
     await waitFor(() => expect(summary.getAttribute('aria-disabled')).toBe('false'));
@@ -165,7 +175,10 @@ async function readDocument(doc: CatalogDocument) {
   fireEvent.click(row()!);
   return await screen.findByLabelText<HTMLTextAreaElement>(`合成正文 ${doc.id}`);
 }
-function fixture() {
+function fixture(
+  favoriteDocument = false,
+  options: { knowledge?: boolean; finance?: boolean } = {},
+) {
   // 每次使用新项目身份，避免模块内合法的窗口级阅读缓存串到另一条测试。
   const projects: Matter[] = ['合成项目P', '合成项目Q'].map((title) => ({
     id: crypto.randomUUID(),
@@ -213,6 +226,8 @@ function fixture() {
     start_date: null,
     updated_at: doc.updated_at,
   })) as Task[];
+  if (favoriteDocument) documents[0].favorite = true;
+  if (options.knowledge) documents[0].in_library = true;
   let unknown = false;
   const response = (target: string | null = null): Extract<CatalogResponse, { ok: true }> => ({
     ok: true,
@@ -261,12 +276,57 @@ function fixture() {
   });
   const preferences = vi.fn(async () => ({
     ok: true,
-    preferences: initialLocalPreferences,
+    preferences: options.finance
+      ? {
+          ...initialLocalPreferences,
+          favorite_navigation: {
+            folders: [],
+            references: projects.map((p) => ({ kind: 'finance', id: p.id, folder_id: null })),
+            document_folders: [],
+          },
+        }
+      : initialLocalPreferences,
     receipt: null,
   }));
   const material = vi.fn(async () => ({ ok: true, materials: [] }));
   const folder = vi.fn(async () => ({ ok: true, state: 'not_configured', pending: [], saved: [] }));
-  vi.stubGlobal('caselite', { catalog, task, preferences, material, folder });
+  const finance = vi.fn(async (request: { operation: string; project_id?: string }) =>
+    request.operation === 'm_read'
+      ? {
+          ok: true,
+          kind: 'management',
+          receipt: null,
+          evidence: null,
+          effect: null,
+          preview: null,
+          preview_digest: null,
+          state: {
+            version: 0,
+            default_rule_id: null,
+            projects: [],
+            rules: [],
+            bindings: [],
+            allocations: [],
+            candidates: [],
+            sources: [],
+            invoices: [],
+            expenses: [],
+            reimbursements: [],
+            payouts: [],
+          },
+        }
+      : {
+          ok: true,
+          kind: 'ledger',
+          project_id: request.project_id,
+          today: '2026-11-15',
+          time_zone: 'Asia/Shanghai',
+          receipt: null,
+          evidence: null,
+          ledger: null,
+        },
+  );
+  vi.stubGlobal('caselite', { catalog, task, preferences, material, folder, finance });
   render(
     <LocalPreferencesProvider>
       <App />
@@ -275,6 +335,7 @@ function fixture() {
   return {
     projects,
     documents,
+    finance,
     catalog,
     task,
     preferences,
@@ -326,6 +387,49 @@ it('真实项目概述默认展开，文档首次收起，显式开关按项目�
   await inspector(true);
   await section('文档');
   await inspector(false);
+});
+
+it('收藏文档返回已访问页面时恢复原文档显示宽度', async () => {
+  const f = fixture(true);
+  await screen.findByText('合成首页');
+  navigate('收藏');
+  const directory = within(screen.getByRole('complementary', { name: '收藏目录' }));
+  fireEvent.click(await directory.findByRole('button', { name: f.documents[0].title }));
+  await screen.findByLabelText(`合成正文 ${f.documents[0].id}`);
+  fireEvent.click(screen.getByLabelText('文档显示设置'));
+  fireEvent.click(button('宽屏显示'));
+  await waitFor(() =>
+    expect(document.querySelector('.document-workspace')?.getAttribute('data-reading-width')).toBe(
+      'full',
+    ),
+  );
+  navigate('首页');
+  await screen.findByText('合成首页');
+  fireEvent.click(topbar().getByRole('button', { name: '后退', exact: true }));
+  await screen.findByLabelText(`合成正文 ${f.documents[0].id}`);
+  expect(document.querySelector('.document-workspace')?.getAttribute('data-reading-width')).toBe(
+    'full',
+  );
+});
+
+it('离开收藏再返回时保留未提交文件夹名称与搜索', async () => {
+  fixture(true);
+  await screen.findByText('合成首页');
+  navigate('收藏');
+  const directory = within(screen.getByRole('complementary', { name: '收藏目录' }));
+  const create = await directory.findByRole<HTMLButtonElement>('button', {
+    name: '新建收藏文件夹',
+  });
+  await waitFor(() => expect(create.disabled).toBe(false));
+  fireEvent.click(create);
+  fireEvent.change(directory.getByLabelText('收藏文件夹名称'), { target: { value: '待整理资料' } });
+  fireEvent.change(directory.getByLabelText('搜索收藏'), { target: { value: '合成' } });
+  navigate('首页');
+  await screen.findByText('合成首页');
+  navigate('收藏');
+  const restored = within(screen.getByRole('complementary', { name: '收藏目录' }));
+  expect(restored.getByLabelText<HTMLInputElement>('收藏文件夹名称').value).toBe('待整理资料');
+  expect(restored.getByLabelText<HTMLInputElement>('搜索收藏').value).toBe('合成');
 });
 
 it.each([false, true])(
@@ -434,4 +538,81 @@ it('真实文档未知回执沿原canLeave锁导航，侧栏切换不重提写�
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({ id: f.documents[0].id, tags: ['合成未知标签'] });
   expect(writes[0] && 'idempotency_key' in writes[0]).toBe(true);
+});
+
+it('收藏知识文档打开原知识视图并由页签恢复同一 Document 身份', async () => {
+  const f = fixture(true, { knowledge: true });
+  await screen.findByText('合成首页');
+  navigate('收藏');
+  fireEvent.click(
+    await within(screen.getByRole('complementary', { name: '收藏目录' })).findByRole('button', {
+      name: f.documents[0].title,
+    }),
+  );
+  const body = await screen.findByLabelText(`合成正文 ${f.documents[0].id}`);
+  expect(body.closest('.document-workspace')?.getAttribute('data-collection')).toBe('knowledge');
+  navigate('首页');
+  await screen.findByText('合成首页');
+  fireEvent.click(topbar().getByRole('button', { name: '后退', exact: true }));
+  expect(
+    (await screen.findByLabelText(`合成正文 ${f.documents[0].id}`))
+      .closest('.document-workspace')
+      ?.getAttribute('data-collection'),
+  ).toBe('knowledge');
+  expect(f.catalog.mock.calls.some(([r]) => r.operation === 'organize_document')).toBe(false);
+});
+
+it('连续点击财务项目收藏打开原账本，未保存输入沿原守卫阻止切换', async () => {
+  const f = fixture(false, { finance: true });
+  await screen.findByText('合成首页');
+  navigate('收藏');
+  const directory = within(screen.getByRole('complementary', { name: '收藏目录' }));
+  fireEvent.click(await directory.findByRole('button', { name: f.projects[0].title }));
+  await screen.findByRole('heading', { name: f.projects[0].title, level: 1 });
+  await screen.findByRole('group', { name: '登记有效收费合同' });
+  expect(screen.getByRole('button', { name: '取消收藏财务项目' })).toBeTruthy();
+  fireEvent.click(directory.getByRole('button', { name: f.projects[1].title }));
+  await screen.findByRole('heading', { name: f.projects[1].title, level: 1 });
+  const number = await screen.findByLabelText('合同编号');
+  fireEvent.change(number, { target: { value: '保留财务输入' } });
+  await screen.findByText('有未提交的财务输入。保存或放弃输入后可以切换项目。');
+  fireEvent.click(directory.getByRole('button', { name: f.projects[0].title }));
+  expect(screen.getByRole('heading', { name: f.projects[1].title, level: 1 })).toBeTruthy();
+  expect((number as HTMLInputElement).value).toBe('保留财务输入');
+  expect(
+    f.finance.mock.calls.filter(([r]) => !['read', 'm_read'].includes(r.operation)),
+  ).toHaveLength(0);
+});
+
+it('知识库真实入口打开 Skills 预览，取消不写现有文档或任务', async () => {
+  const f = fixture(false, { knowledge: true });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  await screen.findByText('合成首页');
+  expect(screen.queryByRole('button', { name: 'Skills' })).toBeNull();
+  fireEvent.click(
+    within(screen.getByRole('complementary', { name: '一级导航' })).getByRole('button', {
+      name: '知识库',
+    }),
+  );
+  await within(document.querySelector<HTMLElement>('.workspace-directory-heading')!).findByRole(
+    'heading',
+    { name: '知识库' },
+  );
+  const entry = screen.getByText('Skills', { selector: 'button' });
+  fireEvent.click(entry.closest('details')!.querySelector('summary')!);
+  fireEvent.click(entry);
+  await screen.findByRole('dialog', { name: 'Skills 导入预览' });
+  expect(screen.getByText(/文件夹和 ZIP 尚未支持/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '取消并关闭' }));
+  expect(screen.queryByRole('dialog', { name: 'Skills 导入预览' })).toBeNull();
+  expect(
+    f.catalog.mock.calls.filter(([request]) => request.operation === 'organize_document'),
+  ).toHaveLength(0);
+  expect(
+    f.task.mock.calls.every(([request]) =>
+      ['read', 'list', 'calendar_query', 'list_snapshots'].includes(request.operation),
+    ),
+  ).toBe(true);
 });

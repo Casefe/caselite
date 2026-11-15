@@ -2,7 +2,8 @@ import { useSyncExternalStore } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { Contact, ContactsRequest, ContactsResponse } from '../../../preload/caselite-api';
 
-export const contactsKey = ['contacts', 'local'] as const;
+import { contactsKey } from '../../shared/data/contact-query';
+export { contactsKey } from '../../shared/data/contact-query';
 export const contactKey = (id: string) => ['contacts', 'detail', id] as const;
 export type ContactWrite = Exclude<ContactsRequest, { operation: 'read' | 'list' }>;
 type Confirmed = Extract<ContactsResponse, { ok: true }>;

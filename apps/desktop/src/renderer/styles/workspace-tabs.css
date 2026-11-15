@@ -1,7 +1,4 @@
 /* 系统按钮由Electron保留；只有标题栏空白区参与拖动，页面操作保持可点击。 */
-.workbench {
-  grid-template-rows: 44px minmax(0, 1fr);
-}
 .workspace-topbar {
   min-width: 0;
   position: relative;

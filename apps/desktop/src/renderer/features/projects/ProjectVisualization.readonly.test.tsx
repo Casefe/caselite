@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, waitFor } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect } from 'react';
 import { readFileSync } from 'node:fs';
 import { ReactFlowProvider, useStoreApi } from '@xyflow/react';
 import type { Matter, Task } from '../../../preload/caselite-api';
 import ProjectVisualization from './ProjectVisualization';
+import {
+  defaultProjectVisualizationConfig,
+  type ProjectGraph,
+} from './project-visualization-view-model';
 
 type FlowStore = ReturnType<typeof useStoreApi>;
 
@@ -21,29 +25,35 @@ const project: Matter = {
   updated_at: '2026-11-12',
   task_count: 1,
 };
-const tasks = [{ id: 'task-a', title: '当前任务', matter_id: project.id }] as Task[];
+const tasks = [
+  { id: '11111111-1111-4111-8111-111111111112', title: '当前任务', matter_id: project.id },
+] as Task[];
 const documents = [
   {
-    id: 'doc-a',
+    id: '11111111-1111-4111-8111-111111111113',
     title: '当前文档',
-    task_id: 'task-a',
+    task_id: '11111111-1111-4111-8111-111111111112',
     matter_id: project.id,
   },
 ];
 
-const nodeIds = [`project:${project.id}`, 'task:task-a', 'document:doc-a'];
+const nodeIds = [
+  `project:${project.id}`,
+  'task:11111111-1111-4111-8111-111111111112',
+  'document:11111111-1111-4111-8111-111111111113',
+];
 const expectedEdgeEndpoints = [
   {
-    id: `project:${project.id}:task:task-a`,
+    id: `project:${project.id}:task:11111111-1111-4111-8111-111111111112`,
     source: `project:${project.id}`,
-    target: 'task:task-a',
+    target: 'task:11111111-1111-4111-8111-111111111112',
     sourceHandle: null,
     targetHandle: null,
   },
   {
-    id: 'task:task-a:document:doc-a',
-    source: 'task:task-a',
-    target: 'document:doc-a',
+    id: 'task:11111111-1111-4111-8111-111111111112:document:11111111-1111-4111-8111-111111111113',
+    source: 'task:11111111-1111-4111-8111-111111111112',
+    target: 'document:11111111-1111-4111-8111-111111111113',
     sourceHandle: null,
     targetHandle: null,
   },
@@ -80,6 +90,16 @@ function setRuntimeProperty(key: string, value: unknown) {
 }
 
 beforeAll(() => {
+  // jsdom缺少SVG文本测量；只供真实ReactFlow的连线标签布局，不改变端点断言。
+  runtimeDescriptors.push({
+    target: SVGElement.prototype,
+    key: 'getBBox',
+    descriptor: Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox'),
+  });
+  Object.defineProperty(SVGElement.prototype, 'getBBox', {
+    configurable: true,
+    value: () => ({ x: 0, y: 0, width: 40, height: 14 }),
+  });
   style = document.createElement('style');
   style.textContent = readFileSync('node_modules/@xyflow/react/dist/style.css', 'utf8');
   document.head.append(style);
@@ -279,7 +299,7 @@ describe('项目可视化关系图只读端点', () => {
     });
 
     const sourceHandle = document.querySelector<HTMLElement>(
-      '[data-nodeid="task:task-a"][data-handleid="right"]',
+      '[data-nodeid="task:11111111-1111-4111-8111-111111111112"][data-handleid="right"]',
     );
     expect(sourceHandle).toBeTruthy();
     expect(sourceHandle?.classList.contains('source')).toBe(true);
@@ -338,4 +358,71 @@ describe('项目可视化关系图只读端点', () => {
       unsubscribe();
     }
   });
+});
+
+beforeEach(() => {
+  const graph: ProjectGraph = {
+    project_id: project.id,
+    depth: 2,
+    node_limit: 200,
+    read_only: false,
+    truncated: false,
+    fingerprint: 'a'.repeat(64),
+    nodes: [
+      {
+        kind: 'project',
+        id: project.id,
+        title: project.title,
+        version: 1,
+        status: 'planned',
+        project_type: 'general',
+        professional_type: null,
+        professional_fields: [],
+      },
+      { kind: 'task', id: tasks[0].id, title: '当前任务', version: 1 },
+      {
+        kind: 'document',
+        id: documents[0].id,
+        task_id: tasks[0].id,
+        title: '当前任务',
+        task_version: 1,
+        metadata_version: 1,
+        body_revision: 0,
+      },
+    ],
+    edges: [
+      {
+        kind: 'project_task',
+        from: { kind: 'project', id: project.id },
+        to: { kind: 'task', id: tasks[0].id },
+      },
+      {
+        kind: 'task_document',
+        from: { kind: 'task', id: tasks[0].id },
+        to: { kind: 'document', id: documents[0].id },
+      },
+    ],
+  };
+  window.caselite = {
+    catalog: vi.fn(async () => ({
+      ok: true,
+      projects: [],
+      documents: [],
+      state: null,
+      target_id: project.id,
+      receipt: null,
+      project_graph: graph,
+      project_visualization_view: {
+        project_id: project.id,
+        view_id: 'current',
+        format_version: 1,
+        revision: 0,
+        config: defaultProjectVisualizationConfig,
+        saved_source_fingerprint: null,
+        current_source_fingerprint: graph.fingerprint,
+        read_only: false,
+        scope_pruned: false,
+      },
+    })),
+  } as unknown as Window['caselite'];
 });

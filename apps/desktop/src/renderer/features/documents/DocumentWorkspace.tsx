@@ -1,3 +1,10 @@
+import DocumentCreateDialog from './DocumentCreateDialog';
+import {
+  WorkspaceDirectory,
+  useFourColumnWorkspace,
+  useWorkspacePageActions,
+} from '../../ui/FourColumnWorkspace';
+import SkillsImportPreview from './SkillsImportPreview';
 import WorkspacePageChrome, {
   closeWorkspaceDisplayOnEscape,
 } from '../../shared/ui/WorkspacePageChrome';
@@ -70,6 +77,9 @@ export default function DocumentWorkspace({
   onOpen(id: string): void;
   onDirty(value: boolean): void;
 }) {
+  const shell = useFourColumnWorkspace();
+  const [creatingDocument, setCreatingDocument] = useState(false);
+  const [directoryQuery, setDirectoryQuery] = useState('');
   const client = useQueryClient(),
     read = useOrdinaryCatalog(),
     c = useCatalog(false, read);
@@ -83,25 +93,26 @@ export default function DocumentWorkspace({
   }, [projectId, loadOriginals]);
   const kind = library ? 'knowledge' : 'documents';
   const candidate = navigation?.initial as DocumentPageState | null;
-  const initial = projectId
-    ? initialDocumentId
-      ? {
-          kind: 'documents' as const,
-          selection: {
-            primary: initialDocumentId,
-            secondary: null,
-            active: 'primary' as const,
-            split: false,
-          },
-          reading: true,
-          wide: false,
-          versions: { primary: null, secondary: null },
-          title: '文档',
-        }
-      : (projectViews.get(projectId) ?? null)
-    : candidate?.kind === kind
+  const initial =
+    !projectId && candidate?.kind === kind
       ? candidate
-      : null;
+      : initialDocumentId
+        ? {
+            kind,
+            selection: {
+              primary: initialDocumentId,
+              secondary: null,
+              active: 'primary' as const,
+              split: false,
+            },
+            reading: true,
+            wide: false,
+            versions: { primary: null, secondary: null },
+            title: '文档',
+          }
+        : projectId
+          ? (projectViews.get(projectId) ?? null)
+          : null;
   const selection = useSplitPreviewSelection(initial?.selection);
   const [reading, setReading] = useState(initial?.reading ?? false);
   const [wide, setWide] = useState(initial?.wide ?? false);
@@ -197,6 +208,7 @@ export default function DocumentWorkspace({
     !all.some((d) => d.id === acknowledged.id && d.version >= acknowledged.version);
   const bodyDirty = Object.values(dirtyEditors).some(Boolean);
   const dirty =
+    creatingDocument ||
     bodyDirty ||
     tagDraft ||
     c.pending ||
@@ -206,6 +218,17 @@ export default function DocumentWorkspace({
     localFolder.busy ||
     folderSettingsBlocked;
   const blocked = dirty || read.isFetching || externalBlocked || originals.busy;
+  useWorkspacePageActions({
+    create:
+      !projectId && !library
+        ? {
+            kind: 'document',
+            run: () => setCreatingDocument(true),
+            disabled: blocked,
+            reason: blocked ? '请先完成当前编辑或核对提交' : undefined,
+          }
+        : undefined,
+  });
   // 只恢复既有审阅路由；镜像、固定版本和未确认保存的状态不能作为可写工作稿离开。
   const reviewMirror =
     selection.active === 'secondary' && primary?.id === current?.id && !versions.primary;
@@ -213,6 +236,7 @@ export default function DocumentWorkspace({
     !library && !projectId && !!current && !originals.selected && !localFolder.opened;
   const canReview =
     hasReviewRoute &&
+    !!current?.task_id &&
     reading &&
     !blocked &&
     !!c.data &&
@@ -312,10 +336,12 @@ export default function DocumentWorkspace({
     const result = await c.load();
     if (result) setReload((n) => n + 1);
   }
-  function saved(task: Task) {
+  function saved(task: Task | CatalogDocument) {
+    const documentId = 'document_id' in task ? task.document_id : task.id;
+    const metadataVersion = 'document_id' in task ? task.document_metadata_version : task.version;
     const latest = client
       .getQueryData<NonNullable<typeof c.data>>(['catalog', 'ordinary'])
-      ?.documents.find((d) => d.id === task.document_id);
+      ?.documents.find((d) => d.id === documentId);
     const external =
       !library &&
       latest &&
@@ -328,15 +354,15 @@ export default function DocumentWorkspace({
         ? {
             ...value,
             documents: value.documents.map((d) =>
-              d.id === task.document_id
+              d.id === documentId
                 ? {
                     ...d,
                     body_revision: library
                       ? task.body_revision
                       : Math.max(d.body_revision, task.body_revision),
                     version: library
-                      ? (task.document_metadata_version ?? d.version)
-                      : Math.max(d.version, task.document_metadata_version ?? d.version),
+                      ? (metadataVersion ?? d.version)
+                      : Math.max(d.version, metadataVersion ?? d.version),
                     updated_at:
                       library || task.body_revision >= d.body_revision
                         ? task.updated_at
@@ -366,6 +392,7 @@ export default function DocumentWorkspace({
         generation={reload}
         autosave={!library}
         document={doc}
+        exportActive={slot === selection.active && (slot === 'primary' || selection.split)}
         mirror={slot === 'secondary' && primary?.id === doc.id && !versions.primary}
         disabled={
           read.isFetching ||
@@ -413,6 +440,7 @@ export default function DocumentWorkspace({
       ref={root}
       className={`collection-workspace catalog-view document-workspace property-resizable ${library ? 'knowledge-view' : ''}${!library && !projectId ? ' workspace-has-page-chrome' : ''}`}
       data-layout="three-column"
+      data-shell-directory={Boolean(shell)}
       data-properties-resizable="true"
       data-collection={library ? 'knowledge' : 'documents'}
       data-page-ui={library ? undefined : 'document'}
@@ -431,12 +459,30 @@ export default function DocumentWorkspace({
           : undefined
       }
     >
+      {creatingDocument && (
+        <DocumentCreateDialog
+          onCancel={() => setCreatingDocument(false)}
+          onCreated={async (id) => {
+            const latest = await c.load();
+            const created = latest?.documents.find((item) => item.id === id);
+            if (!created) throw new Error('文档已创建，目录刷新未完成；请重试打开。');
+            if (!projectId) navigation?.beforeChange();
+            originals.close();
+            localFolder.close();
+            selection.select(id);
+            setReading(true);
+            setVersions((old) => ({ ...old, [selection.active]: null }));
+            setReload((value) => value + 1);
+            setCreatingDocument(false);
+          }}
+        />
+      )}
       {!projectId && <DocumentNavigation read={page} ready={!read.isFetching} />}
       {!library && !projectId && (
         <WorkspacePageChrome
           title="文档"
           createLabel="新建文档"
-          create={{ unavailableReason: '文档创建入口尚未接入' }}
+          create={{ onClick: () => setCreatingDocument(true), disabled: blocked }}
           search={{ unavailableReason: '文档目录全范围搜索尚未接入' }}
           filter={{ unavailableReason: '文档目录筛选尚未接入' }}
           display={
@@ -471,121 +517,139 @@ export default function DocumentWorkspace({
           }
         />
       )}
-      <div className="collection-main">
-        {library || projectId ? (
-          <header className="collection-heading">
-            <Icon name={library ? 'book' : 'folder'} size={18} />
-            <h1 tabIndex={-1} ref={heading}>
-              {library ? '知识库' : '文件夹'}
-            </h1>
-          </header>
-        ) : (
-          <h2 className="sr-only" tabIndex={-1} ref={heading}>
-            文件夹
-          </h2>
-        )}
-        {!library && (
-          <LocalFolderTree
-            folder={localFolder}
+      <WorkspaceDirectory>
+        <div className="collection-main">
+          {library || projectId ? (
+            <header className="collection-heading">
+              <Icon name={library ? 'book' : 'folder'} size={18} />
+              <h1 tabIndex={-1} ref={heading}>
+                {library ? '知识库' : '文件夹'}
+              </h1>
+            </header>
+          ) : (
+            <h2 className="sr-only" tabIndex={-1} ref={heading}>
+              文件夹
+            </h2>
+          )}
+          {library && <SkillsImportPreview disabled={blocked} />}
+          {!library && (
+            <LocalFolderTree
+              folder={localFolder}
+              disabled={blocked}
+              projectId={projectId}
+              onSettingsBlocked={setFolderSettingsBlocked}
+              onBeforeOpen={() => {
+                if (!projectId) navigation?.beforeChange();
+                originals.close();
+                setReading(true);
+              }}
+              onOpen={(entry) => {
+                if (!projectId) navigation?.beforeChange();
+                originals.close();
+                setReading(true);
+                localFolder.open(entry);
+              }}
+            />
+          )}
+          <label className="shell-directory-search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              aria-label="搜索文档目录"
+              placeholder="搜索文档名称"
+              disabled={blocked}
+              value={directoryQuery}
+              onChange={(event) => {
+                if (!blocked) setDirectoryQuery(event.target.value);
+              }}
+            />
+          </label>
+          <DocumentFolderTree
+            documents={available.filter((item) =>
+              item.title.toLocaleLowerCase().includes(directoryQuery.trim().toLocaleLowerCase()),
+            )}
+            projects={
+              projectId
+                ? (c.data?.projects ?? []).filter((p) => p.id === projectId)
+                : (c.data?.projects ?? [])
+            }
+            selected={current?.id ?? null}
             disabled={blocked}
+            scopeKey={scopeKey}
             projectId={projectId}
-            onSettingsBlocked={setFolderSettingsBlocked}
-            onBeforeOpen={() => {
-              if (!projectId) navigation?.beforeChange();
-              originals.close();
-              setReading(true);
-            }}
-            onOpen={(entry) => {
-              if (!projectId) navigation?.beforeChange();
-              originals.close();
-              setReading(true);
-              localFolder.open(entry);
-            }}
-          />
-        )}
-        <DocumentFolderTree
-          documents={available}
-          projects={
-            projectId
-              ? (c.data?.projects ?? []).filter((p) => p.id === projectId)
-              : (c.data?.projects ?? [])
-          }
-          selected={current?.id ?? null}
-          disabled={blocked}
-          scopeKey={scopeKey}
-          projectId={projectId}
-          onSelect={(doc) => choose(doc.id)}
-          onProjectOpen={
-            library
-              ? undefined
-              : (id) => {
-                  if (!projectId || id === projectId) void originals.load(id);
-                }
-          }
-          projectContents={
-            library
-              ? undefined
-              : (id) =>
-                  originals.projectId !== id ? null : (
-                    <>
-                      {originals.busy && <p role="status">正在读取原件…</p>}
-                      {originals.error && (
-                        <div role="alert">
-                          {originals.error}
-                          <button disabled={blocked} onClick={() => void originals.load(id)}>
-                            重试读取原件
+            onSelect={(doc) => choose(doc.id)}
+            onProjectOpen={
+              library
+                ? undefined
+                : (id) => {
+                    if (!projectId || id === projectId) void originals.load(id);
+                  }
+            }
+            projectContents={
+              library
+                ? undefined
+                : (id) =>
+                    originals.projectId !== id ? null : (
+                      <>
+                        {originals.busy && <p role="status">正在读取原件…</p>}
+                        {originals.error && (
+                          <div role="alert">
+                            {originals.error}
+                            <button disabled={blocked} onClick={() => void originals.load(id)}>
+                              重试读取原件
+                            </button>
+                          </div>
+                        )}
+                        {originals.materials.map((material) => (
+                          <button
+                            key={material.id}
+                            type="button"
+                            className="document-folder-file"
+                            data-source-id={material.id}
+                            data-project-id={id}
+                            disabled={
+                              blocked ||
+                              originals.busy ||
+                              (!isDocx(material.name) && !/\.pdf$/i.test(material.name))
+                            }
+                            aria-pressed={originals.selected?.id === material.id}
+                            onClick={() => {
+                              if (!projectId) navigation?.beforeChange();
+                              localFolder.close();
+                              void originals.load(id, material);
+                              setReading(true);
+                            }}
+                          >
+                            <span className="document-file-badge">
+                              {isDocx(material.name)
+                                ? 'W'
+                                : /\.pdf$/i.test(material.name)
+                                  ? 'PDF'
+                                  : '?'}
+                            </span>
+                            <span>{material.name}</span>
                           </button>
-                        </div>
-                      )}
-                      {originals.materials.map((material) => (
-                        <button
-                          key={material.id}
-                          type="button"
-                          className="document-folder-file"
-                          data-source-id={material.id}
-                          data-project-id={id}
-                          disabled={
-                            blocked ||
-                            originals.busy ||
-                            (!isDocx(material.name) && !/\.pdf$/i.test(material.name))
-                          }
-                          aria-pressed={originals.selected?.id === material.id}
-                          onClick={() => {
-                            if (!projectId) navigation?.beforeChange();
-                            localFolder.close();
-                            void originals.load(id, material);
-                            setReading(true);
-                          }}
-                        >
-                          <span className="document-file-badge">
-                            {isDocx(material.name)
-                              ? 'W'
-                              : /\.pdf$/i.test(material.name)
-                                ? 'PDF'
-                                : '?'}
-                          </span>
-                          <span>{material.name}</span>
-                        </button>
-                      ))}
-                    </>
-                  )
-          }
-        />
-        {c.error && <p role="alert">{c.error}</p>}
-        {c.unknown && (
-          <button disabled={c.pending} onClick={() => void c.retry()}>
-            核对原提交
-          </button>
-        )}
-        {(!c.data || c.error) && (
-          <button
-            disabled={read.isFetching || c.pending || c.unknown || bodyDirty}
-            onClick={() => void refresh()}
-          >
-            重读目录
-          </button>
-        )}
-      </div>
+                        ))}
+                      </>
+                    )
+            }
+          />
+          {c.error && <p role="alert">{c.error}</p>}
+          {c.unknown && (
+            <button disabled={c.pending} onClick={() => void c.retry()}>
+              核对原提交
+            </button>
+          )}
+          {(!c.data || c.error) && (
+            <button
+              disabled={read.isFetching || c.pending || c.unknown || bodyDirty}
+              onClick={() => void refresh()}
+            >
+              重读目录
+            </button>
+          )}
+        </div>
+      </WorkspaceDirectory>
       <div className="document-center-workspace">
         {reading && selection.selectedId && c.data && !current && !read.isFetching && (
           <p role="status">该文档已归档或不在当前目录，请返回目录重新选择。</p>
@@ -667,7 +731,7 @@ export default function DocumentWorkspace({
                         onOpenReview={
                           hasReviewRoute
                             ? () => {
-                                if (canReview && current) onOpen(current.task_id);
+                                if (canReview && current?.task_id) onOpen(current.task_id);
                               }
                             : undefined
                         }

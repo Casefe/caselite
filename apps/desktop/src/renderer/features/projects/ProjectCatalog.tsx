@@ -1,3 +1,4 @@
+import { WorkspaceDirectory, useWorkspacePageActions } from '../../ui/FourColumnWorkspace';
 import SharedTaskTable from '../../ui/SharedTaskTable';
 import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
 import WorkspacePageChrome, {
@@ -23,7 +24,6 @@ import { catalogMutation } from '../../shared/data/catalogMutation';
 import { Icon } from '../../shared/ui/Icon';
 import { PriorityGlyph, StatusGlyph } from '../../ui/TaskListGlyph';
 import { taskStatusNames } from '../../ui/task-status';
-import { createPortal } from 'react-dom';
 import { projectHealthNames, projectStatuses, projectTypes } from './project-display';
 import ProjectPropertyEditor from './ProjectPropertyEditor';
 import {
@@ -38,7 +38,13 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
-import type { Matter, Task, CatalogRequest, CatalogResponse } from '../../../preload/caselite-api';
+import type {
+  Matter,
+  Task,
+  CatalogRequest,
+  CatalogResponse,
+  CatalogDocument,
+} from '../../../preload/caselite-api';
 import ProjectEditor from './ProjectEditor';
 
 import SidebarAgent from '../../ui/SidebarAgent';
@@ -51,6 +57,7 @@ import ActivityList from './ActivityList';
 import ProjectDiscussion from './ProjectDiscussion';
 import ProjectPlanning from './ProjectPlanning';
 import ProjectVisualizationInspector from './ProjectVisualizationInspector';
+import type { VisualizationSession } from './project-visualization-view-model';
 import type { VisualizationInspection } from './project-visualization-model';
 const ProjectVisualization = lazy(() => import('./ProjectVisualization'));
 const names = { ...projectStatuses, archived: '已归档' };
@@ -81,6 +88,7 @@ export type ProjectViewState = {
   documentId?: string;
   page?: number;
   pageSize?: number;
+  visualization?: VisualizationSession;
 };
 export default function ProjectCatalog({
   tasks,
@@ -92,7 +100,6 @@ export default function ProjectCatalog({
   onDirty,
   onChanged,
   initialView,
-  backSlot,
   navigationPending = false,
   favoriteAction,
   completion,
@@ -105,7 +112,6 @@ export default function ProjectCatalog({
   importantInfo?: ComponentType<{ onOpen(id: string): void; onCalendar?(): void; title?: string }>;
   onNewTask?(source: ProjectViewState): void;
   initialView?: ProjectViewState | null;
-  backSlot?: HTMLDivElement | null;
   navigationPending?: boolean;
   favoriteAction?(project: Matter, disabled: boolean): ReactNode;
   onDirty(v: boolean): void;
@@ -132,6 +138,10 @@ export default function ProjectCatalog({
   const [visualizationCollapsed, setVisualizationCollapsed] = useWorkspaceInspector(false, true);
   const [visualizationInspection, setVisualizationInspection] =
     useState<VisualizationInspection | null>(null);
+  const [visualizationSession, setVisualizationSession] = useState<
+    VisualizationSession | undefined
+  >(initialView?.visualization);
+  const [visualizationDirty, setVisualizationDirty] = useState(false);
   const [bodyError, setBodyError] = useState('');
   const [bodyCommand, setBodyCommand] = useState(false);
   const [lifecycleDraft, setLifecycleDraft] = useState(false);
@@ -203,7 +213,7 @@ export default function ProjectCatalog({
   );
   const [documentDirty, setDocumentDirty] = useState(false);
   const otherDirty = bodyDirty || propertyDirty || discussionDirty || planningDirty;
-  const dirty = otherDirty || documentDirty;
+  const dirty = otherDirty || documentDirty || visualizationDirty;
   const discussionDisabled =
     navigationPending ||
     reading ||
@@ -318,7 +328,7 @@ export default function ProjectCatalog({
     };
   }, [initialView, read]);
   const documents = c.data?.documents.filter(
-    (doc) =>
+    (doc): doc is Extract<CatalogDocument, { owner_kind: 'task' }> =>
       doc.matter_id === p?.id &&
       !doc.archived_at &&
       tasks.some(
@@ -393,6 +403,7 @@ export default function ProjectCatalog({
     scrollTop: scroll.current?.scrollTop ?? 0,
     workspaceScrollTop: workspace.current?.scrollTop ?? 0,
     returnTaskId: id,
+    ...(visualizationSession?.projectId === p?.id ? { visualization: visualizationSession } : {}),
     ...(documentId ? { documentId } : {}),
   });
   const pageNavigation = usePageNavigation();
@@ -550,6 +561,9 @@ export default function ProjectCatalog({
       </div>
     </details>
   );
+  useWorkspacePageActions({
+    create: { kind: 'project', run: () => setCreating(true), disabled: blocked },
+  });
   return (
     <section
       ref={workspace}
@@ -564,6 +578,60 @@ export default function ProjectCatalog({
       data-layout="three-column"
       data-testid="project-catalog"
     >
+      <WorkspaceDirectory>
+        {editor && section === 'documents' && (
+          <button
+            type="button"
+            className="shell-directory-return"
+            disabled={
+              navigationPending ||
+              reading ||
+              propertyDirty ||
+              discussionDirty ||
+              planningDirty ||
+              documentDirty ||
+              visualizationDirty ||
+              c.pending ||
+              c.unknown
+            }
+            onClick={() => changeSection('overview')}
+          >
+            <Icon name="chevron" size={16} />
+            返回项目概览
+          </button>
+        )}
+        <div
+          className="shell-record-directory"
+          hidden={Boolean(editor && section === 'documents')}
+          inert={Boolean(editor && section === 'documents')}
+        >
+          <label className="shell-directory-search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              aria-label="搜索项目目录"
+              placeholder="搜索项目"
+              disabled={blocked}
+              value={query}
+              onChange={(event) => {
+                if (!blocked) setQuery(event.target.value);
+              }}
+            />
+          </label>
+          {list.map((project) => (
+            <button
+              type="button"
+              key={project.id}
+              aria-current={project.id === p?.id ? 'true' : undefined}
+              disabled={blocked}
+              onClick={() => void open(project)}
+            >
+              <Icon name="folder" size={16} />
+              <span>{project.title}</span>
+            </button>
+          ))}
+        </div>
+      </WorkspaceDirectory>
       {section !== 'documents' && <PropertyResizeHandle module="projects" />}
       {!editor && (
         <WorkspacePageChrome
@@ -622,10 +690,9 @@ export default function ProjectCatalog({
         />
       )}
       <div className="collection-main">
-        {backSlot && createPortal(backButton, backSlot)}
         {editor && (
           <div className="collection-heading project-catalog-heading">
-            {!backSlot && backButton}
+            {backButton}
             <Icon name="folder" size={16} />
             <h1>{(p ?? editor.project).title}</h1>
             {favoriteAction?.(p ?? editor.project, blocked || !!(p ?? editor.project).archived_at)}
@@ -819,6 +886,7 @@ export default function ProjectCatalog({
                       discussionDirty ||
                       planningDirty ||
                       documentDirty ||
+                      visualizationDirty ||
                       c.pending ||
                       c.unknown
                     }
@@ -1125,7 +1193,8 @@ export default function ProjectCatalog({
                 aria-labelledby="project-tab-visualization"
                 className="project-record-panel project-visualization-panel"
               >
-                {section === 'visualization' && (
+                {(section === 'visualization' ||
+                  visualizationSession?.projectId === editor.project.id) && (
                   <Suspense fallback={<p role="status">正在加载可视化画布…</p>}>
                     <ProjectVisualization
                       key={editor.project.id}
@@ -1135,6 +1204,9 @@ export default function ProjectCatalog({
                       readError={Boolean(c.error)}
                       onOpen={openTask}
                       onInspect={setVisualizationInspection}
+                      initialSession={initialView?.visualization}
+                      onSession={setVisualizationSession}
+                      onDirty={setVisualizationDirty}
                       sidebarCollapsed={visualizationCollapsed}
                       onToggleSidebar={() => toggleVisualizationSidebar()}
                     />
@@ -1351,7 +1423,7 @@ export default function ProjectCatalog({
                   {p && (editor || listInspectorOpen) && (
                     <div className="project-sidebar-properties">
                       <ProjectPropertyEditor
-                        key={p.id}
+                        key={`properties:${p.id}`}
                         project={p}
                         sidebar={!editor}
                         pending={c.pending}
@@ -1404,7 +1476,7 @@ export default function ProjectCatalog({
                       />
                       {editor && (
                         <ProjectPlanning
-                          key={p.id}
+                          key={`planning:${p.id}`}
                           project={p}
                           tasks={members}
                           disabled={

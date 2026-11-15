@@ -1,4 +1,18 @@
 import {
+  SKILLS_PREVIEW_CHANNEL,
+  SKILLS_PREVIEW_LIMITS,
+  skillPreviewInputSchema,
+  skillPreviewResultSchema,
+  type SkillPreviewInput,
+  type SkillPreviewResult,
+} from '@caselite/contracts';
+export type {
+  SkillPreviewInput,
+  SkillPreviewResult,
+  SkillPreview,
+  PriorCandidate,
+} from '@caselite/contracts';
+import {
   FOLDER_CHANNEL,
   folderRequestSchema,
   folderResponseSchema,
@@ -166,6 +180,8 @@ async function invokeBusinessCommand(
 }
 
 export type CaseLitePreloadApi = {
+  readonly skillsPreviewLimits?: typeof SKILLS_PREVIEW_LIMITS;
+  previewSkills?(request: SkillPreviewInput): Promise<SkillPreviewResult>;
   folder?(request: FolderRequest): Promise<FolderResponse>;
   readonly creationPolicy?: {
     file_extensions: readonly string[];
@@ -209,6 +225,29 @@ export function createCaseLitePreloadApi(
     };
   };
   return {
+    skillsPreviewLimits: SKILLS_PREVIEW_LIMITS,
+    async previewSkills(request) {
+      const parsed = skillPreviewInputSchema.safeParse(request);
+      if (!parsed.success) return { status: 'rejected', code: 'INVALID_INPUT' };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const raw = await Promise.race([
+          invoke(SKILLS_PREVIEW_CHANNEL, parsed.data),
+          new Promise((resolve) => {
+            timer = setTimeout(
+              () => resolve({ status: 'rejected', code: 'PREVIEW_TIMEOUT' }),
+              IPC_COMMAND_TIMEOUT_MS,
+            );
+          }),
+        ]);
+        const result = skillPreviewResultSchema.safeParse(raw);
+        return result.success ? result.data : { status: 'rejected', code: 'INVALID_RESULT' };
+      } catch {
+        return { status: 'rejected', code: 'PREVIEW_UNAVAILABLE' };
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    },
     async folder(request) {
       const parsed = folderRequestSchema.safeParse(request);
       if (!parsed.success) return { ok: false, code: 'INVALID_REQUEST', message: '请求格式无效。' };
@@ -407,6 +446,8 @@ export type {
 } from '@caselite/contracts';
 export type {
   Theme,
+  SkinId,
+  AppearanceValues,
   ThemeCommand,
   AppearanceRequest,
   AppearanceResponse,

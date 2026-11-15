@@ -20,8 +20,14 @@ export default function ProjectVisualizationInspector({
     <div className="visualization-properties">
       <InspectorSection title="图示信息">
         <dl>
-          <PropertyValue label="图示类型">{mode.title}</PropertyValue>
-          <PropertyValue label="所属项目">{projectTitle}</PropertyValue>
+          <PropertyValue label="图示类型">
+            {!active?.sample && active?.mode === 'relations'
+              ? '项目记录归属图'
+              : !active?.sample && active?.mode === 'statistics'
+                ? '当前范围记录统计'
+                : mode.title}
+          </PropertyValue>
+          <PropertyValue label="所属项目">{active?.projectTitle ?? projectTitle}</PropertyValue>
           <PropertyValue label="数据范围">
             {active?.sample ? '虚构示例 · 非项目数据' : '当前项目'}
           </PropertyValue>
@@ -33,7 +39,43 @@ export default function ProjectVisualizationInspector({
       <InspectorSection title="选中对象">
         {selected ? (
           <>
-            <h3>{selected.data.label}</h3>
+            <h3>{selected.data.sourceTitle ?? selected.data.label}</h3>
+            {selected.data.customLabel && (
+              <p className="caption">自定义显示：{selected.data.customLabel}</p>
+            )}
+            {!active?.sample && active?.editLabel && (
+              <label className="visualization-label-editor">
+                显示标签
+                <input
+                  aria-label="显示标签"
+                  maxLength={160}
+                  disabled={active.readOnly || active.busy}
+                  value={selected.data.customLabel ?? ''}
+                  placeholder="跟随原名称"
+                  onChange={(event) => active.editLabel?.(event.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={active.readOnly || active.busy || !selected.data.customLabel}
+                  onClick={() => active.editLabel?.('')}
+                >
+                  恢复跟随来源
+                </button>
+                <small>仅改显示；原名称始终保留。</small>
+              </label>
+            )}
+            {selected.data.fieldSources && (
+              <details className="visualization-field-sources">
+                <summary>字段来源与修订</summary>
+                <dl>
+                  {selected.data.fieldSources.map(([field, source]) => (
+                    <PropertyValue key={field} label={field}>
+                      {source}
+                    </PropertyValue>
+                  ))}
+                </dl>
+              </details>
+            )}
             <dl>
               {selected.data.properties.map(([label, value]) => (
                 <PropertyValue key={label} label={label}>

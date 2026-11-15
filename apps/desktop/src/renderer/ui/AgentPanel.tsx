@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom';
+import { useHomePreview, type HomePreviewEntry } from './HomePreview';
 import { AssistantComposerInput } from '../shared/ui/AssistantComposerInput';
 import { isDocx, useMaterials } from './useMaterials';
 import { agentMessages, isConversationRun } from '../features/agent/agent-messages';
@@ -12,6 +14,7 @@ import {
   createContext,
   forwardRef,
   useContext,
+  useId,
   useState,
   useEffect,
   useLayoutEffect,
@@ -58,6 +61,30 @@ function Message() {
   const copyOutput = useContext(CopyOutput);
   const renderRun = useContext(RunContent);
   const custom = role === 'assistant' && run ? renderRun(run.id) : undefined;
+  const hasPreviewText = useAuiState((state) =>
+    state.message.content.some((part) => part.type === 'text' && Boolean(part.text.trim())),
+  );
+  const canPreviewOutput =
+    role === 'assistant' &&
+    hasPreviewText &&
+    Boolean(run?.copyable) &&
+    run?.status !== 'running' &&
+    !custom;
+  const homePreview = useHomePreview();
+  const previewOwner = useId();
+  const releasePreview = homePreview?.release;
+  const previewSession = homePreview?.session;
+  const previewEnabled = homePreview?.enabled;
+  useLayoutEffect(
+    () => () => {
+      releasePreview?.(previewOwner);
+    },
+    [releasePreview, previewOwner, previewSession, previewEnabled],
+  );
+  useLayoutEffect(() => {
+    if (!canPreviewOutput) releasePreview?.(previewOwner);
+  }, [canPreviewOutput, releasePreview, previewOwner]);
+
   return (
     <MessagePrimitive.Root className={`assistant-message assistant-message--${role}`}>
       <header className="assistant-message-heading">
@@ -96,6 +123,30 @@ function Message() {
       {role === 'assistant' && run && run.status !== 'running' && (
         <footer className="assistant-message-footer">
           <span>{run.status === 'succeeded' ? '待人工核对' : run.message}</span>
+          {homePreview?.enabled && canPreviewOutput && (
+            <button
+              type="button"
+              onClick={(event) => {
+                const trigger = event.currentTarget;
+                const entry: HomePreviewEntry = {
+                  owner: previewOwner,
+                  session: homePreview.session,
+                  title: '回答内容 · 待人工核对',
+                  close(restoreFocus = false) {
+                    if (
+                      restoreFocus &&
+                      trigger.isConnected &&
+                      !trigger.closest('[hidden], [inert]')
+                    )
+                      trigger.focus();
+                  },
+                };
+                homePreview.show(entry, homePreview.begin(entry));
+              }}
+            >
+              预览回答
+            </button>
+          )}
           <button
             type="button"
             disabled={!run.copyable}
@@ -112,6 +163,16 @@ function Message() {
           </button>
         </footer>
       )}
+      {homePreview?.enabled &&
+        canPreviewOutput &&
+        homePreview.owner === previewOwner &&
+        homePreview.target &&
+        createPortal(
+          <section className="home-output-preview" aria-label="回答预览">
+            <MessagePrimitive.Parts components={{ Text: AssistantMarkdown }} />
+          </section>,
+          homePreview.target,
+        )}
     </MessagePrimitive.Root>
   );
 }
@@ -215,6 +276,7 @@ export function UnavailableAgentPanel({ reason }: { reason: string }) {
 
 // 只把已有 Run 投影成消息；复制和附件仍按原范围通过受控 Application 读取。
 export function AgentRunReadOnly({ run }: { run: AgentRun }) {
+  const homePreview = useHomePreview();
   // 记录只读固定附件，不订阅首页草稿列表，也不把历史材料变成本轮选择。
   const materials = useMaterials('home', false, false);
   const [readAttempted, setReadAttempted] = useState(false);
@@ -259,13 +321,15 @@ export function AgentRunReadOnly({ run }: { run: AgentRun }) {
             >
               {run.message ||
                 (run.status === 'running'
-                  ? '正在生成，可在运行栏停止。'
+                  ? '正在生成，可在对话运行状态区停止。'
                   : '运行已结束，请核对记录。')}
             </p>
-            {materials.reading && (
+            {(materials.reading || homePreview) && (
               <PdfAttachments
+                readerOnly
                 controller={{
                   ...materials,
+                  selected: {},
                   clearReading() {
                     // 关闭已打开的原范围附件不是读取失败，不再显示该次读取的错误。
                     setReadAttempted(false);
@@ -599,11 +663,18 @@ export default function AgentPanel({
               </ThreadPrimitive.Viewport>
             </ThreadPrimitive.Root>
           )}
+          {model === 'deepseek-flash' && (
+            <p className="assistant-footnote">
+              长附件仅按纯文字预算检查，包含系统文字上限256
+              KiB；token为工程估算，服务商仍可能拒绝。发送前超限会保留本轮输入；服务商拒绝后可手动恢复原输入。不截断、不自动分段。
+            </p>
+          )}
           {latest && (
             <p
               className={`assistant-run-status ${latest.status === 'running' && homeRunStateUnverified ? 'unverified' : latest.status}`}
               role="status"
             >
+              {error && latest.status !== 'running' ? '上一轮：' : ''}
               {agentModelLabel(latest.model)} ·{' '}
               {latest.status === 'running'
                 ? homeRunStateUnverified
@@ -642,7 +713,8 @@ export default function AgentPanel({
           )}
           {error && (
             <div role="alert" className="assistant-error">
-              {error}
+              <span>本次发送：</span>
+              <span>{error}</span>
               <button onClick={() => void refresh()}>刷新状态</button>
             </div>
           )}

@@ -65,11 +65,11 @@ export default function PropertyResizeHandle({ module }: { module: Module }) {
         : 280;
       const centerMinimum = responsive ? Math.min(originalCenter, available / 2) : originalCenter;
       const maximum = responsive
-        ? Math.max(0, Math.min(720, available - centerMinimum))
-        : Math.max(240, Math.min(720, available - centerMinimum));
+        ? Math.max(0, Math.min(window.innerWidth / 3, 720, available - centerMinimum))
+        : Math.max(0, Math.min(window.innerWidth / 3, 720, available - centerMinimum));
       setLimits({
         defaultWidth: Number.isFinite(defaultWidth) ? defaultWidth : 300,
-        min: responsive ? Math.min(240, maximum) : 240,
+        min: Math.min(240, maximum),
         max: maximum,
       });
     };

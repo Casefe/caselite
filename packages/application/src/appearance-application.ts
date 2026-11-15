@@ -1,40 +1,51 @@
 import {
   appearanceRequestSchema,
+  appearanceValuesSchema,
   themeProposalSchema,
   type AppearanceResponse,
+  type AppearanceValues,
+  type SkinId,
   type Theme,
   type ThemeCommand,
 } from '@caselite/contracts';
 
-export type AppearancePort = { read(): Theme; write(theme: Theme): void };
+export type AppearancePort = {
+  read(): Theme;
+  write(theme: Theme): void;
+  // 兼容原theme-only消费者；真实桌面适配器用一次读取提供完整快照。
+  readAppearance?(): AppearanceValues;
+  writeSkin?(skin: SkinId | undefined): void;
+};
 
 export function createAppearanceApplication(port: AppearancePort) {
   let revision = 0;
   const commands = new Map<string, { owner: string; revision: number; result: ThemeCommand }>();
   const failed = (message: string): AppearanceResponse => ({ ok: false, message });
-  const invalidateExternalChange = (current: Theme) => {
+  const invalidateExternalChange = (current: string) => {
     if (observed !== undefined && current !== observed) revision++;
     observed = current;
   };
-  let observed: Theme | undefined;
-  const read = () => {
-    const theme = port.read();
-    invalidateExternalChange(theme);
-    return theme;
+  let observed: string | undefined;
+  const readAppearance = () => {
+    const value = appearanceValuesSchema.parse(port.readAppearance?.() ?? { theme: port.read() });
+    invalidateExternalChange(`${value.theme}:${value.skin ?? ''}`);
+    return value;
   };
+  const read = () => readAppearance().theme;
   const view = (id: string, owner: string): AppearanceResponse => {
     const item = commands.get(id);
     if (!item || item.owner !== owner)
       return failed('操作已过期或不属于当前窗口，请核对当前主题。');
     try {
-      const theme = read();
+      const appearance = readAppearance();
+      const theme = appearance.theme;
       const expected =
         item.result.state === 'undone' || item.result.state === 'pending'
           ? item.result.before
           : item.result.after;
       item.result.current = item.revision === revision && theme === expected;
       item.result.can_undo = item.result.state === 'saved' && item.result.current;
-      return { ok: true, theme, command: { ...item.result } };
+      return { ok: true, ...appearance, command: { ...item.result } };
     } catch {
       return failed('无法读取本机主题，结果待核对；未重复提交。');
     }
@@ -50,10 +61,20 @@ export function createAppearanceApplication(port: AppearancePort) {
           revision++;
           port.write(request.theme);
         }
-        const theme = read();
-        if (request.operation === 'applied' && request.theme !== theme)
+        if (request.operation === 'set_skin' || request.operation === 'reset_skin') {
+          if (!port.readAppearance || !port.writeSkin)
+            return failed('此版本未接通皮肤保存，请更新后重试。');
+          // 外观手动写入共享同一修订，皮肤改变也使旧AI授权与撤销失效。
+          revision++;
+          port.writeSkin(request.operation === 'set_skin' ? request.skin : undefined);
+        }
+        const appearance = readAppearance();
+        if (
+          request.operation === 'applied' &&
+          (request.theme !== appearance.theme || (request.skin ?? undefined) !== appearance.skin)
+        )
           return { ok: false, message: '外观已发生变化，请重新读取后同步。' };
-        return { ok: true, theme };
+        return { ok: true, ...appearance };
       } catch {
         return { ok: false, message: '无法确认本机主题设置，请重新读取后重试。' };
       }

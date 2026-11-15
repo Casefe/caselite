@@ -199,7 +199,16 @@ export const materialPreviewSchema = z.object({
   task_id: id,
   instruction: z.string(),
   model: agentModelSchema,
-  payload: z.string().max(MATERIAL_MAX_CONTEXT),
+  // 资源上限与Application模型预算分开；保留旧无预算字段记录的读取兼容。
+  payload: z.string().max(256 * 1024),
+  budget: z
+    .object({
+      policy: z.string().max(64),
+      visible_utf8_bytes: z.number().int().nonnegative(),
+      estimated_input_tokens: z.number().int().nonnegative(),
+      model_capability: z.string().max(2048),
+    })
+    .optional(),
   sha256: z.string(),
   images: z
     .array(

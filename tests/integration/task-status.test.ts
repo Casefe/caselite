@@ -134,6 +134,14 @@ it('upgrades a WAL backup of a populated pre-status database without rewriting i
     goals: db.prepare('SELECT * FROM task_objective_revisions').all(),
     projects: db.prepare('SELECT * FROM task_projects').all(),
   });
+  const upgradedExpected = JSON.parse(protectedBefore) as { documents: Record<string, unknown>[] };
+  upgradedExpected.documents = upgradedExpected.documents.map((row) => ({
+    ...row,
+    personal_workspace_id: null,
+    personal_title: null,
+    personal_updated_at: null,
+    owner_kind: 'task',
+  }));
   await db.backup(backup);
   db.close();
   for (const candidate of [file, backup]) {
@@ -173,7 +181,7 @@ it('upgrades a WAL backup of a populated pre-status database without rewriting i
         goals: checked.sqlite.prepare('SELECT * FROM task_objective_revisions').all(),
         projects: checked.sqlite.prepare('SELECT * FROM task_projects').all(),
       }),
-    ).toBe(protectedBefore);
+    ).toBe(JSON.stringify(upgradedExpected));
     expect(
       checked.sqlite
         .prepare('SELECT digest,result FROM task_receipts WHERE key=?')

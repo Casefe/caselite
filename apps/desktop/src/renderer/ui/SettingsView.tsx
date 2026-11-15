@@ -2,7 +2,7 @@ import DefaultFolderSettings from '../features/documents/DefaultFolderSettings';
 import CalendarSettings from '../features/calendar/CalendarSettings';
 const ignoreBlocked = () => {};
 import { Icon } from '../shared/ui/Icon';
-import { ThemeSetting } from './Appearance';
+import SkinSetting from './SkinSetting';
 import ModelSettings from './ModelSettings';
 import PersonalSettings from './PersonalSettings';
 import EditorSettings from './EditorSettings';
@@ -70,7 +70,7 @@ export default function SettingsView({
             <CalendarSettings onBlocked={onBlocked ?? ignoreBlocked} />
           )}
           {section === 'models' && <ModelSettings />}
-          {section === 'general' && <ThemeSetting />}
+          {section === 'skin' && <SkinSetting />}
           {section === 'editor' && <EditorSettings />}
           {section === 'account' && <PersonalSettings />}
           {section === 'general' && <PersonalSettings preferencesOnly />}

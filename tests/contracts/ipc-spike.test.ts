@@ -128,7 +128,9 @@ describe('typed preload to main IPC Spike', () => {
       'offlineProbe',
       'pickPdf',
       'preferences',
+      'previewSkills',
       'reminder',
+      'skillsPreviewLimits',
       'task',
       'validateTaskCalendar',
     ]);

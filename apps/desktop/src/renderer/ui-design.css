@@ -30,3 +30,7 @@
 
 @import './styles/shared-task-table.css';
 @import './styles/workspace-page-chrome.css';
+
+@import './styles/skins.css';
+
+@import './styles/four-column-workspace.css';

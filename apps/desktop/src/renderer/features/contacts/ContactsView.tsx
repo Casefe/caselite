@@ -1,3 +1,4 @@
+import { WorkspaceDirectory, useWorkspacePageActions } from '../../ui/FourColumnWorkspace';
 import WorkspacePageChrome from '../../shared/ui/WorkspacePageChrome';
 import { usePageNavigation } from '../../shared/navigation/PageNavigation';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
@@ -18,16 +19,20 @@ export default function ContactsView({
   onOpenTask,
   onOpenDocument,
   onOpenFinance,
+  initialContactId,
+  favoriteAction,
 }: {
   onDirty(value: boolean): void;
   onOpenProject?(id: string): void;
   onOpenTask?(id: string): void;
   onOpenDocument?(id: string, taskId: string): void;
   onOpenFinance?(id: string): void;
+  initialContactId?: string;
+  favoriteAction?(contact: Contact, disabled: boolean): React.ReactNode;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const returnPosition = useRef({ top: 0, id: '' });
-  const [detailId, setDetailId] = useState<string>();
+  const [detailId, setDetailId] = useState<string | undefined>(initialContactId);
   const [detailTarget, setDetailTarget] = useState<HTMLDivElement | null>(null);
   const catalog = useOrdinaryCatalog();
   const read = useQuery({
@@ -113,6 +118,7 @@ export default function ContactsView({
     }
   };
   const filter = (change: () => void) => {
+    if (blocked) return;
     change();
     setPage(0);
     setSelected(undefined);
@@ -127,12 +133,46 @@ export default function ContactsView({
     setTag('');
     setPage(0);
   }
+  useWorkspacePageActions({
+    create: {
+      kind: 'contact',
+      run: () => setCreating(true),
+      disabled: blocked || Boolean(read.error) || !read.data,
+    },
+  });
   return (
     <section
       className={`collection-workspace catalog-view contacts-workbench property-resizable${detailId ? '' : ' workspace-has-page-chrome'}`}
       data-properties-resizable="true"
       data-layout="three-column"
     >
+      <WorkspaceDirectory>
+        <div className="shell-record-directory">
+          <label className="shell-directory-search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              aria-label="搜索联系人目录"
+              placeholder="搜索联系人"
+              disabled={blocked}
+              value={text}
+              onChange={(event) => filter(() => setText(event.target.value))}
+            />
+          </label>
+          {rows.map((row) => (
+            <button
+              type="button"
+              key={row.id}
+              aria-current={row.id === contact?.id ? 'true' : undefined}
+              disabled={blocked}
+              onClick={() => openDetail(row.id)}
+            >
+              <Icon name="person" size={16} />
+              <span>{row.name}</span>
+            </button>
+          ))}
+        </div>
+      </WorkspaceDirectory>
       <PropertyResizeHandle module="contacts" />
       {!detailId && (
         <WorkspacePageChrome
@@ -184,6 +224,13 @@ export default function ContactsView({
       )}
       <div className="collection-main">
         <div ref={setDetailTarget} className="customer-detail-slot" hidden={!detailId} />
+        {detailId && !read.isPending && !contact && (
+          <div role="status" className="catalog-empty">
+            {read.error ? '联系人读取失败，请重试。' : '联系人不可用或已移除。'}
+            {read.error && <button onClick={() => void read.refetch()}>重读联系人</button>}
+            <button onClick={closeDetail}>返回联系人列表</button>
+          </div>
+        )}
         <div className="customer-list-page" hidden={Boolean(detailId)}>
           <p className="workbench-list-caption">管理联系人资料，记录每次沟通。</p>
           <div
@@ -393,6 +440,7 @@ export default function ContactsView({
         detailTarget={detailId ? detailTarget : null}
         onOpenDetail={contact ? () => openDetail(contact.id) : undefined}
         onCloseDetail={closeDetail}
+        favoriteAction={favoriteAction}
         onDirty={setBlocked}
         onCreated={created}
         onCancel={() => setCreating(false)}
