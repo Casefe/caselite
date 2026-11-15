@@ -5,13 +5,26 @@ import { useOrdinaryCatalog } from '../../shared/data/ordinary-catalog-query';
 import { catalogMutation } from '../../shared/data/catalogMutation';
 import { useCatalog } from '../../ui/useCatalog';
 import { Icon } from '../../shared/ui/Icon';
+import { DirectoryBranch, DirectoryItem, navigateDirectory } from '../../shared/ui/DirectoryTree';
+import { useQuery } from '@tanstack/react-query';
+import { contactsKey } from '../../shared/data/contact-query';
 
 type Navigation = NonNullable<LocalPreferenceValues['favorite_navigation']>;
-export type FavoriteTarget = { kind: 'task' | 'project' | 'document'; id: string };
-type Entry = FavoriteTarget & { title: string; folder_id: string | null };
+export type FavoriteTarget = {
+  kind: 'task' | 'project' | 'document' | 'contact' | 'finance';
+  id: string;
+  library?: boolean;
+};
+type Entry = FavoriteTarget & { title: string; folder_id: string | null; unavailable?: boolean };
 const empty: Navigation = { folders: [], references: [], document_folders: [] };
 const key = (target: FavoriteTarget) => `${target.kind}:${target.id}`;
-const labels = { task: '任务', project: '项目', document: '文档' };
+const labels = {
+  task: '任务',
+  project: '项目',
+  document: '文档',
+  contact: '联系人',
+  finance: '财务项目',
+};
 const Context = createContext({
   navigation: empty,
   blocked: true,
@@ -28,10 +41,11 @@ const Context = createContext({
   },
   documents: [] as Array<{
     id: string;
-    task_id: string;
+    task_id: string | null;
     title: string;
     favorite: boolean;
     archived_at: string | null;
+    in_library: boolean;
   }>,
   projects: [] as Array<{ id: string; title: string; archived_at: string | null }>,
   feedback: null as ReactNode,
@@ -160,34 +174,55 @@ const dragType = 'application/x-caselite-favorite';
 export function FavoritesSidebar({
   tasks,
   onOpen,
+  selected,
 }: {
   tasks: Task[];
   onOpen(target: FavoriteTarget): void;
+  selected?: FavoriteTarget | null;
 }) {
   const favorites = useFavorites(),
     { navigation } = favorites;
   const [adding, setAdding] = useState(false),
     [name, setName] = useState('');
+  const [query, setQuery] = useState('');
   const [newFolderId, setNewFolderId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dragged, setDragged] = useState<string | null>(null),
     [over, setOver] = useState<string | null>(null);
+  const contacts = useQuery({
+    queryKey: contactsKey,
+    enabled: navigation.references.some((r) => r.kind === 'contact'),
+    queryFn: async () => {
+      const result = await window.caselite.contacts({ protocol_version: 1, operation: 'list' });
+      if (!result.ok) throw new Error(result.message);
+      return result.contacts;
+    },
+  });
   const entries: Entry[] = navigation.references.flatMap((r) => {
     const object =
       r.kind === 'task'
         ? tasks.find((t) => t.id === r.id)
-        : favorites.projects.find((p) => p.id === r.id && !p.archived_at);
-    return object ? [{ ...r, title: object.title }] : [];
+        : r.kind === 'project' || r.kind === 'finance'
+          ? favorites.projects.find((p) => p.id === r.id && !p.archived_at)
+          : contacts.data?.find((c) => c.id === r.id);
+    if (object) return [{ ...r, title: 'name' in object ? object.name : object.title }];
+    if (r.kind === 'contact' && (contacts.isPending || contacts.isError)) return [];
+    return [{ ...r, title: `不可用的${labels[r.kind]}`, unavailable: true }];
   });
   entries.push(
     ...favorites.documents
-      .filter((d) => d.favorite && !d.archived_at)
+      .filter((d) => d.favorite)
       .map((d) => ({
         kind: 'document' as const,
+        library: d.in_library,
         id: d.id,
-        title: d.title,
+        title: d.archived_at ? `${d.title}（已归档）` : d.title,
+        unavailable: Boolean(d.archived_at),
         folder_id: navigation.document_folders.find((r) => r.id === d.id)?.folder_id ?? null,
       })),
+  );
+  const visibleEntries = entries.filter((entry) =>
+    entry.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
   async function move(entry: Entry, folder_id: string | null) {
     if (favorites.blocked || entry.folder_id === folder_id) return;
@@ -254,17 +289,31 @@ export function FavoritesSidebar({
           setOver(null);
         }}
       >
-        <button
+        <DirectoryItem
           data-task-id={entry.kind === 'task' ? entry.id : undefined}
+          disabled={entry.unavailable}
+          aria-current={selected && key(selected) === key(entry) ? 'page' : undefined}
           onClick={() => onOpen(entry)}
           title={`${labels[entry.kind]} · ${entry.title}`}
         >
           <Icon
-            name={entry.kind === 'task' ? 'check' : entry.kind === 'project' ? 'folder' : 'file'}
+            name={
+              entry.kind === 'task'
+                ? 'check'
+                : entry.kind === 'project'
+                  ? 'folder'
+                  : entry.kind === 'contact'
+                    ? 'person'
+                    : entry.kind === 'finance'
+                      ? 'wallet'
+                      : entry.library
+                        ? 'book'
+                        : 'file'
+            }
             size={15}
           />
           <span>{entry.title}</span>
-        </button>
+        </DirectoryItem>
         <select
           className="favorite-move"
           aria-label={`移动收藏 ${entry.title}`}
@@ -315,6 +364,14 @@ export function FavoritesSidebar({
           <Icon name="plus" size={10} />
         </button>
       </div>
+      <input
+        className="favorite-search"
+        data-directory-search
+        aria-label="搜索收藏"
+        placeholder="搜索收藏"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
       {adding && !navigation.folders.some((folder) => folder.id === newFolderId) && (
         <form
           className="favorite-folder-form"
@@ -362,42 +419,45 @@ export function FavoritesSidebar({
         </form>
       )}
       {!collapsed.root && (
-        <div className="favorites-contents">
+        <div
+          className="favorites-contents document-folder-tree"
+          onKeyDown={(event) => navigateDirectory(event, favorites.blocked)}
+        >
           <div className="favorites-root-items" data-favorite-folder="root" {...dropProps(null)}>
-            {entries.filter((e) => !e.folder_id).map(item)}
+            {visibleEntries.filter((e) => !e.folder_id).map(item)}
           </div>
           {navigation.folders.map((folder) => (
-            <div
+            <DirectoryBranch
               className="favorite-folder"
               key={folder.id}
+              id={folder.id}
+              label={folder.name}
+              open={!collapsed[folder.id]}
+              disabled={favorites.blocked}
+              summaryRole="button"
               data-favorite-folder={folder.id}
               {...dropProps(folder.id)}
+              onToggle={() => setCollapsed((old) => ({ ...old, [folder.id]: !old[folder.id] }))}
             >
-              <button
-                className="favorite-folder-title"
-                aria-expanded={!collapsed[folder.id]}
-                onClick={() => setCollapsed((old) => ({ ...old, [folder.id]: !old[folder.id] }))}
-              >
-                <Icon name="folder" size={16} />
-                <span>{folder.name}</span>
-                <Icon name="chevron" size={12} />
-              </button>
-              {!collapsed[folder.id] && (
-                <div className="favorite-folder-items">
-                  {entries.filter((e) => e.folder_id === folder.id).map(item)}
-                  {!entries.some((e) => e.folder_id === folder.id) && (
-                    <p className="sidebar-empty">拖动收藏到此文件夹</p>
-                  )}
-                </div>
+              {visibleEntries.filter((e) => e.folder_id === folder.id).map(item)}
+              {!query && !entries.some((e) => e.folder_id === folder.id) && (
+                <p className="sidebar-empty">拖动收藏到此文件夹</p>
               )}
-            </div>
+            </DirectoryBranch>
           ))}
           {!entries.length && !navigation.folders.length && (
-            <p className="sidebar-empty">在任务、项目或文档旁点 ☆ 收藏</p>
+            <p className="sidebar-empty">在任务、项目、联系人、财务项目或文档旁点 ☆ 收藏</p>
           )}
+          {query && !visibleEntries.length && <p className="sidebar-empty">没有匹配的收藏。</p>}
         </div>
       )}
       {favorites.feedback}
+      {contacts.isError && (
+        <p role="alert">
+          联系人收藏读取失败，请重试。
+          <button onClick={() => void contacts.refetch()}>重读联系人</button>
+        </p>
+      )}
     </section>
   );
 }

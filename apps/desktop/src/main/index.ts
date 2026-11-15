@@ -1,3 +1,6 @@
+import { validateSilentPerformance } from './silent-performance-policy';
+import { runSilentPerformance } from './silent-performance';
+import { registerSkillsPreviewIpc } from './ipc/register-skills-preview-ipc';
 import { createFolderRootFiles } from './adapters/folder-root-files';
 import { registerFolderIpc, chooseFolder } from './ipc/register-folder-ipc';
 import {
@@ -135,7 +138,54 @@ import {
 
 import { registerApplicationIpc } from './ipc/register-application-ipc';
 
+const silentRequested = process.env.CASELITE_TASK_DEMO === 'performance-silent';
+if (CASELITE_SILENT_PERFORMANCE_BUILD && !silentRequested) process.exit(2);
+let silentConfiguration: ReturnType<typeof validateSilentPerformance> | undefined;
+const silentStart = /^\d+$/.test(process.env.CASELITE_SILENT_START_NS ?? '')
+  ? BigInt(process.env.CASELITE_SILENT_START_NS!)
+  : process.hrtime.bigint();
+const silentMarks: Record<string, number> = {};
+if (silentRequested) {
+  try {
+    silentConfiguration = validateSilentPerformance(
+      CASELITE_LOCAL_TEST_BUILD && CASELITE_SILENT_PERFORMANCE_BUILD,
+      process.env.CASELITE_TASK_DEMO_DIR,
+      process.env.CASELITE_SILENT_OUTPUT,
+    );
+    if (process.platform !== 'darwin') throw new Error('Silent platform rejected');
+    if (!/^\d+$/.test(process.env.CASELITE_SILENT_START_NS ?? ''))
+      throw new Error('Silent clock rejected');
+    silentMarks.bundleEnteredMs = Number(process.hrtime.bigint() - silentStart) / 1e6;
+    app.setActivationPolicy('prohibited');
+    app.setName('CaseLite Silent Performance');
+    app.on('browser-window-created', (_event, window) => {
+      window.on('show', () => process.exit(4));
+      window.on('focus', () => process.exit(4));
+    });
+    const root = silentConfiguration.root;
+    for (const [name, path] of [
+      ['userData', 'userData'],
+      ['sessionData', 'sessionData'],
+      ['crashDumps', 'crashDumps'],
+    ] as const) {
+      mkdirSync(join(root, path), { recursive: true });
+      app.setPath(name, join(root, path));
+    }
+    app.setAppLogsPath(join(root, 'logs'));
+    // 进程失败只退出测试副本，不弹出产品错误框或激活已有用户实例。
+    process.on('uncaughtException', () => process.exit(1));
+    process.on('unhandledRejection', () => process.exit(1));
+    setTimeout(() => process.exit(3), 60000).unref();
+  } catch {
+    process.exit(2);
+  }
+}
+
 function reportStartupFailure(): void {
+  if (silentRequested) {
+    process.exit(1);
+    return;
+  }
   // Keep internal paths and stack traces out of user-facing errors.
   dialog.showErrorBox('CaseLite 启动失败', '无法加载工程骨架页面。请关闭应用并检查本地构建配置。');
   app.quit();
@@ -171,6 +221,7 @@ async function createWindow(
           },
         }),
     show: false,
+    ...(silentRequested ? { focusable: false, skipTaskbar: true } : {}),
     backgroundColor: appearanceBackground(appearance?.theme ?? 'light'),
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
@@ -179,8 +230,13 @@ async function createWindow(
       nodeIntegration: false,
       webSecurity: true,
       webviewTag: false,
+      backgroundThrottling: !silentRequested,
     },
   });
+  if (silentRequested) {
+    window.on('show', () => process.exit(4));
+    window.on('focus', () => process.exit(4));
+  }
   windowAppearance?.attach(window);
   const painted = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()));
 
@@ -229,7 +285,7 @@ async function createWindow(
   }
   startingProductWindow = false;
   credentialWindowLoaded();
-  if (show && !window.isDestroyed()) window.show();
+  if (show && !silentRequested && !window.isDestroyed()) window.show();
   return window;
 }
 
@@ -706,6 +762,7 @@ if (taskDemoPhase) {
       'performance-seed',
       'performance-run',
       'performance-start',
+      'performance-silent',
       'export-style-write',
       'export-style-read',
       'export-style-preview',
@@ -867,9 +924,10 @@ const isolatedProbe =
   process.env.CASELITE_DB_PROBE === '1' ||
   process.env.CASELITE_PDF_PROBE === '1' ||
   integrationProbe;
-const ownsWorkspace = isolatedProbe || app.requestSingleInstanceLock();
+const ownsWorkspace = silentRequested || isolatedProbe || app.requestSingleInstanceLock();
 if (!ownsWorkspace) app.exit(0);
 app.on('second-instance', () => {
+  if (silentRequested) return;
   const existing = BrowserWindow.getAllWindows().find((window) =>
     window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),
   );
@@ -883,6 +941,17 @@ app.on('second-instance', () => {
 app
   .whenReady()
   .then(async () => {
+    if (silentRequested) {
+      silentMarks.appReadyMs = Number(process.hrtime.bigint() - silentStart) / 1e6;
+      session.defaultSession.webRequest.onBeforeRequest((request, done) =>
+        done({
+          cancel:
+            !request.url.startsWith('file:') &&
+            !request.url.startsWith('data:') &&
+            !request.url.startsWith('blob:'),
+        }),
+      );
+    }
     const cameraPermission = denyUnrequestedDesktopCapabilities();
     if (
       process.env.CASELITE_INTEGRATION_PHASE === 'write' ||
@@ -983,6 +1052,7 @@ app
       recoveryFixture ? recoveryFixture.wrapTaskPort(taskStore) : taskStore,
     );
     const tasks = performanceDemo ? performanceApplication('task', baseTasks) : baseTasks;
+    registerSkillsPreviewIpc();
     registerLocalPreferencesIpc(
       createLocalPreferencesApplication(taskStore.localPreferences, {
         database_file: join(taskRoot, 'caselite.sqlite'),
@@ -1056,10 +1126,12 @@ app
       recoveryFixture ? recoveryFixture.wrapTaskApplication(taskApplication) : taskApplication,
     );
     const reminders = createReminderApplication(taskStore.reminders);
-    const reminderScheduler = startReminderScheduler(
-      reminders,
-      createHash('sha256').update(taskRoot).digest('hex').slice(0, 24),
-    );
+    const reminderScheduler = silentRequested
+      ? { tick() {}, stop() {} }
+      : startReminderScheduler(
+          reminders,
+          createHash('sha256').update(taskRoot).digest('hex').slice(0, 24),
+        );
     registerReminderIpc(reminders, reminderScheduler.tick);
     app.on('will-quit', reminderScheduler.stop);
     const baseCatalog = createCatalogApplication(taskStore.catalog);
@@ -1102,7 +1174,9 @@ app
       },
     });
     registerFolderIpc(personalMaterials, taskStore.folders.workspace);
+    let agentRuntime: ReturnType<typeof createPiRuntime>;
     const materials = createMaterialApplication({
+      inputCapability: (model) => agentRuntime?.inputCapability?.(model),
       store: taskStore.materials,
       files: materialFiles,
       processor: createPdfProcessor(),
@@ -1320,7 +1394,7 @@ app
           return taskStore.agentHistory.load();
         },
       },
-      runtime:
+      runtime: (agentRuntime =
         taskDemoRoot && taskDemoPhase?.startsWith('real-agent')
           ? createRealDemoRuntime({
               directory: taskDemoEvidenceRoot!,
@@ -1418,7 +1492,7 @@ app
                               taskDemoPhase?.startsWith('agent')
                             ? syntheticAgentStream
                             : undefined,
-            ),
+            )),
       taskExists: (id) => tasks.execute({ protocol_version: 1, operation: 'read', task_id: id }).ok,
     });
     const agent = recoveryFixture ? recoveryFixture.wrapAgentApplication(baseAgent) : baseAgent;
@@ -1464,7 +1538,32 @@ app
       );
     });
     if (performanceDemo && taskDemoRoot) {
-      if (taskDemoPhase === 'performance-seed')
+      if (silentConfiguration) {
+        silentMarks.applicationReadyMs = Number(process.hrtime.bigint() - silentStart) / 1e6;
+        const list = tasks.execute({ protocol_version: 1, operation: 'list' });
+        if (!list.ok || list.tasks.some((task) => !task.title.startsWith('合成静默性能任务')))
+          throw new Error('Silent synthetic workspace rejected');
+        if (!list.tasks.length)
+          for (let i = 0; i < 10; i++) {
+            const result = tasks.execute({
+              protocol_version: 1,
+              operation: 'create',
+              request_id: randomUUID(),
+              idempotency_key: randomUUID(),
+              title: '合成静默性能任务' + i,
+              objective: '隔离性能样本',
+            });
+            if (!result.ok) throw new Error('Silent seed failed');
+          }
+        silentMarks.fixtureReadyMs = Number(process.hrtime.bigint() - silentStart) / 1e6;
+        await runSilentPerformance(
+          () => createWindow(false),
+          taskDemoRoot,
+          silentConfiguration.output,
+          silentMarks,
+          silentStart,
+        );
+      } else if (taskDemoPhase === 'performance-seed')
         seedPerformance(taskDemoRoot, tasks, catalog, contacts, finance);
       else await runPerformance(() => createWindow(), taskDemoRoot, taskDemoPhase!);
       agent.release();
@@ -1826,6 +1925,7 @@ app
       );
     }
     app.on('activate', () => {
+      if (silentRequested) return;
       if (
         !BrowserWindow.getAllWindows().some((window) =>
           window.webContents.getURL().startsWith(MAIN_WINDOW_WEBPACK_ENTRY),

@@ -68,3 +68,5 @@
 - [ADR-036](./ADR-036-yjs-split-undo-backport.md) Yjs 13.6.33 固定 PR836 撤销兼容回补，DEV-1624；主目录落地前核对编号。
 
 - [ADR-038](./ADR-038-local-folder-workspace.md) 默认目录、个人材料固定来源与唯一目录能力Owner，DEV-1855；实现/验收按本轮生产证据。
+
+- [ADR-039](./ADR-039-independent-documents.md) 独立 Document、原生兼容迁移与同一 Yjs 正文 Owner，DEV-1934；真实桌面验收未运行。

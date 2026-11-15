@@ -1,3 +1,4 @@
+import { WorkspaceDirectory, type WorkspaceCreateKind } from './ui/FourColumnWorkspace';
 import { useTaskCompletion } from './features/tasks/useTaskCompletion';
 import { refreshTaskConsumers } from './ui/refresh-task-consumers';
 import {
@@ -9,7 +10,7 @@ import {
   FavoriteButton,
   FavoritesProvider,
   FavoritesSidebar,
-  useFavorites,
+  type FavoriteTarget,
 } from './features/favorites/Favorites';
 import PropertyResizeHandle from './ui/PropertyResizeHandle';
 import WorkspaceTopbar from './ui/WorkspaceTopbar';
@@ -93,6 +94,8 @@ type WorkbenchPageState = {
   financeProject: string;
   settingsSection: SettingsSection;
   settingsReturn: WorkspaceView;
+  favoriteMode?: boolean;
+  favoriteTarget?: FavoriteTarget | null;
   scroll: Array<{ classes: string; index: number; top: number; left: number }>;
 };
 const workspacePages: Record<WorkspaceView, { title: string; icon: string }> = {
@@ -102,6 +105,7 @@ const workspacePages: Record<WorkspaceView, { title: string; icon: string }> = {
   projects: { title: '项目', icon: 'folder' },
   documents: { title: '文档', icon: 'file' },
   knowledge: { title: '知识库', icon: 'book' },
+  favorites: { title: '收藏', icon: 'star' },
   finance: { title: '财务', icon: 'wallet' },
   contacts: { title: '联系人', icon: 'person' },
   settings: { title: '设置', icon: 'settings' },
@@ -124,41 +128,31 @@ const defaultCreateProperties = {
 };
 function FavoriteNavigation({
   tasks,
-  onTask,
-  onProject,
+  onOpen,
+  selected,
 }: {
   tasks: Task[];
-  onTask(id: string, document: boolean): void;
-  onProject(id: string): void;
+  onOpen(target: FavoriteTarget): void;
+  selected: FavoriteTarget | null;
 }) {
-  const favorites = useFavorites();
-  return (
-    <FavoritesSidebar
-      tasks={tasks}
-      onOpen={(target) => {
-        if (target.kind === 'project') {
-          onProject(target.id);
-          return;
-        }
-        const id =
-          target.kind === 'document'
-            ? favorites.documents.find((doc) => doc.id === target.id)?.task_id
-            : target.id;
-        if (id) onTask(id, target.kind === 'document');
-      }}
-    />
-  );
+  return <FavoritesSidebar tasks={tasks} onOpen={onOpen} selected={selected} />;
 }
 function Workbench() {
   const queryClient = useQueryClient();
   const importantDates = useCalendar(calendarQuery('important'));
   const [settingsReturn, setSettingsReturn] = useState<WorkspaceView>('home');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
-  const [projectBackSlot, setProjectBackSlot] = useState<HTMLDivElement | null>(null);
   const [homeLeftSlot, setHomeLeftSlot] = useState<HTMLDivElement | null>(null);
   const [homeRightSlot, setHomeRightSlot] = useState<HTMLDivElement | null>(null);
   const [calendarDate, setCalendarDate] = useState(localDate);
   const [view, setView] = useState<WorkspaceView>('home');
+  const [taskDirectoryQuery, setTaskDirectoryQuery] = useState('');
+  const [shellCreateRequest, setShellCreateRequest] = useState<{
+    kind: WorkspaceCreateKind;
+    id: number;
+  }>();
+  const [favoriteMode, setFavoriteMode] = useState(false);
+  const [favoriteTarget, setFavoriteTarget] = useState<FavoriteTarget | null>(null);
   const [pageEpoch, setPageEpoch] = useState(0);
   const [inspectorChoices, setInspectorChoices] = useState<Record<string, boolean>>({});
   const displayedPage = useRef('home');
@@ -175,7 +169,7 @@ function Workbench() {
   const reportChildLocation = useCallback((page: Omit<ChildPage, 'state'>) => {
     setChildLocation((old) => (old?.key === page.key && old.title === page.title ? old : page));
   }, []);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const responsive = useResponsiveWorkspace();
   const effectiveCollapsed = responsive.navigationHidden ? !responsive.drawerOpen : collapsed;
   const toggleNavigation = () =>
@@ -406,9 +400,13 @@ function Workbench() {
     setNavigationNotice('');
     return true;
   }
-  function navigate(next: WorkspaceView) {
+  function navigate(next: WorkspaceView, fromFavorites = false) {
     responsive.closeDrawer();
     if (!canLeave()) return;
+    if (!fromFavorites) {
+      setFavoriteMode(next === 'favorites');
+      setFavoriteTarget(null);
+    }
     captureNavigation.current();
     if (view === 'projects' && next === 'settings') {
       const child = childPageRead.current?.();
@@ -432,7 +430,7 @@ function Workbench() {
     setCreating(false);
     setError('');
   }
-  function openProjectFromNavigation(id: string) {
+  function openProjectFromNavigation(id: string, fromFavorites = false) {
     if (!canLeave()) return;
     setProjectView({
       selected: id,
@@ -446,7 +444,33 @@ function Workbench() {
       workspaceScrollTop: 0,
       returnTaskId: '',
     });
-    navigate('projects');
+    navigate('projects', fromFavorites);
+  }
+  async function openFavorite(target: FavoriteTarget) {
+    if (!canLeave()) return;
+    if (target.kind === 'task') {
+      if (!(await open(target.id))) return;
+    } else if (target.kind === 'project') {
+      openProjectFromNavigation(target.id, true);
+      setPageEpoch((value) => value + 1);
+    } else {
+      navigate(
+        target.kind === 'document'
+          ? target.library
+            ? 'knowledge'
+            : 'documents'
+          : target.kind === 'finance'
+            ? 'finance'
+            : 'contacts',
+        true,
+      );
+      if (target.kind === 'finance') setFinanceProject(target.id);
+      setInitialChildState(null);
+      setChildLocation(null);
+      setPageEpoch((value) => value + 1);
+    }
+    setFavoriteTarget(target);
+    setFavoriteMode(true);
   }
   function newTask(source: ProjectViewState | null = null, mode: 'task' | 'schedule' = 'task') {
     if (!canLeave()) return;
@@ -1025,6 +1049,8 @@ function Workbench() {
         financeProject,
         settingsSection,
         settingsReturn,
+        favoriteMode,
+        favoriteTarget,
         scroll,
       },
     };
@@ -1071,6 +1097,8 @@ function Workbench() {
     setFinanceProject(target.financeProject);
     setSettingsSection(target.settingsSection);
     setSettingsReturn(target.settingsReturn);
+    setFavoriteMode(target.favoriteMode ?? target.view === 'favorites');
+    setFavoriteTarget(target.favoriteTarget ?? null);
     setDetailTab(target.detailTab);
     setCreating(false);
     setError('');
@@ -1163,14 +1191,37 @@ function Workbench() {
       }}
     >
       <WorkspaceShell
-        view={view === 'tasks' && documentEntry ? 'documents' : view}
+        view={favoriteMode ? 'favorites' : view === 'tasks' && documentEntry ? 'documents' : view}
         collapsed={effectiveCollapsed}
         onCollapse={toggleNavigation}
-        onNavigate={navigate}
+        onNavigate={(next) => navigate(next)}
+        createRequest={shellCreateRequest}
+        onCreateRequestConsumed={(id) =>
+          setShellCreateRequest((old) => (old?.id === id ? undefined : old))
+        }
         inspectorOpen={inspectorOpen}
+        onToggleInspector={() => setInspectorOpen(!inspectorOpen)}
         topbar={
           <WorkspaceTopbar
             navigation={workspaceNavigation}
+            canCreate={canLeave}
+            onCreate={(kind) => {
+              if (!canLeave()) return;
+              if (kind === 'task') {
+                newTask();
+                return;
+              }
+              navigate(
+                kind === 'document'
+                  ? 'documents'
+                  : kind === 'project'
+                    ? 'projects'
+                    : kind === 'contact'
+                      ? 'contacts'
+                      : 'finance',
+              );
+              setShellCreateRequest({ kind, id: Date.now() });
+            }}
             home={view === 'home'}
             homeLeftSlot={setHomeLeftSlot}
             homeRightSlot={setHomeRightSlot}
@@ -1181,16 +1232,16 @@ function Workbench() {
             onToggleInspector={() => setInspectorOpen(!inspectorOpen)}
           />
         }
-        projectBackSlot={setProjectBackSlot}
         tasks={tasks}
         importantDatesCount={importantDates.isError ? undefined : importantDates.data?.page?.total}
         favoritesPanel={
           <FavoriteNavigation
             tasks={tasks}
-            onTask={(id, document) => void open(id, null, document, document)}
-            onProject={openProjectFromNavigation}
+            selected={favoriteTarget}
+            onOpen={(target) => void openFavorite(target)}
           />
         }
+        favoritesActive={favoriteMode}
         agentDraft={Boolean(agentPrompt.text.trim())}
         onOpen={(id) => void open(id)}
       >
@@ -1278,7 +1329,38 @@ function Workbench() {
           }}
           key={`${view}:${pageEpoch}`}
         >
-          {view === 'new-tab' ? (
+          {view === 'tasks' && (
+            <WorkspaceDirectory>
+              <div className="shell-record-directory">
+                <h2>任务</h2>
+                <input
+                  data-directory-search
+                  aria-label="搜索任务目录"
+                  placeholder="搜索任务"
+                  value={taskDirectoryQuery}
+                  onChange={(event) => setTaskDirectoryQuery(event.target.value)}
+                />
+                {tasks
+                  .filter((task) =>
+                    task.title
+                      .toLocaleLowerCase()
+                      .includes(taskDirectoryQuery.trim().toLocaleLowerCase()),
+                  )
+                  .map((task) => (
+                    <button type="button" key={task.id} onClick={() => void open(task.id)}>
+                      <Icon name="check" size={16} />
+                      <span>{task.title}</span>
+                    </button>
+                  ))}
+              </div>
+            </WorkspaceDirectory>
+          )}
+          {view === 'favorites' ? (
+            <section className="workspace-placeholder">
+              <h1>收藏</h1>
+              <p>从目录中选择项目、任务、联系人、财务项目或文档。</p>
+            </section>
+          ) : view === 'new-tab' ? (
             <section className="workspace-new-page">
               <h1>打开一个页面</h1>
               <div className="workspace-new-page-links">
@@ -1312,7 +1394,6 @@ function Workbench() {
               )}
               tasks={tasks}
               initialView={projectView}
-              backSlot={projectBackSlot}
               navigationPending={loading || completion.blocked}
               onOpen={(id, source) => void open(id, source)}
               onNewTask={newTask}
@@ -1674,6 +1755,9 @@ function Workbench() {
             <DocumentLibrary
               key={view}
               library={view === 'knowledge'}
+              initialDocumentId={
+                favoriteMode && favoriteTarget?.kind === 'document' ? favoriteTarget.id : undefined
+              }
               onOpen={(id) => void open(id, null, true, view === 'documents')}
               onDirty={setDirty}
             />
@@ -1694,6 +1778,12 @@ function Workbench() {
             />
           ) : view === 'contacts' ? (
             <ContactsView
+              initialContactId={
+                favoriteMode && favoriteTarget?.kind === 'contact' ? favoriteTarget.id : undefined
+              }
+              favoriteAction={(contact, disabled) => (
+                <FavoriteButton kind="contact" id={contact.id} disabled={disabled} />
+              )}
               onOpenFinance={(id) => {
                 if (!canLeave()) return;
                 navigate('finance');
@@ -1728,7 +1818,16 @@ function Workbench() {
               }}
             />
           ) : view === 'finance' ? (
-            <FinanceView initialProject={financeProject} onDirty={setDirty} />
+            <FinanceView
+              key={
+                favoriteMode && favoriteTarget?.kind === 'finance' ? favoriteTarget.id : undefined
+              }
+              initialProject={financeProject}
+              favoriteAction={(project, disabled) => (
+                <FavoriteButton kind="finance" id={project.id} disabled={disabled} />
+              )}
+              onDirty={setDirty}
+            />
           ) : view === 'tools' || view === 'whiteboard' ? (
             <section className="workspace-placeholder">
               <h1>{{ tools: '工具', whiteboard: '白板' }[view]}</h1>

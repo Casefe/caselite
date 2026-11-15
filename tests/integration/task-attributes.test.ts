@@ -107,6 +107,14 @@ it('upgrades populated pre-attribute WAL data and its backup, preserving status,
     body: db.prepare('SELECT * FROM body_revisions').all(),
     receipts: db.prepare('SELECT * FROM task_receipts').all(),
   });
+  const upgradedExpected = JSON.parse(before) as { docs: Record<string, unknown>[] };
+  upgradedExpected.docs = upgradedExpected.docs.map((row) => ({
+    ...row,
+    personal_workspace_id: null,
+    personal_title: null,
+    personal_updated_at: null,
+    owner_kind: 'task',
+  }));
   await db.backup(backup);
   db.close();
   for (const candidate of [file, backup]) {
@@ -133,7 +141,7 @@ it('upgrades populated pre-attribute WAL data and its backup, preserving status,
         body: checked.prepare('SELECT * FROM body_revisions').all(),
         receipts: checked.prepare('SELECT * FROM task_receipts').all(),
       }),
-    ).toBe(before);
+    ).toBe(JSON.stringify(upgradedExpected));
     expect(checked.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(checked.pragma('foreign_key_check')).toEqual([]);
     expect(checked.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
@@ -280,7 +288,16 @@ it('upgrades a populated 0013 library, preserving the legacy request digest, gro
   expect(current.tasks[0]).toMatchObject({ ...legacy, assignee: '本人' });
   expect(current.state).toEqual(bytes);
   const checked = openToolchainProbe(file, migrations).sqlite;
-  expect(snapshot(checked)).toEqual(original);
+  expect(snapshot(checked)).toEqual([
+    original[0].map((row) => ({
+      ...(row as Record<string, unknown>),
+      personal_workspace_id: null,
+      personal_title: null,
+      personal_updated_at: null,
+      owner_kind: 'task',
+    })),
+    ...original.slice(1),
+  ]);
   expect(checked.pragma('foreign_key_check')).toEqual([]);
   for (const value of ['', '   ', '甲'.repeat(81), '甲\0乙', Buffer.from('甲')]) {
     expect(() =>

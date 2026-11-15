@@ -28,6 +28,8 @@ vi.mock('react-resizable-panels', async () => {
 const projection = vi.hoisted(() => ({ runs: [] as AgentRun[], mounts: 0 }));
 vi.mock('./AgentPanel', async () => {
   const React = await import('react');
+  const { useMaterials } = await import('./useMaterials');
+  const { default: PdfAttachments } = await import('./PdfAttachments');
   return {
     default: function MockAgentPanel({
       editorRef,
@@ -46,6 +48,7 @@ vi.mock('./AgentPanel', async () => {
       otherRunActive: boolean;
       otherRunStatusUnknown: boolean;
     }) {
+      const materials = useMaterials('home');
       React.useEffect(() => {
         projection.mounts++;
       }, []);
@@ -62,7 +65,9 @@ vi.mock('./AgentPanel', async () => {
           data-busy={otherRunActive}
           data-unknown={otherRunStatusUnknown}
         >
-          <textarea data-testid="agent-input" aria-label="演示草稿" />
+          <PdfAttachments controller={materials}>
+            <textarea data-testid="agent-input" aria-label="演示草稿" />
+          </PdfAttachments>
           <button onClick={() => onConversationChange(true)}>模拟进入对话</button>
           <button onClick={() => onHomeViewState({ runs: [...projection.runs] })}>
             回读同一运行
@@ -79,6 +84,9 @@ vi.mock('./AgentPanel', async () => {
       <section aria-label="只读运行记录">
         {run.output || run.message}
         <span>{run.status}</span>
+        {run.attachments?.map((file) => (
+          <p key={file.source_id}>{file.name}</p>
+        ))}
       </section>
     ),
   };
@@ -179,9 +187,8 @@ it('shows current projects and fills a prompt without navigating from shortcuts'
   for (const name of ['创建项目', '生成文书', '合同审查', '法律研究'])
     expect(screen.getByRole('button', { name })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '全部历史对话' }));
-  fireEvent.click(screen.getByRole('button', { name: '展开重要日程' }));
-  fireEvent.click(screen.getByRole('button', { name: '重要日程', exact: true }));
-  expect(vi.mocked(props.onNavigate).mock.calls).toEqual([['agent-history'], ['calendar']]);
+  expect(screen.queryByRole('button', { name: '展开重要日程' })).toBeNull();
+  expect(vi.mocked(props.onNavigate).mock.calls).toEqual([['agent-history']]);
   expect(
     container.querySelector('.agent-topline, .home-conversation-toolbar, .home-topbar'),
   ).toBeNull();
@@ -199,16 +206,16 @@ it('places the only directory and running controls in topbar slots and preserves
     const input = screen.getByLabelText('演示草稿') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '保留待发送草稿' } });
     expect(within(leftSlot).getByRole('button', { name: '收起 Agent 目录' })).toBeTruthy();
-    expect(within(rightSlot).getByRole('button', { name: '收起进行中的智能体' })).toBeTruthy();
+    expect(within(rightSlot).queryByRole('button')).toBeNull();
+    expect(screen.getAllByLabelText('智能体')).toHaveLength(1);
+    expect(screen.getByLabelText('对话运行状态').contains(screen.getByLabelText('智能体'))).toBe(
+      true,
+    );
     fireEvent.click(screen.getByRole('button', { name: '模拟进入对话' }));
     fireEvent.click(screen.getByRole('button', { name: '收起 Agent 目录' }));
     fireEvent.click(screen.getByRole('button', { name: '展开 Agent 目录' }));
-    for (const name of ['本轮材料', '成果', '重要日程', '对话信息']) {
-      fireEvent.click(screen.getByRole('button', { name: `展开${name}` }));
-      fireEvent.click(screen.getByRole('button', { name: '收起辅助面板' }));
-    }
-    fireEvent.click(screen.getByRole('button', { name: '收起进行中的智能体' }));
-    fireEvent.click(screen.getByRole('button', { name: '展开进行中的智能体' }));
+    expect(screen.getByLabelText('首页预览').hidden).toBe(true);
+    expect(screen.queryByRole('navigation', { name: '预览内容' })).toBeNull();
     expect(screen.getByLabelText('演示草稿')).toBe(input);
     expect(input.value).toBe('保留待发送草稿');
     expect(projection.mounts).toBe(1);
@@ -341,7 +348,7 @@ it('uses compact overlays without remounting the composer and restores directory
   fireEvent.click(toggle);
   const directory = screen.getByLabelText('Agent 目录');
   expect(directory.dataset.overlay).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: '展开本轮材料' }));
+  expect(screen.getByLabelText('首页预览').hidden).toBe(true);
   expect(directory.hidden).toBe(false);
   input.focus();
   fireEvent.keyDown(window, { key: 'Escape', isComposing: true });
@@ -352,34 +359,6 @@ it('uses compact overlays without remounting the composer and restores directory
   expect(document.activeElement).toBe(toggle);
   expect(screen.getByLabelText('演示草稿')).toBe(input);
   expect(projection.mounts).toBe(1);
-});
-
-it('isolates historical Run attachments from the unsent home material draft', async () => {
-  const run = makeRun('attached', {
-    scope: 'task-origin',
-    attachments: [
-      { source_id: 'history-source', task_id: 'task-origin', name: '历史原件.pdf', pages: [1] },
-    ],
-  });
-  api(
-    (request) =>
-      ({ ...profile, runs: request.operation === 'active_runs' ? [] : [run] }) as AgentResponse,
-  );
-  window.caselite.material = vi.fn(async () => ({
-    ok: true,
-    materials: [],
-    staged: { token: 'draft-token', name: '未发送材料.pdf', bytes: 100 },
-  })) as Window['caselite']['material'];
-  renderHome();
-  fireEvent.click(screen.getByRole('button', { name: '展开本轮材料' }));
-  const auxiliary = screen.getByLabelText('首页辅助面板');
-  await within(auxiliary).findByText(/未发送材料.pdf/);
-  fireEvent.click(await screen.findByRole('button', { name: run.prompt, exact: true }));
-  await within(auxiliary).findByText('历史原件.pdf');
-  expect(within(auxiliary).queryByText(/未发送材料.pdf/)).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '新对话' }));
-  expect(within(auxiliary).getByText(/未发送材料.pdf/)).toBeTruthy();
-  expect(within(auxiliary).queryByText('历史原件.pdf')).toBeNull();
 });
 
 it('keeps an older home-scope active Run guarded when the fresh live session does not own it', async () => {
@@ -394,63 +373,6 @@ it('keeps an older home-scope active Run guarded when the fresh live session doe
   expect(screen.getByTestId('live-agent').dataset.busy).toBe('true');
   expect(projection.mounts).toBe(1);
   expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
-});
-
-it('distinguishes delayed and rejected material lists from a verified empty draft and recovers the original source', async () => {
-  vi.useFakeTimers();
-  api();
-  let rejectInitial: (error: Error) => void = () => {};
-  const initial = new Promise<never>((_resolve, reject) => {
-    rejectInitial = reject;
-  });
-  let recovered = false,
-    verifiedEmpty = false;
-  const source = '91919191-9191-4191-8191-919191919191';
-  const material = vi.fn(async () =>
-    verifiedEmpty
-      ? { ok: true, materials: [], staged: null }
-      : recovered
-        ? {
-            ok: true,
-            materials: [],
-            staged: {
-              token: source,
-              restore_source_id: source,
-              name: '原标识恢复材料.pdf',
-              bytes: 100,
-            },
-          }
-        : initial,
-  );
-  window.caselite.material = material as Window['caselite']['material'];
-  renderHome();
-  fireEvent.click(screen.getByRole('button', { name: '展开本轮材料' }));
-  const auxiliary = screen.getByLabelText('首页辅助面板');
-  expect(within(auxiliary).getByText('正在读取本轮材料…')).toBeTruthy();
-  expect(within(auxiliary).queryByText('本轮未添加材料')).toBeNull();
-  await act(async () => {
-    rejectInitial(new Error('list offline'));
-  });
-  expect(within(auxiliary).getByRole('alert').textContent).toContain('材料列表暂不可核对');
-  expect(within(auxiliary).queryByText('本轮未添加材料')).toBeNull();
-  recovered = true;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
-  const original = within(auxiliary).getByText(/原标识恢复材料.pdf/);
-  expect(original.getAttribute('data-home-material-source')).toBe(source);
-  expect(within(auxiliary).queryByRole('alert')).toBeNull();
-  expect(material).toHaveBeenLastCalledWith({
-    protocol_version: 1,
-    operation: 'list',
-    scope: 'home',
-  });
-  verifiedEmpty = true;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
-  expect(within(auxiliary).getByText('本轮未添加材料')).toBeTruthy();
-  expect(within(auxiliary).queryByText(/原标识恢复材料.pdf/)).toBeNull();
 });
 
 it('shows the original interrupted history message before expanding it without reviving a Run or adding a composer', async () => {
@@ -522,4 +444,99 @@ it('does not present a running history snapshot as confirmed activity when activ
       ([request]) => request.operation === 'start' || request.operation === 'cancel',
     ),
   ).toBe(false);
+});
+
+// 用户撤销五页签后，原材料隔离验收仍保留，展示位置改为聊天材料入口。
+it('isolates historical Run attachments from the unsent home material draft', async () => {
+  const run = makeRun('attached', {
+    scope: 'task-origin',
+    attachments: [
+      { source_id: 'history-source', task_id: 'task-origin', name: '历史原件.pdf', pages: [1] },
+    ],
+  });
+  api(
+    (request) =>
+      ({ ...profile, runs: request.operation === 'active_runs' ? [] : [run] }) as AgentResponse,
+  );
+  const material = vi.fn(async (request: { scope: string }) => {
+    expect(request.scope).toBe('home');
+    return {
+      ok: true,
+      materials: [],
+      staged: { token: 'draft-token', name: '未发送材料.pdf', bytes: 100 },
+    };
+  });
+  window.caselite.material = material as Window['caselite']['material'];
+  renderHome();
+  const staged = await screen.findByText('未发送材料.pdf');
+  expect(staged.closest('.home-live-panel')?.hasAttribute('hidden')).toBe(false);
+  expect(screen.getByLabelText('首页预览').hidden).toBe(true);
+  fireEvent.click(await screen.findByRole('button', { name: run.prompt, exact: true }));
+  const history = await screen.findByLabelText('只读运行记录');
+  expect(within(history).getByText('历史原件.pdf')).toBeTruthy();
+  expect(within(history).queryByText('未发送材料.pdf')).toBeNull();
+  expect(staged.closest('.home-live-panel')?.hasAttribute('hidden')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '新对话' }));
+  expect(screen.getByText('未发送材料.pdf')).toBe(staged);
+  expect(staged.closest('.home-live-panel')?.hasAttribute('hidden')).toBe(false);
+  expect(screen.queryByText('历史原件.pdf')).toBeNull();
+  expect(material.mock.calls.every((args) => (args[0] as { scope: string }).scope === 'home')).toBe(
+    true,
+  );
+});
+
+it('distinguishes delayed and rejected material lists from a verified empty draft and recovers the original source', async () => {
+  vi.useFakeTimers();
+  api();
+  let rejectInitial: (error: Error) => void = () => {};
+  const initial = new Promise<never>((_resolve, reject) => {
+    rejectInitial = reject;
+  });
+  let recovered = false,
+    verifiedEmpty = false;
+  const source = '91919191-9191-4191-8191-919191919191';
+  const material = vi.fn(async () =>
+    verifiedEmpty
+      ? { ok: true, materials: [], staged: null }
+      : recovered
+        ? {
+            ok: true,
+            materials: [],
+            staged: {
+              token: source,
+              restore_source_id: source,
+              name: '原标识恢复材料.pdf',
+              bytes: 100,
+            },
+          }
+        : initial,
+  );
+  window.caselite.material = material as Window['caselite']['material'];
+  renderHome();
+  expect(screen.getByLabelText('首页预览').hidden).toBe(true);
+  expect(screen.queryByText('本轮未添加材料')).toBeNull();
+  await act(async () => {
+    rejectInitial(new Error('list offline'));
+  });
+  expect(screen.getByRole('alert').textContent).toContain('材料列表暂不可核对');
+  expect(screen.queryByText('本轮未添加材料')).toBeNull();
+  recovered = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(screen.getByText('原标识恢复材料.pdf')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '重试恢复' })).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(material).toHaveBeenLastCalledWith({
+    protocol_version: 1,
+    operation: 'list',
+    scope: 'home',
+  });
+  verifiedEmpty = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(screen.queryByText('原标识恢复材料.pdf')).toBeNull();
+  expect(screen.queryByLabelText('待发送附件')).toBeNull();
+  expect(screen.getByLabelText('首页预览').hidden).toBe(true);
 });

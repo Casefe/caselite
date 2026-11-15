@@ -146,7 +146,11 @@ it('keeps the same mounted project section on failed task read without an extra 
   render(<App />);
   await screen.findByText('首页');
   fireEvent.click(screen.getByText('项目入口'));
-  fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
+  fireEvent.click(
+    await within(
+      document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+    ).findByRole('button', { name: '来源项目', exact: true }),
+  );
   await screen.findByLabelText('编辑项目名称');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   const editor = screen.getByLabelText('编辑项目名称');
@@ -193,7 +197,11 @@ it('keeps all create fields on project rejection and resolves a lost acknowledge
   window.caselite = { catalog, task: taskApi } as unknown as Window['caselite'];
   render(<App />);
   fireEvent.click(screen.getByText('项目入口'));
-  fireEvent.click(await screen.findByRole('button', { name: '来源项目', exact: true }));
+  fireEvent.click(
+    await within(
+      document.querySelector<HTMLElement>('.project-catalog > .collection-main')!,
+    ).findByRole('button', { name: '来源项目', exact: true }),
+  );
   await screen.findByLabelText('编辑项目名称');
   fireEvent.click(screen.getByRole('tab', { name: '任务', exact: true }));
   const sourcePage = document.querySelector('.project-catalog');

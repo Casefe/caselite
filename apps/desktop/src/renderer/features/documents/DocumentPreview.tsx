@@ -1,3 +1,4 @@
+import { readDocument } from './read-document';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
 import type { CatalogDocument } from '../../../preload/caselite-api';
@@ -13,21 +14,7 @@ export default function DocumentPreview({ document }: { document: CatalogDocumen
     gcTime: 0,
     staleTime: 0,
     queryFn: async () => {
-      const result = await window.caselite.task({
-        operation: 'read',
-        protocol_version: 1,
-        task_id: document.task_id,
-      });
-      if (!result.ok) throw new Error(result.message);
-      const task = result.tasks[0];
-      if (
-        task?.id !== document.task_id ||
-        task.document_id !== document.id ||
-        task.matter_id !== document.matter_id ||
-        task.body_revision !== document.body_revision ||
-        Boolean(task.document_archived_at) !== Boolean(document.archived_at)
-      )
-        throw new Error('文档版本或归属已变化，请先刷新目录。');
+      const result = await readDocument(document);
       return { state: result.state, text: '' };
     },
   });

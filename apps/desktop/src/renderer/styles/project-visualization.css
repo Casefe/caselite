@@ -420,3 +420,200 @@
     display: none;
   }
 }
+
+/* 真实记录视图沿既有紧凑工具栏；显示配置与业务字段分开。 */
+.project-visualization.is-maximized {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--theme-panel, #fff);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 48px #0002;
+}
+.visualization-view-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 16px 10px;
+  font-size: 11px;
+}
+.visualization-view-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.visualization-view-controls select {
+  max-width: 130px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--theme-panel, #fff);
+  color: var(--ink);
+  font: inherit;
+}
+.visualization-view-controls fieldset {
+  display: flex;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.visualization-view-controls legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.visualization-view-controls input {
+  margin: 0;
+}
+.visualization-view-controls button,
+.visualization-preview-bar button,
+.visualization-recovery button {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.visualization-view-controls [role='status'] {
+  margin-left: auto;
+  color: var(--muted);
+}
+.visualization-source-notice,
+.project-visualization > .visualization-caution {
+  margin: 0 14px 8px;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.visualization-source-notice {
+  color: var(--muted);
+  background: var(--theme-subtle);
+  border-left: 2px solid var(--line);
+}
+.visualization-preview-bar,
+.visualization-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 14px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--active);
+  font-size: 11px;
+}
+.visualization-preview-bar span {
+  flex: 1;
+  color: var(--muted);
+}
+.visualization-label-editor {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.visualization-label-editor input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  color: var(--ink);
+  background: var(--theme-panel, #fff);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+}
+.visualization-label-editor small,
+.visualization-field-sources {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.visualization-label-editor button {
+  justify-self: start;
+  font-size: 11px;
+}
+.visualization-record-list,
+.visualization-record-statistics table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.visualization-record-list :is(th, td),
+.visualization-record-statistics :is(th, td) {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.visualization-record-list th,
+.visualization-record-statistics th {
+  font-weight: 500;
+  color: var(--muted);
+}
+.visualization-record-list button {
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  font: inherit;
+  text-align: left;
+}
+.visualization-record-list tr[aria-selected='true'] {
+  background: var(--active);
+}
+.visualization-record-statistics {
+  padding: 18px;
+  overflow: auto;
+  max-height: 100%;
+  box-sizing: border-box;
+}
+.visualization-record-statistics h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+.visualization-record-statistics p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.visualization-accessible-list {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  max-height: 55%;
+  max-width: min(440px, 90%);
+  overflow: auto;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--theme-panel, #fff);
+  font-size: 11px;
+}
+.visualization-accessible-list summary {
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .visualization-view-controls {
+    padding-inline: 10px;
+    gap: 7px;
+  }
+  .visualization-view-controls [role='status'] {
+    margin-left: 0;
+  }
+  .project-visualization.is-maximized {
+    inset: 0;
+  }
+  .visualization-preview-bar {
+    margin-inline: 8px;
+  }
+  .visualization-record-list :is(th, td) {
+    padding: 8px;
+  }
+}
+
+.project-catalog[data-project-view='visualization'] > .collection-main {
+  position: relative;
+}

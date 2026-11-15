@@ -470,3 +470,34 @@ it.each(['moved attachment', 'legacy run without a manifest'])(
     expect(screen.queryByLabelText('待发送附件')).toBeNull();
   },
 );
+
+it('distinguishes a rejected current send from the previous completed run and preserves the composer', async () => {
+  const f = fixture();
+  render(<AgentPanel scope="f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f2" />);
+  await screen.findByText('已配置 · 模型设置');
+  const input = screen.getByLabelText('AI 工作要求') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: '第一轮' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(f.sent).toHaveLength(1));
+  await act(async () => f.accept());
+  await waitFor(() => expect(input.value).toBe(''));
+  const original = vi.mocked(window.caselite.agent).getMockImplementation()!;
+  vi.mocked(window.caselite.agent).mockImplementation(async (r: AgentRequest) =>
+    r.operation === 'start'
+      ? { ok: false, code: 'BUDGET', message: '本轮超限，未发送。' }
+      : original(r),
+  );
+  addPdf();
+  await waitFor(() =>
+    expect(f.material.mock.calls.some(([r]) => r.operation === 'commit')).toBe(true),
+  );
+  await act(async () => f.finishImport({ ok: true, materials: [file] }));
+  fireEvent.change(input, { target: { value: '第二轮待保留' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText('本轮超限，未发送。');
+  expect(screen.getByText('本次发送：')).toBeDefined();
+  expect(document.querySelector('.assistant-run-status')?.textContent).toContain('上一轮：');
+  expect(input.value).toBe('第二轮待保留');
+  expect(screen.getByLabelText('待发送附件').textContent).toContain(file.name);
+  expect(f.sent).toHaveLength(1);
+});

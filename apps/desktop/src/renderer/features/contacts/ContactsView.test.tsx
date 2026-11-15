@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ContactsRequest } from '../../../preload/caselite-api';
 import { createWorkbenchQueryClient } from '../../shared/data/workbench-query-client';
@@ -84,7 +84,11 @@ it('回执丢失后使用同一份请求核对，确认后只显示一条联系�
   await screen.findByRole('heading', { name: '合成联系人' });
   expect(writes).toHaveLength(2);
   expect(writes[1]).toEqual(writes[0]);
-  expect(screen.getAllByRole('button', { name: '合成联系人' })).toHaveLength(1);
+  expect(
+    within(screen.getByRole('table', { name: '联系人列表' })).getAllByRole('button', {
+      name: '合成联系人',
+    }),
+  ).toHaveLength(1);
 });
 it('opens details on double click, preserves list state and AI layout identity, and retains an edit on list refresh failure', async () => {
   const { contactSchema } = await import('@caselite/contracts');
@@ -129,7 +133,9 @@ it('opens details on double click, preserves list state and AI layout identity, 
     target: { value: '合成' },
   });
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  const row = screen.getByRole('button', { name: '合成联系人16' });
+  const row = within(screen.getByRole('table', { name: '联系人列表' })).getByRole('button', {
+    name: '合成联系人16',
+  });
   fireEvent.click(row);
   await waitFor(() =>
     expect((screen.getByRole('button', { name: '编辑电话' }) as HTMLButtonElement).disabled).toBe(
@@ -139,12 +145,20 @@ it('opens details on double click, preserves list state and AI layout identity, 
   const split = document.querySelector('.inspector-split');
   const scroll = document.querySelector('.collection-scroll') as HTMLElement;
   scroll.scrollTop = 61;
-  fireEvent.doubleClick(screen.getByRole('button', { name: '合成联系人16' }));
+  fireEvent.doubleClick(
+    within(screen.getByRole('table', { name: '联系人列表' })).getByRole('button', {
+      name: '合成联系人16',
+    }),
+  );
   await screen.findByRole('navigation', { name: '联系人详情导航' });
   expect(document.querySelector('.inspector-split')).toBe(split);
   fireEvent.click(screen.getByRole('button', { name: '← 返回联系人列表' }));
   await waitFor(() =>
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '合成联系人16' })),
+    expect(document.activeElement).toBe(
+      within(screen.getByRole('table', { name: '联系人列表' })).getByRole('button', {
+        name: '合成联系人16',
+      }),
+    ),
   );
   expect(scroll.scrollTop).toBe(61);
   expect((screen.getByRole('textbox', { name: '搜索联系人' }) as HTMLInputElement).value).toBe(
@@ -210,7 +224,11 @@ it('preserves list and AI instances while creating, confirms discarded drafts, a
     target: { value: '合成' },
   });
   await user.click(screen.getByRole('button', { name: '下一页' }));
-  await user.click(screen.getByRole('button', { name: '合成联系人16' }));
+  await user.click(
+    within(screen.getByRole('table', { name: '联系人列表' })).getByRole('button', {
+      name: '合成联系人16',
+    }),
+  );
   const split = document.querySelector('.inspector-split');
   const agent = screen.getByTestId('contact-agent');
   const scroll = document.querySelector('.collection-scroll') as HTMLElement;

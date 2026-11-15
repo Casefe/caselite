@@ -1,0 +1,142 @@
+@import './skin-deep-sea.css';
+@import './skin-lilac.css';
+@import './skin-paper.css';
+@import './skin-pine.css';
+
+/* 只消费已有语义token，不改变主导航/目录/工作区/属性栏的尺寸Owner。 */
+html[data-skin] :is(.primary-sidebar, .workspace-topbar-navigation) {
+  color: var(--skin-nav-ink);
+}
+html[data-skin]
+  :is(
+    .primary-navigation button,
+    .sidebar-bottom .profile-settings,
+    .sidebar-bottom .sidebar-draft,
+    .workspace-topbar-navigation .workspace-navigation-toggle,
+    .workspace-sidebar-heading .workspace-topbar-brand,
+    .workspace-topbar-navigation .workspace-topbar-brand
+  ) {
+  color: var(--skin-nav-ink);
+}
+/* 用户名有自己的显式颜色，必须覆盖子节点，不能依赖父按钮继承。 */
+html[data-skin] .primary-sidebar .profile-name {
+  color: var(--skin-nav-ink);
+}
+html[data-skin] .primary-navigation button:hover {
+  background: var(--skin-nav-hover);
+  color: var(--skin-nav-selected);
+}
+html[data-skin] .primary-navigation button[aria-current='page'] {
+  background: var(--skin-nav-active);
+  color: var(--skin-nav-selected);
+}
+html[data-skin] button.primary {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: #fff;
+}
+html[data-skin][data-theme='dark'] button.primary {
+  color: #17232b;
+}
+html[data-skin] button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-accent) 88%, var(--theme-panel));
+}
+html[data-skin] :is(button, input, textarea, select):focus-visible {
+  outline-color: var(--theme-accent);
+}
+html[data-skin='deep-sea'] .primary-navigation button {
+  border-radius: 4px;
+}
+html[data-skin='lilac'] .primary-navigation button {
+  border-radius: 9px;
+}
+html[data-skin='paper'] :is(.page-title h1, .project-titlebar h1, .settings-page > h2) {
+  font-family: 'CaseLite Source Han Serif', 'Songti SC', serif;
+}
+html[data-skin='paper'] .primary-navigation button {
+  border-radius: 2px;
+}
+html[data-skin='pine'] .primary-navigation button {
+  border-radius: 3px;
+}
+.skin-setting fieldset {
+  border: 0;
+  margin: 24px 0;
+  padding: 0;
+  min-width: 0;
+}
+.skin-setting legend {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.skin-style-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.skin-style-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--theme-panel);
+  color: var(--ink);
+  text-align: left;
+}
+.skin-style-card[aria-pressed='true'] {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: -2px;
+}
+.skin-style-card strong {
+  display: block;
+  margin: 11px 0 5px;
+}
+.skin-style-description,
+.skin-legacy-note {
+  font-size: 12px;
+  color: var(--theme-secondary);
+}
+.skin-style-description {
+  display: block;
+  line-height: 1.7;
+}
+.skin-style-preview {
+  display: grid;
+  grid-template-columns: 25% minmax(0, 1fr);
+  height: 74px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--theme-subtle);
+}
+.skin-style-preview > i {
+  background: var(--nav);
+  border-right: 1px solid var(--line);
+}
+.skin-style-preview > span {
+  padding: 12px;
+}
+.skin-style-preview b,
+.skin-style-preview span i {
+  display: block;
+  height: 5px;
+  margin-bottom: 8px;
+  background: var(--line-strong);
+}
+.skin-style-preview b {
+  width: 55%;
+  background: var(--theme-accent);
+}
+.skin-reset {
+  margin-top: 8px;
+}
+.skin-style-fieldset:disabled,
+.skin-color-fieldset:disabled {
+  opacity: 0.7;
+}
+@media (max-width: 680px) {
+  .skin-style-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -58,25 +58,11 @@ it('returns from overview to the same conversation without remounting the unsent
   fireEvent.click(screen.getByRole('button', { name: '显示已有对话' }));
   expect(screen.getByLabelText('Agent 首页').classList.contains('home-conversation')).toBe(true);
   await screen.findByText('暂无运行中的智能体');
-  for (const name of ['Agent 目录', '进行中的智能体']) {
-    fireEvent.click(
-      screen.getByRole('button', { name: `收起${name === 'Agent 目录' ? ' ' : ''}${name}` }),
-    );
-    expect(
-      screen
-        .getByRole('button', { name: `展开${name === 'Agent 目录' ? ' ' : ''}${name}` })
-        .getAttribute('aria-expanded'),
-    ).toBe('false');
-    fireEvent.click(
-      screen.getByRole('button', { name: `展开${name === 'Agent 目录' ? ' ' : ''}${name}` }),
-    );
-  }
-  for (const name of ['本轮材料', '成果', '重要日程', '对话信息']) {
-    fireEvent.click(screen.getByRole('button', { name: `展开${name}` }));
-    expect(screen.getByLabelText('首页辅助面板')).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: '保留的对话草稿' })).toBe(draft);
-    fireEvent.click(screen.getByRole('button', { name: '收起辅助面板' }));
-  }
+  fireEvent.click(screen.getByRole('button', { name: '收起 Agent 目录' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开 Agent 目录' }));
+  expect(screen.getByLabelText('首页预览').hidden).toBe(true);
+  expect(screen.queryByRole('navigation', { name: '预览内容' })).toBeNull();
+  expect(screen.getAllByLabelText('智能体')).toHaveLength(1);
   expect(screen.getByLabelText('Agent 首页').classList.contains('home-conversation')).toBe(true);
   expect(screen.getByRole('textbox', { name: '保留的对话草稿' })).toBe(draft);
   expect((draft as HTMLTextAreaElement).value).toBe('尚未发送的中文要求');

@@ -700,3 +700,97 @@ it('releases layout measurement and document keyboard listeners on unmount', () 
     vi.stubGlobal('ResizeObserver', previousObserver);
   }
 });
+
+it('uses the 240px property width in the four-column shell and restores custom AI size and draft after minimize and viewport changes', async () => {
+  const { FourColumnWorkspace } = await import('./FourColumnWorkspace');
+  const geometry = vi
+    .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(
+      () => ({ width: 240, right: 1000, bottom: 700, height: 600, left: 760, top: 100 }) as DOMRect,
+    );
+  try {
+    render(
+      <FourColumnWorkspace.Provider
+        value={{
+          directory: null,
+          directoryOpen: true,
+          toggleDirectory: vi.fn(),
+          registerActions: vi.fn(),
+          actions: {},
+        }}
+      >
+        <InspectorLayout properties={<p>属性</p>}>
+          <textarea aria-label="四栏草稿" defaultValue="未发送" />
+        </InspectorLayout>
+      </FourColumnWorkspace.Provider>,
+    );
+    const panel = screen.getByRole('region', { name: 'AI 对话' });
+    const draft = screen.getByLabelText('四栏草稿');
+    fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+    expect(panel.style.width).toBe('240px');
+    fireEvent.keyDown(screen.getByRole('separator', { name: '调整 AI 对话宽度' }), {
+      key: 'ArrowLeft',
+    });
+    expect(panel.style.width).toBe('264px');
+    fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+    fireEvent(window, new Event('resize'));
+    fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+    expect(panel.style.width).toBe('264px');
+    expect(screen.getByLabelText('四栏草稿')).toBe(draft);
+    expect((draft as HTMLTextAreaElement).value).toBe('未发送');
+  } finally {
+    geometry.mockRestore();
+  }
+});
+
+it.each(['pointercancel', 'lostpointercapture', 'Escape'])(
+  'restores the committed AI width on %s without discarding the conversation draft',
+  async (cancel) => {
+    const { FourColumnWorkspace } = await import('./FourColumnWorkspace');
+    const geometry = vi
+      .spyOn(HTMLDivElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(() => new DOMRect(760, 100, 240, 600));
+    try {
+      render(
+        <FourColumnWorkspace.Provider
+          value={{
+            directory: null,
+            directoryOpen: true,
+            toggleDirectory: vi.fn(),
+            registerActions: vi.fn(),
+            actions: {},
+          }}
+        >
+          <InspectorLayout properties={null}>
+            <textarea aria-label="取消拖宽草稿" defaultValue="保留会话" />
+          </InspectorLayout>
+        </FourColumnWorkspace.Provider>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+      const panel = screen.getByRole('region', { name: 'AI 对话' });
+      const draft = screen.getByLabelText('取消拖宽草稿');
+      const handle = screen.getByRole('separator', { name: '调整 AI 对话宽度' });
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+      expect(panel.style.width).toBe('264px');
+      handle.setPointerCapture = vi.fn();
+      for (const [type, clientX] of [
+        ['pointerdown', 500],
+        ['pointermove', 400],
+      ] as const) {
+        const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+        Object.defineProperty(event, 'pointerId', { value: 71 });
+        fireEvent(handle, event);
+      }
+      expect(panel.style.width).toBe('364px');
+      if (cancel === 'Escape') {
+        fireEvent.keyDown(handle, { key: 'Escape' });
+        fireEvent.click(screen.getByRole('button', { name: '展开 AI 对话' }));
+      } else fireEvent(handle, new Event(cancel, { bubbles: true }));
+      expect(panel.style.width).toBe('264px');
+      expect(screen.getByLabelText('取消拖宽草稿')).toBe(draft);
+      expect((draft as HTMLTextAreaElement).value).toBe('保留会话');
+    } finally {
+      geometry.mockRestore();
+    }
+  },
+);

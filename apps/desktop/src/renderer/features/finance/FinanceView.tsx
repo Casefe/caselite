@@ -1,3 +1,4 @@
+import { WorkspaceDirectory, useWorkspacePageActions } from '../../ui/FourColumnWorkspace';
 import WorkspacePageChrome from '../../shared/ui/WorkspacePageChrome';
 import { usePageNavigation } from '../../shared/navigation/PageNavigation';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
@@ -11,7 +12,8 @@ import {
   useOrdinaryCatalog,
 } from '../../shared/data/ordinary-catalog-query';
 import ReadTable from '../../shared/ui/ReadTable';
-import { useState, useRef, useEffect, useId, type FormEvent } from 'react';
+import { Icon } from '../../shared/ui/Icon';
+import { useState, useRef, useEffect, useId, type FormEvent, type ReactNode } from 'react';
 import FinanceSettings from './FinanceSettings';
 import ProjectFinancePanel from './ProjectFinancePanel';
 import {
@@ -464,9 +466,11 @@ function ProjectLedger({
 
 export default function FinanceView({
   initialProject,
+  favoriteAction,
   onDirty,
 }: {
   initialProject: string;
+  favoriteAction?(project: Matter, disabled: boolean): ReactNode;
   onDirty(blocked: boolean): void;
 }) {
   const read = useOrdinaryCatalog();
@@ -558,6 +562,16 @@ export default function FinanceView({
     setOpened(true);
     setSettings(false);
   };
+  useWorkspacePageActions({
+    create: {
+      kind: 'finance',
+      run: () => {
+        if (project) openProject(project.id);
+      },
+      disabled: isBlocked || !project,
+      reason: !project ? '请先选择财务项目，再登记收支' : undefined,
+    },
+  });
   return (
     <section
       className={`collection-workspace catalog-view finance-workspace property-resizable${opened ? '' : ' workspace-has-page-chrome'}`}
@@ -565,6 +579,36 @@ export default function FinanceView({
       data-layout="three-column"
       aria-label="财务工作区"
     >
+      <WorkspaceDirectory>
+        <div className="shell-record-directory">
+          <label className="shell-directory-search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              aria-label="搜索财务目录"
+              placeholder="搜索项目"
+              disabled={isBlocked}
+              value={search}
+              onChange={(event) => {
+                if (!isBlocked) setSearch(event.target.value);
+              }}
+            />
+          </label>
+          {matches.map((row) => (
+            <button
+              type="button"
+              key={row.id}
+              disabled={isBlocked}
+              aria-current={row.id === selected ? 'true' : undefined}
+              onClick={() => openProject(row.id)}
+            >
+              <Icon name="wallet" size={16} />
+              <span>{row.title}</span>
+            </button>
+          ))}
+          {!project && <p>选择项目后登记收支。</p>}
+        </div>
+      </WorkspaceDirectory>
       <PropertyResizeHandle module="finance" />
       {!opened && (
         <WorkspacePageChrome
@@ -629,6 +673,7 @@ export default function FinanceView({
             </button>
           )}
           <h1>{opened && project ? project.title : '财务'}</h1>
+          {opened && project && favoriteAction?.(project, isBlocked || !!project.archived_at)}
           <button disabled={isBlocked} onClick={() => setSettings((value) => !value)}>
             {settings ? '关闭财务设置' : '财务设置'}
           </button>
@@ -841,6 +886,7 @@ export default function FinanceView({
                   {project ? (
                     <>
                       <h3>{project.title}</h3>
+                      {!opened && favoriteAction?.(project, isBlocked || !!project.archived_at)}
                       {!opened && (
                         <>
                           <dl className="finance-properties">

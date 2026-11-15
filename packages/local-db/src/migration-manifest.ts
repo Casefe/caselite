@@ -170,4 +170,14 @@ export const integrationMigrations = [
     when: 1794551192839,
     hash: '55701991c6e432bf37d4a395a7747a05c3f28a7cdae0594dcf976f2f8195961d',
   },
+  {
+    tag: '0034_project_visualization_views',
+    when: 1794583200000,
+    hash: 'c677ad2f171c031b707c318dc73277e0c5119469bbf1bc0e6922f564c5ff5b5b',
+  },
+  {
+    tag: '0035_personal_documents',
+    when: 1794718000000,
+    hash: 'e1df4ff97af65e3a66710059163c31889d2d33baee3dce7cceb10ac6a86040e7',
+  },
 ] as const;

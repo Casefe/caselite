@@ -14,8 +14,20 @@ export function createDocumentReviewReader(
   workspace: string,
   get: (id: string) => Task | null,
 ) {
+  const personalDocuments = (
+    db.prepare('PRAGMA table_info(documents)').all() as { name: string }[]
+  ).some((column) => column.name === 'owner_kind');
   return {
     reviewDocumentExists(documentId: string) {
+      if (
+        personalDocuments &&
+        db
+          .prepare(
+            "SELECT id FROM documents WHERE id=? AND owner_kind='personal' AND personal_workspace_id=?",
+          )
+          .get(documentId, workspace)
+      )
+        return true;
       return Boolean(
         db
           .prepare(

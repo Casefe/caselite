@@ -51,12 +51,14 @@ it('persists favorite references and folder moves without changing legacy receip
   const folder = randomUUID(),
     task = randomUUID(),
     project = randomUUID(),
-    document = randomUUID();
+    document = randomUUID(),
+    contact = randomUUID();
   first.values.favorite_navigation = {
     folders: [{ id: folder, name: '诉讼案件' }],
     references: [
       { kind: 'task', id: task, folder_id: null },
       { kind: 'project', id: project, folder_id: folder },
+      { kind: 'contact', id: contact, folder_id: null },
     ],
     document_folders: [{ id: document, folder_id: folder }],
   };
@@ -73,7 +75,11 @@ it('persists favorite references and folder moves without changing legacy receip
   const move = set('旧版资料更新', 2);
   move.values.favorite_navigation = {
     ...first.values.favorite_navigation,
-    references: [{ kind: 'task', id: task, folder_id: folder }],
+    references: [
+      { kind: 'task', id: task, folder_id: folder },
+      { kind: 'contact', id: contact, folder_id: folder },
+      { kind: 'finance', id: project, folder_id: folder },
+    ],
   };
   const moved = s.app.execute(move);
   expect(moved).toMatchObject({ ok: true });

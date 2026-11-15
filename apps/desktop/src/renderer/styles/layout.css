@@ -1,7 +1,7 @@
 /* 工作台尺寸的唯一配置入口：页面仅负责内容与视觉，不另设栏宽。 */
 :root {
-  --workspace-navigation-width: 200px;
-  --workspace-navigation-collapsed-width: 65px;
+  --workspace-navigation-width: 64px;
+  --workspace-navigation-collapsed-width: 64px;
   --workspace-inspector-width: 300px;
   --workspace-center-min-width: 340px;
   --workspace-columns: minmax(var(--workspace-center-min-width), 1fr)
@@ -26,20 +26,45 @@
 
 .workbench {
   display: grid;
-  grid-template-columns: var(--workspace-navigation-width) minmax(0, 1fr);
+  --shell-collapsed-rail-width: 44px;
+  --document-directory-width: 0px;
+  grid-template-columns:
+    var(--workspace-navigation-width) var(--shell-directory-width, 0px) minmax(0, 1fr)
+    var(--shell-rail-width);
+  background: var(--theme-panel, #fff);
   grid-template-rows: 48px minmax(0, 1fr);
 }
-.workbench.is-collapsed {
-  grid-template-columns: var(--workspace-navigation-collapsed-width) minmax(0, 1fr);
+.workbench > .primary-sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  position: static;
+  width: var(--workspace-navigation-width);
+  padding: 12px 9px;
+}
+.workbench .workspace-sidebar-heading {
+  display: none;
+}
+.workbench .primary-navigation button {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+.workbench > .workspace-main {
+  grid-column: 3;
+  grid-row: 2;
+}
+@media (max-width: 700px) {
+  :root {
+    --workspace-navigation-width: 52px;
+    --workspace-navigation-collapsed-width: 52px;
+  }
 }
 .workspace-placeholder {
   padding: 24px;
   color: var(--ink);
-}
-.workspace-project-back {
-  display: flex;
-  align-items: center;
-  padding-inline: 4px;
 }
 .workspace-project-back-button {
   width: 32px;
@@ -146,7 +171,6 @@
 }
 @media (max-width: 1250px) {
   :root {
-    --workspace-navigation-width: 180px;
     --workspace-inspector-width: 250px;
   }
 }

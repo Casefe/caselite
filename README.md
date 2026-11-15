@@ -31,6 +31,7 @@ pnpm dev
 - [产品边界](docs/PRODUCT.md) · [实际架构与Owner](docs/ARCHITECTURE.md)
 - [测试分层](docs/TESTING.md) · [安全](docs/SECURITY.md)
 - [执行与交接](docs/WORKFLOW.md) · [独立审查](docs/CODE_REVIEW.md)
+- [当前交接快照](docs/当前交接快照.md)（2026-11-15固定截至点，含334张未完成卡镜像；实时状态与批准以Linear为准）
 - [新会话预演](docs/REVIEW_HANDOFF_EXERCISE.md) · [ADR](docs/adr/README.md)
 - [工程化研究白皮书](docs/research/engineering-whitepaper.md) · [行动方案与跨工具交接](docs/plans/engineering-action-plan.md)（2026-11-14研究建议，执行仍以实时合同和最新授权为准）
 - [Linear 产品开发](https://linear.app/logixy-ai/initiative/caselite-产品开发-1ac38d27e4c0)

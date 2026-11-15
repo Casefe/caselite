@@ -57,7 +57,7 @@ export const favoriteNavigationSchema = z
     references: z
       .array(
         z.strictObject({
-          kind: z.enum(['task', 'project']),
+          kind: z.enum(['task', 'project', 'contact', 'finance']),
           id: z.uuid(),
           folder_id: z.uuid().nullable(),
         }),

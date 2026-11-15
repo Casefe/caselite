@@ -50,7 +50,8 @@ it('replaces only home navigation and inspector controls with slots while keepin
   expect(
     screen.getByRole('button', { name: '首页运行控件' }).closest('.workspace-titlebar'),
   ).toBeTruthy();
-  expect(screen.queryByRole('button', { name: /收起导航|展开导航|收起右侧属性栏/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: '收起右侧属性栏' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
   expect(screen.getByRole('tab', { name: '首页' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '增加页面' }));
   expect(canLeave).toHaveBeenCalledOnce();
@@ -60,6 +61,6 @@ it('replaces only home navigation and inspector controls with slots while keepin
   expect(screen.queryByRole('button', { name: 'Agent 目录' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '收起导航' }));
   fireEvent.click(screen.getByRole('button', { name: '收起右侧属性栏' }));
-  expect(collapse).toHaveBeenCalledOnce();
+  expect(collapse).toHaveBeenCalledTimes(2);
   expect(inspector).toHaveBeenCalledOnce();
 });

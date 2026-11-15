@@ -437,7 +437,17 @@ it('upgrades an exact eight-migration populated database preserving all existing
     ).toBeUndefined();
   rollback.close();
   const upgraded = openToolchainProbe(file, migrations).sqlite;
-  expect(snapshotOf(upgraded)).toBe(snapshot);
+  const upgradedExpected = JSON.parse(snapshot) as Record<string, unknown>[][];
+  upgradedExpected[tables.indexOf('documents')] = upgradedExpected[tables.indexOf('documents')].map(
+    (row) => ({
+      ...row,
+      personal_workspace_id: null,
+      personal_title: null,
+      personal_updated_at: null,
+      owner_kind: 'task',
+    }),
+  );
+  expect(snapshotOf(upgraded)).toBe(JSON.stringify(upgradedExpected));
   expect(upgraded.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
     n: migrationCount,
   });

@@ -1,0 +1,35 @@
+/* 本文件独立声明该风格的明暗色；不触碰工作区栏宽、插槽或正文数据。 */
+html[data-skin='lilac'][data-theme='light'],
+html[data-theme='light'] .skin-style-card[data-skin-choice='lilac'] {
+  --ink: #403246;
+  --muted: #78667f;
+  --line: #e7dfea;
+  --line-strong: #d5c4dd;
+  --nav: #f7f3f9;
+  --theme-subtle: #f6f1f8;
+  --theme-hover: #ede3f1;
+  --theme-secondary: #725e7b;
+  --theme-accent: #80578b;
+  --theme-selected: #eaddf0;
+  --skin-nav-ink: #74627d;
+  --skin-nav-selected: #63366e;
+  --skin-nav-active: #eaddf0;
+  --skin-nav-hover: #eee6f2;
+}
+html[data-skin='lilac'][data-theme='dark'],
+html[data-theme='dark'] .skin-style-card[data-skin-choice='lilac'] {
+  --ink: #f0e9f3;
+  --muted: #bdaec7;
+  --line: #493e50;
+  --line-strong: #65546f;
+  --nav: #24202a;
+  --theme-subtle: #302937;
+  --theme-hover: #46384f;
+  --theme-secondary: #d0bedb;
+  --theme-accent: #d5a8e5;
+  --theme-selected: #4d3958;
+  --skin-nav-ink: #c9b8d4;
+  --skin-nav-selected: #f7e9ff;
+  --skin-nav-active: #4b3658;
+  --skin-nav-hover: #393040;
+}

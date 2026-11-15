@@ -1,6 +1,10 @@
+import { createProjectGraphReader } from './project-graph-reader';
+import { createProjectVisualizationViewStore } from './project-visualization-view-store';
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
+import * as Y from 'yjs';
 import {
+  catalogDocumentSchema,
   catalogResponseSchema,
   agentProjectFieldsSchema,
   projectAttributesSchema,
@@ -22,11 +26,16 @@ import { bodyPlainText, validateBody } from './body-schema';
 
 type Success = Extract<CatalogResponse, { ok: true }>;
 const fail = (
-  code: 'NOT_FOUND' | 'CONFLICT' | 'INVALID_REQUEST',
+  code: 'NOT_FOUND' | 'CONFLICT' | 'INVALID_REQUEST' | 'FORBIDDEN' | 'UNAVAILABLE',
   message: string,
 ): CatalogResponse => ({ ok: false, code, message });
 // 与TaskStore共用连接；仅元数据/绑定在这里维护，正文写入继续复用统一Yjs校验与修订表。
 export function createCatalogStore(db: Database.Database, workspace: string) {
+  const personalDocuments = (
+    db.prepare('PRAGMA table_info(documents)').all() as { name: string }[]
+  ).some((column) => column.name === 'owner_kind');
+  const projectGraph = createProjectGraphReader(db, workspace);
+  const projectVisualizationView = createProjectVisualizationViewStore(db, workspace, projectGraph);
   const planning = projectMilestones(db, workspace);
   const hasHealth = (db.pragma('table_info(project_discussion)') as { name: string }[]).some(
     (column) => column.name === 'health',
@@ -129,19 +138,26 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     (
       db
         .prepare(
-          `SELECT d.id,t.id AS task_id,t.title,p.matter_id,d.body_id,d.body_revision,d.metadata_version AS version,d.archived_at,d.collection,d.tags,d.favorite,d.in_library,t.updated_at FROM documents d JOIN task_items t ON t.id=d.task_id LEFT JOIN task_projects p ON p.task_id=t.id WHERE t.workspace_id=? ORDER BY t.updated_at DESC,d.id`,
+          personalDocuments
+            ? `SELECT d.id,d.task_id,d.owner_kind,CASE WHEN d.owner_kind='personal' THEN d.personal_title ELSE t.title END AS title,p.matter_id,d.body_id,d.body_revision,d.editor_schema,d.metadata_version AS version,d.archived_at,d.collection,d.tags,d.favorite,d.in_library,CASE WHEN d.owner_kind='personal' THEN d.personal_updated_at ELSE t.updated_at END AS updated_at FROM documents d LEFT JOIN task_items t ON t.id=d.task_id LEFT JOIN task_projects p ON p.task_id=t.id WHERE (d.owner_kind='task' AND t.workspace_id=?) OR (d.owner_kind='personal' AND d.personal_workspace_id=?) ORDER BY updated_at DESC,d.id`
+            : `SELECT d.id,t.id AS task_id,'task' AS owner_kind,t.title,p.matter_id,d.body_id,d.body_revision,d.editor_schema,d.metadata_version AS version,d.archived_at,d.collection,d.tags,d.favorite,d.in_library,t.updated_at FROM documents d JOIN task_items t ON t.id=d.task_id LEFT JOIN task_projects p ON p.task_id=t.id WHERE t.workspace_id=? ORDER BY t.updated_at DESC,d.id`,
         )
-        .all(workspace) as (Omit<CatalogDocument, 'tags' | 'favorite' | 'in_library'> & {
+        .all(...(personalDocuments ? [workspace, workspace] : [workspace])) as (Omit<
+        CatalogDocument,
+        'tags' | 'favorite' | 'in_library'
+      > & {
         tags: string;
         favorite: number;
         in_library: number;
       })[]
-    ).map((d) => ({
-      ...d,
-      tags: JSON.parse(d.tags),
-      favorite: !!d.favorite,
-      in_library: !!d.in_library,
-    }));
+    ).map((d) =>
+      catalogDocumentSchema.parse({
+        ...d,
+        tags: JSON.parse(d.tags),
+        favorite: !!d.favorite,
+        in_library: !!d.in_library,
+      }),
+    );
   const result = (
     target: string | null = null,
     receipt: string | null = null,
@@ -240,6 +256,8 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
     return rows.map((row) => ({ ...row, actor: null, recorded_version: null }));
   };
   return {
+    projectGraph,
+    projectVisualizationView,
     agentProject: {
       exists(id: string) {
         return Boolean(
@@ -265,6 +283,18 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       },
     },
     execute(request: CatalogRequest): CatalogResponse {
+      if (request.operation === 'read_project_graph') {
+        const graph = projectGraph.read(request);
+        return graph
+          ? { ...narrowResult(request.project_id), project_graph: graph }
+          : fail('NOT_FOUND', '项目不属于此工作区。');
+      }
+      if (
+        request.operation === 'read_project_visualization_view' ||
+        request.operation === 'save_project_visualization_view' ||
+        request.operation === 'project_visualization_view_status'
+      )
+        return projectVisualizationView.execute(request);
       if (request.operation === 'read_project_plan') {
         const plan = planning.read(request.project_id);
         return 'ok' in plan ? plan : { ...narrowResult(), project_plan: plan };
@@ -337,7 +367,10 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
         if (
           (event.target_type === 'project' && (!project || project.archived_at)) ||
           (event.target_type === 'document' && (!doc || doc.archived_at)) ||
-          (event.target_type !== 'project' && (!task || task.archived_at))
+          (event.target_type === 'task' && (!task || task.archived_at)) ||
+          (event.target_type === 'document' &&
+            doc?.owner_kind === 'task' &&
+            (!task || task.archived_at))
         )
           return fail('NOT_FOUND', '目标已归档或不可访问，历史记录保留。');
         return {
@@ -352,10 +385,26 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
       }
       if (request.operation === 'list')
         return result(null, null, null, request.project_properties ?? null, true);
+      if (request.operation === 'read_document') {
+        const document = documents().find((item) => item.id === request.id);
+        if (!document) return fail('NOT_FOUND', '文档不在当前工作区。');
+        const row = db
+          .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=?')
+          .get(document.body_id, document.body_revision) as { state: Buffer } | undefined;
+        if (document.body_revision && !row) throw new Error('Missing committed document body');
+        if (row) validateBody(row.state, true, document.editor_schema);
+        return {
+          ...narrowResult(document.id),
+          documents: [document],
+          state: row ? Array.from(row.state) : null,
+        };
+      }
       if (request.operation === 'status') {
         const row = db
           .prepare('SELECT result FROM catalog_receipts WHERE workspace_id=? AND key=?')
           .get(workspace, request.idempotency_key) as { result: string } | undefined;
+        if (row && 'visualization_receipt' in JSON.parse(row.result))
+          return fail('INVALID_REQUEST', '请使用原项目与视图身份核对提交。');
         return row
           ? catalogResponseSchema.parse(JSON.parse(row.result))
           : fail('NOT_FOUND', '尚未查到原提交，请保留输入并重试同一提交。');
@@ -388,6 +437,67 @@ export function createCatalogStore(db: Database.Database, workspace: string) {
           ).run(workspace, request.idempotency_key, digest, JSON.stringify(response));
           return response;
         };
+        if (request.operation === 'create_document' || request.operation === 'save_document_body') {
+          if (!personalDocuments) return fail('UNAVAILABLE', '当前工作区尚不支持独立文档。');
+          const now = new Date().toISOString();
+          let target: string;
+          if (request.operation === 'create_document') {
+            target = randomUUID();
+            const bodyId = randomUUID(),
+              doc = new Y.Doc();
+            let state: Uint8Array;
+            try {
+              doc.getXmlFragment('default').insert(0, [new Y.XmlElement('paragraph')]);
+              state = Y.encodeStateAsUpdate(doc);
+            } finally {
+              doc.destroy();
+            }
+            validateBody(state, true, 1);
+            // 文档身份、合法空正文、活动和原键回执必须同成败，不能留下假成功的空壳。
+            db.prepare(
+              "INSERT INTO documents(id,task_id,body_id,body_revision,editor_schema,owner_kind,personal_workspace_id,personal_title,personal_updated_at) VALUES(?,NULL,?,1,1,'personal',?,?,?)",
+            ).run(target, bodyId, workspace, request.title, now);
+            db.prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,1,?)').run(
+              bodyId,
+              Buffer.from(state),
+            );
+          } else {
+            target = request.document_id;
+            const document = documents().find((item) => item.id === target);
+            if (!document) return fail('NOT_FOUND', '文档不在当前工作区。');
+            if (document.owner_kind !== 'personal')
+              return fail('FORBIDDEN', '任务成果继续使用原任务正文保存入口。');
+            if (document.archived_at) return fail('CONFLICT', '文档已归档，请恢复后再保存。');
+            if (document.body_id !== request.body_id)
+              return fail('FORBIDDEN', '正文与当前文档不匹配。');
+            if (
+              document.body_revision !== request.expected_revision ||
+              request.editor_schema < document.editor_schema
+            )
+              return fail('CONFLICT', '正文已有新修订或格式不兼容，请核对后再保存。');
+            try {
+              validateBody(Uint8Array.from(request.state), true, request.editor_schema);
+            } catch {
+              return fail('INVALID_REQUEST', '正文结构或格式不支持，原修订已保留。');
+            }
+            db.prepare('INSERT INTO body_revisions(body_id,revision,state) VALUES(?,?,?)').run(
+              document.body_id,
+              document.body_revision + 1,
+              Buffer.from(request.state),
+            );
+            db.prepare(
+              'UPDATE documents SET body_revision=?,editor_schema=?,personal_updated_at=? WHERE id=?',
+            ).run(document.body_revision + 1, request.editor_schema, now, target);
+          }
+          db.prepare(
+            'INSERT INTO catalog_activity(id,workspace_id,target_id,operation,created_at) VALUES(?,?,?,?,?)',
+          ).run(randomUUID(), workspace, target, request.operation, now);
+          const document = documents().find((item) => item.id === target)!;
+          return saveReceipt({
+            ...narrowResult(target, request.idempotency_key),
+            documents: [document],
+          });
+        }
         if (request.operation === 'publish_discussion') {
           const { scope } = request;
           const target = discussionTarget(scope);

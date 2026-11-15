@@ -4,6 +4,12 @@ export const APPEARANCE_CHANNEL = 'caselite:appearance:v1';
 export const APPEARANCE_INITIAL_CHANNEL = 'caselite:appearance-initial:v1';
 export const themeSchema = z.enum(['light', 'dark']);
 export type Theme = z.infer<typeof themeSchema>;
+export const skinIdSchema = z.enum(['deep-sea', 'lilac', 'paper', 'pine']);
+export type SkinId = z.infer<typeof skinIdSchema>;
+export const appearanceValuesSchema = z
+  .object({ theme: themeSchema, skin: skinIdSchema.optional() })
+  .strict();
+export type AppearanceValues = z.infer<typeof appearanceValuesSchema>;
 export const themeProposalSchema = z.object({ theme: themeSchema }).strict();
 export const themeCommandSchema = z
   .object({
@@ -32,13 +38,31 @@ export const appearanceRequestSchema = z.discriminatedUnion('operation', [
     .object({ protocol_version: z.literal(1), operation: z.literal('set'), theme: themeSchema })
     .strict(),
   z
-    .object({ protocol_version: z.literal(1), operation: z.literal('applied'), theme: themeSchema })
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('set_skin'),
+      skin: skinIdSchema,
+    })
+    .strict(),
+  z.object({ protocol_version: z.literal(1), operation: z.literal('reset_skin') }).strict(),
+  z
+    .object({
+      protocol_version: z.literal(1),
+      operation: z.literal('applied'),
+      theme: themeSchema,
+      skin: skinIdSchema.nullable().optional(),
+    })
     .strict(),
 ]);
 export type AppearanceRequest = z.infer<typeof appearanceRequestSchema>;
 export const appearanceResponseSchema = z.discriminatedUnion('ok', [
   z
-    .object({ ok: z.literal(true), theme: themeSchema, command: themeCommandSchema.optional() })
+    .object({
+      ok: z.literal(true),
+      theme: themeSchema,
+      skin: skinIdSchema.optional(),
+      command: themeCommandSchema.optional(),
+    })
     .strict(),
   z.object({ ok: z.literal(false), message: z.string() }).strict(),
 ]);

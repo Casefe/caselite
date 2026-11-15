@@ -1,3 +1,4 @@
+import { useFourColumnWorkspace } from './FourColumnWorkspace';
 import { createPortal } from 'react-dom';
 import AiConversationDock from './AiConversationDock';
 import { useAiConversationDock } from './useAiConversationDock';
@@ -23,6 +24,7 @@ export default function InspectorLayout({
   className?: string;
   expandedActions?: ReactNode;
 }) {
+  const shell = useFourColumnWorkspace();
   const { inlineProperties, slots, presentationEpoch } = useResponsiveWorkspace();
   const layout = useRef<HTMLDivElement>(null);
   const [propertiesSlot, setPropertiesSlot] = useState<HTMLDivElement | null>(null);
@@ -36,8 +38,8 @@ export default function InspectorLayout({
         : null;
     setPropertiesSlot(target);
   }, [slots]);
-  const layoutEpoch = propertiesSlot ? presentationEpoch : 0;
-  const floating = inlineProperties && propertiesSlot !== null;
+  const layoutEpoch = !shell && propertiesSlot ? presentationEpoch : 0;
+  const floating = !shell && inlineProperties && propertiesSlot !== null;
   const [propertiesHost] = useState(() => document.createElement('div'));
   const propertiesHome = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {

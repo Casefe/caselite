@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 // 用已安装TypeScript擦除真实处理器/Worker的类型；仍运行真实worker_threads，不模拟转换结果。
 // 此探针不替代Forge打包、Electron或Word验收，临时输出只在既有可重建目录中保留到测试结束。
-export function sourceDocxProcessor() {
+export function sourceDocxProcessor(options: { workerSource?: string } = {}) {
   const parent = resolve('apps/desktop/.webpack');
   mkdirSync(parent, { recursive: true });
   const root = mkdtempSync(join(parent, 'docx-regression-'));
@@ -20,7 +20,13 @@ export function sourceDocxProcessor() {
           esModuleInterop: true,
         },
       });
-      writeFileSync(join(root, `${name}.cjs`), output.outputText);
+      // 故障夹具只替换本探针私有目录里的worker，真实处理器与生产输出均不改写。
+      writeFileSync(
+        join(root, `${name}.cjs`),
+        name === 'docx-worker' && options.workerSource !== undefined
+          ? options.workerSource
+          : output.outputText,
+      );
     }
     const load = createRequire(resolve('apps/desktop/package.json'));
     const api = load(

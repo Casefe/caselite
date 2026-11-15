@@ -1,3 +1,4 @@
+import { useWorkspacePageActions } from '../../ui/FourColumnWorkspace';
 import DocumentAnnotations from '../../editors/DocumentAnnotations';
 import { hasDocumentAnnotations } from '../../editors/document-annotation-marks';
 import {
@@ -9,9 +10,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
-import type { Task, TaskRequest } from '../../../preload/caselite-api';
+import {
+  bodyPersistence,
+  type BodyOwnerProps,
+  type BodyRequest,
+  type BodyResponse,
+} from './body-persistence';
 import { Icon } from '../../shared/ui/Icon';
-import { mutation, check } from '../../shared/data/taskCommand';
 import { EditorSurface, localExtensions } from '../../editors/RichEditor';
 import DocumentReview, { WritingSkillMenu, type WritingSkillHandle } from './review/DocumentReview';
 import DeliverySnapshots from './delivery/DeliverySnapshots';
@@ -25,44 +30,48 @@ export type BodySaveState = {
   canRetry: boolean;
   retry(): void;
 };
-type SaveRequest = Extract<TaskRequest, { operation: 'save' }>;
+type SaveRequest = BodyRequest;
 
-export default function BodyEditor({
-  task,
-  initial,
-  onSaved,
-  onDirty,
-  disabled = false,
-  reviewDock,
-  reviewSaving,
-  onReviewSaving,
-  reviewVariant = 'review',
-  embedded = false,
-  autosave = false,
-  onSaveState,
-}: {
-  task: Task;
-  initial: number[] | null;
-  onSaved(task: Task, state: number[]): void | string | Promise<void | string>;
-  onDirty(dirty: boolean): void;
-  disabled?: boolean;
-  reviewDock: HTMLElement | null;
-  reviewSaving: boolean;
-  onReviewSaving(value: boolean): void;
-  reviewVariant?: 'review' | 'assistant';
-  embedded?: boolean;
-  autosave?: boolean;
-  onSaveState?(state: BodySaveState | null): void;
-}) {
+export default function BodyEditor(
+  props: BodyOwnerProps & {
+    initial: number[] | null;
+    onDirty(dirty: boolean): void;
+    disabled?: boolean;
+    reviewDock: HTMLElement | null;
+    reviewSaving: boolean;
+    onReviewSaving(value: boolean): void;
+    reviewVariant?: 'review' | 'assistant';
+    embedded?: boolean;
+    autosave?: boolean;
+    exportActive?: boolean;
+    onSaveState?(state: BodySaveState | null): void;
+  },
+) {
+  const {
+    task,
+    initial,
+    onDirty,
+    disabled = false,
+    reviewDock,
+    reviewSaving,
+    onReviewSaving,
+    reviewVariant = 'review',
+    embedded = false,
+    autosave = false,
+    onSaveState,
+    exportActive = true,
+  } = props;
+  const persistence = bodyPersistence(props);
+  const identity = persistence.identity;
   const { preferences } = useLocalPreferences();
   const [doc] = useState(() => {
     const d = new Y.Doc();
     if (initial) Y.applyUpdate(d, Uint8Array.from(initial));
     return d;
   });
-  const [editorSchema, setEditorSchema] = useState(task.editor_schema);
+  const [editorSchema, setEditorSchema] = useState(identity.schema);
   const [annotationDraft, setAnnotationDraft] = useState(false);
-  const [revision, setRevision] = useState(task.body_revision);
+  const [revision, setRevision] = useState(identity.revision);
   const [status, setStatus] = useState('已保存到此设备');
   const [phase, setPhase] = useState<BodySaveState['phase']>('saved');
   const [busy, setBusy] = useState(false);
@@ -95,7 +104,7 @@ export default function BodyEditor({
   const editor = useEditor(
     {
       injectCSS: false,
-      editable: !task.document_archived_at && !disabled,
+      editable: !identity.archivedAt && !disabled,
       extensions: localExtensions(doc, editorCapabilities.document),
       editorProps: {
         attributes: { 'aria-label': '成果正文', 'data-testid': 'body-editor', role: 'textbox' },
@@ -134,10 +143,10 @@ export default function BodyEditor({
   useEffect(() => {
     // 只切换可编辑性，不发出正文update，避免把属性锁定误记成正文修改。
     editor?.setEditable(
-      !task.document_archived_at && !disabled && !reviewSaving && !annotationDraft,
+      !identity.archivedAt && !disabled && !reviewSaving && !annotationDraft,
       false,
     );
-  }, [editor, task.document_archived_at, disabled, reviewSaving, annotationDraft]);
+  }, [editor, identity.archivedAt, disabled, reviewSaving, annotationDraft]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -155,7 +164,7 @@ export default function BodyEditor({
       editor.isDestroyed ||
       inFlight.current ||
       disabled ||
-      task.document_archived_at ||
+      identity.archivedAt ||
       reviewSaving ||
       annotationDraft ||
       composing.current ||
@@ -171,45 +180,34 @@ export default function BodyEditor({
     const sequence = pending.current?.sequence ?? changes.current;
     let failurePhase: BodySaveState['phase'] = 'failed';
     try {
-      const request: SaveRequest = pending.current?.request ?? {
-        ...mutation(),
-        operation: 'save',
-        task_id: task.id,
-        document_id: task.document_id,
-        body_id: task.body_id,
-        expected_revision: confirmedRevision.current,
-        editor_schema: editorSchema === 2 || hasDocumentAnnotations(editor) ? 2 : 1,
-        state: Array.from(Y.encodeStateAsUpdate(doc)),
-      };
+      const request: SaveRequest =
+        pending.current?.request ??
+        persistence.request(
+          confirmedRevision.current,
+          editorSchema === 2 || hasDocumentAnnotations(editor) ? 2 : 1,
+          Array.from(Y.encodeStateAsUpdate(doc)),
+        );
       const reconciling = !!pending.current;
       pending.current = { request, sequence };
       setHasPending(true);
       failurePhase = 'unknown';
       // 已有待确认提交先核对原键；只有明确不存在回执时才重试同一请求。
-      let result: Awaited<ReturnType<typeof window.caselite.task>>;
+      let result: BodyResponse;
       let resultSource: 'save' | 'status';
       if (reconciling) {
         resultSource = 'status';
-        result = await window.caselite.task({
-          protocol_version: 1,
-          operation: 'status',
-          idempotency_key: request.idempotency_key,
-        });
+        result = await persistence.status(request);
       } else {
         resultSource = 'save';
-        result = await window.caselite.task(request);
+        result = await persistence.submit(request);
       }
       if (reconciling && !result.ok && result.code === 'NOT_FOUND') {
         resultSource = 'save';
-        result = await window.caselite.task(request);
+        result = await persistence.submit(request);
       }
       if (!result.ok && result.code === 'RESULT_UNKNOWN') {
         resultSource = 'status';
-        result = await window.caselite.task({
-          protocol_version: 1,
-          operation: 'status',
-          idempotency_key: request.idempotency_key,
-        });
+        result = await persistence.status(request);
         if (!result.ok) throw new Error('保存结果尚未确认，请保留输入并点击核对保存结果。');
       }
       if (!result.ok && result.code === 'INVALID_REQUEST' && resultSource === 'save') {
@@ -219,31 +217,20 @@ export default function BodyEditor({
       }
       if (!result.ok && result.code !== 'RESULT_UNKNOWN' && result.code !== 'READ_FAILED')
         failurePhase = 'failed';
-      const response = check(result);
-      const saved = response.tasks[0];
-      // 回执必须属于冻结的原提交，不能用另一个对象或修订清除当前草稿。
-      if (
-        response.receipt !== request.idempotency_key ||
-        saved?.id !== request.task_id ||
-        saved.document_id !== request.document_id ||
-        saved.body_id !== request.body_id ||
-        saved.body_revision !== request.expected_revision + 1 ||
-        saved.editor_schema !== request.editor_schema
-      ) {
-        failurePhase = 'unknown';
-        throw new Error('保存回执与原提交不一致，请保留输入并核对保存结果。');
-      }
+      if (!result.ok) throw new Error(result.message);
+      failurePhase = 'unknown';
+      const saved = persistence.accept(result, request);
       if (!alive.current) return;
       pending.current = null;
       failed.current = false;
       setHasPending(false);
-      confirmedRevision.current = saved.body_revision;
-      setEditorSchema(saved.editor_schema);
-      setRevision(saved.body_revision);
+      confirmedRevision.current = saved.revision;
+      setEditorSchema(saved.schema);
+      setRevision(saved.revision);
       let projectionFailed = false;
       let notice: void | string = undefined;
       try {
-        notice = await onSaved(saved, request.state);
+        notice = await saved.publish(request.state);
       } catch {
         // 正文已经落盘，目录投影失败不能重新提交这个正文。
         projectionFailed = true;
@@ -288,7 +275,7 @@ export default function BodyEditor({
         failed.current ||
         !bodyDirty.current ||
         disabled ||
-        task.document_archived_at ||
+        identity.archivedAt ||
         reviewSaving ||
         annotationDraft ||
         composing.current ||
@@ -303,7 +290,7 @@ export default function BodyEditor({
   });
   useEffect(() => {
     schedule.current();
-  }, [autosave, editor, disabled, task.document_archived_at, reviewSaving, annotationDraft]);
+  }, [autosave, editor, disabled, identity.archivedAt, reviewSaving, annotationDraft]);
   useEffect(() => {
     if (!autosave) return;
     const guard = (event: BeforeUnloadEvent) => {
@@ -319,22 +306,22 @@ export default function BodyEditor({
   const retry = useCallback(() => void saveLatest.current(), []);
   const saveState = useMemo<BodySaveState>(
     () => ({
-      bodyId: task.body_id,
+      bodyId: identity.bodyId,
       revision,
       phase,
-      message: task.document_archived_at ? '文档已归档 · 只读' : status,
+      message: identity.archivedAt ? '文档已归档 · 只读' : status,
       canRetry:
         (hasPending || (phase === 'failed' && dirty)) &&
         !busy &&
         !disabled &&
         !reviewSaving &&
         !annotationDraft &&
-        !task.document_archived_at,
+        !identity.archivedAt,
       retry,
     }),
     [
-      task.body_id,
-      task.document_archived_at,
+      identity.bodyId,
+      identity.archivedAt,
       revision,
       phase,
       status,
@@ -354,7 +341,7 @@ export default function BodyEditor({
   const saveControls = (
     <footer>
       <span role="status" data-testid="save-status">
-        {task.document_archived_at ? '文档已归档 · 只读' : status}
+        {identity.archivedAt ? '文档已归档 · 只读' : status}
       </span>
       <button
         className="primary"
@@ -363,7 +350,7 @@ export default function BodyEditor({
           disabled ||
           annotationDraft ||
           reviewSaving ||
-          !!task.document_archived_at ||
+          !!identity.archivedAt ||
           busy ||
           (!dirty && !hasPending)
         }
@@ -373,12 +360,26 @@ export default function BodyEditor({
       </button>
     </footer>
   );
+  useWorkspacePageActions({
+    export: exportActive
+      ? {
+          run: () => setDeliveryOpen(true),
+          disabled:
+            !task || disabled || dirty || annotationDraft || busy || hasPending || reviewSaving,
+          reason: !task
+            ? '独立文档暂不支持固定交付导出'
+            : dirty
+              ? '请先保存当前正文，再导出固定修订'
+              : undefined,
+        }
+      : undefined,
+  });
   return (
     <>
       <section className="document" hidden={deliveryOpen}>
         <div className="document-bar">
           <span>
-            <Icon name="file" size={16} /> {embedded ? task.title : '内部沟通初稿'}{' '}
+            <Icon name="file" size={16} /> {embedded ? identity.title : '内部沟通初稿'}{' '}
             <small className="draft-badge">草稿</small>
           </span>
           <span>
@@ -389,7 +390,7 @@ export default function BodyEditor({
         {editor && (
           <DocumentAnnotations
             editor={editor}
-            disabled={disabled || busy || hasPending || reviewSaving || !!task.document_archived_at}
+            disabled={disabled || busy || hasPending || reviewSaving || !!identity.archivedAt}
             onDraft={(open) => {
               setAnnotationDraft(open);
               onDirty(open || bodyDirty.current || pending.current !== null);
@@ -404,11 +405,12 @@ export default function BodyEditor({
         )}
         <EditorSurface
           editor={editor}
-          disabled={disabled || annotationDraft || reviewSaving || !!task.document_archived_at}
+          disabled={disabled || annotationDraft || reviewSaving || !!identity.archivedAt}
           mode={editorProfiles.document.mode}
           documentScheme={embedded ? 'word' : (preferences.editor_mode ?? 'markdown')}
           selectionActions={
             editor &&
+            task &&
             reviewDock && (
               <WritingSkillMenu
                 editor={editor}
@@ -422,7 +424,7 @@ export default function BodyEditor({
                   !hasPending &&
                   !disabled &&
                   !reviewSaving &&
-                  !task.document_archived_at
+                  !identity.archivedAt
                 }
                 onPick={(request) => skillHandle.current?.pick(request)}
               />
@@ -436,36 +438,38 @@ export default function BodyEditor({
         <button
           type="button"
           className="delivery-entry"
-          disabled={disabled || annotationDraft || busy || hasPending || reviewSaving}
+          disabled={!task || disabled || annotationDraft || busy || hasPending || reviewSaving}
+          title={!task ? '独立文档暂不支持固定交付版本' : undefined}
           onClick={() => setDeliveryOpen(true)}
         >
           交付版本
         </button>
       </section>
-      {deliveryOpen && (
+      {task && deliveryOpen && (
         <DeliverySnapshots
           task={{ ...task, editor_schema: editorSchema }}
           revision={revision}
           dirty={dirty}
-          disabled={disabled || busy || hasPending || !!task.document_archived_at}
+          disabled={disabled || busy || hasPending || !!identity.archivedAt}
           onBack={() => setDeliveryOpen(false)}
           onBusy={onReviewSaving}
         />
       )}
-      {reviewDock &&
+      {task &&
+        reviewDock &&
         createPortal(
           <div hidden={deliveryOpen}>
             <DocumentReview
-              title={task.title}
-              key={task.document_id}
+              title={identity.title}
+              key={identity.documentId}
               variant={reviewVariant}
               editor={editor}
               skillHandle={skillHandle}
               onSkillAvailability={setSkillAvailable}
               identity={{
                 task_id: task.id,
-                document_id: task.document_id,
-                body_id: task.body_id,
+                document_id: identity.documentId,
+                body_id: identity.bodyId,
                 revision,
               }}
               blocked={
@@ -473,7 +477,7 @@ export default function BodyEditor({
                 annotationDraft ||
                 deliveryOpen ||
                 disabled ||
-                !!task.document_archived_at ||
+                !!identity.archivedAt ||
                 dirty ||
                 busy ||
                 hasPending
@@ -490,7 +494,7 @@ export default function BodyEditor({
                 confirmedRevision.current = saved.body_revision;
                 setPhase('saved');
                 setStatus('已保存到此设备');
-                onSaved(saved, state);
+                if (props.task) props.onSaved(saved, state);
               }}
             />
           </div>,

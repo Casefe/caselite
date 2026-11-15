@@ -22,6 +22,7 @@ afterEach(cleanup);
 const taskId = 'a9a219f8-01d7-4225-bc61-a100557c0059';
 const projectId = '23ae1bf6-3da8-48cc-890e-52318ce4b536';
 const documentId = 'f8a29142-976a-4cd8-aadb-2226330d22fc';
+const contactId = 'c8a29142-976a-4cd8-aadb-2226330d22fc';
 function setup(fail = false) {
   let persisted: LocalPreferences = { ...initialLocalPreferences };
   let committed: { receipt: string; preferences: LocalPreferences } | null = null;
@@ -38,7 +39,7 @@ function setup(fail = false) {
     favorite: false,
     collection: '',
     tags: [],
-    in_library: true,
+    in_library: false,
     version: 1,
   };
   const catalog = vi.fn(async (request: CatalogRequest) => {
@@ -64,7 +65,11 @@ function setup(fail = false) {
     }
     return { ok: true, ...committed };
   });
-  window.caselite = { preferences, catalog } as unknown as Window['caselite'];
+  const contacts = vi.fn(async () => ({
+    ok: true,
+    contacts: [{ id: contactId, name: '合成联系人' }],
+  }));
+  window.caselite = { preferences, catalog, contacts } as unknown as Window['caselite'];
   function Draft() {
     const p = useLocalPreferences();
     const projectRead = useProjectCatalog();
@@ -99,7 +104,9 @@ function setup(fail = false) {
           <Draft />
           <FavoriteButton kind="task" id={taskId} />
           <FavoriteButton kind="project" id={projectId} />
+          <FavoriteButton kind="finance" id={projectId} />
           <FavoriteButton kind="document" id={documentId} />
+          <FavoriteButton kind="contact" id={contactId} />
           <FavoritesSidebar tasks={[{ id: taskId, title: '合成任务' } as Task]} onOpen={onOpen} />
         </FavoritesProvider>
       </QueryClientProvider>
@@ -108,6 +115,23 @@ function setup(fail = false) {
   const rendered = render(view());
   return { rendered, view, preferences, catalog, onOpen, stored: () => persisted };
 }
+
+it('persists a contact reference and opens the same contact after remount', async () => {
+  const s = setup();
+  await clickReady('收藏联系人');
+  fireEvent.click(await screen.findByRole('button', { name: '合成联系人' }));
+  expect(s.onOpen).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: 'contact', id: contactId }),
+  );
+  expect(s.stored().favorite_navigation?.references).toContainEqual({
+    kind: 'contact',
+    id: contactId,
+    folder_id: null,
+  });
+  s.rendered.unmount();
+  render(s.view());
+  expect(await screen.findByRole('button', { name: '合成联系人' })).toBeTruthy();
+});
 async function clickReady(name: string) {
   const button = screen.getByRole<HTMLButtonElement>('button', { name, exact: true });
   await waitFor(() => expect(button.disabled).toBe(false));
@@ -299,4 +323,110 @@ it('cancels a drag without a save and keeps the root destination available for k
   const select = screen.getByRole<HTMLSelectElement>('combobox', { name: '移动收藏 合成任务' });
   expect(select.disabled).toBe(false);
   expect(within(select).getByRole('option', { name: '收藏根目录' }).getAttribute('value')).toBe('');
+});
+
+it('keeps finance favorites as independent project references through lost receipts and remount', async () => {
+  const s = setup(true);
+  await clickReady('收藏财务项目');
+  await screen.findByRole('button', { name: '核对收藏提交' });
+  expect(screen.queryByRole('button', { name: '合成项目', exact: true })).toBeNull();
+  await clickReady('核对收藏提交');
+  fireEvent.click(await screen.findByRole('button', { name: '合成项目', exact: true }));
+  expect(s.onOpen).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: 'finance', id: projectId }),
+  );
+  expect(s.stored().favorite_navigation?.references).toContainEqual({
+    kind: 'finance',
+    id: projectId,
+    folder_id: null,
+  });
+  expect(s.catalog.mock.calls.filter(([r]) => r.operation !== 'list')).toHaveLength(0);
+  s.rendered.unmount();
+  render(s.view());
+  expect(await screen.findByRole('button', { name: '合成项目', exact: true })).toBeTruthy();
+  await clickReady('模拟项目已归档');
+  const unavailable = await screen.findByRole<HTMLButtonElement>('button', {
+    name: '不可用的财务项目',
+    exact: true,
+  });
+  expect(unavailable.disabled).toBe(true);
+});
+
+it('uses the shared file directory keyboard movement without opening or moving a reference', async () => {
+  const s = setup();
+  await clickReady('收藏任务');
+  await clickReady('新建收藏文件夹');
+  fireEvent.change(screen.getByLabelText('收藏文件夹名称'), { target: { value: '键盘目录' } });
+  await clickReady('创建');
+  const folder = await screen.findByRole('button', { name: '键盘目录' });
+  const task = screen.getByRole('button', { name: '合成任务', exact: true });
+  task.focus();
+  fireEvent.keyDown(task, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(folder);
+  fireEvent.keyDown(folder, { key: 'ArrowLeft' });
+  expect(folder.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.keyDown(folder, { key: 'ArrowRight' });
+  expect(folder.getAttribute('aria-expanded')).toBe('true');
+  expect(s.onOpen).not.toHaveBeenCalled();
+});
+
+it.each(['first', 'middle', 'last'] as const)(
+  'skips unavailable finance references at the %s of the directory during keyboard navigation',
+  async (position) => {
+    const s = setup();
+    const actions =
+      position === 'first'
+        ? ['收藏财务项目', '收藏任务', '收藏文档']
+        : position === 'middle'
+          ? ['收藏任务', '收藏财务项目', '收藏文档']
+          : ['收藏任务', '收藏文档', '收藏财务项目'];
+    for (const action of actions) await clickReady(action);
+    await clickReady('模拟项目已归档');
+    const unavailable = await screen.findByRole<HTMLButtonElement>('button', {
+      name: '不可用的财务项目',
+      exact: true,
+    });
+    expect(unavailable.disabled).toBe(true);
+    const task = screen.getByRole('button', { name: '合成任务', exact: true });
+    const doc = screen.getByRole('button', { name: '合成文档', exact: true });
+    task.focus();
+    fireEvent.keyDown(task, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(doc);
+    fireEvent.keyDown(doc, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(task);
+    doc.focus();
+    fireEvent.keyDown(doc, { key: 'Home' });
+    expect(document.activeElement).toBe(task);
+    fireEvent.keyDown(task, { key: 'End' });
+    expect(document.activeElement).toBe(doc);
+    expect(s.onOpen).not.toHaveBeenCalled();
+  },
+);
+
+it('ArrowRight enters the first available folder child after an unavailable reference', async () => {
+  const s = setup();
+  await clickReady('收藏财务项目');
+  await clickReady('收藏任务');
+  await clickReady('新建收藏文件夹');
+  fireEvent.change(screen.getByLabelText('收藏文件夹名称'), { target: { value: '跳过不可用项' } });
+  await clickReady('创建');
+  const folder = await screen.findByRole('button', { name: '跳过不可用项', exact: true });
+  const folderId = s.stored().favorite_navigation!.folders[0].id;
+  for (const name of ['合成项目', '合成任务']) {
+    const select = () =>
+      screen.getByRole<HTMLSelectElement>('combobox', { name: `移动收藏 ${name}` });
+    await waitFor(() => expect(select().disabled).toBe(false));
+    fireEvent.change(select(), { target: { value: folderId } });
+    await waitFor(() => expect(select().disabled).toBe(false));
+  }
+  await clickReady('模拟项目已归档');
+  expect(
+    (await screen.findByRole<HTMLButtonElement>('button', { name: '不可用的财务项目' })).disabled,
+  ).toBe(true);
+  folder.focus();
+  fireEvent.keyDown(folder, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(
+    screen.getByRole('button', { name: '合成任务', exact: true }),
+  );
+  expect(s.onOpen).not.toHaveBeenCalled();
 });

@@ -381,7 +381,16 @@ it('upgrades a populated 20-migration library and backup; failed 21st DDL rolls 
     ).toMatchObject({ ...t, calendar: emptyTaskCalendar });
     upgraded.close();
     const check = openToolchainProbe(fileName, migrations).sqlite;
-    expect(snapshot(check).slice(1)).toEqual(before.slice(1));
+    expect(snapshot(check).slice(1)).toEqual([
+      before[1].map((row) => ({
+        ...(row as Record<string, unknown>),
+        personal_workspace_id: null,
+        personal_title: null,
+        personal_updated_at: null,
+        owner_kind: 'task',
+      })),
+      ...before.slice(2),
+    ]);
     expect(check.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(check.pragma('foreign_key_check')).toEqual([]);
     expect(check.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({

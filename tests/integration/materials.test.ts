@@ -1,4 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
+import { createPiRuntime } from '../../apps/desktop/src/main/adapters/pi-runtime';
+import { materialPreviewSchema } from '../../packages/contracts/src/material';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -40,6 +42,7 @@ function setup(
   const store = openTaskStore(join(root, 'db.sqlite'), migrations),
     files = createMaterialFiles(join(root, 'materials'));
   const app = createMaterialApplication({
+    inputCapability: createPiRuntime().inputCapability,
     store: store.materials,
     files,
     processor,
@@ -856,5 +859,106 @@ it('queues required local OCR behind a busy worker without making the user resub
     s.app.close();
     await s.settled();
     s.store.close();
+  }
+});
+
+it('persists full long multilingual multi-attachment preview, reopens old and new JSON, rejects policy drift', async () => {
+  const text = '中文English😀'.repeat(3500) + 'FINAL_PAGE_SENTINEL';
+  const s = setup({
+    configuration: 'synthetic-long-v1',
+    inspect: async () => 2,
+    process: async (_bytes, input) => {
+      input.onPage({ ...page, text });
+      input.onPage({ ...page, page: 2, text: 'LAST_PAGE_2' });
+    },
+  });
+  const a = await s.add();
+  const b = await s.add();
+  await s.settled();
+  const r = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      instruction: '总结附件内容',
+      model: 'deepseek-flash',
+      selected: [a, b].map(({ source }) => ({ source_id: source.id, pages: [1, 2] })),
+    }),
+  );
+  const preview = r.preview!;
+  expect(preview.payload.length).toBeGreaterThan(32_000);
+  expect(preview.payload.split('FINAL_PAGE_SENTINEL')).toHaveLength(3);
+  expect(preview.payload.split('LAST_PAGE_2')).toHaveLength(3);
+  expect(preview.budget?.policy).toBe('utf8-byte-proxy-v1');
+  expect(
+    await s.app.resolveContext(preview.id, 'home', preview.instruction, 'deepseek-flash'),
+  ).toMatchObject({ text: preview.payload });
+  await expect(
+    s.app.resolveContext(preview.id, 'home', preview.instruction, 'gpt-4.1-mini'),
+  ).rejects.toThrow();
+  const driftId = randomUUID();
+  s.store.materials.putPreview('home', {
+    ...preview,
+    id: driftId,
+    budget: { ...preview.budget!, policy: 'stale-policy' },
+  });
+  await expect(
+    s.app.resolveContext(driftId, 'home', preview.instruction, 'deepseek-flash'),
+  ).rejects.toThrow();
+  const id = preview.id;
+  s.store.close();
+  const reopened = openTaskStore(join(s.root, 'db.sqlite'), migrations);
+  try {
+    expect(reopened.materials.preview(id, 'home')).toEqual(preview);
+    const old = { ...preview, payload: 'legacy short input' };
+    delete old.budget;
+    expect(materialPreviewSchema.parse(old).payload).toBe('legacy short input');
+    expect(() =>
+      materialPreviewSchema
+        .extend({ payload: materialPreviewSchema.shape.payload.max(32_000) })
+        .parse(preview),
+    ).toThrow();
+    expect(reopened.materials.preview(id, 'home')?.payload).toBe(preview.payload);
+  } finally {
+    reopened.close();
+  }
+});
+
+it('resends a persisted legacy preview through the current budget and rejects capability drift', async () => {
+  const s = setup();
+  const item = await s.add();
+  await s.settled();
+  const preview = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      operation: 'preview',
+      scope: 'home',
+      instruction: '总结附件内容',
+      model: 'deepseek-flash',
+      selected: [{ source_id: item.source.id, pages: [1] }],
+    }),
+  ).preview!;
+  const legacy = { ...preview, id: randomUUID() };
+  delete legacy.budget;
+  s.store.materials.putPreview('home', legacy);
+  expect(
+    await s.app.resolveContext(legacy.id, 'home', legacy.instruction, legacy.model),
+  ).toMatchObject({ text: legacy.payload });
+  const drift = {
+    ...preview,
+    id: randomUUID(),
+    budget: { ...preview.budget!, model_capability: '{}' },
+  };
+  s.store.materials.putPreview('home', drift);
+  await expect(
+    s.app.resolveContext(drift.id, 'home', drift.instruction, drift.model),
+  ).rejects.toThrow('STALE_BUDGET');
+  s.store.close();
+  const reopened = openTaskStore(join(s.root, 'db.sqlite'), migrations);
+  try {
+    expect(reopened.materials.preview(legacy.id, 'home')).toEqual(legacy);
+    expect(reopened.materials.preview(preview.id, 'home')).toEqual(preview);
+  } finally {
+    reopened.close();
   }
 });

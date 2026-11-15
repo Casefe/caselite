@@ -1,0 +1,35 @@
+/* 本文件独立声明该风格的明暗色；不触碰工作区栏宽、插槽或正文数据。 */
+html[data-skin='deep-sea'][data-theme='light'],
+html[data-theme='light'] .skin-style-card[data-skin-choice='deep-sea'] {
+  --ink: #23374c;
+  --muted: #62778a;
+  --line: #dce4ed;
+  --line-strong: #c8d5e2;
+  --nav: #152f4b;
+  --theme-subtle: #eff4f9;
+  --theme-hover: #e3edf7;
+  --theme-secondary: #526d85;
+  --theme-accent: #2866ab;
+  --theme-selected: #dceaf8;
+  --skin-nav-ink: #c7d8e8;
+  --skin-nav-selected: #ffffff;
+  --skin-nav-active: #2a4b70;
+  --skin-nav-hover: #203e5e;
+}
+html[data-skin='deep-sea'][data-theme='dark'],
+html[data-theme='dark'] .skin-style-card[data-skin-choice='deep-sea'] {
+  --ink: #e3edf7;
+  --muted: #a5b8ca;
+  --line: #34434f;
+  --line-strong: #495d6e;
+  --nav: #142532;
+  --theme-subtle: #25343f;
+  --theme-hover: #314656;
+  --theme-secondary: #b6c8d7;
+  --theme-accent: #8ebde9;
+  --theme-selected: #29485f;
+  --skin-nav-ink: #bdcfde;
+  --skin-nav-selected: #eef7ff;
+  --skin-nav-active: #2a485d;
+  --skin-nav-hover: #243c4c;
+}

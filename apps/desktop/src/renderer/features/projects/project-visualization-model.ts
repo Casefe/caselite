@@ -52,6 +52,9 @@ export type VisualizationNodeData = {
     | 'chronicle'
     | 'statistics'
     | 'record';
+  sourceTitle?: string;
+  customLabel?: string;
+  fieldSources?: [string, string][];
   subtitle?: string;
   tag?: string;
   tone?: 'blue' | 'amber';
@@ -109,10 +112,14 @@ export function stepVisualizationLayout(
 }
 export type VisualizationInspection = {
   projectId: string;
+  projectTitle?: string;
   mode: VisualizationMode;
   sample: boolean;
   nodeCount: number;
   edgeCount: number;
+  readOnly?: boolean;
+  busy?: boolean;
+  editLabel?(text: string): void;
   selected?: {
     id: string;
     data: VisualizationNodeData;

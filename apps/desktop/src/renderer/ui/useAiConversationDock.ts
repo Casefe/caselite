@@ -1,3 +1,4 @@
+import { useFourColumnWorkspace } from './FourColumnWorkspace';
 import {
   useCallback,
   useEffect,
@@ -22,13 +23,17 @@ export function useAiConversationDock({
   blocked: boolean;
   compact: boolean;
 }) {
+  const shell = useFourColumnWorkspace();
+  const inShell = Boolean(shell);
   const [expansion, setExpansion] = useState<{
+    open: boolean;
     epoch: number;
     floating: boolean;
     maximized: boolean;
     width: number | null;
   } | null>(null);
-  const expanded = expansion?.epoch === layoutEpoch && expansion.floating === floating;
+  const expanded =
+    !!expansion?.open && expansion.epoch === layoutEpoch && expansion.floating === floating;
   const maximized = expanded && expansion.maximized;
   const customWidth = expanded ? expansion.width : null;
   const setExpanded = useCallback(
@@ -36,11 +41,13 @@ export function useAiConversationDock({
       setExpansion((old) =>
         value
           ? old?.epoch === layoutEpoch && old.floating === floating
-            ? old
-            : { epoch: layoutEpoch, floating, maximized: false, width: null }
-          : null,
+            ? { ...old, open: true }
+            : { open: true, epoch: layoutEpoch, floating, maximized: false, width: null }
+          : inShell && old
+            ? { ...old, open: false }
+            : null,
       ),
-    [layoutEpoch, floating],
+    [layoutEpoch, floating, inShell],
   );
   const setMaximized = useCallback(
     (value: boolean | ((old: boolean) => boolean)) =>
@@ -68,7 +75,15 @@ export function useAiConversationDock({
     workspaceWidth: 0,
     workspaceHeight: 0,
   });
-  const drag = useRef<{ id: number; x: number; width: number } | null>(null);
+  const drag = useRef<{ id: number; x: number; width: number; previous: number | null } | null>(
+    null,
+  );
+  const cancelDrag = useCallback(() => {
+    const start = drag.current;
+    if (!start) return;
+    drag.current = null;
+    setCustomWidth(start.previous);
+  }, [setCustomWidth]);
   const toggle = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
@@ -78,10 +93,16 @@ export function useAiConversationDock({
     Math.max(0, floating ? window.innerWidth - 16 : bounds.right),
   );
   const maximumWidth = Math.max(0, right - 12);
-  const minimumWidth = Math.min(Math.max(280, floating ? 340 : bounds.width), maximumWidth);
+  const minimumWidth = Math.min(
+    inShell ? bounds.width : Math.max(280, floating ? 340 : bounds.width),
+    maximumWidth,
+  );
   // 展开和调宽的下界实时跟随属性栏；窄窗仍受视口安全上限约束，不能挤出控件。
   const width = expanded
-    ? Math.min(maximumWidth, Math.max(minimumWidth, customWidth ?? window.innerWidth / 4))
+    ? Math.min(
+        maximumWidth,
+        Math.max(minimumWidth, customWidth ?? (shell ? bounds.width : window.innerWidth / 4)),
+      )
     : Math.min(bounds.width, right);
   const bottom = Math.min(
     window.innerHeight,
@@ -97,8 +118,10 @@ export function useAiConversationDock({
     : Math.min(availableHeight, compact ? 44 : 164);
   const collapse = () => {
     setExpanded(false);
-    setMaximized(false);
-    setCustomWidth(null);
+    if (!inShell) {
+      setMaximized(false);
+      setCustomWidth(null);
+    }
     drag.current = null;
   };
   useLayoutEffect(() => {
@@ -109,6 +132,7 @@ export function useAiConversationDock({
     const measure = () => {
       const area = workspace?.getBoundingClientRect();
       const rect = element.getBoundingClientRect();
+      if (inShell && rect.width === 0) return;
       setBounds({
         width: rect.width,
         right: rect.right,
@@ -139,7 +163,7 @@ export function useAiConversationDock({
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure, true);
     };
-  }, [layout]);
+  }, [layout, inShell]);
   useLayoutEffect(() => {
     const scroll = content.current;
     if (!expanded || !scroll) return;
@@ -189,9 +213,12 @@ export function useAiConversationDock({
       )
         return;
       event.preventDefault();
+      cancelDrag();
       setExpanded(false);
-      setMaximized(false);
-      setCustomWidth(null);
+      if (!inShell) {
+        setMaximized(false);
+        setCustomWidth(null);
+      }
       drag.current = null;
       if (floating) window.requestAnimationFrame(() => launcher.current?.focus());
       else toggle.current?.focus();
@@ -206,7 +233,7 @@ export function useAiConversationDock({
       scroll.removeEventListener('submit', submit, true);
       document.removeEventListener('keydown', escape);
     };
-  }, [blocked, expanded, floating, setExpanded, setMaximized, setCustomWidth]);
+  }, [blocked, expanded, floating, inShell, setExpanded, setMaximized, setCustomWidth, cancelDrag]);
   const toggleFromLauncher = () => (expanded ? collapse() : setExpanded(true));
   const toggleFromHeading = () => {
     if (expanded) {
@@ -233,7 +260,7 @@ export function useAiConversationDock({
       event.preventDefault();
       event.currentTarget.focus();
       event.currentTarget.setPointerCapture(event.pointerId);
-      drag.current = { id: event.pointerId, x: event.clientX, width };
+      drag.current = { id: event.pointerId, x: event.clientX, width, previous: customWidth };
     },
     onPointerMove: (event) => {
       const start = drag.current;
@@ -245,12 +272,8 @@ export function useAiConversationDock({
     onPointerUp: () => {
       drag.current = null;
     },
-    onPointerCancel: () => {
-      drag.current = null;
-    },
-    onLostPointerCapture: () => {
-      drag.current = null;
-    },
+    onPointerCancel: cancelDrag,
+    onLostPointerCapture: cancelDrag,
     onKeyDown: (event) => {
       const next =
         event.key === 'ArrowLeft'

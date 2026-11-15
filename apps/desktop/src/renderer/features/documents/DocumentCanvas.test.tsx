@@ -150,6 +150,7 @@ it('较早ACK不覆盖较新read投影；高版本缓存不能误解锁尚在旧
   fireEvent.click(screen.getByText('确认保存'));
   act(() =>
     s.client.setQueryData(['document-edit', document.id, 0], {
+      kind: 'task',
       task: { ...task, body_revision: 5 },
       state: [5],
     }),

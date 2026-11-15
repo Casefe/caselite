@@ -1,3 +1,11 @@
+import { projectGraphRequestSchema, projectGraphSchema } from './project-graph';
+import {
+  projectVisualizationReadRequestSchema,
+  projectVisualizationSaveRequestSchema,
+  projectVisualizationStatusRequestSchema,
+  projectVisualizationViewSchema,
+  projectVisualizationReceiptSchema,
+} from './project-visualization-view';
 import { z } from 'zod';
 import { ordinaryDateSchema, tagListSchema } from './task';
 export const projectProfessionalTypeSchema = z.enum([
@@ -104,13 +112,13 @@ export const matterSchema = z.object({
   health: projectHealthSchema.nullable().optional(),
   attributes: projectAttributesSchema.optional(),
 });
-export const catalogDocumentSchema = z.object({
+const catalogDocumentFields = {
   id,
-  task_id: id,
   title: z.string(),
   matter_id: id.nullable(),
   body_id: id,
   body_revision: z.number().int().nonnegative(),
+  editor_schema: z.union([z.literal(1), z.literal(2)]).default(1),
   version,
   archived_at: z.string().nullable(),
   collection: z.string(),
@@ -118,7 +126,21 @@ export const catalogDocumentSchema = z.object({
   favorite: z.boolean(),
   in_library: z.boolean(),
   updated_at: z.string(),
-});
+};
+// 旧回执缺少 owner_kind 时只兼容原任务分支；个人文档不能借任务身份通过验证。
+export const catalogDocumentSchema = z.union([
+  z.object({
+    ...catalogDocumentFields,
+    owner_kind: z.literal('task').default('task'),
+    task_id: id,
+  }),
+  z.object({
+    ...catalogDocumentFields,
+    owner_kind: z.literal('personal'),
+    task_id: z.null(),
+    matter_id: z.null(),
+  }),
+]);
 const discussionState = z.array(z.number().int().min(0).max(255)).min(1).max(32768);
 const discussionScope = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('task_comment'), task_id: id }),
@@ -155,6 +177,10 @@ const projectPlanSchema = z.strictObject({
   assignments: z.array(z.strictObject({ task_id: id, milestone_id: id })),
 });
 export const catalogRequestSchema = z.discriminatedUnion('operation', [
+  projectGraphRequestSchema,
+  projectVisualizationReadRequestSchema,
+  projectVisualizationSaveRequestSchema,
+  projectVisualizationStatusRequestSchema,
   z.strictObject({ ...base, operation: z.literal('read_project_plan'), project_id: id }),
   z.strictObject({
     ...mutation,
@@ -219,7 +245,22 @@ export const catalogRequestSchema = z.discriminatedUnion('operation', [
     })
     .strict(),
   z.object({ ...base, operation: z.literal('read_project'), id }).strict(),
+  z.object({ ...base, operation: z.literal('read_document'), id }).strict(),
   z.object({ ...base, operation: z.literal('status'), idempotency_key: id }).strict(),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('create_document'),
+    title: milestoneTitle,
+  }),
+  z.strictObject({
+    ...mutation,
+    operation: z.literal('save_document_body'),
+    document_id: id,
+    body_id: id,
+    expected_revision: z.number().int().positive(),
+    editor_schema: z.union([z.literal(1), z.literal(2)]),
+    state: bytes,
+  }),
   z
     .object({
       ...mutation,
@@ -311,6 +352,9 @@ export const catalogResponseSchema = z.discriminatedUnion('ok', [
       })
       .optional(),
     project_plan: projectPlanSchema.optional(),
+    project_graph: projectGraphSchema.optional(),
+    project_visualization_view: projectVisualizationViewSchema.optional(),
+    visualization_receipt: projectVisualizationReceiptSchema.optional(),
     activity: z.array(activityEventSchema).optional(),
     activity_has_more: z.boolean().optional(),
     activity_target: z

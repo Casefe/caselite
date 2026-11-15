@@ -6,6 +6,10 @@ const localPath = (relativePath) => fileURLToPath(new URL(relativePath, import.m
 export default {
   plugins: [
     new webpack.DefinePlugin({
+      CASELITE_SILENT_PERFORMANCE_BUILD: JSON.stringify(
+        process.env.CASELITE_LOCAL_TEST_BUILD === '1' &&
+          process.env.CASELITE_SILENT_PERFORMANCE_BUILD === '1',
+      ),
       CASELITE_LOCAL_TEST_BUILD: JSON.stringify(process.env.CASELITE_LOCAL_TEST_BUILD === '1'),
     }),
   ],

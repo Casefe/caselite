@@ -6,3 +6,5 @@ declare const PDF_WORKER_WEBPACK_ENTRY: string;
 declare const LEGAL_WINDOW_WEBPACK_ENTRY: string;
 declare const LEGAL_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 declare const CASELITE_LOCAL_TEST_BUILD: boolean;
+
+declare const CASELITE_SILENT_PERFORMANCE_BUILD: boolean;

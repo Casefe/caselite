@@ -16,7 +16,10 @@ export default function ProjectDeliverables({
 }) {
   if (readError) return <p role="status">暂时无法读取交付草稿。</p>;
   if (!documents) return <p role="status">正在读取交付草稿…</p>;
-  const drafts = documents.filter((doc) => doc.body_revision > 0);
+  const drafts = documents.filter(
+    (doc): doc is Extract<CatalogDocument, { owner_kind: 'task' }> =>
+      !!doc.task_id && doc.body_revision > 0,
+  );
   const owners = new Map(tasks.map((task) => [task.id, task.assignee]));
   return (
     <>

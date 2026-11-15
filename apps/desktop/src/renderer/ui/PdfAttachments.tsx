@@ -3,10 +3,13 @@ import { DocxDraftPreview } from './DocxDraftPreview';
 import { materialSize } from './material-size';
 export { materialSize } from './material-size';
 import { Icon } from '../shared/ui/Icon';
+import { createPortal, flushSync } from 'react-dom';
+import { useHomePreview, type HomePreviewEntry } from './HomePreview';
 import {
   lazy,
   Suspense,
   useEffect,
+  useCallback,
   useLayoutEffect,
   useId,
   useRef,
@@ -49,12 +52,14 @@ export default function PdfAttachments({
   actions,
   disabled = false,
   showSavedMaterials = false,
+  readerOnly = false,
   controller: c,
 }: {
   children: ReactNode;
   actions?: ReactNode;
   disabled?: boolean;
   showSavedMaterials?: boolean;
+  readerOnly?: boolean;
   controller: MaterialController;
 }) {
   const [over, setOver] = useState(false);
@@ -71,6 +76,116 @@ export default function PdfAttachments({
   const [menuPosition, setMenuPosition] = useState<CSSProperties>({});
   const reader = useRef<HTMLDialogElement>(null);
   const readingId = c.reading?.id;
+  const readingKey = c.reading ? `${c.scope}:${c.reading.task}:${c.reading.id}` : '';
+  const homePreview = useHomePreview();
+  const embedded = homePreview !== null;
+  const previewOwner = useId();
+  const previewTicket = useRef<number | null>(null);
+  const previewSession = useRef(homePreview?.session);
+  const previewFocus = useRef<Element | null>(null);
+  const latestClear = useRef(c.clearReading);
+  useLayoutEffect(() => {
+    latestClear.current = c.clearReading;
+  });
+  const previewEnabled = homePreview?.enabled;
+  const hostSession = homePreview?.session;
+  const beginPreview = homePreview?.begin;
+  const showPreview = homePreview?.show;
+  const releasePreview = homePreview?.release;
+  const currentReading = useRef({ key: readingKey, preview: homePreview });
+  useLayoutEffect(() => {
+    currentReading.current = { key: readingKey, preview: homePreview };
+  });
+  const closeHomeReading = useCallback(
+    (restoreFocus = false) => {
+      if (!restoreFocus) {
+        latestClear.current();
+        return;
+      }
+      const current = currentReading.current.preview;
+      if (!current?.enabled || current.owner !== previewOwner) return;
+      const target = previewFocus.current;
+      const session = current.session;
+      // 显式关闭先提交清读及栏宽恢复；最大化时不能把焦点送进仍为零宽的聊天栏。
+      flushSync(() => {
+        latestClear.current();
+        releasePreview?.(previewOwner);
+      });
+      const next = currentReading.current.preview;
+      if (
+        next?.enabled &&
+        next.session === session &&
+        next.owner === null &&
+        target instanceof HTMLElement &&
+        target.isConnected &&
+        target.tabIndex >= 0 &&
+        !target.closest('[hidden], [inert], [disabled], [aria-disabled="true"]')
+      )
+        target.focus();
+    },
+    [previewOwner, releasePreview],
+  );
+  const renderedTicket = previewTicket.current;
+  const closeReader = () => {
+    if (!embedded) {
+      c.clearReading();
+      return;
+    }
+    // 旧阅读器的迟到关闭不能清掉同实例的新材料，也不能夺取新对话的焦点。
+    if (
+      currentReading.current.key === readingKey &&
+      currentReading.current.preview?.session === hostSession &&
+      previewTicket.current === renderedTicket
+    )
+      closeHomeReading(true);
+  };
+  useLayoutEffect(() => {
+    if (!beginPreview || !showPreview || !releasePreview || !hostSession) return;
+    if (!previewEnabled || previewSession.current !== hostSession) {
+      previewSession.current = hostSession;
+      previewTicket.current = null;
+      latestClear.current();
+      releasePreview(previewOwner);
+      return;
+    }
+    const entry: HomePreviewEntry = {
+      owner: previewOwner,
+      session: hostSession,
+      title: c.reading?.name ?? '材料原件',
+      close: closeHomeReading,
+    };
+    if (c.readPending && !readingKey) {
+      previewFocus.current = document.activeElement;
+      previewTicket.current = beginPreview(entry);
+    }
+    if (readingKey) {
+      if (previewTicket.current === null) {
+        previewFocus.current = document.activeElement;
+        previewTicket.current = beginPreview(entry);
+      }
+      showPreview(entry, previewTicket.current);
+    } else if (!c.readPending) {
+      previewTicket.current = null;
+      releasePreview(previewOwner);
+    }
+  }, [
+    readingKey,
+    c.readPending,
+    c.reading?.name,
+    previewEnabled,
+    hostSession,
+    beginPreview,
+    showPreview,
+    releasePreview,
+    previewOwner,
+    closeHomeReading,
+  ]);
+  useLayoutEffect(
+    () => () => {
+      releasePreview?.(previewOwner);
+    },
+    [releasePreview, previewOwner],
+  );
   const readingDocx = c.reading && isDocx(c.reading.name) ? c.reading : null;
   const docxMaterial = c.items.find((item) => item.id === readingId) ?? readingDocx?.material;
   const closeMenu = (restoreFocus = false) => {
@@ -178,7 +293,7 @@ export default function PdfAttachments({
   };
   useEffect(() => {
     const dialog = reader.current;
-    if (!readingId || !dialog) return;
+    if (embedded || !readingKey || !dialog) return;
     const previousFocus = document.activeElement;
     const materialTrigger = trigger.current;
     // 原件阅读进入浏览器原生顶层，不能撑高输入面板或挤掉发送/停止按钮。
@@ -194,7 +309,106 @@ export default function PdfAttachments({
         previousFocus.focus();
       else if (materialTrigger?.isConnected) materialTrigger.focus();
     };
-  }, [readingId]);
+  }, [readingKey, embedded]);
+  const readerContent = (
+    <>
+      {c.reading &&
+        !readingDocx &&
+        c.items
+          .filter((item) => item.id === c.reading?.id)
+          .map((item) => (
+            <div className="material-reader-tools" key={item.id}>
+              <span>
+                {item.status === 'processing'
+                  ? '正在本地提取文字…'
+                  : item.pages.some((page) => page.origin === 'ocr_candidate')
+                    ? '本地识别文字 · 待核对'
+                    : '原件阅读'}
+              </span>
+              <button
+                type="button"
+                disabled={disabled || c.busy}
+                onClick={() =>
+                  void (item.status === 'processing' ? c.stopLocalText(item) : c.localText(item))
+                }
+              >
+                {item.status === 'processing' ? '停止提取' : '提取文字（离线）'}
+              </button>
+            </div>
+          ))}
+      {readingDocx && (
+        <DocxOriginalReader
+          name={readingDocx.name}
+          material={docxMaterial}
+          onSaveOriginal={() => void c.saveOriginal(readingDocx.id, readingDocx.task)}
+          onClose={closeReader}
+          selection={
+            readingDocx.id in c.selected
+              ? {
+                  pages: c.sections.get(readingDocx.id) ?? [],
+                  disabled,
+                  toggle: (page) => c.toggleSection(readingDocx.id, page),
+                }
+              : undefined
+          }
+        >
+          {c.copyError && <p role="alert">{c.copyError}</p>}
+          {docxMaterial && docxMaterial.status !== 'ready' && (
+            <button
+              type="button"
+              disabled={disabled || c.busy}
+              onClick={() =>
+                void (docxMaterial.status === 'processing'
+                  ? c.stopLocalText(docxMaterial)
+                  : c.localText(docxMaterial))
+              }
+            >
+              {docxMaterial.status === 'processing' ? '停止提取' : '提取文字（离线）'}
+            </button>
+          )}
+          {docxMaterial?.status === 'ready' && (
+            <DocxDraftPreview key={readingKey} source={docxMaterial} scope={readingDocx.task} />
+          )}
+        </DocxOriginalReader>
+      )}
+      {c.reading && !readingDocx && (
+        <Suspense fallback={<p>正在加载阅读器…</p>}>
+          <PdfReader
+            key={readingKey}
+            name={c.reading.name}
+            bytes={c.reading.bytes}
+            textPages={c.items.find((item) => item.id === c.reading?.id)?.pages}
+            onClose={closeReader}
+          />
+        </Suspense>
+      )}
+    </>
+  );
+  const readerElement =
+    c.reading &&
+    (homePreview ? (
+      homePreview.enabled && homePreview.owner === previewOwner && homePreview.target ? (
+        createPortal(
+          <div className="home-material-reader" aria-label="材料原件">
+            {readerContent}
+          </div>,
+          homePreview.target,
+        )
+      ) : null
+    ) : (
+      <dialog
+        ref={reader}
+        className="material-reader-dialog"
+        aria-label="材料原件"
+        onCancel={(event) => {
+          event.preventDefault();
+          c.clearReading();
+        }}
+      >
+        {readerContent}
+      </dialog>
+    ));
+  if (readerOnly) return readerElement;
   return (
     <div
       className={`material-composer${over ? ' material-drag-over' : ''}`}
@@ -275,6 +489,7 @@ export default function PdfAttachments({
           </button>
         </div>
       )}
+      {c.readError && <p role="alert">材料列表暂不可核对：{c.readError}</p>}
       {c.error && (
         <div role="alert" className="material-error">
           {c.error}
@@ -492,94 +707,7 @@ export default function PdfAttachments({
         </div>
         {actions}
       </div>
-      {c.reading && (
-        <dialog
-          ref={reader}
-          className="material-reader-dialog"
-          aria-label="材料原件"
-          onCancel={(event) => {
-            event.preventDefault();
-            c.clearReading();
-          }}
-        >
-          {c.reading &&
-            !readingDocx &&
-            c.items
-              .filter((item) => item.id === c.reading?.id)
-              .map((item) => (
-                <div className="material-reader-tools" key={item.id}>
-                  <span>
-                    {item.status === 'processing'
-                      ? '正在本地提取文字…'
-                      : item.pages.some((page) => page.origin === 'ocr_candidate')
-                        ? '本地识别文字 · 待核对'
-                        : '原件阅读'}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={disabled || c.busy}
-                    onClick={() =>
-                      void (item.status === 'processing'
-                        ? c.stopLocalText(item)
-                        : c.localText(item))
-                    }
-                  >
-                    {item.status === 'processing' ? '停止提取' : '提取文字（离线）'}
-                  </button>
-                </div>
-              ))}
-          {readingDocx && (
-            <DocxOriginalReader
-              name={readingDocx.name}
-              material={docxMaterial}
-              onSaveOriginal={() => void c.saveOriginal(readingDocx.id, readingDocx.task)}
-              onClose={c.clearReading}
-              selection={
-                readingDocx.id in c.selected
-                  ? {
-                      pages: c.sections.get(readingDocx.id) ?? [],
-                      disabled,
-                      toggle: (page) => c.toggleSection(readingDocx.id, page),
-                    }
-                  : undefined
-              }
-            >
-              {c.copyError && <p role="alert">{c.copyError}</p>}
-              {docxMaterial && docxMaterial.status !== 'ready' && (
-                <button
-                  type="button"
-                  disabled={disabled || c.busy}
-                  onClick={() =>
-                    void (docxMaterial.status === 'processing'
-                      ? c.stopLocalText(docxMaterial)
-                      : c.localText(docxMaterial))
-                  }
-                >
-                  {docxMaterial.status === 'processing' ? '停止提取' : '提取文字（离线）'}
-                </button>
-              )}
-              {docxMaterial?.status === 'ready' && (
-                <DocxDraftPreview
-                  key={readingDocx.id}
-                  source={docxMaterial}
-                  scope={readingDocx.task}
-                />
-              )}
-            </DocxOriginalReader>
-          )}
-          {c.reading && !readingDocx && (
-            <Suspense fallback={<p>正在加载阅读器…</p>}>
-              <PdfReader
-                key={c.reading.id}
-                name={c.reading.name}
-                bytes={c.reading.bytes}
-                textPages={c.items.find((item) => item.id === c.reading?.id)?.pages}
-                onClose={c.clearReading}
-              />
-            </Suspense>
-          )}
-        </dialog>
-      )}
+      {readerElement}
     </div>
   );
 }

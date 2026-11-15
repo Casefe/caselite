@@ -762,7 +762,20 @@ it.each(['A', 'B'] as const)(
       const after = ['body_revisions', 'task_receipts', 'documents'].map((table) =>
         upgraded.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
       );
-      expect(after).toEqual(before);
+      // 新个人文档列只能为旧Task补确定的空值；原正文、身份、回执及全部旧列仍逐项相等。
+      expect(after).toEqual(
+        before.map((rows, index) =>
+          index === 2
+            ? rows.map((row) => ({
+                ...(row as object),
+                personal_workspace_id: null,
+                personal_title: null,
+                personal_updated_at: null,
+                owner_kind: 'task',
+              }))
+            : rows,
+        ),
+      );
       expect(history(upgraded)).toHaveLength(integrationMigrations.length);
       expect(upgraded.pragma('integrity_check', { simple: true })).toBe('ok');
       expect(upgraded.pragma('foreign_key_check')).toEqual([]);

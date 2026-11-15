@@ -161,3 +161,36 @@
 .local-folder-tree [aria-label='未完成的文件打开'] button {
   margin: 4px 6px 4px 0;
 }
+
+.skills-preview-dialog {
+  width: min(900px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  padding: 24px;
+  overflow: auto;
+  color: var(--ink);
+  background: var(--theme-panel, var(--canvas));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.skills-preview-dialog::backdrop {
+  background: rgb(0 0 0 / 25%);
+}
+.skills-preview-dialog label {
+  display: block;
+  margin-block: 12px;
+}
+.skills-preview-dialog input:not([type='file']) {
+  display: block;
+  width: 100%;
+}
+.skills-preview-dialog pre,
+.skills-preview-dialog code,
+.skills-preview-dialog li,
+.skills-preview-dialog p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.skills-preview-dialog article {
+  border-block-start: 1px solid var(--line);
+  padding-block: 12px;
+}

@@ -13,6 +13,9 @@
 .workbench:is([data-navigation-hidden='true'], [data-navigation-overlay='true']) {
   grid-template-columns: minmax(0, 1fr);
 }
+.workbench:is([data-navigation-hidden='true'], [data-navigation-overlay='true']) > .workspace-main {
+  grid-column: 1;
+}
 .workbench[data-navigation-hidden='true'] > .primary-sidebar {
   display: none;
 }
@@ -275,4 +278,13 @@
   .task-content-overview
   > :not(.task-content-panel):not(.inline-properties-slot) {
   order: 4;
+}
+
+@media (max-width: 700px) {
+  .workbench {
+    --shell-collapsed-rail-width: 36px;
+  }
+  .workbench > .primary-sidebar {
+    padding-inline: 4px;
+  }
 }

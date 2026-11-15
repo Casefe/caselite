@@ -396,3 +396,108 @@ it('flips the menu within viewport space and repositions on resize and ancestor 
   expect(menu.style.top).toBe('68px');
   expect(menu.style.bottom).toBe('');
 });
+
+it('keeps the original modal reader for consumers outside the home preview host and restores focus', async () => {
+  const showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.open = true;
+  });
+  const close = vi.fn(function (this: HTMLDialogElement) {
+    this.open = false;
+  });
+  const originalShow = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+  const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value: showModal,
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: close });
+  try {
+    const c = controller();
+    const view = render(
+      <PdfAttachments controller={c}>
+        <textarea aria-label="原有输入" />
+      </PdfAttachments>,
+    );
+    const input = screen.getByLabelText('原有输入');
+    input.focus();
+    view.rerender(
+      <PdfAttachments
+        controller={{
+          ...c,
+          reading: {
+            context: { scope: 'original-task' },
+            id: 'same-source',
+            task: 'original-task',
+            name: '范围一.pdf',
+            bytes: new Uint8Array([1]),
+          },
+        }}
+      >
+        <textarea aria-label="原有输入" />
+      </PdfAttachments>,
+    );
+    expect(await screen.findByRole('dialog', { name: '材料原件' })).toBeTruthy();
+    expect(showModal).toHaveBeenCalledTimes(1);
+    await screen.findByText('阅读：范围一.pdf');
+    view.rerender(
+      <PdfAttachments
+        controller={{
+          ...c,
+          reading: {
+            context: { scope: 'other-task' },
+            id: 'same-source',
+            task: 'other-task',
+            name: '范围二.pdf',
+            bytes: new Uint8Array([2]),
+          },
+        }}
+      >
+        <textarea aria-label="原有输入" />
+      </PdfAttachments>,
+    );
+    await screen.findByText('阅读：范围二.pdf');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(showModal).toHaveBeenCalledTimes(2);
+    view.rerender(
+      <PdfAttachments controller={c}>
+        <textarea aria-label="原有输入" />
+      </PdfAttachments>,
+    );
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(input);
+  } finally {
+    if (originalShow) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalShow);
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+    if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, 'close', originalClose);
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
+  }
+});
+
+it('keeps delayed or rejected material lists distinct from an empty draft in the chat material entry', () => {
+  const c = controller({ loaded: false, readError: '材料列表读取尚未确认' });
+  const view = render(<PdfAttachments controller={c}>保留草稿</PdfAttachments>);
+  expect(screen.getByRole('alert').textContent).toContain(
+    '材料列表暂不可核对：材料列表读取尚未确认',
+  );
+  expect(screen.queryByText('本轮未添加材料')).toBeNull();
+  view.rerender(
+    <PdfAttachments
+      controller={{
+        ...c,
+        loaded: true,
+        readError: '',
+        staged: {
+          token: 'original-id',
+          restore_source_id: 'original-id',
+          name: '原标识恢复材料.pdf',
+          bytes: 100,
+        },
+      }}
+    >
+      保留草稿
+    </PdfAttachments>,
+  );
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByText('原标识恢复材料.pdf')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '重试恢复' })).toBeTruthy();
+});

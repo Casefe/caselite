@@ -9,7 +9,7 @@ export function ThemeCommandCard({ command, runId }: { command: ThemeCommand; ru
   const [pending, setPending] = useState(true);
   const [error, setError] = useState('');
   const [valid, setValid] = useState(false);
-  const lastTheme = useRef(appearance.theme);
+  const lastAppearance = useRef(`${appearance.theme}:${appearance.skin ?? ''}`);
   const generation = useRef(0);
   const alive = useRef(true);
   const query = useCallback(
@@ -57,8 +57,9 @@ export function ThemeCommandCard({ command, runId }: { command: ThemeCommand; ru
     };
   }, [query, command.state]);
   useEffect(() => {
-    if (lastTheme.current === appearance.theme) return;
-    lastTheme.current = appearance.theme;
+    const identity = `${appearance.theme}:${appearance.skin ?? ''}`;
+    if (lastAppearance.current === identity) return;
+    lastAppearance.current = identity;
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled && alive.current) void query('theme_status', false);
@@ -66,7 +67,7 @@ export function ThemeCommandCard({ command, runId }: { command: ThemeCommand; ru
     return () => {
       cancelled = true;
     };
-  }, [appearance.theme, query]);
+  }, [appearance.theme, appearance.skin, query]);
   const expected = current.state === 'undone' ? current.before : current.after;
   const applied =
     valid && !appearance.pending && !appearance.error && appearance.theme === expected;

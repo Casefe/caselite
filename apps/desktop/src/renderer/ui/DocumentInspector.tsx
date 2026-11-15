@@ -88,7 +88,7 @@ export default function DocumentInspector({
                     <DocumentPropertyValues
                       revision={document.body_revision}
                       projectTitle={project?.title ?? (document.matter_id ? '已归组' : '未归组')}
-                      taskTitle={document.title}
+                      taskTitle={document.task_id ? document.title : '未关联任务'}
                       documentId={document.id}
                     />
                     {saveState && saveState.bodyId === document.body_id && !selectedVersion && (
@@ -145,7 +145,11 @@ export default function DocumentInspector({
                 revision: document.body_revision,
                 archived: !!document.archived_at,
               }}
-              taskId={document.archived_at || selectedVersion ? undefined : document.task_id}
+              taskId={
+                document.archived_at || selectedVersion
+                  ? undefined
+                  : (document.task_id ?? undefined)
+              }
               blocked={blocked || !!selectedVersion || !!activeSource}
               unavailable={
                 activeSource

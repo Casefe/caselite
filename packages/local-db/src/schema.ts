@@ -165,22 +165,39 @@ export const taskItems = sqliteTable(
     ),
   ],
 );
-export const documents = sqliteTable('documents', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id')
-    .notNull()
-    .unique()
-    .references(() => taskItems.id),
-  metadataVersion: integer('metadata_version').notNull().default(1),
-  archivedAt: text('archived_at'),
-  collection: text('collection').notNull().default(''),
-  tags: text('tags').notNull().default('[]'),
-  favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
-  inLibrary: integer('in_library', { mode: 'boolean' }).notNull().default(false),
-  bodyId: text('body_id').notNull().unique(),
-  bodyRevision: integer('body_revision').notNull(),
-  editorSchema: integer('editor_schema').notNull(),
-});
+export const documents = sqliteTable(
+  'documents',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .unique()
+      .references(() => taskItems.id),
+    metadataVersion: integer('metadata_version').notNull().default(1),
+    archivedAt: text('archived_at'),
+    collection: text('collection').notNull().default(''),
+    tags: text('tags').notNull().default('[]'),
+    favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
+    inLibrary: integer('in_library', { mode: 'boolean' }).notNull().default(false),
+    bodyId: text('body_id').notNull().unique(),
+    bodyRevision: integer('body_revision').notNull(),
+    editorSchema: integer('editor_schema').notNull(),
+    personalWorkspaceId: text('personal_workspace_id'),
+    personalTitle: text('personal_title'),
+    personalUpdatedAt: text('personal_updated_at'),
+    ownerKind: text('owner_kind', { enum: ['task', 'personal'] })
+      .notNull()
+      .default('task'),
+  },
+  (table) => [
+    index('documents_personal_workspace').on(table.personalWorkspaceId, table.personalUpdatedAt),
+    check(
+      'documents_owner_binding_valid',
+      sql.raw(
+        "(owner_kind='task' AND task_id IS NOT NULL AND personal_workspace_id IS NULL AND personal_title IS NULL AND personal_updated_at IS NULL) OR (owner_kind='personal' AND task_id IS NULL AND typeof(personal_workspace_id)='text' AND length(personal_workspace_id)>0 AND typeof(personal_title)='text' AND length(personal_title) BETWEEN 1 AND 160 AND instr(personal_title,char(0))=0 AND typeof(personal_updated_at)='text' AND length(personal_updated_at)>0)",
+      ),
+    ),
+  ],
+);
 export const bodyRevisions = sqliteTable(
   'body_revisions',
   {
@@ -886,5 +903,34 @@ export const folderMappings = sqliteTable(
       foreignColumns: [materialSources.workspaceId, materialSources.id],
     }),
     check('folder_mapping_identity', sql`${t.identityVersion}=1`),
+  ],
+);
+
+// 显示配置独立于业务对象与Yjs正文；回退代码也必须保留已保存数据。
+export const projectVisualizationViews = sqliteTable(
+  'project_visualization_views',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => matters.id),
+    viewId: text('view_id').notNull(),
+    formatVersion: integer('format_version').notNull(),
+    revision: integer('revision').notNull(),
+    configuration: text('configuration').notNull(),
+    sourceFingerprint: text('source_fingerprint').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.projectId, t.viewId] }),
+    check('visualization_current', sql`${t.viewId}='current' AND ${t.formatVersion}=1`),
+    check('visualization_revision', sql`typeof(${t.revision})='integer' AND ${t.revision}>0`),
+    check(
+      'visualization_config',
+      sql`length(CAST(${t.configuration} AS blob))<=131072 AND json_valid(${t.configuration})`,
+    ),
+    check(
+      'visualization_fingerprint',
+      sql`length(${t.sourceFingerprint})=64 AND ${t.sourceFingerprint} NOT GLOB '*[^a-f0-9]*'`,
+    ),
   ],
 );

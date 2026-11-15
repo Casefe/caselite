@@ -1,3 +1,4 @@
+import { WorkspaceDirectory } from '../../ui/FourColumnWorkspace';
 import type { TaskCompletionActions } from '../../ui/SharedTaskTable';
 import WorkspacePageChrome, {
   closeWorkspaceDisplayOnEscape,
@@ -240,127 +241,133 @@ export default function CalendarView({
             : undefined
         }
       />
-      <aside className="calendar-dates" aria-label="日期与安排">
-        <header>
-          <h2>日历</h2>
-          <button className="calendar-close-dates" onClick={() => setDatesOpen(false)}>
-            关闭日期
-          </button>
-        </header>
-        <nav className="calendar-month">
-          <button
-            aria-label="上个月"
-            disabled={blocked}
-            onClick={() => {
-              const d = new Date(`${first}T12:00:00`);
-              d.setMonth(d.getMonth() - 1);
-              choose(localDate(d));
-            }}
-          >
-            ‹
-          </button>
-          <strong>{date.slice(0, 7)}</strong>
-          <button
-            aria-label="下个月"
-            disabled={blocked}
-            onClick={() => {
-              const d = new Date(`${first}T12:00:00`);
-              d.setMonth(d.getMonth() + 1);
-              choose(localDate(d));
-            }}
-          >
-            ›
-          </button>
-        </nav>
-        <div className="calendar-weekdays">
-          {'一二三四五六日'.split('').map((v) => (
-            <small key={v}>{v}</small>
-          ))}
-        </div>
-        <div className="calendar-date-grid">
-          {days.map((d) => (
+      <WorkspaceDirectory>
+        <aside className="calendar-dates" aria-label="日期与安排">
+          <header>
+            <h2>日历</h2>
+            <button className="calendar-close-dates" onClick={() => setDatesOpen(false)}>
+              关闭日期
+            </button>
+          </header>
+          <nav className="calendar-month">
             <button
-              key={d}
+              aria-label="上个月"
               disabled={blocked}
-              className={d.slice(0, 7) === date.slice(0, 7) ? '' : 'muted'}
-              aria-label={
-                counts.data
-                  ? `${d}，${counts.data.calendar_counts?.find((v) => v.date === d)?.count ?? 0}个任务`
-                  : `${d}，任务数尚未读取`
-              }
-              aria-pressed={d === date}
-              onClick={() => choose(d)}
-            >
-              <span>{+d.slice(8)}</span>
-              <small>{counts.data?.calendar_counts?.find((v) => v.date === d)?.count || ''}</small>
-            </button>
-          ))}
-        </div>
-        <button disabled={blocked} onClick={() => choose(today)}>
-          返回今日
-        </button>
-        <ImportantSchedules onOpen={onOpen} compact title="重要日期" blocked={blocked} />
-        <details
-          className="calendar-options"
-          id={chromeFiltersId}
-          open={
-            calendarOptionsOpen || !!layout.preferences.error || layout.preferences.phase !== 'idle'
-          }
-          onToggle={(event) => setCalendarOptionsOpen(event.currentTarget.open)}
-        >
-          <summary>日历选项</summary>
-          <label>
-            <input
-              type="checkbox"
-              checked={closed}
-              disabled={blocked}
-              onChange={(e) => {
-                setClosed(e.target.checked);
-                setOffset(0);
-                setTimedOffset(0);
-                setUndatedOffset(0);
-                setRangeOffset(0);
+              onClick={() => {
+                const d = new Date(`${first}T12:00:00`);
+                d.setMonth(d.getMonth() - 1);
+                choose(localDate(d));
               }}
-            />
-            显示已完成／已取消
-          </label>
-          <div className="calendar-layout-controls" aria-label="日历布局偏好">
-            <button disabled={layout.pending} onClick={layout.reset}>
-              重置布局
+            >
+              ‹
             </button>
-            <button disabled={layout.pending} onClick={() => void layout.preferences.reload()}>
-              重读布局偏好
+            <strong>{date.slice(0, 7)}</strong>
+            <button
+              aria-label="下个月"
+              disabled={blocked}
+              onClick={() => {
+                const d = new Date(`${first}T12:00:00`);
+                d.setMonth(d.getMonth() + 1);
+                choose(localDate(d));
+              }}
+            >
+              ›
             </button>
-            {layout.preferences.error && <p role="alert">{layout.preferences.error}</p>}
-            {layout.preferences.phase === 'verify' && (
-              <button
-                disabled={layout.preferences.pending}
-                onClick={() => void layout.preferences.verify()}
-              >
-                核对布局保存结果
-              </button>
-            )}
-            {layout.preferences.phase === 'retry' && (
-              <button
-                disabled={layout.preferences.pending}
-                onClick={() => void layout.preferences.retry()}
-              >
-                重试原布局提交
-              </button>
-            )}
-            {layout.preferences.error && layout.preferences.phase === 'idle' && (
-              <>
-                {layout.dirty && (
-                  <button disabled={layout.pending} onClick={layout.save}>
-                    保存当前布局
-                  </button>
-                )}
-              </>
-            )}
+          </nav>
+          <div className="calendar-weekdays">
+            {'一二三四五六日'.split('').map((v) => (
+              <small key={v}>{v}</small>
+            ))}
           </div>
-        </details>
-        {layout.preferences.notice && <small role="status">{layout.preferences.notice}</small>}
-      </aside>
+          <div className="calendar-date-grid">
+            {days.map((d) => (
+              <button
+                key={d}
+                disabled={blocked}
+                className={d.slice(0, 7) === date.slice(0, 7) ? '' : 'muted'}
+                aria-label={
+                  counts.data
+                    ? `${d}，${counts.data.calendar_counts?.find((v) => v.date === d)?.count ?? 0}个任务`
+                    : `${d}，任务数尚未读取`
+                }
+                aria-pressed={d === date}
+                onClick={() => choose(d)}
+              >
+                <span>{+d.slice(8)}</span>
+                <small>
+                  {counts.data?.calendar_counts?.find((v) => v.date === d)?.count || ''}
+                </small>
+              </button>
+            ))}
+          </div>
+          <button disabled={blocked} onClick={() => choose(today)}>
+            返回今日
+          </button>
+          <ImportantSchedules onOpen={onOpen} compact title="重要日期" blocked={blocked} />
+          <details
+            className="calendar-options"
+            id={chromeFiltersId}
+            open={
+              calendarOptionsOpen ||
+              !!layout.preferences.error ||
+              layout.preferences.phase !== 'idle'
+            }
+            onToggle={(event) => setCalendarOptionsOpen(event.currentTarget.open)}
+          >
+            <summary>日历选项</summary>
+            <label>
+              <input
+                type="checkbox"
+                checked={closed}
+                disabled={blocked}
+                onChange={(e) => {
+                  setClosed(e.target.checked);
+                  setOffset(0);
+                  setTimedOffset(0);
+                  setUndatedOffset(0);
+                  setRangeOffset(0);
+                }}
+              />
+              显示已完成／已取消
+            </label>
+            <div className="calendar-layout-controls" aria-label="日历布局偏好">
+              <button disabled={layout.pending} onClick={layout.reset}>
+                重置布局
+              </button>
+              <button disabled={layout.pending} onClick={() => void layout.preferences.reload()}>
+                重读布局偏好
+              </button>
+              {layout.preferences.error && <p role="alert">{layout.preferences.error}</p>}
+              {layout.preferences.phase === 'verify' && (
+                <button
+                  disabled={layout.preferences.pending}
+                  onClick={() => void layout.preferences.verify()}
+                >
+                  核对布局保存结果
+                </button>
+              )}
+              {layout.preferences.phase === 'retry' && (
+                <button
+                  disabled={layout.preferences.pending}
+                  onClick={() => void layout.preferences.retry()}
+                >
+                  重试原布局提交
+                </button>
+              )}
+              {layout.preferences.error && layout.preferences.phase === 'idle' && (
+                <>
+                  {layout.dirty && (
+                    <button disabled={layout.pending} onClick={layout.save}>
+                      保存当前布局
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </details>
+          {layout.preferences.notice && <small role="status">{layout.preferences.notice}</small>}
+        </aside>
+      </WorkspaceDirectory>
       <ResizeSeparator
         label="调整日期区宽度"
         className="calendar-left-separator"
@@ -473,8 +480,8 @@ export default function CalendarView({
         label="调整任务属性栏宽度"
         className="calendar-right-separator"
         value={layout.limits.inspector}
-        min={280}
-        max={layout.limits.inspectorMax}
+        min={Math.min(280, window.innerWidth / 3)}
+        max={Math.min(layout.limits.inspectorMax, window.innerWidth / 3)}
         direction={-1}
         disabled={layout.pending}
         onPreview={(value) => layout.change('inspector_width', value)}

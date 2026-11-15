@@ -6,6 +6,10 @@ import AutoUnpackNativesPlugin from '@electron-forge/plugin-auto-unpack-natives'
 import FusesPlugin from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+const silentPerformanceBuild =
+  process.env.CASELITE_LOCAL_TEST_BUILD === '1' &&
+  process.env.CASELITE_SILENT_PERFORMANCE_BUILD === '1';
+
 const localPath = (relativePath) => fileURLToPath(new URL(relativePath, import.meta.url));
 
 // Keep verification when the matching Electron ZIP is already in the local cache.
@@ -20,8 +24,11 @@ export default {
   // 文件提供商目录可能重建 FinderInfo；可选择本地构建目录，严格签名校验保持开启。
   outDir: process.env.CASELITE_FORGE_OUT_DIR || undefined,
   packagerConfig: {
-    appBundleId: 'com.caselite.desktop',
+    appBundleId: silentPerformanceBuild
+      ? 'com.caselite.silent-performance'
+      : 'com.caselite.desktop',
     extendInfo: {
+      ...(silentPerformanceBuild ? { LSUIElement: true } : {}),
       NSCameraUsageDescription: '仅在你点击拍照录入后使用摄像头，照片保存在本机项目材料中。',
     },
     asar: true,
@@ -68,7 +75,7 @@ export default {
             '--sign',
             '-',
             '--identifier',
-            'com.caselite.desktop',
+            silentPerformanceBuild ? 'com.caselite.silent-performance' : 'com.caselite.desktop',
             bundle,
           ]);
           execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);

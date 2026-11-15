@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import PropertyResizeHandle from './PropertyResizeHandle';
 
 beforeEach(() => {
+  vi.stubGlobal('innerWidth', 2160);
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   HTMLElement.prototype.setPointerCapture = vi.fn();
   HTMLElement.prototype.releasePointerCapture = vi.fn();
@@ -253,4 +254,33 @@ it('restores separate document and knowledge widths through remounts and cancels
   separator = screen.getByRole('separator');
   expect(separator.getAttribute('aria-valuenow')).toBe('392');
   fireEvent.doubleClick(separator);
+});
+
+it('caps properties at one third of the viewport and restores the requested width without rewriting preferences', () => {
+  vi.stubGlobal('innerWidth', 1200);
+  const preferences = vi.fn();
+  vi.stubGlobal('caselite', { preferences });
+  render(<Panel module="contacts" />);
+  const handle = screen.getByRole('separator');
+  fireEvent.doubleClick(handle);
+  keyboard('End');
+  const editor = screen.getByLabelText<HTMLInputElement>('未保存的正文');
+  fireEvent.change(editor, { target: { value: '缩窗仍保留的草稿' } });
+  for (const [viewport, expected] of [
+    [1200, 400],
+    [600, 200],
+    [1200, 400],
+  ]) {
+    vi.stubGlobal('innerWidth', viewport);
+    fireEvent(window, new Event('resize'));
+    expect(handle.getAttribute('aria-valuemin')).toBe(String(Math.min(240, expected)));
+    expect(handle.getAttribute('aria-valuemax')).toBe(String(expected));
+    expect(handle.getAttribute('aria-valuenow')).toBe(String(expected));
+    expect(
+      handle.parentElement?.parentElement?.style.getPropertyValue('--property-panel-width'),
+    ).toBe(`${expected}px`);
+    expect(screen.getByLabelText('未保存的正文')).toBe(editor);
+    expect(editor.value).toBe('缩窗仍保留的草稿');
+  }
+  expect(preferences).not.toHaveBeenCalled();
 });
