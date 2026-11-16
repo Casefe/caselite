@@ -1,6 +1,10 @@
 import { afterEach, expect, it } from 'vitest';
 import { createPiRuntime } from '../../apps/desktop/src/main/adapters/pi-runtime';
 import { materialPreviewSchema } from '../../packages/contracts/src/material';
+import {
+  checkMaterialPreviewEvidenceCompatibility,
+  materialPreviewDigestSubject,
+} from '../../packages/contracts/src/manifest-evidence';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -961,4 +965,69 @@ it('resends a persisted legacy preview through the current budget and rejects ca
   } finally {
     reopened.close();
   }
+});
+
+it('reads a real frozen preview as EvidenceRef compatibility, not a second assembler', async () => {
+  const s = setup({
+    configuration: 'evidence-compat',
+    inspect: async () => 2,
+    process: async (_bytes, input) => {
+      input.onPage(page);
+      input.onPage({ ...page, page: 2, origin: 'ocr_candidate', text: 'OCR 候选金额待核对' });
+    },
+  });
+  const { source } = await s.add();
+  await s.settled();
+  const preview = ok(
+    await s.app.execute({
+      protocol_version: 1,
+      scope: 'home',
+      operation: 'preview',
+      instruction: '列出付款要求',
+      model: 'gpt-4.1-mini',
+      selected: [{ source_id: source.id, pages: [2, 1] }],
+    }),
+  ).preview!;
+  const digest = (subject: string) => createHash('sha256').update(subject).digest('hex');
+  const foreign = '22222222-2222-4222-8222-222222222222';
+  const report = checkMaterialPreviewEvidenceCompatibility(preview, digest, {
+    search: [
+      { task_id: source.task_id, source_id: source.id, page: 1 },
+      { task_id: source.task_id, source_id: source.id, page: 9 },
+      { task_id: foreign, source_id: source.id, page: 8 },
+    ],
+    liveDerivations: { [source.id]: preview.selections[0].derivation_id },
+  });
+  expect(preview.selections[0].pages).toEqual([1, 2]);
+  expect(report.compatible).toBe(true);
+  expect(report.evidence_boundary_closed).toBe(false);
+  expect(report.hash_matches).toBe(true);
+  expect(report.evidence.map((item) => [item.page, item.card_role, item.quote])).toEqual([
+    [1, 'original', page.text],
+    [2, 'ocr', 'OCR 候选金额待核对'],
+  ]);
+  expect(report.absent_card_roles).toEqual(['correction', 'note', 'inference']);
+  expect(report.actual_reads).toEqual([
+    {
+      task_id: source.task_id,
+      source_id: source.id,
+      derivation_id: preview.selections[0].derivation_id,
+      pages: [1, 2],
+    },
+  ]);
+  expect(report.excluded_cross_task).toEqual([{ task_id: foreign, source_id: source.id, page: 8 }]);
+  expect(report.evidence.some((item) => item.page === 9)).toBe(false);
+  const payload = `${preview.payload}\n\n[材料 2｜别的.pdf｜物理页 1｜PDF 文字]\n未选哨兵`;
+  expect(
+    checkMaterialPreviewEvidenceCompatibility(
+      { ...preview, payload, sha256: digest(materialPreviewDigestSubject({ payload })) },
+      digest,
+    ).failures,
+  ).toContain('UNSELECTED_CONTENT');
+  expect(
+    checkMaterialPreviewEvidenceCompatibility(preview, digest, {
+      liveDerivations: { [source.id]: '55555555-5555-4555-8555-555555555555' },
+    }).failures,
+  ).toContain('STALE_REVISION');
+  s.store.close();
 });
