@@ -562,6 +562,10 @@ describe('项目可视化的数据边界与交互', () => {
     }
     render(<Parent />);
     await screen.findByRole('button', { name: '项目 · 当前合成项目' });
+    // 按钮可以先于属性回报出现；先把已排队的回报刷完，再判断父页面重读会不会再报。
+    await act(async () => {
+      await Promise.resolve();
+    });
     const initial = reports.mock.calls.length;
     expect(initial).toBeLessThan(5);
     if (select) {
@@ -569,6 +573,9 @@ describe('项目可视化的数据边界与交互', () => {
       expect(screen.getByTestId('parent-inspection').textContent).toBe(
         `0:document:${documents[0].id}`,
       );
+      await act(async () => {
+        await Promise.resolve();
+      });
     }
     const selectedCount = reports.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: '父页面等价重读' }));
