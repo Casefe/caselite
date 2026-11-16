@@ -7,6 +7,7 @@ import type {
   DeliveryExport,
   DeliveryExportFormat,
 } from '../../../../preload/caselite-api';
+import { exportArtifactPdfViewerBinding } from '../../../pdf-viewer-binding';
 import { mutation } from '../../../shared/data/taskCommand';
 import { useLocalPreferences } from '../../../shared/data/LocalPreferences';
 import { EditorSettingsNavigation } from '../../../shared/navigation/EditorSettingsNavigation';
@@ -447,6 +448,7 @@ export function useSnapshotExport(
               key={preview.id}
               bytes={preview.bytes}
               name="最终 PDF · 草稿"
+              binding={exportArtifactPdfViewerBinding(record)}
               onClose={() => setPreview(null)}
             />
           </Suspense>

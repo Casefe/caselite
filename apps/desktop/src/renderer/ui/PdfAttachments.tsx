@@ -18,6 +18,7 @@ import {
   type KeyboardEvent,
   type CSSProperties,
 } from 'react';
+import { materialPdfViewerBinding } from '../pdf-viewer-binding';
 import { isDocx, type MaterialController } from './useMaterials';
 
 const PdfReader = lazy(() => import('./PdfReader'));
@@ -371,17 +372,26 @@ export default function PdfAttachments({
           )}
         </DocxOriginalReader>
       )}
-      {c.reading && !readingDocx && (
-        <Suspense fallback={<p>正在加载阅读器…</p>}>
-          <PdfReader
-            key={readingKey}
-            name={c.reading.name}
-            bytes={c.reading.bytes}
-            textPages={c.items.find((item) => item.id === c.reading?.id)?.pages}
-            onClose={closeReader}
-          />
-        </Suspense>
-      )}
+      {c.reading &&
+        !readingDocx &&
+        (() => {
+          const readingMaterial =
+            c.reading.material ?? c.items.find((item) => item.id === c.reading?.id);
+          const binding = readingMaterial ? materialPdfViewerBinding(readingMaterial) : null;
+          if (!readingMaterial || !binding) return null;
+          return (
+            <Suspense fallback={<p>正在加载阅读器…</p>}>
+              <PdfReader
+                key={readingKey}
+                name={c.reading.name}
+                bytes={c.reading.bytes}
+                binding={binding}
+                textPages={readingMaterial.pages}
+                onClose={closeReader}
+              />
+            </Suspense>
+          );
+        })()}
     </>
   );
   const readerElement =

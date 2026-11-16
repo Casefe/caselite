@@ -1,24 +1,20 @@
-import { PDF_BUDGET, PDF_CANVAS_PIXELS } from '../pdf-budget';
+import { PDF_CANVAS_PIXELS } from '../pdf-budget';
 import type { TextPage } from '../../preload/caselite-api';
+import {
+  assertPdfViewerControlledBytes,
+  clampPdfViewerPage,
+  type PdfViewerSourceBinding,
+} from '../pdf-viewer-binding';
+import { pdfJsRendererOptions, pdfJsWorkerSrc } from '../pdf-viewer-options';
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import PhotoReader from './PhotoReader';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
-
-const options = {
-  ...PDF_BUDGET,
-  cMapUrl: new URL('../pdf-resources/cmaps/', document.baseURI).toString(),
-  cMapPacked: true,
-  standardFontDataUrl: new URL('../pdf-resources/standard_fonts/', document.baseURI).toString(),
-  wasmUrl: new URL('../pdf-resources/wasm/', document.baseURI).toString(),
-};
+pdfjs.GlobalWorkerOptions.workerSrc = pdfJsWorkerSrc();
 
 function PdfDocumentReader({
   bytes,
+  binding,
   name,
   onClose,
   textPages = [],
@@ -26,18 +22,35 @@ function PdfDocumentReader({
   initialPage = 1,
 }: {
   bytes: Uint8Array;
+  binding: PdfViewerSourceBinding;
   textPages?: TextPage[];
   name: string;
   initialWidth?: number;
   initialPage?: number;
   onClose(): void;
 }) {
+  const options = useMemo(() => pdfJsRendererOptions(), []);
+  const sourceFault = useMemo(() => {
+    try {
+      assertPdfViewerControlledBytes(binding, bytes);
+      clampPdfViewerPage(binding, initialPage);
+      return '';
+    } catch (error) {
+      return error instanceof Error ? error.message : 'PDF 来源不匹配';
+    }
+  }, [binding, bytes, initialPage]);
   // PDF.js 会转移底层 buffer；阅读器只消费副本，不能损坏暂存原件。
   const file = useMemo(() => ({ data: bytes.slice() }), [bytes]);
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [dimensions, setDimensions] = useState<{ page: number; ratio: number } | null>(null);
   const [pages, setPages] = useState(0);
-  const [page, setPage] = useState(initialPage);
+  const [page, setPage] = useState(() => {
+    try {
+      return clampPdfViewerPage(binding, initialPage);
+    } catch {
+      return 1;
+    }
+  });
   const [failure, setFailure] = useState('');
   const [width, setWidth] = useState(initialWidth);
   useEffect(() => {
@@ -90,7 +103,9 @@ function PdfDocumentReader({
         </div>
       </header>
       <div className="material-paper">
-        {failure ? (
+        {sourceFault ? (
+          <p role="alert">{sourceFault}</p>
+        ) : failure ? (
           <p role="alert">{failure}</p>
         ) : (
           <Document

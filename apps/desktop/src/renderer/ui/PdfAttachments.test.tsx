@@ -13,6 +13,18 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+const boundPdf = (id: string, task: string, name: string, bytes: number): Material => ({
+  id,
+  task_id: task,
+  asset_version_id: id,
+  name,
+  sha256: 'a'.repeat(64),
+  bytes,
+  page_count: 1,
+  derivation_id: null,
+  status: 'ready',
+  pages: [],
+});
 function controller(extra: Partial<MaterialController> = {}): MaterialController {
   return {
     available: true,
@@ -430,6 +442,7 @@ it('keeps the original modal reader for consumers outside the home preview host 
             task: 'original-task',
             name: '范围一.pdf',
             bytes: new Uint8Array([1]),
+            material: boundPdf('same-source', 'original-task', '范围一.pdf', 1),
           },
         }}
       >
@@ -449,6 +462,7 @@ it('keeps the original modal reader for consumers outside the home preview host 
             task: 'other-task',
             name: '范围二.pdf',
             bytes: new Uint8Array([2]),
+            material: boundPdf('same-source', 'other-task', '范围二.pdf', 2),
           },
         }}
       >

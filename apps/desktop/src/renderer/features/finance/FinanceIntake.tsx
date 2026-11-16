@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { materialPdfViewerBinding } from '../../pdf-viewer-binding';
 import type { Material } from '../../../preload/caselite-api';
 import type { FinanceCandidate as Candidate, FinancePrefill } from './types';
 import type { FinanceManagementController } from './useFinanceManagement';
@@ -92,7 +93,9 @@ function Origin({ candidate, edited = false }: { candidate: Candidate; edited?: 
             </DocxReader>
           ) : (
             <PdfReader
-              {...reader}
+              name={reader.name}
+              bytes={reader.bytes}
+              binding={materialPdfViewerBinding(reader.material, candidate.page)!}
               textPages={[
                 {
                   page: candidate.page,

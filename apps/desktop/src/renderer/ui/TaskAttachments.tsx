@@ -3,6 +3,7 @@ import { DocxOriginalReader } from './DocxOriginalReader';
 import PhotoReader from './PhotoReader';
 import { isDocx, useMaterials } from './useMaterials';
 import ImportantDates from '../features/calendar/ImportantDates';
+import { materialPdfViewerBinding } from '../pdf-viewer-binding';
 import type { Task } from '../../preload/caselite-api';
 import type { ReactNode } from 'react';
 
@@ -198,15 +199,22 @@ export default function TaskAttachments({
               )}
             </DocxOriginalReader>
           ) : (
-            <Suspense fallback={<p>正在加载阅读器…</p>}>
-              <PdfReader
-                key={reading.id}
-                name={reading.name}
-                bytes={reading.bytes}
-                textPages={material?.pages}
-                onClose={c.clearReading}
-              />
-            </Suspense>
+            (() => {
+              const binding = material ? materialPdfViewerBinding(material) : null;
+              if (!binding) return <p role="alert">附件来源不完整，请重新打开。</p>;
+              return (
+                <Suspense fallback={<p>正在加载阅读器…</p>}>
+                  <PdfReader
+                    key={reading.id}
+                    name={reading.name}
+                    bytes={reading.bytes}
+                    binding={binding}
+                    textPages={material?.pages}
+                    onClose={c.clearReading}
+                  />
+                </Suspense>
+              );
+            })()
           )}
         </dialog>
       )}

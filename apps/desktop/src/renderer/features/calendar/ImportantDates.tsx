@@ -11,6 +11,7 @@ import type {
   Material,
   Task,
 } from '../../../preload/caselite-api';
+import { materialPdfViewerBinding } from '../../pdf-viewer-binding';
 import { isDocx, pageRange, useMaterials } from '../../ui/useMaterials';
 import { DocxOriginalReader } from '../../ui/DocxOriginalReader';
 import {
@@ -829,6 +830,7 @@ export default function ImportantDates({
                   <PdfReader
                     name={reader.material.name}
                     bytes={reader.data}
+                    binding={materialPdfViewerBinding(reader.material, reader.page)!}
                     textPages={reader.material.pages}
                     initialPage={reader.page}
                     onClose={() => setReader(null)}
