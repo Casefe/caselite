@@ -46,6 +46,7 @@ import type { ReminderDraft } from './features/tasks/ReminderDraftPicker';
 import TaskAttachments from './ui/TaskAttachments';
 import ReminderEditor from './ui/ReminderEditor';
 import ReminderInbox from './ui/ReminderInbox';
+import IntakeView from './features/intake/IntakeView';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   Matter,
@@ -110,6 +111,7 @@ const workspacePages: Record<WorkspaceView, { title: string; icon: string }> = {
   contacts: { title: '联系人', icon: 'person' },
   settings: { title: '设置', icon: 'settings' },
   reminders: { title: '提醒', icon: 'bell' },
+  intake: { title: '收件', icon: 'filter' },
   reports: { title: '统计', icon: 'grid' },
   tools: { title: '工具', icon: 'tool' },
   whiteboard: { title: '白板', icon: 'board' },
@@ -1373,6 +1375,7 @@ function Workbench() {
                     'calendar',
                     'finance',
                     'contacts',
+                    'intake',
                   ] as const
                 ).map((next) => (
                   <button key={next} type="button" onClick={() => navigate(next)}>
@@ -1382,7 +1385,7 @@ function Workbench() {
                 ))}
               </div>
             </section>
-          ) : loading && view !== 'projects' && view !== 'calendar' ? (
+          ) : loading && view !== 'projects' && view !== 'calendar' && view !== 'intake' ? (
             <div className="loading-state" role="status">
               正在读取本地任务…
             </div>
@@ -1746,6 +1749,8 @@ function Workbench() {
                 )}
               </div>
             </section>
+          ) : view === 'intake' ? (
+            <IntakeView onOpen={(id) => void open(id)} />
           ) : view === 'reminders' ? (
             <>
               <button onClick={() => navigate('calendar')}>返回日历</button>

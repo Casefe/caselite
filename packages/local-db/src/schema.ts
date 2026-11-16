@@ -934,3 +934,41 @@ export const projectVisualizationViews = sqliteTable(
     ),
   ],
 );
+
+// 工作请求只记录尚未采纳的人工分拣；Task 仍由 task_items 拥有。
+export const workRequests = sqliteTable(
+  'work_requests',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    source: text('source').notNull(),
+    status: text('status').notNull(),
+    attachmentDraftId: text('attachment_draft_id'),
+    targetTaskId: text('target_task_id'),
+    targetTaskVersion: integer('target_task_version'),
+    duplicateOfRequestId: text('duplicate_of_request_id'),
+    snoozeUntil: text('snooze_until'),
+    version: integer('version').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('work_requests_workspace').on(table.workspaceId, table.updatedAt),
+    foreignKey({ columns: [table.targetTaskId], foreignColumns: [taskItems.id] }),
+    foreignKey({ columns: [table.duplicateOfRequestId], foreignColumns: [table.id] }),
+    check('work_request_source', sql`${table.source} = 'local_manual'`),
+    check('work_request_version', sql`${table.version} > 0`),
+  ],
+);
+export const workRequestReceipts = sqliteTable(
+  'work_request_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
+);
