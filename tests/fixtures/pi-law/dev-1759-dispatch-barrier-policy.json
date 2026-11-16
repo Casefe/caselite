@@ -1,0 +1,6 @@
+{
+  "manifest_id": "11111111-1111-4111-8111-111111111111",
+  "tools": ["read_selected_document", "read_selected_source"],
+  "allow_discovery": false,
+  "allow_effects": false
+}
