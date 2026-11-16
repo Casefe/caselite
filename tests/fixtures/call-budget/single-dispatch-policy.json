@@ -1,0 +1,37 @@
+{
+  "issue": "DEV-1760",
+  "policy_id": "single-dispatch-difference-v1",
+  "distinct_from_input_budget": "utf8-byte-proxy-v1",
+  "policy": {
+    "policy": "single-dispatch-difference-v1",
+    "max_steps": 1,
+    "max_calls": 1,
+    "token_reserve": { "input": null, "output": 2048 },
+    "deadline_ms": 60000,
+    "compress_count": 0,
+    "retry_count": 0
+  },
+  "empty_ledger": {
+    "steps_used": 0,
+    "calls_used": 0,
+    "elapsed_ms": 0,
+    "compress_attempts": 0,
+    "retry_attempts": 0,
+    "settled_tokens": null,
+    "remote_cost": "unobserved"
+  },
+  "candidates": [
+    { "status": "conditional_candidate", "kind": "multi_step", "executable": false },
+    { "status": "conditional_candidate", "kind": "auto_compress", "executable": false },
+    { "status": "conditional_candidate", "kind": "auto_retry", "executable": false }
+  ],
+  "bypass_attempts": [
+    { "action": "tool_continue", "reset_budget": true, "counts_as_call": false },
+    { "action": "compress", "reset_budget": true },
+    { "action": "retry", "reason": "401", "reset_budget": true },
+    { "action": "retry", "reason": "429" },
+    { "action": "retry", "reason": "unknown" },
+    { "action": "retry", "reason": "deadline" },
+    { "action": "cancel", "remote_cost_claim": "zero" }
+  ]
+}
