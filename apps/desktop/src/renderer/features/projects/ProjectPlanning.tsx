@@ -1,11 +1,41 @@
 import { useEffect, useState } from 'react';
 import type { CatalogRequest, CatalogResponse, Matter, Task } from '../../../preload/caselite-api';
 import { catalogMutation } from '../../shared/data/catalogMutation';
+import { StatusGlyph } from '../../ui/TaskListGlyph';
 
 type Success = Extract<CatalogResponse, { ok: true }>;
 type Plan = NonNullable<Success['project_plan']>;
 type Milestone = Plan['milestones'][number];
 const progress = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
+
+const milestoneStatus = (m: Milestone) => {
+  if (m.archived_at) return 'archived';
+  if (m.status) return m.status;
+  if (m.total > 0 && m.done === m.total) return 'completed';
+  if (m.done > 0 || (m.in_progress ?? 0) > 0) return 'in_progress';
+  return 'planned';
+};
+
+const milestoneStatusLabel = (m: Milestone) => {
+  const s = milestoneStatus(m);
+  switch (s) {
+    case 'archived':
+      return '已归档';
+    case 'completed':
+      return '已完成';
+    case 'in_progress':
+      return '进行中';
+    case 'planned':
+    default:
+      return '规划中';
+  }
+};
+
+const isOverdue = (m: Milestone) => {
+  if (m.archived_at || m.done === m.total || !m.target_date) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return m.target_date < today;
+};
 
 export default function ProjectPlanning({
   project,
@@ -14,6 +44,7 @@ export default function ProjectPlanning({
   pending,
   onDirty,
   execute,
+  onOpenTask,
 }: {
   project: Matter;
   tasks: Task[];
@@ -21,6 +52,7 @@ export default function ProjectPlanning({
   pending: boolean;
   onDirty(value: boolean): void;
   execute(request: CatalogRequest, committed: () => void): Promise<CatalogResponse | null>;
+  onOpenTask?(taskId: string): void;
 }) {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState('');
@@ -221,42 +253,105 @@ export default function ProjectPlanning({
           </form>
         )}
         {plan && !plan.milestones.length && <p>暂无里程碑。</p>}
-        {plan?.milestones.map((milestone) => (
-          <div className="project-milestone-row" key={milestone.id}>
-            <strong>{milestone.title}</strong>
-            <small>
-              {milestone.archived_at ? '已归档 · ' : ''}
-              {milestone.target_date ? `${milestone.target_date} · ` : ''}
-              {milestone.done} / {milestone.total} 项完成
-            </small>
-            {!project.archived_at && !draft && (
-              <div>
-                <button
-                  type="button"
-                  disabled={unavailable || assignmentDirty}
-                  onClick={() => edit(milestone)}
-                  aria-label={`编辑里程碑 ${milestone.title}`}
+        {plan?.milestones.map((milestone) => {
+          const milestoneTasks = tasks.filter((task) =>
+            plan.assignments.some((a) => a.task_id === task.id && a.milestone_id === milestone.id),
+          );
+          return (
+            <div className="project-milestone-row" key={milestone.id}>
+              <div className="project-milestone-header">
+                <strong>{milestone.title}</strong>
+                <span
+                  className={`project-milestone-status project-milestone-status-${milestoneStatus(milestone)}`}
                 >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  disabled={unavailable || assignmentDirty}
-                  onClick={() =>
-                    void updateMilestone(
-                      milestone,
-                      milestone.title,
-                      milestone.target_date,
-                      !milestone.archived_at,
-                    )
-                  }
-                >
-                  {milestone.archived_at ? '恢复' : '归档'}
-                </button>
+                  {milestoneStatusLabel(milestone)}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
+              <div className="project-milestone-meta">
+                <small>
+                  {milestone.target_date ? `目标日 ${milestone.target_date}` : '未设目标日'}
+                  {isOverdue(milestone) && (
+                    <span className="project-milestone-overdue">（已逾期）</span>
+                  )}
+                </small>
+              </div>
+              <p className="project-milestone-progress-text">
+                {progress(milestone.done, milestone.total)}% · {milestone.done} / {milestone.total}{' '}
+                项完成
+              </p>
+              <progress
+                className="project-milestone-progress-bar"
+                aria-label={`里程碑 ${milestone.title} 完成度`}
+                value={milestone.done}
+                max={milestone.total || 1}
+              />
+              <div
+                className="project-milestone-counts"
+                aria-label={`里程碑 ${milestone.title} 进度构成`}
+              >
+                <span>待办 {milestone.todo ?? milestone.total - milestone.done}</span>
+                <span>进行中 {milestone.in_progress ?? 0}</span>
+                <span>已完成 {milestone.done}</span>
+                <span>已取消 {milestone.canceled ?? 0}</span>
+              </div>
+              <div
+                className="project-milestone-tasks"
+                aria-label={`里程碑 ${milestone.title} 关联任务`}
+              >
+                {milestoneTasks.map((task) => (
+                  <div className="project-milestone-task-item" key={task.id}>
+                    <StatusGlyph status={task.status} />
+                    <button
+                      type="button"
+                      className="project-milestone-task-link"
+                      onClick={() => onOpenTask?.(task.id)}
+                      aria-label={`打开任务 ${task.title}`}
+                    >
+                      {task.title}
+                    </button>
+                    {task.due_date && <small>截止 {task.due_date}</small>}
+                  </div>
+                ))}
+                {!milestoneTasks.length && (
+                  <p className="project-milestone-task-empty">暂无关联任务</p>
+                )}
+              </div>
+              {!project.archived_at && !draft && (
+                <div className="project-milestone-actions">
+                  <button
+                    type="button"
+                    disabled={unavailable || assignmentDirty}
+                    onClick={() => edit(milestone)}
+                    aria-label={`编辑里程碑 ${milestone.title}`}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={unavailable || assignmentDirty}
+                    onClick={() =>
+                      void updateMilestone(
+                        milestone,
+                        milestone.title,
+                        milestone.target_date,
+                        !milestone.archived_at,
+                      )
+                    }
+                  >
+                    {milestone.archived_at ? '恢复' : '归档'}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {plan && Boolean(tasks.length) && (
+          <p className="project-milestone-reconciliation">
+            未关联里程碑任务：
+            {tasks.filter((t) => !plan.assignments.some((a) => a.task_id === t.id)).length} /{' '}
+            {tasks.length} 项
+          </p>
+        )}
         {!project.archived_at &&
           !draft &&
           Boolean(plan?.milestones.length) &&

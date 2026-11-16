@@ -21,12 +21,15 @@ export function projectMilestones(db: Database.Database, workspace: string) {
   return {
     read(projectId: string): Plan | Failure {
       if (!readProject(projectId)) return fail('NOT_FOUND', '项目在当前工作区不可访问。');
-      const milestones = db
+      const rawMilestones = db
         .prepare(
           `
         SELECT m.id,m.title,m.target_date,m.version,m.archived_at,
-          count(CASE WHEN t.status <> 'canceled' THEN 1 END) AS total,
-          count(CASE WHEN t.status = 'done' THEN 1 END) AS done
+          count(CASE WHEN t.status <> 'canceled' AND t.id IS NOT NULL THEN 1 END) AS total,
+          count(CASE WHEN t.status = 'done' THEN 1 END) AS done,
+          count(CASE WHEN t.status = 'todo' THEN 1 END) AS todo,
+          count(CASE WHEN t.status = 'in_progress' THEN 1 END) AS in_progress,
+          count(CASE WHEN t.status = 'canceled' THEN 1 END) AS canceled
         FROM project_milestones m
         LEFT JOIN task_milestones a ON a.milestone_id=m.id AND a.matter_id=m.matter_id
         LEFT JOIN task_items t ON t.id=a.task_id AND t.workspace_id=?
@@ -34,7 +37,26 @@ export function projectMilestones(db: Database.Database, workspace: string) {
         ORDER BY m.archived_at IS NOT NULL,m.target_date IS NULL,m.target_date,m.created_at,m.id
       `,
         )
-        .all(workspace, projectId) as Plan['milestones'];
+        .all(workspace, projectId) as Array<
+        Plan['milestones'][number] & {
+          todo: number;
+          in_progress: number;
+          canceled: number;
+        }
+      >;
+      const milestones = rawMilestones.map((item) => {
+        const status: 'planned' | 'in_progress' | 'completed' | 'archived' = item.archived_at
+          ? 'archived'
+          : item.total > 0 && item.done === item.total
+            ? 'completed'
+            : item.in_progress > 0 || item.done > 0
+              ? 'in_progress'
+              : 'planned';
+        return {
+          ...item,
+          status,
+        };
+      });
       const assignments = db
         .prepare(
           `

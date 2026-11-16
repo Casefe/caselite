@@ -31,3 +31,4 @@ export * from './project-graph';
 export * from './project-visualization-view';
 
 export * from './skills-import-preview';
+export * from './task-group-progress';
