@@ -13,6 +13,7 @@ export * from './agent';
 export * from './catalog';
 export * from './source';
 export * from './agent-input';
+export * from './pi-law-harness';
 export * from './appearance';
 
 export * from './material';

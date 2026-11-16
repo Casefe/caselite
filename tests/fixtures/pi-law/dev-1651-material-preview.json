@@ -1,0 +1,22 @@
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "task_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "instruction": "列出付款要求",
+  "model": "gpt-4.1-mini",
+  "payload": "用户要求\n列出付款要求\n\n[材料:合成合同首页｜物理页 1]\n甲方应于验收后30日内支付合同价款。",
+  "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "selections": [
+    {
+      "source_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "derivation_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "name": "合成合同首页.pdf",
+      "pages": [1]
+    }
+  ],
+  "budget": {
+    "policy": "DEV-1651-synthetic",
+    "visible_utf8_bytes": 120,
+    "estimated_input_tokens": 48,
+    "model_capability": "synthetic-only"
+  }
+}
