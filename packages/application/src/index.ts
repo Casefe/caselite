@@ -9,6 +9,7 @@ export * from './material-application';
 export * from './material-batch-application';
 
 export * from './reminder-application';
+export * from './intake-application';
 export * from './finance-application';
 export * from './document-review-application';
 export * from './contacts-application';

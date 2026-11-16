@@ -94,6 +94,7 @@ import {
   registerCatalogIpc,
   registerContactsIpc,
   registerFinanceIpc,
+  registerIntakeIpc,
   registerTaskIpc,
 } from './ipc/register-task-ipc';
 import {
@@ -127,6 +128,7 @@ import {
   createContactsApplication,
   createSpikeApplication,
   createTaskApplication,
+  createIntakeApplication,
 } from '@caselite/application';
 import {
   openOfflineProbePort,
@@ -1133,6 +1135,7 @@ app
           createHash('sha256').update(taskRoot).digest('hex').slice(0, 24),
         );
     registerReminderIpc(reminders, reminderScheduler.tick);
+    registerIntakeIpc(createIntakeApplication(taskStore.intake));
     app.on('will-quit', reminderScheduler.stop);
     const baseCatalog = createCatalogApplication(taskStore.catalog);
     const catalog = performanceDemo ? performanceApplication('catalog', baseCatalog) : baseCatalog;
