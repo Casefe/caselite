@@ -650,3 +650,102 @@ it('reopens a committed table revision and rejects malformed grids without repla
     next.close();
   }
 });
+
+it('rejects nested and overlapping table writes without replacing the committed revision', () => {
+  const { file, store } = setup();
+  const task = value(
+    store.execute({ ...identity(), operation: 'create', title: '表格回退', objective: '' }),
+  ).tasks[0];
+  const doc = new Y.Doc();
+  const table = new Y.XmlElement('table');
+  const row = new Y.XmlElement('tableRow');
+  const cell = new Y.XmlElement<{ colwidth: number[] }>('tableCell');
+  cell.setAttribute('colwidth', [0]);
+  const paragraph = new Y.XmlElement('paragraph');
+  const text = new Y.XmlText();
+  text.insert(0, '已提交单元格');
+  paragraph.insert(0, [text]);
+  cell.insert(0, [paragraph]);
+  row.insert(0, [cell]);
+  table.insert(0, [row]);
+  doc.getXmlFragment('default').insert(0, [table]);
+  const committed = Array.from(Y.encodeStateAsUpdate(doc));
+  const inner = new Y.XmlElement('table');
+  const innerRow = new Y.XmlElement('tableRow');
+  const innerCell = new Y.XmlElement('tableCell');
+  const innerParagraph = new Y.XmlElement('paragraph');
+  const innerText = new Y.XmlText();
+  innerText.insert(0, '内嵌');
+  innerParagraph.insert(0, [innerText]);
+  innerCell.insert(0, [innerParagraph]);
+  innerRow.insert(0, [innerCell]);
+  inner.insert(0, [innerRow]);
+  cell.insert(1, [inner]);
+  const nested = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const overlapDoc = new Y.Doc();
+  const overlapTable = new Y.XmlElement('table');
+  const top = new Y.XmlElement('tableRow');
+  const left = new Y.XmlElement('tableCell');
+  const spanned = new Y.XmlElement<{ rowspan: number }>('tableCell');
+  spanned.setAttribute('rowspan', 2);
+  left.insert(0, [new Y.XmlElement('paragraph')]);
+  spanned.insert(0, [new Y.XmlElement('paragraph')]);
+  top.insert(0, [left, spanned]);
+  const bottom = new Y.XmlElement('tableRow');
+  const wide = new Y.XmlElement<{ colspan: number }>('tableCell');
+  wide.setAttribute('colspan', 2);
+  wide.insert(0, [new Y.XmlElement('paragraph')]);
+  bottom.insert(0, [wide]);
+  overlapTable.insert(0, [top, bottom]);
+  overlapDoc.getXmlFragment('default').insert(0, [overlapTable]);
+  const overlapping = Array.from(Y.encodeStateAsUpdate(overlapDoc));
+  overlapDoc.destroy();
+  const save = (state: number[], expected_revision: number) =>
+    store.execute({
+      ...identity(),
+      operation: 'save',
+      task_id: task.id,
+      document_id: task.document_id,
+      body_id: task.body_id,
+      expected_revision,
+      editor_schema: 1,
+      state,
+    });
+  const read = { operation: 'read' as const, protocol_version: 1 as const, task_id: task.id };
+  expect(value(save(committed, 0)).tasks[0].body_revision).toBe(1);
+  expect(() => validateBody(Uint8Array.from(nested), true)).toThrow('Nested table');
+  expect(() => validateBody(Uint8Array.from(overlapping), true)).toThrow('Overlapping table cells');
+  for (const state of [nested, overlapping])
+    expect(save(state, 1)).toMatchObject({
+      ok: false,
+      code: 'INVALID_REQUEST',
+    });
+  expect(value(store.execute(read))).toMatchObject({
+    state: committed,
+    tasks: [{ body_revision: 1 }],
+  });
+  const plain = binary('无表格的后续修订');
+  expect(value(save(plain, 1)).tasks[0].body_revision).toBe(2);
+  store.close();
+  const reopened = openTaskStore(file, migrations);
+  try {
+    expect(value(reopened.execute(read))).toMatchObject({
+      state: plain,
+      tasks: [{ body_revision: 2 }],
+    });
+    const raw = openToolchainProbe(file, migrations);
+    const kept = raw.sqlite
+      .prepare('SELECT state FROM body_revisions WHERE body_id=? AND revision=1')
+      .get(task.body_id) as { state: Buffer };
+    expect(Array.from(kept.state)).toEqual(committed);
+    expect(
+      raw.sqlite
+        .prepare('SELECT count(*) AS n FROM body_revisions WHERE body_id=?')
+        .get(task.body_id),
+    ).toEqual({ n: 2 });
+    raw.sqlite.close();
+  } finally {
+    reopened.close();
+  }
+});

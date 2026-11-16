@@ -16,8 +16,11 @@ export function assertBoundedHtml(html: string) {
   body.innerHTML = fragment;
   let count = 0;
   let hasTable = false;
-  function inspect(element: Element, depth: number) {
+  function inspect(element: Element, depth: number, insideTable = false) {
     if (++count > 10000 || depth > 35) throw new Error('文档结构过于复杂，请核对原件。');
+    // 嵌套表格在 HTML 里仍然合法，但宿主保存后重开会被编辑器拆开。解析前拒绝。
+    if (element.tagName === 'TABLE' && insideTable)
+      throw new Error('暂不支持嵌套表格，请在表格外粘贴完整表格。');
     const slice = element.getAttribute('data-pm-slice');
     if (slice !== null) {
       const bounded = /^(\d{1,2}) (\d{1,2})(?: -(\d{1,2}))? \[\]$/.exec(slice);
@@ -56,7 +59,8 @@ export function assertBoundedHtml(html: string) {
         100
     )
       throw new Error('表格超过 100 列，请核对原件。');
-    for (const child of element.children) inspect(child, depth + 1);
+    for (const child of element.children)
+      inspect(child, depth + 1, insideTable || element.tagName === 'TABLE');
     if (element.tagName === 'TABLE') {
       hasTable = true;
       const rows = [...(element as HTMLTableElement).rows];

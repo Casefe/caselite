@@ -25,6 +25,12 @@ it.each([
   expect(() => assertBoundedHtml(input)).toThrow();
 });
 
+it('refuses a nested table before the editor can flatten it', () => {
+  expect(() =>
+    assertBoundedHtml('<table><tr><td><table><tr><td>内嵌</td></tr></table></td></tr></table>'),
+  ).toThrow('嵌套');
+});
+
 it('refuses excessive nesting without modifying the active document DOM', () => {
   document.body.innerHTML = '<p id="saved">已保存正文</p>';
   const before = document.body.innerHTML;
