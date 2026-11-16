@@ -253,6 +253,13 @@
       "when": 1794718000000,
       "tag": "0035_personal_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1794804400000,
+      "tag": "0036_memos",
+      "breakpoints": true
     }
   ]
 }
