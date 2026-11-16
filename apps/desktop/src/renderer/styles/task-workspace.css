@@ -1066,3 +1066,107 @@
   padding: 0 !important;
   border: 0 !important;
 }
+
+/* 看板只投影当前筛选页；沿用工作区与皮肤，不建立另一套布局几何。 */
+.task-board-scope {
+  margin: 8px 24px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  min-width: 916px;
+  align-items: start;
+}
+.task-board-column {
+  min-width: 0;
+  min-height: 160px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--theme-subtle);
+}
+.task-board-column h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.task-board-column h2 > span:last-child {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.task-board-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-board-card {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--canvas);
+}
+.task-board-card:hover {
+  background: var(--theme-hover);
+}
+.task-board-card[aria-current='true'] {
+  background: var(--theme-selected);
+}
+.task-board-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.task-board-card-heading,
+.task-board-metadata,
+.task-board-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-board-card-heading {
+  align-items: start;
+}
+.task-board-title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.task-board-drag {
+  flex: none;
+  padding: 0 3px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: grab;
+}
+.task-board-metadata,
+.task-board-card > time,
+.task-board-status {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-board-metadata {
+  flex-wrap: wrap;
+}
+.task-board-status select {
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  background: transparent;
+}

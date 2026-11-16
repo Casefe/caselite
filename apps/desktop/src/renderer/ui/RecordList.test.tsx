@@ -729,3 +729,217 @@ it('keeps preview property unknown recovery available when the preview owns its 
     idempotency_key: key,
   });
 });
+
+it('switches a 41-task filtered page between list and board without changing query, selection or page range', async () => {
+  const all = Array.from(
+    { length: 41 },
+    (_, index) =>
+      ({
+        ...task(`分页看板${index + 1}`),
+        status: index % 2 ? 'in_progress' : 'todo',
+      }) satisfies Task,
+  );
+  const requests = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation !== 'list' || !request.query) return result([]);
+    const offset = request.query.offset;
+    return {
+      ...result(all.slice(offset, offset + 20), offset),
+      page: { offset, total: 41, has_more: offset + 20 < 41 },
+    } as TaskResponse;
+  });
+  const completion = { complete: vi.fn(), changeStatus: vi.fn(), busyIds: [], blocked: false };
+  const initial = {
+    ...initialTaskListState,
+    selected: all[22]!.id,
+    query: { ...initialTaskListState.query, text: '分页看板', offset: 20 },
+  };
+  const view = show(requests, initial, false, completion);
+  await screen.findByRole('row', { name: '选择任务：分页看板21' });
+  fireEvent.click(screen.getByLabelText('任务显示设置'));
+  fireEvent.click(screen.getByRole('checkbox', { name: '选择多个任务' }));
+  fireEvent.click(screen.getByLabelText('勾选任务：分页看板23'));
+  const queryCalls = requests.mock.calls.length;
+  fireEvent.change(screen.getByLabelText('任务布局'), { target: { value: 'board' } });
+  expect(screen.getByRole('note').textContent).toContain('本页 20 项 / 全部匹配 41 项 · 21—40');
+  expect(screen.getAllByRole('article')).toHaveLength(20);
+  expect((screen.getByLabelText('勾选任务：分页看板23') as HTMLInputElement).checked).toBe(true);
+  expect(
+    screen.getByRole('article', { name: '任务：分页看板23' }).getAttribute('aria-current'),
+  ).toBe('true');
+  expect(view.changed.mock.lastCall?.[0].query).toEqual(initial.query);
+  expect(requests).toHaveBeenCalledTimes(queryCalls);
+  fireEvent.change(screen.getByLabelText('任务布局'), { target: { value: 'list' } });
+  expect((screen.getByLabelText('勾选任务：分页看板23') as HTMLInputElement).checked).toBe(true);
+  fireEvent.change(screen.getByLabelText('任务布局'), { target: { value: 'board' } });
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  await waitFor(() =>
+    expect(screen.getByRole('note').textContent).toContain('本页 1 项 / 全部匹配 41 项 · 41—41'),
+  );
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(requests.mock.lastCall?.[0]).toMatchObject({ query: { text: '分页看板', offset: 40 } });
+});
+it('shows four honest empty columns while keeping the existing status filter', async () => {
+  const api = vi.fn(async () => result([]));
+  show(api, {
+    ...initialTaskListState,
+    layout: 'board',
+    query: { ...initialTaskListState.query, status: 'canceled' },
+  });
+  await screen.findByText('本页 0 项 / 全部匹配 0 项 · 0—0', { exact: false });
+  expect(screen.getAllByText('当前筛选页无任务')).toHaveLength(4);
+  expect(api.mock.calls[0]![0]).toMatchObject({ query: { status: 'canceled' } });
+});
+it('removes a confirmed changed task from its filter and backs out of an empty last page', async () => {
+  let all = Array.from({ length: 21 }, (_, index) => task(`尾页${index + 1}`));
+  const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+    if (request.operation !== 'list' || !request.query) return result([]);
+    const query = request.query,
+      filtered = all.filter((row) => !query.status || row.status === query.status);
+    return {
+      ...result(filtered.slice(query.offset, query.offset + 20), query.offset),
+      page: {
+        offset: query.offset,
+        total: filtered.length,
+        has_more: query.offset + 20 < filtered.length,
+      },
+    } as TaskResponse;
+  });
+  const onStatus = vi.fn();
+  const view = show(
+    api,
+    {
+      ...initialTaskListState,
+      layout: 'board',
+      query: { ...initialTaskListState.query, status: 'todo', offset: 20 },
+    },
+    false,
+    { complete: vi.fn(), changeStatus: onStatus, busyIds: [], blocked: false },
+  );
+  await screen.findByRole('article', { name: '任务：尾页21' });
+  fireEvent.change(screen.getByLabelText('修改任务状态：尾页21'), {
+    target: { value: 'canceled' },
+  });
+  expect(onStatus).toHaveBeenCalledWith(all[20], 'canceled');
+  expect(screen.getByRole('article', { name: '任务：尾页21' })).toBeDefined();
+  all = all.map((row, index) => (index === 20 ? { ...row, status: 'canceled', version: 2 } : row));
+  act(() => invalidateTaskPages(view.client));
+  await waitFor(() =>
+    expect(screen.getByRole('note').textContent).toContain('本页 20 项 / 全部匹配 20 项 · 1—20'),
+  );
+  expect(screen.queryByRole('article', { name: '任务：尾页21' })).toBeNull();
+  expect(view.changed.mock.lastCall?.[0].query).toMatchObject({ status: 'todo', offset: 0 });
+});
+it('keeps board layout and page identity after opening and returning from the original task detail', async () => {
+  const original = task('看板详情原身份');
+  const api = vi.fn(async () => result([original], 20));
+  show(api, {
+    ...initialTaskListState,
+    layout: 'board',
+    query: { ...initialTaskListState.query, text: '原身份', offset: 20 },
+  });
+  fireEvent.click(await screen.findByRole('button', { name: original.title }));
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  await screen.findByRole('article', { name: `任务：${original.title}` });
+  expect((screen.getByLabelText('任务布局') as HTMLSelectElement).value).toBe('board');
+  expect(screen.getByRole('note').textContent).toContain('21—21');
+  expect(api.mock.calls[0]![0]).toMatchObject({ query: { text: '原身份', offset: 20 } });
+});
+it('blocks layout, page and board status controls while the shared status owner is unresolved', async () => {
+  const original = task('状态恢复互斥');
+  const completion = {
+    complete: vi.fn(),
+    changeStatus: vi.fn(),
+    busyIds: [] as string[],
+    blocked: false,
+  };
+  const view = show(
+    async () => result([original]),
+    { ...initialTaskListState, layout: 'board' },
+    false,
+    completion,
+  );
+  await screen.findByRole('article', { name: `任务：${original.title}` });
+  completion.blocked = true;
+  completion.busyIds = [original.id];
+  act(() => view.force());
+  expect((screen.getByLabelText('修改任务状态：状态恢复互斥') as HTMLSelectElement).disabled).toBe(
+    true,
+  );
+  expect((screen.getByLabelText('拖动任务：状态恢复互斥') as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  const layout = screen.getByLabelText('任务布局');
+  expect(layout.closest('fieldset')?.disabled).toBe(true);
+  fireEvent.change(layout, { target: { value: 'list' } });
+  expect(screen.getByRole('article', { name: `任务：${original.title}` })).toBeDefined();
+  expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(completion.changeStatus).not.toHaveBeenCalled();
+});
+
+it.each(['cross-column', 'filtered-last-page'] as const)(
+  'retains keyboard focus through status readback and %s loading',
+  async (mode) => {
+    let all =
+      mode === 'filtered-last-page'
+        ? Array.from({ length: 21 }, (_, index) => task(`焦点尾页${index + 1}`))
+        : [task('焦点跨列')];
+    const original = all.at(-1)!;
+    const query: TaskListQuery = {
+      ...initialTaskListState.query,
+      status: mode === 'filtered-last-page' ? 'todo' : null,
+      offset: mode === 'filtered-last-page' ? 20 : 0,
+    };
+    const api = vi.fn(async (request: TaskRequest): Promise<TaskResponse> => {
+      if (request.operation !== 'list' || !request.query) return result([]);
+      const current = request.query;
+      const rows = all.filter((row) => !current.status || row.status === current.status);
+      return {
+        ...result(rows.slice(current.offset, current.offset + 20), current.offset),
+        page: {
+          offset: current.offset,
+          total: rows.length,
+          has_more: current.offset + 20 < rows.length,
+        },
+      } as TaskResponse;
+    });
+    const completion = {
+      complete: vi.fn(),
+      changeStatus: vi.fn(),
+      busyIds: [] as string[],
+      blocked: false,
+    };
+    const view = show(api, { ...initialTaskListState, layout: 'board', query }, false, completion);
+    const select = await screen.findByLabelText(`修改任务状态：${original.title}`);
+    select.focus();
+    fireEvent.change(select, { target: { value: 'in_progress' } });
+    completion.blocked = true;
+    completion.busyIds = [original.id];
+    act(() => view.force());
+    all = all.map((row) =>
+      row.id === original.id ? { ...row, status: 'in_progress', version: 2 } : row,
+    );
+    await act(async () => {
+      const { refreshTaskConsumers } = await import('./refresh-task-consumers');
+      await refreshTaskConsumers(view.client);
+    });
+    completion.blocked = false;
+    completion.busyIds = [];
+    act(() => view.force());
+    if (mode === 'cross-column') {
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByLabelText(`修改任务状态：${original.title}`),
+        ),
+      );
+      expect((document.activeElement as HTMLSelectElement).value).toBe('in_progress');
+    } else {
+      await waitFor(() =>
+        expect(screen.getByRole('note').textContent).toContain(
+          '本页 20 项 / 全部匹配 20 项 · 1—20',
+        ),
+      );
+      expect(document.activeElement).toBe(screen.getByRole('group', { name: '当前页任务看板' }));
+    }
+    expect(completion.changeStatus).toHaveBeenCalledTimes(1);
+  },
+);

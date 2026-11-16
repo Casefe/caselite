@@ -12,6 +12,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Matter, Task, TaskListQuery } from '../../preload/caselite-api';
 import { TaskTable, taskOptionalColumns, type TaskOptionalColumn } from './Workspace';
 import TaskBulkActions from '../features/tasks/TaskBulkActions';
+import TaskBoard from '../features/tasks/TaskBoard';
 import { taskStatusNames } from './task-status';
 import { taskPriorityNames } from './task-priority';
 import { useTaskPage } from './task-list-query';
@@ -21,6 +22,7 @@ export type TaskListState = {
   selected: string | null;
   scroll: number;
   groupByStatus?: boolean;
+  layout?: 'list' | 'board';
   hiddenColumns?: TaskOptionalColumn[];
 };
 const optionalColumns = Object.entries(taskOptionalColumns) as [TaskOptionalColumn, string][];
@@ -115,6 +117,7 @@ export default function RecordList({
     !propertiesBlocked &&
     (taskPage.isPending || taskPage.isFetching || (!taskPage.isError && outOfRange));
   const rows = taskPage.isError ? [] : (data?.rows ?? []);
+  const board = viewState.layout === 'board';
   const grouped = viewState.groupByStatus && rows.length > 0;
   const groups = grouped
     ? Object.entries(taskStatusNames)
@@ -194,6 +197,26 @@ export default function RecordList({
   const unavailable =
     q.scope.type === 'project' &&
     !projects.some((p) => p.id === (q.scope.type === 'project' ? q.scope.id : ''));
+  const layoutOptions = (
+    <label>
+      任务布局
+      <select
+        aria-label="任务布局"
+        value={viewState.layout ?? 'list'}
+        onChange={(event) => {
+          if (!propertiesBlocked)
+            onViewState({
+              ...viewState,
+              layout: event.target.value as 'list' | 'board',
+              scroll: 0,
+            });
+        }}
+      >
+        <option value="list">列表</option>
+        <option value="board">当前页看板</option>
+      </select>
+    </label>
+  );
   const controls = (
     <div className="task-list-controls">
       <button
@@ -223,6 +246,7 @@ export default function RecordList({
         </summary>
         <fieldset disabled={propertiesBlocked}>
           <legend>当前列表</legend>
+          {layoutOptions}
           <label>
             <input
               type="checkbox"
@@ -285,6 +309,7 @@ export default function RecordList({
       </summary>
       <fieldset disabled={propertiesBlocked}>
         <legend>当前列表</legend>
+        {layoutOptions}
         <label>
           <input
             type="checkbox"
@@ -621,6 +646,17 @@ export default function RecordList({
             </button>
           </p>
         )}
+        {board && (
+          <p className="task-board-scope" role="note">
+            看板仅展示当前筛选页 ·{' '}
+            {loading
+              ? '正在读取任务…'
+              : error
+                ? '读取失败，当前范围未确认'
+                : `本页 ${rows.length} 项 / 全部匹配 ${total} 项 · ${total === 0 ? 0 : q.offset + 1}—${Math.min(q.offset + rows.length, total)}`}
+            。列数量仅计本页。
+          </p>
+        )}
         <div
           className="collection-scroll"
           ref={scroll}
@@ -629,7 +665,36 @@ export default function RecordList({
               onViewState({ ...viewState, scroll: e.currentTarget.scrollTop });
           }}
         >
-          {loading ? (
+          {board ? (
+            <>
+              {loading && <p role="status">正在读取任务…</p>}
+              <TaskBoard
+                tasks={loading ? [] : rows}
+                queryKey={JSON.stringify(q)}
+                disabled={propertiesBlocked || loading}
+                loading={loading}
+                busyIds={completion?.busyIds}
+                selectedId={selected?.id}
+                selectedIds={selectedIds}
+                onSelection={
+                  selectionMode
+                    ? (ids) => {
+                        if (!propertiesBlocked) setSelectedIds(ids);
+                      }
+                    : undefined
+                }
+                onSelect={
+                  previewOpen
+                    ? (id) => {
+                        if (!propertiesBlocked) onViewState({ ...viewState, selected: id });
+                      }
+                    : undefined
+                }
+                onOpen={openTask}
+                onStatus={completion?.changeStatus}
+              />
+            </>
+          ) : loading ? (
             <p role="status">正在读取任务…</p>
           ) : (
             groups.map((group) => (

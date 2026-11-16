@@ -175,3 +175,120 @@ it('does not accept mismatched receipts or allow completed/canceled task writes'
   expect(onChanged).not.toHaveBeenCalled();
   expect(handler).toHaveBeenCalledTimes(1);
 });
+
+function StatusHarness({
+  current = task,
+  onChanged = vi.fn(),
+}: {
+  current?: Task;
+  onChanged?: ReturnType<typeof vi.fn>;
+}) {
+  const actions = useTaskCompletion({ disabled: false, onChanged });
+  return (
+    <>
+      <button onClick={() => actions.changeStatus(current, 'in_progress')}>推进状态</button>
+      {actions.feedback}
+    </>
+  );
+}
+it.each(['todo', 'done', 'canceled'] as const)(
+  'changes %s to a different ordinary status and verifies that target',
+  async (status) => {
+    const current = { ...task, status },
+      next = { ...task, status: 'in_progress' as const, version: 4 };
+    const handler = vi.fn(async (request) => ({
+      ok: true,
+      tasks: [next],
+      receipt: request.idempotency_key ?? null,
+    }));
+    Object.defineProperty(window, 'caselite', { configurable: true, value: { task: handler } });
+    const onChanged = vi.fn();
+    render(<StatusHarness current={current} onChanged={onChanged} />);
+    fireEvent.click(screen.getByText('推进状态'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(next, null));
+    expect(handler.mock.calls.map(([request]) => request.operation)).toEqual([
+      'change_status',
+      'read',
+    ]);
+    expect(handler.mock.calls[0]![0]).toMatchObject({
+      status: 'in_progress',
+      task_id: task.id,
+      expected_version: 3,
+    });
+  },
+);
+it.each(['receipt', 'identity', 'version', 'target'] as const)(
+  'rejects a wrong %s ACK and resolves only through the original key',
+  async (field) => {
+    let key = '';
+    const next = { ...task, status: 'in_progress' as const, version: 4 };
+    const handler = vi.fn(async (request) => {
+      if (request.operation === 'change_status') {
+        key = request.idempotency_key;
+        return {
+          ok: true,
+          receipt: field === 'receipt' ? 'wrong-key' : key,
+          tasks: [
+            {
+              ...next,
+              ...(field === 'identity' ? { id: 'wrong-task' } : {}),
+              ...(field === 'version' ? { version: 5 } : {}),
+              ...(field === 'target' ? { status: 'done' } : {}),
+            },
+          ],
+        };
+      }
+      return { ok: true, receipt: request.operation === 'status' ? key : null, tasks: [next] };
+    });
+    Object.defineProperty(window, 'caselite', { configurable: true, value: { task: handler } });
+    const onChanged = vi.fn();
+    render(<StatusHarness onChanged={onChanged} />);
+    fireEvent.click(screen.getByText('推进状态'));
+    await screen.findByRole('alert');
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('核对原状态操作'));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(handler.mock.calls.map(([request]) => request.operation)).toEqual([
+      'change_status',
+      'status',
+      'read',
+    ]);
+    expect(handler.mock.calls[1]![0].idempotency_key).toBe(key);
+  },
+);
+it('keeps a status ACK in read phase across a failed read and never resends it', async () => {
+  const next = { ...task, status: 'in_progress', version: 4 };
+  const handler = vi
+    .fn()
+    .mockImplementationOnce(async (request) => ({
+      ok: true,
+      receipt: request.idempotency_key,
+      tasks: [next],
+    }))
+    .mockResolvedValueOnce(fail('READ_FAILED'))
+    .mockResolvedValueOnce({ ok: true, tasks: [next] });
+  Object.defineProperty(window, 'caselite', { configurable: true, value: { task: handler } });
+  render(<StatusHarness />);
+  fireEvent.click(screen.getByText('推进状态'));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByText('重新读取任务和列表'));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  expect(handler.mock.calls.map(([request]) => request.operation)).toEqual([
+    'change_status',
+    'read',
+    'read',
+  ]);
+});
+it('shares the synchronous lock between complete and ordinary status and suppresses same-status writes', async () => {
+  const handler = vi.fn(() => new Promise(() => {}));
+  const { result } = setup(handler);
+  act(() => result.current.changeStatus(task, 'todo'));
+  expect(handler).not.toHaveBeenCalled();
+  act(() => {
+    result.current.changeStatus(task, 'in_progress');
+    result.current.complete(task);
+  });
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(handler.mock.calls[0]![0]).toMatchObject({ status: 'in_progress' });
+});
