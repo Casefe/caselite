@@ -742,6 +742,48 @@ export const reminderReceipts = sqliteTable(
   (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
 );
 
+export const memoItems = sqliteTable(
+  'memo_items',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    text: text('text').notNull(),
+    lifecycle: text('lifecycle', { enum: ['active', 'scratched', 'deleted'] })
+      .notNull()
+      .default('active'),
+    version: integer('version').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    scratchedAt: text('scratched_at'),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    index('memo_workspace_daily').on(table.workspaceId, table.lifecycle, table.updatedAt),
+    check(
+      'memo_text_valid',
+      sql`typeof(${table.text})='text' AND length(trim(${table.text})) BETWEEN 1 AND 2000 AND instr(${table.text}, char(0))=0`,
+    ),
+    check('memo_lifecycle_valid', sql`${table.lifecycle} IN ('active','scratched','deleted')`),
+    check('memo_version_valid', sql`${table.version}>0`),
+    check(
+      'memo_lifecycle_timestamps_valid',
+      sql.raw(
+        `("memo_items"."lifecycle"='active' AND "memo_items"."scratched_at" IS NULL AND "memo_items"."deleted_at" IS NULL) OR ("memo_items"."lifecycle"='scratched' AND "memo_items"."scratched_at" IS NOT NULL AND "memo_items"."deleted_at" IS NULL) OR ("memo_items"."lifecycle"='deleted' AND "memo_items"."deleted_at" IS NOT NULL)`,
+      ),
+    ),
+  ],
+);
+export const memoReceipts = sqliteTable(
+  'memo_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
+);
+
 export const financeContracts = sqliteTable(
   'finance_contracts',
   {

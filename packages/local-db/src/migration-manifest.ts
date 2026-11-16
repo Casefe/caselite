@@ -180,4 +180,9 @@ export const integrationMigrations = [
     when: 1794718000000,
     hash: 'e1df4ff97af65e3a66710059163c31889d2d33baee3dce7cceb10ac6a86040e7',
   },
+  {
+    tag: '0036_workspace_memos',
+    when: 1794800000000,
+    hash: 'f88162f4f26e7f62305c0080bd93c472665b10986d4b16d1a9b34c039d8f3655',
+  },
 ] as const;

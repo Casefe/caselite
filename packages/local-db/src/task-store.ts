@@ -11,6 +11,7 @@ import { createAgentPageReader } from './agent-page-reader';
 import { createDeliverySnapshotStore } from './delivery-snapshot-store';
 import { createDeliveryExportStore } from './delivery-export-store';
 import { createReminderStore } from './reminder-store';
+import { createMemoStore } from './memo-store';
 import { createFolderConfigurationStore } from './folder-configuration-store';
 import { createPersonalMaterialStore } from './personal-material-store';
 import { createMaterialStore } from './material-store';
@@ -227,6 +228,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
     folders: createFolderConfigurationStore(db, workspace),
     personalMaterials: createPersonalMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),
+    memos: createMemoStore(db, workspace),
     finance: createFinanceStore(db, workspace),
     contacts: createContactsStore(db, workspace),
     catalog: createCatalogStore(db, workspace),

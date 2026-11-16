@@ -18,6 +18,8 @@ export * from './legal-consent-application';
 export * from './folder-configuration-application';
 export type * from './folder-ports';
 export { createPersonalMaterialApplication } from './personal-material-application';
+export { createMemoApplication } from './memo-application';
+export type { MemoPort } from './memo-application';
 
 export * from './project-graph-application';
 export * from './project-visualization-view-application';
