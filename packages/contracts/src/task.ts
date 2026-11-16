@@ -7,7 +7,7 @@ export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export const taskPrioritySchema = z.number().int().min(0).max(4);
-const taskAssigneeSchema = z
+export const taskAssigneeSchema = z
   .string()
   .trim()
   .min(1)
