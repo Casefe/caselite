@@ -1,0 +1,133 @@
+{
+  "index_id": "PLH-12-DEV-1767-TRIAL-001",
+  "version": "0.1.0-trial",
+  "status": "TRIAL_ONLY",
+  "issue": "DEV-1767",
+  "plh_id": "PLH-12",
+  "title": "复用1657：Pi-law差异验收与退出证据索引",
+  "base_commit": "d5307fcb704c194a3698c2e35e85aa8b1af1417d",
+  "trial_branch": "cursor/trial-dev-1767-composer",
+  "scope": "仅汇总差异验收与退出证据槽位；不替代 DEV-1657 产品总验收或 DEV-1655 候选接受。",
+  "acceptance_owners": {
+    "product_total": "DEV-1657",
+    "candidate_acceptance": "DEV-1655",
+    "eval_baseline": "DEV-1765",
+    "representative_fixture": "DEV-1682"
+  },
+  "upstream_plh_dependencies": [
+    { "plh": "PLH-06", "issue": "DEV-1761", "consumes": ["DEV-1655"], "result": "NOT_RUN" },
+    { "plh": "PLH-07", "issue": "DEV-1762", "consumes": ["DEV-1653"], "result": "NOT_RUN" },
+    { "plh": "PLH-03", "issue": "DEV-1758", "consumes": ["DEV-1651"], "result": "NOT_RUN" },
+    {
+      "plh": "PLH-04",
+      "issue": "DEV-1759",
+      "consumes": ["DEV-1652", "DEV-1654"],
+      "result": "NOT_RUN"
+    },
+    { "plh": "PLH-10", "issue": "DEV-1765", "consumes": ["DEV-1682"], "result": "NOT_RUN" },
+    {
+      "plh": "PLH-11",
+      "issue": "DEV-1766",
+      "consumes": [],
+      "result": "NOT_RUN",
+      "note": "条件候选；未确认 Core 缺口时不阻塞主线"
+    }
+  ],
+  "fixed_references": {
+    "representative_baseline": "tests/fixtures/case-materials/representative-task/baseline.json",
+    "representative_readme": "tests/fixtures/case-materials/representative-task/README.md",
+    "synthetic_case_materials": "tests/fixtures/case-materials/manifest.json",
+    "agent_demo_script": "scripts/check-agent-demo.mjs",
+    "real_agent_demo_script": "scripts/check-real-agent-demo.mjs"
+  },
+  "harness_exit_conditions": [
+    {
+      "id": "H12-EXIT-01",
+      "description": "移除 Pi-law harness 适配后，Task/Run/Yjs 与来源修订仍可按固定 ID 读回",
+      "verification": "NOT_RUN",
+      "owner_issues": ["DEV-1657", "DEV-1653", "DEV-1582"]
+    },
+    {
+      "id": "H12-EXIT-02",
+      "description": "同构建 SHA 下记录正常/失败/取消/重启与输入、来源修订及律师人工接收分记",
+      "verification": "NOT_RUN",
+      "owner_issues": ["DEV-1657", "DEV-1765"]
+    },
+    {
+      "id": "H12-EXIT-03",
+      "description": "无 Core 缺口时继续复用 Pi；不要求 Main 或十候选全部完成",
+      "verification": "MOCK_ONLY",
+      "note": "本试做索引文件即 MOCK_ONLY 规划产物，非运行证据"
+    }
+  ],
+  "difference_acceptance_paths": [
+    {
+      "id": "PLH12-DIFF-01",
+      "caselite_r1_case_ids": ["D1-01", "R1-06"],
+      "pi_law_same_page_loop": [
+        "合成 UI 固定材料",
+        "真实 BYOK 授权后生成",
+        "回源",
+        "拒绝或接受新稿",
+        "重启读回"
+      ],
+      "expected_evidence_fields": [
+        "build_sha",
+        "task_id",
+        "document_id",
+        "body_revision",
+        "run_checkpoint",
+        "source_revision_refs",
+        "human_reception"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "id": "PLH12-DIFF-02",
+      "caselite_r1_case_ids": ["R1-07", "R1-08"],
+      "pi_law_focus": "交付快照 Word/PDF 打开与隔离恢复",
+      "result": "NOT_RUN"
+    }
+  ],
+  "evidence_slots": [
+    {
+      "slot_id": "E-SHA",
+      "label": "构建 SHA",
+      "required": true,
+      "value": "d5307fcb704c194a3698c2e35e85aa8b1af1417d",
+      "result": "PASS_REAL"
+    },
+    {
+      "slot_id": "E-FIXTURE-INDEX",
+      "label": "本索引 JSON 结构校验",
+      "required": true,
+      "command": "pnpm vitest run tests/contracts/pi-law-exit-evidence.test.ts",
+      "result": "PASS_REAL"
+    },
+    {
+      "slot_id": "E-1657-R1",
+      "label": "DEV-1657 代表任务 R1 全链",
+      "required": true,
+      "command": null,
+      "result": "NOT_RUN"
+    },
+    {
+      "slot_id": "E-LAWYER",
+      "label": "律师人工接收",
+      "required": true,
+      "command": null,
+      "result": "NOT_RUN"
+    },
+    {
+      "slot_id": "E-PACKAGED-E2E",
+      "label": "打包桌面 harness",
+      "required": false,
+      "command": "pnpm test:e2e",
+      "result": "NOT_RUN",
+      "note": "Linux CI 不替代 macOS 打包桌面"
+    }
+  ],
+  "result_vocabulary": ["PASS_REAL", "MOCK_ONLY", "NOT_RUN", "BLOCKED", "FAIL"],
+  "rollback": "撤销本目录与合同测试；不改动 representative-task 与产品 Runtime。",
+  "next_consumer": "DEV-1657 总验收与 PLH-06—11 差异卡分别消费本索引槽位，不另建第二评测平台。"
+}

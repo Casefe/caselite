@@ -1,0 +1,64 @@
+{
+  "artifact_id": "PLH-12-DIFF-ACCEPTANCE-001",
+  "issue": "DEV-1767",
+  "paired_product_acceptance": "DEV-1657",
+  "baseline_fixture_id": "DEV-1682-REP-001",
+  "trial_mode": "MOCK_ONLY",
+  "loop_steps": [
+    {
+      "step": 1,
+      "name": "synthetic_ui",
+      "caselite_boundary": "Renderer 经 Preload/IPC；不直达 SQLite 或任意路径",
+      "pi_law_expectation": "同页法律任务 UI 原型；律师流程标 MOCK_ONLY 直至宿主接线",
+      "result": "NOT_RUN"
+    },
+    {
+      "step": 2,
+      "name": "fixed_materials",
+      "caselite_fixture": "tests/fixtures/case-materials/representative-task/",
+      "pi_law_expectation": "消费 DEV-1682 代表样本；不复制第二真源",
+      "result": "NOT_RUN"
+    },
+    {
+      "step": 3,
+      "name": "byok_generate",
+      "caselite_owners": ["DEV-1648", "DEV-1652"],
+      "pi_law_expectation": "无 Key 时保留人工路径；有 Key 时记录 Provider/范围/费用",
+      "result": "NOT_RUN"
+    },
+    {
+      "step": 4,
+      "name": "source_anchoring",
+      "caselite_owners": ["DEV-1617", "DEV-1684"],
+      "pi_law_expectation": "回源与拒绝无依据句；Anchor 不等于法律核验",
+      "result": "NOT_RUN"
+    },
+    {
+      "step": 5,
+      "name": "accept_or_reject_draft",
+      "caselite_owners": ["DEV-1655"],
+      "pi_law_expectation": "候选与最终人工稿分列；重复接受幂等",
+      "result": "NOT_RUN"
+    },
+    {
+      "step": 6,
+      "name": "restart_readback",
+      "caselite_owners": ["DEV-1653", "DEV-1593"],
+      "pi_law_expectation": "停止/取消/重启后 Task、正文修订、来源可读",
+      "result": "NOT_RUN"
+    }
+  ],
+  "failure_paths_to_record": [
+    "user_cancel",
+    "provider_stop",
+    "late_response_after_stop",
+    "duplicate_accept",
+    "restore_failure_with_preserved_data"
+  ],
+  "non_goals": [
+    "不自动法律确认",
+    "不默启外发或收费",
+    "不等待 Main 或全部 PLH 完成再索引",
+    "不把本试做标为 Linear 完成"
+  ]
+}
