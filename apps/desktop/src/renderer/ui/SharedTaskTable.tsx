@@ -12,6 +12,7 @@ export const taskOptionalColumns = {
 export type TaskOptionalColumn = keyof typeof taskOptionalColumns;
 export type TaskCompletionActions = {
   complete(task: Task): void;
+  changeStatus?(task: Task, status: Task['status']): void;
   busyIds: readonly string[];
   blocked: boolean;
 };

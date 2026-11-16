@@ -20,6 +20,7 @@ export function useTaskCompletion({
   const [recovery, setRecovery] = useState<'unknown' | 'read'>('read');
   const [taskId, setTaskId] = useState<string | null>(null);
   const [conflictId, setConflictId] = useState<string | null>(null);
+  const [action, setAction] = useState<'complete' | 'status'>('complete');
 
   async function read(id: string, minimum: number) {
     const result = await window.caselite.task({
@@ -31,12 +32,21 @@ export function useTaskCompletion({
     const actual = result.tasks.find((task) => task.id === id && task.version >= minimum);
     if (!actual) throw Error('暂时无法重读任务当前版本，请保留原操作后重试。');
     if ((await onChanged(actual, result.objective_state ?? null)) === false)
-      throw Error('任务已保存，列表刷新失败；请重读，勿重新完成任务。');
+      throw Error('任务已保存，列表刷新失败；请重读，勿重复修改状态。');
   }
-  async function run(task?: Task) {
+  async function run(
+    task?: Task,
+    status: Task['status'] = 'done',
+    kind: 'complete' | 'status' = 'complete',
+  ) {
     // 同一事件循环内先锁定，阻止双击在 React 更新前创建第二个幂等键。
     if (running.current || (task && (disabled || pending.current || error))) return;
-    if (task && (task.status === 'done' || task.status === 'canceled')) return;
+    if (
+      task &&
+      (task.status === status ||
+        (kind === 'complete' && (task.status === 'done' || task.status === 'canceled')))
+    )
+      return;
     if (!task && !pending.current && !conflictId) return;
     running.current = true;
     setBusy(true);
@@ -44,13 +54,14 @@ export function useTaskCompletion({
     try {
       if (task) {
         setTaskId(task.id);
+        setAction(kind);
         pending.current = {
           command: {
             ...mutation(),
             operation: 'change_status',
             task_id: task.id,
             expected_version: task.version,
-            status: 'done',
+            status,
           },
           phase: 'unknown',
         };
@@ -86,9 +97,13 @@ export function useTaskCompletion({
             result.receipt !== command.idempotency_key ||
             !saved ||
             saved.version !== command.expected_version + 1 ||
-            saved.status !== 'done'
+            saved.status !== command.status
           )
-            throw Error('完成回执未确认，请核对原提交。');
+            throw Error(
+              kind === 'complete' && task
+                ? '完成回执未确认，请核对原提交。'
+                : '状态回执未确认，请核对原提交。',
+            );
           original.phase = 'read';
         }
         // 确认回执后只重读和刷新缓存，不再次提交；允许回读到后续合法版本。
@@ -101,7 +116,7 @@ export function useTaskCompletion({
       setConflictId(null);
     } catch (cause) {
       setRecovery(pending.current?.phase ?? 'read');
-      setError(cause instanceof Error ? cause.message : '任务完成结果未确认，请核对原操作。');
+      setError(cause instanceof Error ? cause.message : '任务状态结果未确认，请核对原操作。');
     } finally {
       running.current = false;
       setBusy(false);
@@ -111,15 +126,22 @@ export function useTaskCompletion({
     complete: (task: Task) => {
       void run(task);
     },
+    changeStatus: (task: Task, status: Task['status']) => {
+      void run(task, status, 'status');
+    },
     busyIds: taskId ? [taskId] : [],
     blocked: busy || Boolean(error),
     feedback: busy ? (
-      <p role="status">正在确认任务完成…</p>
+      <p role="status">{action === 'complete' ? '正在确认任务完成…' : '正在确认任务状态…'}</p>
     ) : error ? (
       <div role="alert" className="task-completion-feedback">
         {error}
         <button type="button" onClick={() => void run()}>
-          {recovery === 'unknown' ? '核对原完成操作' : '重新读取任务和列表'}
+          {recovery === 'unknown'
+            ? action === 'complete'
+              ? '核对原完成操作'
+              : '核对原状态操作'
+            : '重新读取任务和列表'}
         </button>
       </div>
     ) : null,
