@@ -32,6 +32,18 @@ describe('host-owned desktop window capabilities', () => {
     expect(access.allows({ ...trusted.event(), senderFrame: null }, 'business')).toBe(false);
   });
 
+  it('gives a pdf reading window no business, appearance, consent, or probe access', () => {
+    const access = createDesktopWindowCapabilities(),
+      w = fakeWindow();
+    access.register(w.window, 'pdf-view', entry);
+    expect(access.allows(w.event(), 'business')).toBe(false);
+    expect(access.allows(w.event(), 'appearance')).toBe(false);
+    expect(access.allows(w.event(), 'consent')).toBe(false);
+    expect(access.allows(w.event(), 'probe')).toBe(false);
+    access.register(w.window, 'workbench', entry);
+    expect(access.allows(w.event(), 'business')).toBe(true);
+  });
+
   it('gives the consent role only initial appearance and consent access', () => {
     const access = createDesktopWindowCapabilities(),
       w = fakeWindow();
