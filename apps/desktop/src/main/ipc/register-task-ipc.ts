@@ -15,6 +15,8 @@ import type { createReminderApplication } from '@caselite/application';
 import { CATALOG_CHANNEL, catalogResponseSchema, type CatalogResponse } from '@caselite/contracts';
 import type { createCatalogApplication } from '@caselite/application';
 import { TASK_CHANNEL, taskResponseSchema, type TaskResponse } from '@caselite/contracts';
+import { INTAKE_CHANNEL, intakeResponseSchema, type IntakeResponse } from '@caselite/contracts';
+import type { createIntakeApplication } from '@caselite/application';
 import { isTrustedBusinessSender, onBusinessAccessRevoked } from './window-capabilities';
 import { ipcMain } from 'electron';
 
@@ -50,6 +52,14 @@ export function registerCatalogIpc(application: ReturnType<typeof createCatalogA
     if (!isTrustedBusinessSender(event))
       return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问本地目录。' };
     return catalogResponseSchema.parse(application.execute(payload));
+  });
+}
+
+export function registerIntakeIpc(application: ReturnType<typeof createIntakeApplication>) {
+  ipcMain.handle(INTAKE_CHANNEL, (event, payload): IntakeResponse => {
+    if (!isTrustedBusinessSender(event))
+      return { ok: false, code: 'FORBIDDEN', message: '当前页面无权访问收件区。' };
+    return intakeResponseSchema.parse(application.execute(payload));
   });
 }
 

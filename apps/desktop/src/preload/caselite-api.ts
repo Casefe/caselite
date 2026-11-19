@@ -64,6 +64,12 @@ import {
   type ReminderResponse,
 } from '@caselite/contracts';
 import {
+  INTAKE_CHANNEL,
+  intakeResponseSchema,
+  type IntakeRequest,
+  type IntakeResponse,
+} from '@caselite/contracts';
+import {
   MATERIAL_CHANNEL,
   MATERIAL_PICK_CHANNEL,
   MATERIAL_DROP_CHANNEL,
@@ -157,6 +163,7 @@ async function invokeBusinessCommand(
     | AppearanceRequest
     | MaterialRequest
     | ReminderRequest
+    | IntakeRequest
     | FinanceRequest
     | FinanceManagementRequest
     | ContactsRequest
@@ -193,6 +200,7 @@ export type CaseLitePreloadApi = {
   materialBatch(request: MaterialBatchRequest): Promise<MaterialBatchResponse>;
   preferences(request: LocalPreferencesRequest): Promise<LocalPreferencesResponse>;
   reminder(request: ReminderRequest): Promise<ReminderResponse>;
+  intake(request: IntakeRequest): Promise<IntakeResponse>;
   material(request: MaterialRequest): Promise<MaterialResponse>;
   pickPdf(scope: MaterialScope): Promise<MaterialResponse>;
   dropPdf(file: File, scope: MaterialScope): Promise<MaterialResponse>;
@@ -299,6 +307,18 @@ export function createCaseLitePreloadApi(
             ok: false,
             code: 'RESULT_UNKNOWN',
             message: '无法确认本地设置结果，请保留输入并核对原提交。',
+          };
+    },
+    async intake(request) {
+      const result = intakeResponseSchema.safeParse(
+        await invokeBusinessCommand(invoke, INTAKE_CHANNEL, request),
+      );
+      return result.success
+        ? result.data
+        : {
+            ok: false,
+            code: 'RESULT_UNKNOWN',
+            message: '无法确认收件结果，请保留原提交身份并核对。',
           };
     },
     async reminder(request) {
@@ -470,6 +490,7 @@ export type {
 } from '@caselite/contracts';
 
 export type { Reminder, ReminderRequest, ReminderResponse } from '@caselite/contracts';
+export type { WorkRequest, IntakeRequest, IntakeResponse } from '@caselite/contracts';
 
 export type { FinanceRequest, FinanceResponse } from '@caselite/contracts';
 

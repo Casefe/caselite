@@ -95,6 +95,31 @@
   overflow: auto;
 }
 
+.intake-inbox {
+  color: var(--ink);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 28px;
+  background: var(--theme-panel);
+}
+.intake-inbox h1,
+.intake-inbox h2 {
+  margin: 0;
+}
+.intake-inbox form,
+.intake-inbox article {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+.intake-inbox article {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .reminder-inbox {
   color: var(--ink);
   height: 100%;
