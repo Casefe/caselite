@@ -54,7 +54,9 @@ function Message() {
   ) as AgentRun['attachments'];
   const role = useAuiState((state) => state.message.role);
   const run = useAuiState((state) => state.message.metadata.custom?.run) as
-    | (Pick<AgentRun, 'id' | 'scope' | 'model' | 'status' | 'message'> & { copyable: boolean })
+    | (Pick<AgentRun, 'id' | 'scope' | 'model' | 'status' | 'message' | 'output_incomplete'> & {
+        copyable: boolean;
+      })
     | undefined;
   const [copyState, setCopyState] = useState('复制');
   const read = useContext(AttachmentReader);
@@ -122,7 +124,13 @@ function Message() {
       )}
       {role === 'assistant' && run && run.status !== 'running' && (
         <footer className="assistant-message-footer">
-          <span>{run.status === 'succeeded' ? '待人工核对' : run.message}</span>
+          <span>
+            {run.status === 'succeeded'
+              ? run.output_incomplete
+                ? '回答不完整 · 待人工核对'
+                : '待人工核对'
+              : run.message}
+          </span>
           {homePreview?.enabled && canPreviewOutput && (
             <button
               type="button"
