@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { openTaskStore } from '../../packages/local-db/src/task-store';
 import { openToolchainProbe } from '../../packages/local-db/src/connection';
 import { createCatalogApplication } from '../../packages/application/src/catalog-application';
+import { validateBody } from '../../packages/local-db/src/body-schema';
 import type { CatalogResponse, TaskResponse } from '../../packages/contracts/src';
 
 const migrations = resolve('packages/local-db/migrations');
@@ -33,6 +34,24 @@ function binary(text: string) {
   value.insert(0, text);
   paragraph.insert(0, [value]);
   doc.getXmlFragment('default').insert(0, [paragraph]);
+  const state = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  return state;
+}
+function tableBinary(text = '表格单元格') {
+  const doc = new Y.Doc();
+  const table = new Y.XmlElement('table');
+  const row = new Y.XmlElement('tableRow');
+  const cell = new Y.XmlElement('tableCell');
+  cell.setAttribute('colwidth', [0]);
+  const paragraph = new Y.XmlElement('paragraph');
+  const value = new Y.XmlText();
+  value.insert(0, text);
+  paragraph.insert(0, [value]);
+  cell.insert(0, [paragraph]);
+  row.insert(0, [cell]);
+  table.insert(0, [row]);
+  doc.getXmlFragment('default').insert(0, [table]);
   const state = Array.from(Y.encodeStateAsUpdate(doc));
   doc.destroy();
   return state;
@@ -345,6 +364,56 @@ it.each(['body_revisions', 'catalog_activity', 'catalog_receipts'])(
     expect(good(s.app.execute(command)).documents[0].body_revision).toBe(2);
   },
 );
+
+it('reopens a committed personal table revision and rejects malformed grids without replacing it', () => {
+  const s = setup(),
+    { document } = created(s, '表格独立文档');
+  const tableState = tableBinary('已提交单元格');
+  const committed = good(s.app.execute({ ...save(document), state: tableState })).documents[0];
+  expect(committed.body_revision).toBe(2);
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(tableState));
+  doc
+    .getXmlFragment('default')
+    .get(0)
+    .insert(1, [new Y.XmlElement('tableRow')]);
+  const malformed = Array.from(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  expect(() => validateBody(Uint8Array.from(malformed), true)).toThrow('Incomplete table grid');
+  expect(
+    s.app.execute({
+      ...save(committed),
+      state: malformed,
+    }),
+  ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  expect(
+    good(s.app.execute({ protocol_version: 1, operation: 'read_document', id: document.id })).state,
+  ).toEqual(tableState);
+  expect(
+    s.db.prepare('SELECT count(*) AS n FROM body_revisions WHERE body_id=?').get(document.body_id),
+  ).toEqual({ n: 2 });
+  s.close();
+  const reopened = openTaskStore(s.file, migrations);
+  closes.push(() => reopened.close());
+  expect(
+    good(
+      reopened.catalog.execute({
+        protocol_version: 1,
+        operation: 'read_document',
+        id: document.id,
+      }),
+    ).documents[0],
+  ).toMatchObject({ body_revision: 2 });
+  expect(
+    good(
+      reopened.catalog.execute({
+        protocol_version: 1,
+        operation: 'read_document',
+        id: document.id,
+      }),
+    ).state,
+  ).toEqual(tableState);
+});
 
 it('preserves the original Task write/read/status path and enforces ownership CHECKs with a valid local Task parent', () => {
   const s = setup();
