@@ -3,7 +3,7 @@ import { isTrustedDesktopSender } from './register-application-ipc';
 
 type Sender = Parameters<typeof isTrustedDesktopSender>[0];
 type Capability = 'business' | 'appearance' | 'consent' | 'probe';
-type Role = 'workbench' | 'consent';
+type Role = 'workbench' | 'consent' | 'pdf-view';
 type Grant = {
   window: BrowserWindow;
   entry: URL;
@@ -14,6 +14,8 @@ type Grant = {
 const capabilities: Record<Role, readonly Capability[]> = {
   workbench: ['business', 'appearance', 'probe'],
   consent: ['appearance', 'consent'],
+  // 不可信 PDF 阅读/解析窗口即使登记了固定入口，也没有业务 preload 所能调用的能力。
+  'pdf-view': [],
 };
 
 function matchesEntry(url: string, entry: URL) {
