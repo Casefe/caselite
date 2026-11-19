@@ -7,13 +7,13 @@ export const taskIdSchema = z.string().uuid();
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'canceled']);
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export const taskPrioritySchema = z.number().int().min(0).max(4);
-const taskAssigneeSchema = z
+export const taskAssigneeNameSchema = z
   .string()
   .trim()
   .min(1)
   .max(80)
-  .refine((value) => !value.includes('\0'))
-  .nullable();
+  .refine((value) => !value.includes('\0'));
+const taskAssigneeSchema = taskAssigneeNameSchema.nullable();
 export const tagListSchema = z.array(z.string().trim().min(1).max(40)).max(20);
 export const ordinaryDateSchema = z.iso.date().refine((value) => !value.startsWith('0000-'));
 export const calendarTypeIdSchema = z
