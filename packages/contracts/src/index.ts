@@ -6,6 +6,7 @@ export * from './queries';
 export * from './results';
 export * from './offline-probe';
 export * from './task';
+export * from './task-filter-expression';
 export * from './delivery-snapshot';
 export * from './delivery-export';
 export * from './export-style';

@@ -1,6 +1,12 @@
 export * from './spike-application';
 export * from './offline-probe-application';
 export * from './task-application';
+export {
+  validateTaskFilterExpression,
+  evaluateTaskFilterExpression,
+  type TaskFilterSubject,
+  type TaskFilterValidationResult,
+} from './task-filter-expression';
 export * from './delivery-export-application';
 export * from './agent-application';
 export * from './catalog-application';
