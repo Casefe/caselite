@@ -13,6 +13,7 @@ import {
   CATALOG_CHANNEL,
   CONTACTS_CHANNEL,
   REMINDER_CHANNEL,
+  INTAKE_CHANNEL,
   APPEARANCE_CHANNEL,
   LOCAL_PREFERENCES_CHANNEL,
   MATERIAL_CHANNEL,
@@ -38,6 +39,7 @@ import {
   registerFinanceIpc,
   registerCatalogIpc,
   registerReminderIpc,
+  registerIntakeIpc,
   registerContactsIpc,
 } from './register-task-ipc';
 import { registerAgentIpc } from './register-agent-ipc';
@@ -151,6 +153,7 @@ it('rejects auxiliary and consent windows at every production business entry bef
   registerFinanceIpc(app as unknown as Parameters<typeof registerFinanceIpc>[0]);
   registerCatalogIpc(app as unknown as Parameters<typeof registerCatalogIpc>[0]);
   registerReminderIpc(app as unknown as Parameters<typeof registerReminderIpc>[0], changed);
+  registerIntakeIpc(app as unknown as Parameters<typeof registerIntakeIpc>[0]);
   registerContactsIpc(app as unknown as Parameters<typeof registerContactsIpc>[0], allowed);
   registerAgentIpc(app as unknown as Parameters<typeof registerAgentIpc>[0]);
   registerAppearanceIpc(app as unknown as Parameters<typeof registerAppearanceIpc>[0]);
@@ -163,6 +166,7 @@ it('rejects auxiliary and consent windows at every production business entry bef
     CATALOG_CHANNEL,
     CONTACTS_CHANNEL,
     REMINDER_CHANNEL,
+    INTAKE_CHANNEL,
     AGENT_CHANNEL,
     APPEARANCE_CHANNEL,
     LOCAL_PREFERENCES_CHANNEL,

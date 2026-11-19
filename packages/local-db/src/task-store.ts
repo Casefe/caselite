@@ -33,6 +33,7 @@ import { createFinanceStore } from './finance-store';
 import { createCatalogStore } from './catalog-store';
 import { createAgentHistoryStore } from './agent-history-store';
 import { createImportantDateStore } from './important-date-store';
+import { createIntakeStore, unavailableIntake } from './intake-store';
 
 type Row = Omit<Task, 'tags' | 'assignee' | 'subscribed'> & {
   tags: string;
@@ -213,6 +214,7 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
   const executeTask = (r: TaskRequest, confirmation?: boolean): TaskResponse =>
     api.execute(r, confirmation);
   const dates = createImportantDateStore(db, workspace, get, (r) => executeTask(r, true));
+  const materials = createMaterialStore(db, workspace);
   const api = {
     agentPage: createAgentPageReader(db, workspace, get),
     dates,
@@ -223,7 +225,17 @@ export function openTaskStore(file: string, migrations: string, workspace = 'loc
       return review.reviewSaved(range, receipt, (request) => this.execute(request));
     },
     reviewState: review.reviewState,
-    materials: createMaterialStore(db, workspace),
+    materials,
+    intake: db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_requests'")
+      .get()
+      ? createIntakeStore(
+          db,
+          workspace,
+          { execute: (request: TaskRequest): TaskResponse => executeTask(request) },
+          materials,
+        )
+      : unavailableIntake(),
     folders: createFolderConfigurationStore(db, workspace),
     personalMaterials: createPersonalMaterialStore(db, workspace),
     reminders: createReminderStore(db, workspace),

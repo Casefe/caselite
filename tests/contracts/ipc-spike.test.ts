@@ -123,6 +123,7 @@ describe('typed preload to main IPC Spike', () => {
       'exportStyleDefaults',
       'finance',
       'folder',
+      'intake',
       'material',
       'materialBatch',
       'offlineProbe',

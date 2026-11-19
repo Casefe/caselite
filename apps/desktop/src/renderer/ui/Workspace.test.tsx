@@ -29,7 +29,7 @@ describe('workspace navigation and clearly bounded project prototype', () => {
           .getAllByRole('button')
           .map((button) => button.getAttribute('aria-label'));
       expect(labels('常用')).toEqual(['首页', '日历', '任务', '项目', '文档']);
-      expect(labels('更多')).toEqual(['财务', '联系人', '知识库', '收藏']);
+      expect(labels('更多')).toEqual(['收件', '财务', '联系人', '知识库', '收藏']);
       for (const name of ['白板', '报告', '工具', '客户'])
         expect(sidebar.queryByRole('button', { name, exact: true })).toBeNull();
     };
