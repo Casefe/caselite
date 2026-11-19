@@ -26,6 +26,7 @@ const currentHomeRunIds = new Set<string>();
 
 export type AgentControllerOptions = {
   scope: string;
+  defaultDocxFull?: boolean;
   freshHomeSession?: boolean;
   draft?: RichDraft;
   onDraft?(value: RichDraft): void;
@@ -36,6 +37,7 @@ export type AgentControllerOptions = {
 
 export function useAgentController({
   scope,
+  defaultDocxFull = false,
   freshHomeSession = false,
   draft: controlled,
   onDraft,
@@ -46,7 +48,7 @@ export function useAgentController({
   const withoutMaterials = Boolean(
     project || scope.startsWith('document:') || scope.startsWith('contact:'),
   );
-  const materials = useMaterials(scope, !withoutMaterials);
+  const materials = useMaterials(scope, !withoutMaterials, true, defaultDocxFull);
   const [pageState, setPageState] = useState<{
     version: string | undefined;
     value: AgentPageReference;

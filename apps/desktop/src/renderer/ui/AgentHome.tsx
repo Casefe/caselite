@@ -679,6 +679,7 @@ export default function AgentHome({
                   <div className="home-live-panel" hidden={!liveVisible} inert={!liveVisible}>
                     <AgentPanel
                       scope="home"
+                      defaultDocxFull
                       freshHomeSession
                       draft={prompt}
                       onDraft={onPrompt}

@@ -345,7 +345,10 @@ export default function PdfAttachments({
           selection={
             readingDocx.id in c.selected
               ? {
-                  pages: c.sections.get(readingDocx.id) ?? [],
+                  pages:
+                    c.sections.get(readingDocx.id) ??
+                    (c.defaultDocxFull ? docxMaterial?.pages.map((page) => page.page) : []) ??
+                    [],
                   disabled,
                   toggle: (page) => c.toggleSection(readingDocx.id, page),
                 }
@@ -522,9 +525,13 @@ export default function PdfAttachments({
                     <small title={`${item.bytes} 字节`}>
                       {materialSize(item.bytes)} ·{' '}
                       {isDocx(item.name)
-                        ? c.sections.get(item.id)?.length
-                          ? `已选 ${c.sections.get(item.id)!.length} 段`
-                          : '打开并选择段落'
+                        ? c.sections.has(item.id)
+                          ? c.sections.get(item.id)!.length
+                            ? `已选 ${c.sections.get(item.id)!.length} 段`
+                            : '未选段落 · 请选择后发送'
+                          : c.defaultDocxFull && item.page_count
+                            ? `全部 ${item.page_count} 个可读取段落 · 本次发送`
+                            : '打开并选择段落'
                         : c.sections.has(item.id)
                           ? `第 ${c.sections.get(item.id)!.join('、')} 页 · 本次发送`
                           : `${item.page_count} 页 · 本次发送`}

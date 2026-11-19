@@ -110,7 +110,12 @@ function subscribeMaterials(scope: MaterialScope, listener: () => void) {
     }
   };
 }
-export function useMaterials(scope: MaterialScope, enabled = true, selectImports = true) {
+export function useMaterials(
+  scope: MaterialScope,
+  enabled = true,
+  selectImports = true,
+  defaultDocxFull = false,
+) {
   const draft = getDraft(scope);
   const available = enabled && typeof window.caselite?.material === 'function';
   const subscribe = useCallback(
@@ -244,8 +249,13 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
     readError: draft.readError,
     readPending,
     sections: draft.sections,
+    defaultDocxFull,
     toggleSection(id: string, page: number) {
-      const selected = draft.sections.get(id) ?? [];
+      const item = draft.items.find((material) => material.id === id);
+      const selected =
+        draft.sections.get(id) ??
+        (defaultDocxFull && item && isDocx(item.name) ? pageRange('', item.page_count) : []) ??
+        [];
       draft.sections.set(
         id,
         selected.includes(page) ? selected.filter((n) => n !== page) : [...selected, page],
@@ -505,7 +515,7 @@ export function useMaterials(scope: MaterialScope, enabled = true, selectImports
         if (!item || !item.page_count) throw new Error('附件尚不可用，本轮未发送。');
         const pages =
           draft.sections.get(id) ??
-          (isDocx(item.name) ? undefined : pageRange('', item.page_count));
+          (!isDocx(item.name) || defaultDocxFull ? pageRange('', item.page_count) : undefined);
         if (!pages?.length) throw new Error('请先打开 Word 附件并选择本轮使用的段落。');
         return { source_id: id, pages };
       });

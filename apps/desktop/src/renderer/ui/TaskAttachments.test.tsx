@@ -80,6 +80,61 @@ function fixture(task = crypto.randomUUID()) {
   window.caselite = { material, pickPdf, agent } as unknown as Window['caselite'];
   return { task, file, material, pickPdf, agent, token };
 }
+it('defaults Word to all readable paragraphs only for the explicit home composer policy', async () => {
+  const scope = crypto.randomUUID();
+  const docx = { ...source(scope, '合同.docx'), page_count: 3 };
+  docx.pages = [1, 2, 3].map((page) => ({ ...docx.pages[0], page, text: `段落${page}` }));
+  const material = vi.fn(async (request: MaterialRequest): Promise<MaterialResponse> => {
+    if (request.operation === 'preview')
+      return { ok: true, materials: [docx], preview: {} as never };
+    return { ok: true, materials: [docx] };
+  });
+  window.caselite = { material } as unknown as Window['caselite'];
+  const home = renderHook(() => useMaterials(scope, true, true, true));
+  await waitFor(() => expect(home.result.current.items).toHaveLength(1));
+  act(() => home.result.current.select(docx.id, true));
+  await act(async () => {
+    await home.result.current.preview('核对', 'gpt-4.1-mini');
+  });
+  expect(
+    material.mock.calls.filter(([request]) => request.operation === 'preview').at(-1)?.[0],
+  ).toMatchObject({ selected: [{ source_id: docx.id, pages: [1, 2, 3] }] });
+  act(() => home.result.current.toggleSection(docx.id, 1));
+  await act(async () => {
+    await home.result.current.preview('核对', 'gpt-4.1-mini');
+  });
+  expect(
+    material.mock.calls.filter(([request]) => request.operation === 'preview').at(-1)?.[0],
+  ).toMatchObject({ selected: [{ source_id: docx.id, pages: [2, 3] }] });
+  act(() => {
+    home.result.current.toggleSection(docx.id, 2);
+    home.result.current.toggleSection(docx.id, 3);
+  });
+  const count = material.mock.calls.filter(([request]) => request.operation === 'preview').length;
+  await expect(home.result.current.preview('核对', 'gpt-4.1-mini')).rejects.toThrow(
+    '选择本轮使用的段落',
+  );
+  expect(material.mock.calls.filter(([request]) => request.operation === 'preview')).toHaveLength(
+    count,
+  );
+  act(() => home.result.current.toggleSection(docx.id, 2));
+  await act(async () => {
+    await home.result.current.preview('核对', 'gpt-4.1-mini');
+  });
+  expect(
+    material.mock.calls.filter(([request]) => request.operation === 'preview').at(-1)?.[0],
+  ).toMatchObject({ selected: [{ source_id: docx.id, pages: [2] }] });
+  act(() => home.result.current.select(docx.id, false));
+  home.unmount();
+
+  const other = renderHook(() => useMaterials(scope));
+  await waitFor(() => expect(other.result.current.items).toHaveLength(1));
+  act(() => other.result.current.select(docx.id, true));
+  await expect(other.result.current.preview('核对', 'gpt-4.1-mini')).rejects.toThrow(
+    '选择本轮使用的段落',
+  );
+  act(() => other.result.current.select(docx.id, false));
+});
 it('shares one scope poll with AI, imports fixed attachments without authorizing AI and never starts a provider', async () => {
   const f = fixture();
   const ai = renderHook(() => useMaterials(f.task));
