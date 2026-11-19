@@ -13,6 +13,7 @@ export * from './agent';
 export * from './catalog';
 export * from './source';
 export * from './agent-input';
+export * from './agent-call-budget';
 export * from './appearance';
 
 export * from './material';
