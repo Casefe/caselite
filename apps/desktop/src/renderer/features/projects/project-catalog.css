@@ -811,13 +811,97 @@
 .project-milestone-row,
 .project-milestone-form {
   display: grid;
-  gap: 5px;
-  padding-block: 7px;
+  gap: 6px;
+  padding-block: 8px;
 }
 .project-milestone-row + .project-milestone-row {
   border-block-start: 1px solid var(--line);
 }
+.project-milestone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.project-milestone-status {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--surface-muted, #f1f3f5);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.project-milestone-status-in_progress {
+  color: #bd882e;
+  border-color: #bd882e44;
+}
+.project-milestone-status-completed {
+  color: #2b8a3e;
+  border-color: #2b8a3e44;
+}
+.project-milestone-status-archived {
+  opacity: 0.7;
+}
+.project-milestone-overdue {
+  color: #c92a2a;
+  margin-inline-start: 4px;
+  font-weight: 500;
+}
+.project-milestone-meta small,
 .project-milestone-row small {
+  color: var(--muted);
+}
+.project-milestone-progress-text {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.project-milestone-progress-bar {
+  width: 100%;
+  height: 6px;
+}
+.project-milestone-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.project-milestone-tasks {
+  display: grid;
+  gap: 4px;
+  padding-inline-start: 4px;
+  margin-block: 2px;
+}
+.project-milestone-task-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+.project-milestone-task-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: start;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.project-milestone-task-link:hover {
+  text-decoration-color: var(--ink);
+}
+.project-milestone-task-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.project-milestone-reconciliation {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
   color: var(--muted);
 }
 .project-milestone-form label {

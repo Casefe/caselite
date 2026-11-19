@@ -1490,6 +1490,7 @@ export default function ProjectCatalog({
                           pending={c.pending || c.unknown}
                           onDirty={setPlanningDirty}
                           execute={command}
+                          onOpenTask={(id) => openTask(id)}
                         />
                       )}
                     </div>

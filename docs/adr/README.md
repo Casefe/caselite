@@ -70,3 +70,5 @@
 - [ADR-038](./ADR-038-local-folder-workspace.md) 默认目录、个人材料固定来源与唯一目录能力Owner，DEV-1855；实现/验收按本轮生产证据。
 
 - [ADR-039](./ADR-039-independent-documents.md) 独立 Document、原生兼容迁移与同一 Yjs 正文 Owner，DEV-1934；真实桌面验收未运行。
+
+- [ADR-040](./ADR-040-project-task-grouping-and-module-progress.md) 项目任务分组、目标日期与模块进度对账，DEV-1891。

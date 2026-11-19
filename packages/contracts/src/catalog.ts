@@ -157,6 +157,14 @@ const discussionEntry = z.strictObject({
 const discussionCursor = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export type DiscussionScope = z.infer<typeof discussionScope>;
 export type DiscussionEntry = z.infer<typeof discussionEntry>;
+export const milestoneOrganizationStatusSchema = z.enum([
+  'planned',
+  'in_progress',
+  'completed',
+  'archived',
+]);
+export type MilestoneOrganizationStatus = z.infer<typeof milestoneOrganizationStatusSchema>;
+
 const milestoneTitle = z
   .string()
   .trim()
@@ -164,18 +172,25 @@ const milestoneTitle = z
   .max(160)
   .refine((v) => !v.includes('\0'));
 const milestoneFields = { title: milestoneTitle, target_date: ordinaryDateSchema.nullable() };
-const milestoneSchema = z.strictObject({
+export const milestoneSchema = z.strictObject({
   id,
   ...milestoneFields,
   version,
   archived_at: z.iso.datetime().nullable(),
   total: z.number().int().nonnegative(),
   done: z.number().int().nonnegative(),
+  todo: z.number().int().nonnegative().optional(),
+  in_progress: z.number().int().nonnegative().optional(),
+  canceled: z.number().int().nonnegative().optional(),
+  status: milestoneOrganizationStatusSchema.optional(),
 });
-const projectPlanSchema = z.strictObject({
+export type Milestone = z.infer<typeof milestoneSchema>;
+
+export const projectPlanSchema = z.strictObject({
   milestones: z.array(milestoneSchema),
   assignments: z.array(z.strictObject({ task_id: id, milestone_id: id })),
 });
+export type ProjectPlan = z.infer<typeof projectPlanSchema>;
 export const catalogRequestSchema = z.discriminatedUnion('operation', [
   projectGraphRequestSchema,
   projectVisualizationReadRequestSchema,
