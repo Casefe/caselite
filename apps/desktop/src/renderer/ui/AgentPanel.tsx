@@ -361,6 +361,7 @@ export function AgentRunReadOnly({ run }: { run: AgentRun }) {
 
 export default function AgentPanel({
   scope,
+  defaultDocxFull = false,
   freshHomeSession = false,
   variant = 'default',
   draft: controlled,
@@ -377,6 +378,7 @@ export default function AgentPanel({
   onHomeViewState,
 }: {
   scope: string;
+  defaultDocxFull?: boolean;
   freshHomeSession?: boolean;
   variant?: 'default' | 'compact';
   draft?: RichDraft;
@@ -430,6 +432,7 @@ export default function AgentPanel({
     preparing,
   } = useAgentController({
     scope,
+    defaultDocxFull,
     freshHomeSession,
     draft: controlled,
     onDraft,

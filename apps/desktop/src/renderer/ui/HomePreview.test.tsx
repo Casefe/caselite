@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type {
   AgentRequest,
@@ -126,6 +126,114 @@ function fixture(
   } as unknown as Window['caselite'];
   return { agent, material, profile };
 }
+
+it('shows the same default Word paragraphs that the homepage submits for preview', async () => {
+  const docx: Material = {
+    ...source,
+    id: 'home-default-word',
+    task_id: 'home',
+    name: '首页合成合同.docx',
+    page_count: 2,
+    pages: [1, 2].map((page) => ({ page, text: `第${page}段`, origin: 'docx_text' })),
+  };
+  const { agent, material } = fixture([]);
+  let imported = false;
+  material.mockImplementation(async (request) => {
+    if (request.operation === 'commit') imported = true;
+    return {
+      ok: true,
+      materials: imported ? [docx] : [],
+      ...(request.operation === 'read' ? { data: new Uint8Array([1]) } : {}),
+    };
+  });
+  window.caselite.pickPdf = vi.fn(async () => ({
+    ok: true,
+    materials: [],
+    staged: { token: docx.id, name: docx.name, bytes: docx.bytes },
+  }));
+  render(<Home />);
+  fireEvent.change(await screen.findByLabelText('Agent 工作目标'), {
+    target: { value: '审查合同' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '添加文件与材料' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '文件' }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: /首页合成合同.docx.*全部 2 个可读取段落/ }),
+  );
+  const reader = await screen.findByLabelText('Word 固定原件');
+  expect(
+    within(reader)
+      .getAllByRole('checkbox')
+      .every((input) => (input as HTMLInputElement).checked),
+  ).toBe(true);
+  expect(material.mock.calls.some(([request]) => request.operation === 'preview')).toBe(false);
+  expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '发送', exact: true }));
+  await waitFor(() =>
+    expect(
+      material.mock.calls.some(
+        ([request]) =>
+          request.operation === 'preview' &&
+          JSON.stringify(request.selected) ===
+            JSON.stringify([{ source_id: docx.id, pages: [1, 2] }]),
+      ),
+    ).toBe(true),
+  );
+  expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '移除附件 首页合成合同.docx' }));
+});
+
+it.each([
+  ['finance', 'home'],
+  ['task', 'eecceecc-eec0-4ecc-8ecc-eecceecceecc'],
+])('keeps Word selection explicit in the %s agent panel', async (_name, scope) => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const docx: Material = {
+    ...source,
+    id: `word-${scope}`,
+    task_id: scope,
+    name: '非首页合成合同.docx',
+    page_count: 1,
+    pages: [{ page: 1, text: '合成正文', origin: 'docx_text' }],
+  };
+  const { agent, material } = fixture([]);
+  let imported = false;
+  material.mockImplementation(async (request) => {
+    if (request.operation === 'commit') imported = true;
+    return {
+      ok: true,
+      materials: imported ? [docx] : [],
+      ...(request.operation === 'read' ? { data: new Uint8Array([1]) } : {}),
+    };
+  });
+  window.caselite.pickPdf = vi.fn(async () => ({
+    ok: true,
+    materials: [],
+    staged: { token: docx.id, name: docx.name, bytes: docx.bytes },
+  }));
+  render(<AgentPanel scope={scope} variant="compact" />);
+  fireEvent.change(
+    await screen.findByLabelText(scope === 'home' ? 'Agent 工作目标' : 'AI 工作要求'),
+    { target: { value: '审查合同' } },
+  );
+  fireEvent.click(screen.getByRole('button', { name: '添加文件与材料' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '文件' }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: /非首页合成合同.docx.*打开并选择段落/ }),
+  );
+  const reader = await screen.findByLabelText('Word 固定原件');
+  expect((within(reader).getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '发送', exact: true }));
+  expect(await screen.findByText('请先打开 Word 附件并选择本轮使用的段落。')).toBeTruthy();
+  expect(material.mock.calls.some(([request]) => request.operation === 'preview')).toBe(false);
+  expect(agent.mock.calls.some(([request]) => request.operation === 'start')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '移除附件 非首页合成合同.docx' }));
+});
 function Home({ onInspectorChange = () => {} }: { onInspectorChange?(open: boolean): void }) {
   const [open, setOpen] = useState(true);
   const [client] = useState(
