@@ -1,0 +1,14 @@
+{
+  "issue": "DEV-1863",
+  "channel": "caselite:pdf-viewer-host:v1",
+  "document_input": "controlled-bytes-only",
+  "forbidden_document_sources": ["https://", "file://", "data:", "parent_traversal"],
+  "required_csp_directives": [
+    "default-src 'none'",
+    "script-src 'self'",
+    "worker-src 'self' blob:",
+    "connect-src 'self'",
+    "style-src-attr 'unsafe-inline'",
+    "object-src 'none'"
+  ]
+}

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { Material } from '../../../preload/caselite-api';
 import { ProjectFileExample, ProjectFileTable } from './ProjectFileTable';
 import { DocxOriginalReader } from '../../ui/DocxOriginalReader';
+import { materialPdfViewerBinding } from '../../pdf-viewer-binding';
 import { isDocx } from '../../ui/useMaterials';
 const PdfReader = lazy(() => import('../../ui/PdfReader'));
 const states: Record<Material['status'], string> = {
@@ -141,6 +142,7 @@ export default function ProjectFiles({
           key={selected.id}
           bytes={bytes}
           name={selected.name}
+          binding={materialPdfViewerBinding(selected)!}
           textPages={selected.pages}
           onClose={closePreview}
           {...(!compact && { initialWidth: 320 })}

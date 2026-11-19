@@ -41,6 +41,7 @@ import DocumentInspector from '../../ui/DocumentInspector';
 import PropertyResizeHandle from '../../ui/PropertyResizeHandle';
 import { useCatalog } from '../../ui/useCatalog';
 import { DocxOriginalReader } from '../../ui/DocxOriginalReader';
+import { materialPdfViewerBinding } from '../../pdf-viewer-binding';
 import { isDocx } from '../../ui/useMaterials';
 import { useProjectOriginals } from './useProjectOriginals';
 import { useLocalFolder } from './useLocalFolder';
@@ -675,6 +676,7 @@ export default function DocumentWorkspace({
                 key={localFolder.opened.source.id}
                 name={localFolder.opened.source.name}
                 bytes={localFolder.opened.bytes}
+                binding={materialPdfViewerBinding(localFolder.opened.source)!}
                 textPages={localFolder.opened.source.pages}
                 onClose={localFolder.close}
                 initialWidth={320}
@@ -693,14 +695,19 @@ export default function DocumentWorkspace({
               />
             ) : (
               <Suspense fallback={<p>正在打开阅读器…</p>}>
-                <PdfReader
-                  key={originals.selected.id}
-                  bytes={originals.bytes}
-                  name={originals.selected.name}
-                  textPages={originals.selected.pages}
-                  onClose={originals.close}
-                  initialWidth={320}
-                />
+                {materialPdfViewerBinding(originals.selected) ? (
+                  <PdfReader
+                    key={originals.selected.id}
+                    bytes={originals.bytes}
+                    name={originals.selected.name}
+                    binding={materialPdfViewerBinding(originals.selected)!}
+                    textPages={originals.selected.pages}
+                    onClose={originals.close}
+                    initialWidth={320}
+                  />
+                ) : (
+                  <p role="alert">原件来源不完整，请重新读取。</p>
+                )}
               </Suspense>
             )
           ) : (

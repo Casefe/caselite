@@ -895,6 +895,8 @@ it('项目工作台从同一目录打开原件并使用项目范围读取', asyn
   const project = { id: 'project-original', title: '合成项目' };
   const original = {
     id: 'source-original',
+    asset_version_id: 'source-original',
+    sha256: 'a'.repeat(64),
     name: '证据.pdf',
     status: 'ready',
     pages: [],

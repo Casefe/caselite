@@ -12,6 +12,7 @@ export * from './export-style';
 export * from './agent';
 export * from './catalog';
 export * from './source';
+export * from './pdf-viewer-host';
 export * from './agent-input';
 export * from './appearance';
 
