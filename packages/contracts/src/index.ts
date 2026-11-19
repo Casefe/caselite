@@ -19,6 +19,7 @@ export * from './material';
 export * from './material-batch';
 
 export * from './reminder';
+export * from './memo';
 export * from './finance';
 export * from './contacts';
 export * from './local-preferences';
