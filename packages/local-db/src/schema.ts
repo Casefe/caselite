@@ -741,6 +741,45 @@ export const reminderReceipts = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
 );
+// 备忘不引用 Task、Matter 或 Document。正文只在这一行，不另建 Yjs 副本。
+export const memos = sqliteTable(
+  'memos',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    text: text('text').notNull(),
+    status: text('status', { enum: ['active', 'done'] }).notNull(),
+    version: integer('version').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    index('memos_workspace_list').on(
+      table.workspaceId,
+      table.status,
+      table.deletedAt,
+      table.updatedAt,
+    ),
+    check(
+      'memos_text',
+      sql`length(${table.text}) BETWEEN 1 AND 4000 AND instr(${table.text}, char(0))=0`,
+    ),
+    check('memos_status', sql`${table.status} IN ('active', 'done')`),
+    check('memos_version', sql`typeof(${table.version})='integer' AND ${table.version}>0`),
+    check('memos_deleted', sql`${table.deletedAt} IS NULL OR length(${table.deletedAt})>0`),
+  ],
+);
+export const memoReceipts = sqliteTable(
+  'memo_receipts',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    key: text('key').notNull(),
+    digest: text('digest').notNull(),
+    result: text('result').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.key] })],
+);
 
 export const financeContracts = sqliteTable(
   'finance_contracts',
