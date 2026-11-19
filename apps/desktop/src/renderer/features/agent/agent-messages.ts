@@ -23,6 +23,7 @@ export function agentMessages(runs: AgentRun[]): ThreadMessageLike[] {
             model: run.model,
             status: run.status,
             message: run.message,
+            output_incomplete: run.output_incomplete,
             copyable: Boolean(run.output),
           },
         },
