@@ -117,6 +117,22 @@ it('rejects context hidden in head tags and rejects unsupported column widths', 
   ).toThrow('列宽');
 });
 
+it('rejects a nested table paste before the editor can repair or store it', () => {
+  const { editor } = setup();
+  editor.commands.setContent('<p>原文</p>');
+  editor.commands.setTextSelection(1);
+  render(<EditorSurface editor={editor} mode="simple" />);
+  const before = editor.getHTML();
+  fireEvent.paste(document.querySelector('.tiptap')!, {
+    clipboardData: {
+      getData: () => '<table><tr><td><table><tr><td>内嵌</td></tr></table></td></tr></table>',
+    },
+  });
+  expect(screen.getByRole('alert').textContent).toContain('嵌套');
+  expect(editor.getHTML()).toBe(before);
+  expect(editor.getText()).toBe('原文');
+});
+
 it('rejects a second HTML table inside an existing table while retaining the original cells', () => {
   const { editor } = setup();
   editor.commands.setTextSelection(4);

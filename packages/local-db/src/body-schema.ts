@@ -88,7 +88,12 @@ function validateTable(table: Y.XmlElement) {
       throw new Error('Invalid table row');
     let x = 0;
     for (const cell of row.toArray()) {
-      if (!(cell instanceof Y.XmlElement)) throw new Error('Invalid table cell');
+      // 行内只能是单元格；把表格或其他块当成格子会在重开时被编辑器改写。
+      if (
+        !(cell instanceof Y.XmlElement) ||
+        (cell.nodeName !== 'tableCell' && cell.nodeName !== 'tableHeader')
+      )
+        throw new Error('Invalid table cell');
       while (grid[y][x]) x++;
       const attrs = cell.getAttributes() as Record<string, unknown>;
       if (
@@ -151,7 +156,7 @@ export function validateBody(state: Uint8Array, allowTables = false, editorSchem
     if (root._map.size) throw new Error('Invalid body root container');
     let count = 0;
     let hasTable = false;
-    function visit(node: Y.XmlElement | Y.XmlText, parent: string, depth: number) {
+    function visit(node: Y.XmlElement | Y.XmlText, parent: string, depth: number, inTable = false) {
       if (++count > 100000 || depth > 40) throw new Error('Body too complex');
       if (node instanceof Y.XmlText) {
         if (!['paragraph', 'heading', 'codeBlock'].includes(parent))
@@ -187,6 +192,8 @@ export function validateBody(state: Uint8Array, allowTables = false, editorSchem
         return;
       }
       const name = node.nodeName;
+      // 单元格里的表格会被 TableKit 在重开时拆开或丢弃。保存前拒绝，已提交修订保持原字节。
+      if (name === 'table' && inTable) throw new Error('Nested table');
       const allowed =
         parent === 'default' || parent === 'blockquote'
           ? blocks.has(name)
@@ -233,7 +240,7 @@ export function validateBody(state: Uint8Array, allowTables = false, editorSchem
       for (const child of node.toArray()) {
         if (!(child instanceof Y.XmlElement) && !(child instanceof Y.XmlText))
           throw new Error('Unsupported child');
-        visit(child, name, depth + 1);
+        visit(child, name, depth + 1, inTable || name === 'table');
       }
     }
     for (const child of root.toArray()) {
