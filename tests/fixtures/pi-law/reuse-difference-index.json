@@ -1,0 +1,62 @@
+{
+  "issue": "DEV-1767",
+  "baseline_role": "只汇总复用差异和退出证据。DEV-1657保留产品总验收，DEV-1655保留候选接受。",
+  "entries": [
+    {
+      "id": "exit-host-read",
+      "owner_issue": "DEV-1767",
+      "status": "PASS_REAL",
+      "evidence": "tests/integration/pi-law-exit-read.test.ts",
+      "summary": "临时库写入任务、Run、Yjs正文和材料来源后关闭重开；读取路径不加载Pi适配。"
+    },
+    {
+      "id": "persistence-independent-of-pi",
+      "owner_issue": "DEV-1767",
+      "status": "PASS_REAL",
+      "evidence": "tests/contracts/pi-law-reuse-difference-index.test.ts",
+      "summary": "domain、contracts、application、local-db的源码不引用Pi包或pi-runtime。"
+    },
+    {
+      "id": "agent-v1-omits-manifest",
+      "owner_issue": "DEV-1767",
+      "status": "PASS_REAL",
+      "evidence": "tests/contracts/pi-law-reuse-difference-index.test.ts",
+      "summary": "已有选材Manifest合同没有进入agent:v1请求。本卡只记录该差异，不新建Manifest运行时。"
+    },
+    {
+      "id": "product-acceptance",
+      "owner_issue": "DEV-1657",
+      "status": "NOT_RUN",
+      "evidence": null,
+      "summary": "安装后的离线、AI、双格式与恢复全流程仍由DEV-1657接收。"
+    },
+    {
+      "id": "candidate-acceptance",
+      "owner_issue": "DEV-1655",
+      "status": "NOT_RUN",
+      "evidence": null,
+      "summary": "预览、拒绝或接受新稿仍由DEV-1655接收。"
+    },
+    {
+      "id": "source-version-anchor-store",
+      "owner_issue": "DEV-1767",
+      "status": "NOT_RUN",
+      "evidence": null,
+      "summary": "SourceVersion与Anchor仍是设计合同，当前没有独立表。退出读回只覆盖已经落盘的材料来源。"
+    },
+    {
+      "id": "upstream-difference-cards",
+      "owner_issue": "DEV-1767",
+      "status": "NOT_RUN",
+      "evidence": null,
+      "summary": "DEV-1758、DEV-1759、DEV-1761、DEV-1762、DEV-1765的兼容检查和评测不在本卡重做。"
+    },
+    {
+      "id": "lawyer-and-real-provider",
+      "owner_issue": "DEV-1767",
+      "status": "NOT_RUN",
+      "evidence": null,
+      "summary": "律师接收、真实Provider和Electron同构建闭环未运行。"
+    }
+  ]
+}
